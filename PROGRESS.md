@@ -33,12 +33,15 @@ Fundație fără hardcodare, cu puncte de integrare curate.
 - Auth store Zustand (`src/store/authStore.ts`).
 - Root layout cu providers (temă, react-query), fonturi Manrope, hidratare sesiune.
 
-## Etapa 2 — Auth + Anketă (🚧 în lucru, sub-agenți paraleli)
+## Etapa 2 — Auth + Anketă (✅ gata & testat)
 Scope: **login (email+parolă) → onboarding → anketă**. Fără telefon/OTP. Fără verificare facială.
-- 🚧 Backend auth: register/login/refresh(rotație+reuse detection)/logout/me + teste.
-- 🚧 Backend anketă: modele Profile/Interest, `/profiles/reference`, `PUT /profiles/me` + teste.
-- 🚧 Mobile auth: splash+redirect, welcome, login, register + teste.
-- 🚧 Mobile anketă: wizard multi-pas (opțiuni din backend, fără hardcodare) + teste.
+- ✅ Backend auth: register/login/refresh(rotație+reuse detection)/logout/me + teste. **12 teste ✔**
+- ✅ Backend anketă: modele Profile/Interest, `/profiles/reference`, `PUT /profiles/me` + teste.
+- ✅ Migrație Alembic inițială (users, refresh_sessions, profiles, interests, profile_interests).
+- ✅ Mobile auth: splash+redirect, welcome, login, register + teste.
+- ✅ Mobile anketă: wizard multi-pas (opțiuni din backend, fără hardcodare) + teste. **31/31 Jest ✔, tsc curat**
+
+Verificat de sub-agenți dedicați: backend `pytest` 12/12, mobile `jest` 31/31 + `tsc --noEmit` curat.
 
 ## Amânat intenționat (❌ — mai târziu)
 - ❌ Verificare facială / liveness (TZ 2.2).

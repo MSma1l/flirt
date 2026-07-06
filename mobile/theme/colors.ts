@@ -44,7 +44,9 @@ export const lightTheme = {
 } as const;
 
 // Contract de tip: light și dark trebuie să aibă EXACT aceleași chei.
-export type ThemeColors = typeof darkTheme;
+// Mapped type → valorile devin `string` (nu literalii din `as const`),
+// astfel încât light și dark să fie interschimbabile în ThemeProvider.
+export type ThemeColors = { [K in keyof typeof darkTheme]: string };
 
 export const CTA_GRADIENT = ['#FF2D78', '#E01B63'] as const;
 export const ACCENT_GLOW = 'rgba(255,45,120,0.35)';
