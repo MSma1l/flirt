@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "FLIRT",
+    "slug": "flirt",
+    "scheme": "flirt",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "plugins": ["expo-router", "expo-secure-store", "expo-font"],
+    "ios": { "supportsTablet": false, "bundleIdentifier": "eu.flirt.app" },
+    "android": { "package": "eu.flirt.app" },
+    "extra": {
+      "router": { "origin": false },
+      "apiUrl": "http://localhost:8000/api/v1"
+    }
+  }
+}
