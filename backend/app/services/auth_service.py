@@ -147,8 +147,12 @@ async def rotate_refresh(db: AsyncSession, refresh_token: str) -> TokenPair:
         await db.commit()
         raise invalid
 
-    # Expirare (dublă verificare pe lângă `exp` din JWT).
-    if session.expires_at < datetime.now(timezone.utc):
+    # Expirare (dublă verificare pe lângă `exp` din JWT). Pe SQLite datetime-ul
+    # revine „naive"; îl tratăm ca UTC pentru o comparație corectă.
+    expires_at = session.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
         raise invalid
 
     user = await db.get(User, session.user_id)

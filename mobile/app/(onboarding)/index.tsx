@@ -15,7 +15,7 @@ import {
 import { Button, Input, ProgressDots, ScreenContainer } from '@/components/ui';
 import { fetchReference, submitAnketa } from '@/features/anketa/anketaApi';
 import { ANKETA_STEPS, useAnketaStore } from '@/features/anketa/anketaStore';
-import { AnketaDraft } from '@/features/anketa/types';
+import { AnketaDraft, InterestOption } from '@/features/anketa/types';
 import {
   FieldErrors,
   isValid,
@@ -325,7 +325,10 @@ export default function AnketaWizard() {
             <Text style={[typography.h1, { color: colors.textPrimary }]}>Interese</Text>
             <ChipGroup
               label="Alege ce te reprezintă"
-              options={reference.interests.map((i) => ({ key: i.slug, label: i.label }))}
+              options={reference.interests.map((i: InterestOption) => ({
+                key: i.slug,
+                label: i.label,
+              }))}
               values={draft.interests ?? []}
               onToggle={(key) => toggleMulti('interests', key)}
               error={errors.interests}
