@@ -1,0 +1,27 @@
+# === Python / backend ===
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+backend/.env
+*.pem
+
+# === Node / mobile ===
+node_modules/
+.expo/
+dist/
+web-build/
+mobile/.env
+npm-debug.*
+*.tsbuildinfo
+
+# === OS / editor ===
+.DS_Store
+*.log
+.idea/
+.vscode/
+
+# Extras de lucru
+.context/tz_extract/
