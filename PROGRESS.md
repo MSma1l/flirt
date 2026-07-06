@@ -43,11 +43,27 @@ Scope: **login (email+parolă) → onboarding → anketă**. Fără telefon/OTP.
 
 Verificat de sub-agenți dedicați: backend `pytest` 12/12, mobile `jest` 31/31 + `tsc --noEmit` curat.
 
+## Etapa 3 — Navigare 3 taburi + Feed de swipe (✅ gata & testat)
+Ecranul principal (TZ secț. 3–4).
+- ✅ Backend feed: Compatibility Score (TZ 4.6, ponderi ca constante), `GET /feed` (excludere self/
+  swipe-uiți + separare vârstă 16-17/18+), `POST /feed/swipe` (like/dislike → match reciproc),
+  `GET /feed/matches`. Modele `Like`/`Match` + migrație Alembic. **17 teste ✔**
+- ✅ Mobile: tab bar 3 taburi (Ankete/Mesaje/Setări), swipe deck cu `ProfileCard` + `CompatBadge`
+  (verde/galben/gri), butoane like/dislike, `MatchModal` „Connect!", ecran Mesaje (matches),
+  ecran Setări (temă light/dark/system + logout). **40 teste ✔, tsc curat**
+- ❌ Gesturi de swipe (reanimated/gesture-handler) — momentan butoane; le adăugăm ulterior.
+
 ## Amânat intenționat (❌ — mai târziu)
 - ❌ Verificare facială / liveness (TZ 2.2).
 - ❌ Înregistrare prin telefon + OTP (TZ 2.1).
 - ❌ Upload poze anketă (TZ 2.4) — momentan doar câmp opțional de URL-uri.
 - ❌ Swipe / Compatibility / Chat / Events / Monetizare — etape următoare.
+
+## 🔎 Gate de revizuire finală (cerut de user)
+La finalul întregii dezvoltări (nu doar per-etapă): revizuire completă cu **sub-agenți în paralel**
+care verifică că tot codul corespunde și funcționează conform `docs/` și prototipului de design
+(paletă + `FLIRT Prototype (standalone).html`). Acoperă: conformitate TZ, potrivire UI/paletă,
+corectitudine, teste verzi, zero hardcodare.
 
 ## Cum rulezi
 - Backend teste: `cd backend && . .venv/bin/activate && pytest`

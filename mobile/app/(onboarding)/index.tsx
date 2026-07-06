@@ -154,7 +154,7 @@ export default function AnketaWizard() {
       await submitAnketa(draft as AnketaDraft);
       setProfileCompleted(true);
       reset();
-      router.replace('/home');
+      router.replace('/(tabs)/ankete');
     } catch {
       setSubmitError('Nu am putut salva anketa. Încearcă din nou.');
     } finally {

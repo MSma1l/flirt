@@ -20,7 +20,7 @@ export default function Index() {
     if (user && !user.profile_completed) {
       return <Redirect href="/(onboarding)" />;
     }
-    return <Redirect href="/home" />;
+    return <Redirect href="/(tabs)/ankete" />;
   }
 
   // status === 'loading' → splash

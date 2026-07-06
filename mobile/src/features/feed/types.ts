@@ -1,0 +1,37 @@
+/** Tipuri pentru feed-ul de swipe (TZ secț. 4). Toate câmpurile în camelCase. */
+
+/** Un card de profil afișat în deck-ul de ankete. */
+export interface FeedCard {
+  userId: string;
+  name: string;
+  age: number;
+  gender: string;
+  city: string;
+  /** Distanța în km până la utilizator (opțională). */
+  distanceKm?: number;
+  about: string;
+  topInterests: string[];
+  languages: string[];
+  /** Scor de compatibilitate 0–100. */
+  compatibility: number;
+  photos: string[];
+}
+
+/** Rezultatul unui swipe: dacă a rezultat un match și id-ul lui. */
+export interface SwipeResult {
+  matched: boolean;
+  matchId?: string;
+}
+
+/** Un element din lista de match-uri. */
+export interface MatchItem {
+  matchId: string;
+  userId: string;
+  name: string;
+  age: number;
+  city: string;
+  compatibility: number;
+}
+
+/** Acțiunea posibilă la swipe. */
+export type SwipeAction = 'like' | 'dislike';
