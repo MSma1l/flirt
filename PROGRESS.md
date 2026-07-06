@@ -62,6 +62,15 @@ TZ secț. 5.
   `chat/[id]` (bule mesaje, hint „contact ascuns", input+trimite, mark-read). **49 teste ✔, tsc curat**
 - ❌ Realtime WebSocket — momentan polling (React Query); WS ulterior.
 
+## Etapa 5 — Profil + Setări (✅ gata & testat)
+TZ secț. 6.
+- ✅ Backend cont: modele `UserSettings`/`Favorite`/`Block`/`Ticket`/`AccountDeletionRequest`;
+  `GET/PUT /settings`, `/social/favorites`, `/social/blocks`, `GET /ticket` (bilet Flirt Party lazy),
+  ștergere cont cu grație (config). Migrație Alembic. **33 teste ✔**
+- ✅ Mobile profil: `profile/edit` (editare anketă completă), `favorites` (★). **tsc curat**
+- ✅ Mobile setări: hub `setari` (temă/rază/notificări/ascundere), `ticket` (cod + QR placeholder),
+  `blocklist` (deblocare), ștergere cont cu confirmare. **63 teste ✔**
+
 ## Amânat intenționat (❌ — mai târziu)
 - ❌ Verificare facială / liveness (TZ 2.2).
 - ❌ Înregistrare prin telefon + OTP (TZ 2.1).

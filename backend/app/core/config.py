@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     min_registration_age: int = 16
     min_photos: int = 3
     max_photos: int = 9
+    search_radius_default_km: int = 50
+    account_deletion_grace_days: int = 30
 
     @property
     def cors_origins_list(self) -> list[str]:

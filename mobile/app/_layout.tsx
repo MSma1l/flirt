@@ -41,6 +41,10 @@ export default function RootLayout() {
             <Stack.Screen name="(onboarding)" />
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="chat/[id]" />
+            <Stack.Screen name="profile/edit" />
+            <Stack.Screen name="favorites" />
+            <Stack.Screen name="ticket" />
+            <Stack.Screen name="blocklist" />
           </Stack>
         </ThemeProvider>
       </QueryClientProvider>
