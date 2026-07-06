@@ -53,6 +53,15 @@ Ecranul principal (TZ secț. 3–4).
   ecran Setări (temă light/dark/system + logout). **40 teste ✔, tsc curat**
 - ❌ Gesturi de swipe (reanimated/gesture-handler) — momentan butoane; le adăugăm ulterior.
 
+## Etapa 4 — Chat / Mesaje (✅ gata & testat)
+TZ secț. 5.
+- ✅ Backend chat: modele `Chat`/`Message`, `GET /chats` (dialoguri din match-uri + unread), 
+  `GET/POST /chats/{id}/messages`, `POST /chats/{id}/read`. **Mascare contacte (TZ 5.5)**:
+  `contact_masker` ascunde telefon/email/URL/@handle/mesagerie. Migrație Alembic. **28 teste ✔**
+- ✅ Mobile chat: listă dialoguri (`mesaje` tab, unread badge, polling), ecran conversație
+  `chat/[id]` (bule mesaje, hint „contact ascuns", input+trimite, mark-read). **49 teste ✔, tsc curat**
+- ❌ Realtime WebSocket — momentan polling (React Query); WS ulterior.
+
 ## Amânat intenționat (❌ — mai târziu)
 - ❌ Verificare facială / liveness (TZ 2.2).
 - ❌ Înregistrare prin telefon + OTP (TZ 2.1).

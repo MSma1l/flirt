@@ -1,22 +1,26 @@
-/** Mesaje — placeholder: listă de match-uri (dacă există) sau mesaj gol. */
+/** Mesaje — lista de dialoguri (TZ secț. 5). Poll la ~5s, tap → conversație. */
 import { useQuery } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
 import React from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 
 import { ScreenContainer } from '@/components/ui';
-import { CompatBadge } from '@/features/feed/CompatBadge';
-import { fetchMatches } from '@/features/feed/feedApi';
-import { MatchItem } from '@/features/feed/types';
+import { ChatListItem } from '@/features/chat/ChatListItem';
+import { fetchChats } from '@/features/chat/chatApi';
+import { ChatSummary } from '@/features/chat/types';
 import { useTheme } from '@theme/index';
 
-export default function MesajeScreen() {
-  const { colors, typography, spacing, radius } = useTheme();
-  const { data, isLoading } = useQuery<MatchItem[]>({
-    queryKey: ['matches'],
-    queryFn: fetchMatches,
-  });
+const REFETCH_MS = 5000;
 
-  const matches = data ?? [];
+export default function MesajeScreen() {
+  const { colors, typography, spacing } = useTheme();
+  const router = useRouter();
+
+  const { data, isLoading, isError, refetch } = useQuery<ChatSummary[]>({
+    queryKey: ['chats'],
+    queryFn: fetchChats,
+    refetchInterval: REFETCH_MS,
+  });
 
   if (isLoading) {
     return (
@@ -26,7 +30,26 @@ export default function MesajeScreen() {
     );
   }
 
-  if (matches.length === 0) {
+  if (isError) {
+    return (
+      <ScreenContainer center>
+        <Text style={[typography.body, styles.center, { color: colors.danger }]}>
+          Nu am putut încărca mesajele.
+        </Text>
+        <Text
+          accessibilityRole="button"
+          onPress={() => refetch()}
+          style={[typography.bodyStrong, styles.center, { color: colors.accent, marginTop: spacing.md }]}
+        >
+          Reîncearcă
+        </Text>
+      </ScreenContainer>
+    );
+  }
+
+  const chats = data ?? [];
+
+  if (chats.length === 0) {
     return (
       <ScreenContainer center>
         <Text style={[typography.body, styles.center, { color: colors.textSecondary }]}>
@@ -42,31 +65,14 @@ export default function MesajeScreen() {
         Mesaje
       </Text>
       <FlatList
-        data={matches}
-        keyExtractor={(m) => m.matchId}
+        data={chats}
+        keyExtractor={(c) => c.chatId}
         ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
         renderItem={({ item }) => (
-          <View
-            style={[
-              styles.row,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-                borderRadius: radius.md,
-                padding: spacing.md,
-              },
-            ]}
-          >
-            <View style={styles.rowText}>
-              <Text style={[typography.bodyStrong, { color: colors.textPrimary }]}>
-                {item.name}, {item.age}
-              </Text>
-              <Text style={[typography.caption, { color: colors.textSecondary }]}>
-                {item.city}
-              </Text>
-            </View>
-            <CompatBadge score={item.compatibility} />
-          </View>
+          <ChatListItem
+            chat={item}
+            onPress={() => router.push(`/chat/${item.chatId}`)}
+          />
         )}
       />
     </ScreenContainer>
@@ -74,16 +80,6 @@ export default function MesajeScreen() {
 }
 
 const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-  },
-  rowText: {
-    flex: 1,
-    gap: 2,
-  },
   center: {
     textAlign: 'center',
   },
