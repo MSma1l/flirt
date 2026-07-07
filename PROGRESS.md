@@ -95,6 +95,15 @@ TZ secț. 11 (roadmap adus în MVP).
   **Compatibility Score folosește acum umorul real** (nu mai e neutru).
 - Teste: **backend 55 ✔, mobile 95 ✔, tsc curat**.
 
+## Etapa 10 — Rafinări feed & chat (✅ gata & testat)
+Fără dependențe native noi.
+- ✅ **Undo swipe** (TZ 4.4): `POST /feed/undo` (demontează like + match/chat); buton „↩" în deck.
+- ✅ **Mesaj la like** (TZ 4.7): `Like.deferred_message`; sheet la like; livrat în chat la match reciproc.
+- ✅ **Gesturi swipe**: PanResponder + Animated (built-in, fără reanimated) — drag like/dislike.
+- ✅ **Reacții la mesaje** (TZ 5.2): `Message.reaction`; long-press → picker emoji.
+- ✅ **Compatibility în chat**: header conversație + listă dialoguri afișează scorul.
+- Migrație pentru coloanele noi. Teste: **backend 62 ✔, mobile ✔ (tsc curat)**.
+
 ## Amânat intenționat (❌ — mai târziu)
 - ❌ Verificare facială / liveness (TZ 2.2).
 - ❌ Înregistrare prin telefon + OTP (TZ 2.1).

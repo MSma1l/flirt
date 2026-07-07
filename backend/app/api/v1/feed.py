@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.feed import FeedCard, MatchOut, SwipeIn, SwipeResult
+from app.schemas.feed import FeedCard, MatchOut, SwipeIn, SwipeResult, UndoResult
 from app.services import feed_service
 
 router = APIRouter()
@@ -25,7 +25,15 @@ async def get_feed(db: DbDep, user: UserDep) -> list[FeedCard]:
 @router.post("/swipe", response_model=SwipeResult)
 async def swipe(data: SwipeIn, db: DbDep, user: UserDep) -> SwipeResult:
     """Înregistrează un like/dislike; întoarce dacă a produs match (protejat)."""
-    return await feed_service.swipe(db, user, data.target_user_id, data.action)
+    return await feed_service.swipe(
+        db, user, data.target_user_id, data.action, data.message
+    )
+
+
+@router.post("/undo", response_model=UndoResult)
+async def undo(db: DbDep, user: UserDep) -> UndoResult:
+    """Anulează ultimul swipe al userului curent (TZ 4.4, protejat)."""
+    return await feed_service.undo_last_swipe(db, user)
 
 
 @router.get("/matches", response_model=list[MatchOut])

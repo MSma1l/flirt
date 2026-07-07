@@ -13,6 +13,8 @@ export interface ChatSummary {
   lastMessageAt?: string;
   /** Numărul de mesaje necitite pentru utilizatorul curent. */
   unreadCount: number;
+  /** Scorul de compatibilitate cu celălalt (0–100). */
+  compatibility: number;
 }
 
 /** Un mesaj dintr-o conversație. */
@@ -25,4 +27,6 @@ export interface ChatMessage {
   isRead: boolean;
   /** Momentul creării (ISO 8601). */
   createdAt: string;
+  /** Reacția emoji la mesaj (ex. „❤️") sau null dacă nu există. */
+  reaction?: string | null;
 }

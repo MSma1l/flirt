@@ -1,7 +1,7 @@
 """Modele pentru swipe: like-uri și match-uri (TZ secț. 4)."""
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -24,6 +24,8 @@ class Like(Base):
     )
     # True = like (swipe dreapta), False = dislike (swipe stânga).
     is_like: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Mesaj atașat la like, livrat abia la match reciproc (TZ 4.7). Nullable.
+    deferred_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Match(Base):

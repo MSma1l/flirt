@@ -18,6 +18,8 @@ class ChatSummary(BaseModel):
     last_message: str | None = None
     last_message_at: datetime | None = None
     unread_count: int = 0
+    # Scorul de compatibilitate cu celălalt participant, 0–100 (TZ 5.2 / 4.6).
+    compatibility: int = 0
 
 
 class MessageOut(BaseModel):
@@ -30,6 +32,7 @@ class MessageOut(BaseModel):
     body: str  # deja mascat la persistare (TZ 5.5)
     was_masked: bool
     is_read: bool
+    reaction: str | None = None  # emoji simplu sau None (TZ 5.2)
     created_at: datetime
 
 
@@ -37,3 +40,9 @@ class MessageIn(BaseModel):
     """Payload-ul de trimitere a unui mesaj."""
 
     body: str = Field(min_length=1, max_length=2000)
+
+
+class ReactionIn(BaseModel):
+    """Payload pentru reacția la un mesaj; None scoate reacția (TZ 5.2)."""
+
+    reaction: str | None = Field(default=None, max_length=16)

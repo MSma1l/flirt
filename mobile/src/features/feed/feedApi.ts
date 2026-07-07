@@ -1,7 +1,7 @@
 /** Acces la API pentru feed-ul de swipe (TZ secț. 4): feed, swipe, match-uri. */
 import { api } from '@/services/api';
 
-import { FeedCard, MatchItem, SwipeAction, SwipeResult } from './types';
+import { FeedCard, MatchItem, SwipeAction, SwipeResult, UndoResult } from './types';
 
 /** Forma brută (snake_case) a unui card din backend. */
 interface FeedCardResponse {
@@ -22,6 +22,11 @@ interface SwipeResponse {
   matched: boolean;
   match_id?: string | null;
   chat_id?: string | null;
+}
+
+interface UndoResponse {
+  undone: boolean;
+  target_user_id?: string | null;
 }
 
 interface MatchResponse {
@@ -51,19 +56,35 @@ export async function fetchFeed(): Promise<FeedCard[]> {
   }));
 }
 
-/** Trimite un swipe (like/dislike) și întoarce dacă a rezultat un match. */
+/**
+ * Trimite un swipe (like/dislike) și întoarce dacă a rezultat un match.
+ * La like se poate atașa un mesaj de deschidere (`message`), inclus doar când e dat.
+ */
 export async function swipe(
   targetUserId: string,
   action: SwipeAction,
+  message?: string,
 ): Promise<SwipeResult> {
-  const { data } = await api.post<SwipeResponse>('/feed/swipe', {
+  const body: { target_user_id: string; action: SwipeAction; message?: string } = {
     target_user_id: targetUserId,
     action,
-  });
+  };
+  if (message !== undefined) body.message = message;
+
+  const { data } = await api.post<SwipeResponse>('/feed/swipe', body);
   return {
     matched: !!data.matched,
     matchId: data.match_id ?? undefined,
     chatId: data.chat_id ?? undefined,
+  };
+}
+
+/** Anulează ultimul swipe. Mapează `target_user_id` → `targetUserId`. */
+export async function undoSwipe(): Promise<UndoResult> {
+  const { data } = await api.post<UndoResponse>('/feed/undo', {});
+  return {
+    undone: !!data.undone,
+    targetUserId: data.target_user_id ?? null,
   };
 }
 

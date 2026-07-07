@@ -28,6 +28,8 @@ class SwipeIn(BaseModel):
 
     target_user_id: uuid.UUID
     action: Literal["like", "dislike"]
+    # Mesaj opțional trimis odată cu like-ul; devine vizibil la match (TZ 4.7).
+    message: str | None = None
 
 
 class SwipeResult(BaseModel):
@@ -37,6 +39,14 @@ class SwipeResult(BaseModel):
     match_id: uuid.UUID | None = None
     # Chat-ul creat pentru match (None când swipe-ul nu produce match).
     chat_id: uuid.UUID | None = None
+
+
+class UndoResult(BaseModel):
+    """Rezultatul unui undo de swipe (TZ 4.4)."""
+
+    undone: bool
+    # Userul căruia i-a fost anulat swipe-ul (None dacă nu era nimic de anulat).
+    target_user_id: uuid.UUID | None = None
 
 
 class MatchOut(BaseModel):

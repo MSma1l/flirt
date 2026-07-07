@@ -1,7 +1,7 @@
 """Modele pentru chat: un dialog per match + mesajele lui (TZ secț. 5)."""
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Text
+from sqlalchemy import Boolean, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -48,3 +48,5 @@ class Message(Base):
     was_masked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # True după ce destinatarul a deschis conversația.
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Reacția la mesaj — un emoji simplu (❤️/😂/👍); None = fără reacție (TZ 5.2).
+    reaction: Mapped[str | None] = mapped_column(String(16), nullable=True)

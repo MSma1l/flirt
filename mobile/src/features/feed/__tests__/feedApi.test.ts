@@ -1,4 +1,4 @@
-import { fetchFeed, swipe } from '../feedApi';
+import { fetchFeed, swipe, undoSwipe } from '../feedApi';
 
 jest.mock('@/services/api', () => ({
   api: {
@@ -104,5 +104,53 @@ describe('swipe', () => {
     });
     const result = await swipe('u3', 'like');
     expect(result).toEqual({ matched: true, matchId: 'm2', chatId: undefined });
+  });
+
+  it('include `message` în payload doar când e dat', async () => {
+    (api.post as jest.Mock).mockResolvedValue({ data: { matched: false } });
+
+    await swipe('u1', 'like', 'Salut 👋');
+
+    const [url, payload] = (api.post as jest.Mock).mock.calls[0];
+    expect(url).toBe('/feed/swipe');
+    expect(payload).toEqual({
+      target_user_id: 'u1',
+      action: 'like',
+      message: 'Salut 👋',
+    });
+  });
+
+  it('nu trimite cheia `message` când lipsește', async () => {
+    (api.post as jest.Mock).mockResolvedValue({ data: { matched: false } });
+
+    await swipe('u1', 'like');
+
+    const [, payload] = (api.post as jest.Mock).mock.calls[0];
+    expect(payload).toEqual({ target_user_id: 'u1', action: 'like' });
+    expect('message' in payload).toBe(false);
+  });
+});
+
+describe('undoSwipe', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('apelează POST /feed/undo și mapează target_user_id → targetUserId', async () => {
+    (api.post as jest.Mock).mockResolvedValue({
+      data: { undone: true, target_user_id: 'u9' },
+    });
+
+    const result = await undoSwipe();
+
+    expect(api.post).toHaveBeenCalledWith('/feed/undo', {});
+    expect(result).toEqual({ undone: true, targetUserId: 'u9' });
+  });
+
+  it('mapează target_user_id lipsă/null la targetUserId null', async () => {
+    (api.post as jest.Mock).mockResolvedValue({
+      data: { undone: false, target_user_id: null },
+    });
+
+    const result = await undoSwipe();
+    expect(result).toEqual({ undone: false, targetUserId: null });
   });
 });

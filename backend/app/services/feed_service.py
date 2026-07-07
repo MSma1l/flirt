@@ -9,11 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.account import Block, UserSettings
+from app.models.chat import Chat, Message
 from app.models.interest import Interest, ProfileInterest
 from app.models.profile import Profile
 from app.models.swipe import Like, Match
 from app.models.user import User
-from app.schemas.feed import FeedCard, MatchOut, SwipeResult
+from app.schemas.feed import FeedCard, MatchOut, SwipeResult, UndoResult
 from app.services import chat_service
 from app.services.compatibility import compute_compatibility
 
@@ -159,10 +160,20 @@ async def get_feed(
 
 
 async def swipe(
-    db: AsyncSession, user: User, target_user_id: uuid.UUID, action: str
+    db: AsyncSession,
+    user: User,
+    target_user_id: uuid.UUID,
+    action: str,
+    message: str | None = None,
 ) -> SwipeResult:
-    """Înregistrează un swipe; creează Match dacă like-ul e reciproc (TZ 4.4/4.7)."""
+    """Înregistrează un swipe; creează Match dacă like-ul e reciproc (TZ 4.4/4.7).
+
+    Un `message` opțional se atașează like-ului (`deferred_message`) și devine
+    vizibil ca mesaj de chat abia când swipe-ul produce un match reciproc (TZ 4.7).
+    """
     is_like = action == "like"
+    # Mesajul deferred are sens doar pentru like (nu pentru dislike).
+    deferred = message if (is_like and message) else None
 
     # Upsert Like direcțional (from user -> target).
     existing_result = await db.execute(
@@ -174,11 +185,17 @@ async def swipe(
     like = existing_result.scalar_one_or_none()
     if like is None:
         like = Like(
-            from_user_id=user.id, to_user_id=target_user_id, is_like=is_like
+            from_user_id=user.id,
+            to_user_id=target_user_id,
+            is_like=is_like,
+            deferred_message=deferred,
         )
         db.add(like)
     else:
         like.is_like = is_like
+        # Re-swipe cu mesaj nou îl actualizează; fără mesaj păstrăm ce era.
+        if deferred is not None:
+            like.deferred_message = deferred
 
     # Fără like nu poate exista match.
     if not is_like:
@@ -213,8 +230,85 @@ async def swipe(
     # dialogul să existe imediat (TZ 4.7/5.1). Refolosim logica din chat_service.
     chat = await chat_service.ensure_chat_for_match(db, match)
 
+    # Livrăm mesajele deferred: pentru fiecare like din pereche (A->B și B->A)
+    # care are `deferred_message`, creăm un mesaj în chat de la autorul like-ului
+    # și consumăm textul (îl golim ca să nu-l re-livrăm la un eventual re-swipe).
+    await _deliver_deferred_messages(db, chat, like, reciprocal)
+
     await db.commit()
     return SwipeResult(matched=True, match_id=match.id, chat_id=chat.id)
+
+
+async def _deliver_deferred_messages(
+    db: AsyncSession,
+    chat: Chat,
+    *like_pair: Like,
+) -> None:
+    """Creează câte un `Message` pentru fiecare like cu `deferred_message` (TZ 4.7).
+
+    Inserează direct prin modelul `Message` (fără chat_service, deci fără mascare
+    și fără commit — apelantul comite). Textul deferred e consumat după livrare.
+    """
+    for like in like_pair:
+        if like is None or not like.deferred_message:
+            continue
+        db.add(
+            Message(
+                chat_id=chat.id,
+                sender_id=like.from_user_id,
+                body=like.deferred_message,
+                was_masked=False,
+                is_read=False,
+            )
+        )
+        # Consumăm mesajul ca să nu fie re-livrat la un swipe ulterior.
+        like.deferred_message = None
+
+
+async def undo_last_swipe(db: AsyncSession, user: User) -> UndoResult:
+    """Anulează ULTIMUL swipe al userului (cel mai recent după created_at, TZ 4.4).
+
+    Șterge acel `Like`; dacă producea un `Match`, șterge și match-ul + chat-ul
+    asociat (ca să nu rămână orfan). Userul astfel „re-swipe-abil" reapare în feed.
+    Fără niciun swipe → {undone: false, target_user_id: null}.
+    """
+    last_result = await db.execute(
+        select(Like)
+        .where(Like.from_user_id == user.id)
+        .order_by(Like.created_at.desc(), Like.id.desc())
+        .limit(1)
+    )
+    like = last_result.scalar_one_or_none()
+    if like is None:
+        return UndoResult(undone=False, target_user_id=None)
+
+    target_user_id = like.to_user_id
+
+    # Dacă exista un match cu perechea, îl demontăm (chat mai întâi, apoi match).
+    a_id, b_id = _normalized_pair(user.id, target_user_id)
+    match_result = await db.execute(
+        select(Match).where(Match.user_a_id == a_id, Match.user_b_id == b_id)
+    )
+    match = match_result.scalar_one_or_none()
+    if match is not None:
+        # Chat-ul asociat (dacă există) — îl ștergem ca să nu rămână orfan.
+        chat_result = await db.execute(
+            select(Chat).where(Chat.match_id == match.id)
+        )
+        chat = chat_result.scalar_one_or_none()
+        if chat is not None:
+            # Ștergem explicit mesajele (SQLite nu forțează implicit CASCADE).
+            msgs_result = await db.execute(
+                select(Message).where(Message.chat_id == chat.id)
+            )
+            for msg in msgs_result.scalars().all():
+                await db.delete(msg)
+            await db.delete(chat)
+        await db.delete(match)
+
+    await db.delete(like)
+    await db.commit()
+    return UndoResult(undone=True, target_user_id=target_user_id)
 
 
 async def get_matches(db: AsyncSession, user: User) -> list[MatchOut]:

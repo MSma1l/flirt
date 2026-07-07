@@ -37,3 +37,10 @@ export interface MatchItem {
 
 /** Acțiunea posibilă la swipe. */
 export type SwipeAction = 'like' | 'dislike';
+
+/** Rezultatul unui undo: dacă s-a anulat ultimul swipe și pe cine viza. */
+export interface UndoResult {
+  undone: boolean;
+  /** Id-ul utilizatorului al cărui swipe a fost anulat (sau null). */
+  targetUserId: string | null;
+}

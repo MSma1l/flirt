@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import React from 'react';
 
 import { MessageBubble } from '../MessageBubble';
@@ -23,10 +23,10 @@ function makeMessage(over: Partial<ChatMessage> = {}): ChatMessage {
   };
 }
 
-function renderBubble(message: ChatMessage) {
+function renderBubble(message: ChatMessage, onReact?: (r: string | null) => void) {
   return render(
     <ThemeProvider>
-      <MessageBubble message={message} currentUserId={CURRENT} />
+      <MessageBubble message={message} currentUserId={CURRENT} onReact={onReact} />
     </ThemeProvider>,
   );
 }
@@ -70,5 +70,39 @@ describe('MessageBubble', () => {
   it('nu afișează hintul când mesajul nu e mascat', () => {
     const { queryByTestId } = renderBubble(makeMessage({ wasMasked: false }));
     expect(queryByTestId('masked-hint')).toBeNull();
+  });
+
+  it('afișează badge-ul de reacție când e setată', () => {
+    const { getByTestId, getByText } = renderBubble(makeMessage({ reaction: '❤️' }));
+    expect(getByTestId('reaction-badge')).toBeTruthy();
+    expect(getByText('❤️')).toBeTruthy();
+  });
+
+  it('nu afișează badge-ul de reacție când lipsește', () => {
+    const { queryByTestId } = renderBubble(makeMessage({ reaction: null }));
+    expect(queryByTestId('reaction-badge')).toBeNull();
+  });
+
+  it('long-press deschide picker-ul și selectarea declanșează onReact', () => {
+    const onReact = jest.fn();
+    const { getByTestId } = renderBubble(makeMessage(), onReact);
+
+    // Picker-ul nu e vizibil inițial.
+    expect(() => getByTestId('reaction-picker')).toThrow();
+
+    fireEvent(getByTestId('message-bubble').children[0] as never, 'longPress');
+    expect(getByTestId('reaction-picker')).toBeTruthy();
+
+    fireEvent.press(getByTestId('reaction-option-🔥'));
+    expect(onReact).toHaveBeenCalledWith('🔥');
+  });
+
+  it('re-selectarea aceleiași reacții o scoate (null)', () => {
+    const onReact = jest.fn();
+    const { getByTestId } = renderBubble(makeMessage({ reaction: '👍' }), onReact);
+
+    fireEvent(getByTestId('message-bubble').children[0] as never, 'longPress');
+    fireEvent.press(getByTestId('reaction-option-👍'));
+    expect(onReact).toHaveBeenCalledWith(null);
   });
 });

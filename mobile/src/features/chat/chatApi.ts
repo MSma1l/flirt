@@ -13,6 +13,7 @@ interface ChatSummaryResponse {
   last_message?: string | null;
   last_message_at?: string | null;
   unread_count: number;
+  compatibility?: number | null;
 }
 
 /** Forma brută (snake_case) a unui mesaj din backend. */
@@ -23,6 +24,7 @@ interface ChatMessageResponse {
   was_masked: boolean;
   is_read: boolean;
   created_at: string;
+  reaction?: string | null;
 }
 
 function mapMessage(m: ChatMessageResponse): ChatMessage {
@@ -33,6 +35,7 @@ function mapMessage(m: ChatMessageResponse): ChatMessage {
     wasMasked: !!m.was_masked,
     isRead: !!m.is_read,
     createdAt: m.created_at,
+    reaction: m.reaction ?? null,
   };
 }
 
@@ -48,6 +51,7 @@ export async function fetchChats(): Promise<ChatSummary[]> {
     lastMessage: c.last_message ?? undefined,
     lastMessageAt: c.last_message_at ?? undefined,
     unreadCount: c.unread_count ?? 0,
+    compatibility: c.compatibility ?? 0,
   }));
 }
 
@@ -68,4 +72,20 @@ export async function sendMessage(chatId: string, body: string): Promise<ChatMes
 /** Marchează dialogul ca citit. */
 export async function markRead(chatId: string): Promise<void> {
   await api.post(`/chats/${chatId}/read`);
+}
+
+/**
+ * Adaugă sau scoate o reacție la un mesaj și întoarce mesajul actualizat.
+ * `reaction = null` scoate reacția existentă.
+ */
+export async function reactToMessage(
+  chatId: string,
+  messageId: string,
+  reaction: string | null,
+): Promise<ChatMessage> {
+  const { data } = await api.post<ChatMessageResponse>(
+    `/chats/${chatId}/messages/${messageId}/react`,
+    { reaction },
+  );
+  return mapMessage(data);
 }

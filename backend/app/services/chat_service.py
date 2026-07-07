@@ -9,10 +9,12 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chat import Chat, Message
+from app.models.interest import Interest, ProfileInterest
 from app.models.profile import Profile
 from app.models.swipe import Match
 from app.models.user import User
 from app.schemas.chat import ChatSummary, MessageOut
+from app.services.compatibility import compute_compatibility
 from app.services.contact_masker import mask_contacts
 
 
@@ -29,6 +31,23 @@ def _calc_age(birth_date: date, today: date | None = None) -> int:
 def _other_id(chat: Chat, user_id: uuid.UUID) -> uuid.UUID:
     """Id-ul celuilalt participant din chat."""
     return chat.user_b_id if chat.user_a_id == user_id else chat.user_a_id
+
+
+async def _interests_by_profile(
+    db: AsyncSession, profile_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, set[str]]:
+    """Mapează profile_id -> set de slug-uri de interese (ca în feed_service)."""
+    if not profile_ids:
+        return {}
+    result = await db.execute(
+        select(ProfileInterest.profile_id, Interest.slug)
+        .join(Interest, Interest.id == ProfileInterest.interest_id)
+        .where(ProfileInterest.profile_id.in_(profile_ids))
+    )
+    mapping: dict[uuid.UUID, set[str]] = {}
+    for profile_id, slug in result.all():
+        mapping.setdefault(profile_id, set()).add(slug)
+    return mapping
 
 
 async def _ensure_chat_for_match(db: AsyncSession, match: Match) -> Chat:
@@ -90,6 +109,10 @@ async def list_chats(db: AsyncSession, user: User) -> list[ChatSummary]:
         chats.append(await _ensure_chat_for_match(db, match))
     await db.commit()
 
+    # Profilul propriu — necesar pentru scorul de compatibilitate (TZ 5.2).
+    my_result = await db.execute(select(Profile).where(Profile.user_id == user.id))
+    my_profile = my_result.scalar_one_or_none()
+
     # Profilurile celorlalți participanți, indexate după user_id.
     other_ids = [_other_id(c, user.id) for c in chats]
     profiles_result = await db.execute(
@@ -97,10 +120,27 @@ async def list_chats(db: AsyncSession, user: User) -> list[ChatSummary]:
     )
     profiles_by_user = {p.user_id: p for p in profiles_result.scalars().all()}
 
+    # Interesele mele + ale celorlalți (o singură interogare batch, ca în feed).
+    profile_ids = [p.id for p in profiles_by_user.values()]
+    if my_profile is not None:
+        profile_ids.append(my_profile.id)
+    interests_map = await _interests_by_profile(db, profile_ids)
+    my_interests = (
+        interests_map.get(my_profile.id, set()) if my_profile is not None else set()
+    )
+
     summaries: list[ChatSummary] = []
     for chat in chats:
         other_id = _other_id(chat, user.id)
         profile = profiles_by_user.get(other_id)
+
+        # Compatibilitatea cu celălalt user (0 dacă lipsește vreun profil).
+        if my_profile is not None and profile is not None:
+            compatibility = compute_compatibility(
+                my_profile, profile, my_interests, interests_map.get(profile.id, set())
+            )
+        else:
+            compatibility = 0
 
         # Ultimul mesaj din chat (după created_at).
         last_result = await db.execute(
@@ -133,6 +173,7 @@ async def list_chats(db: AsyncSession, user: User) -> list[ChatSummary]:
                 last_message=last_msg.body if last_msg else None,
                 last_message_at=last_msg.created_at if last_msg else None,
                 unread_count=unread_count,
+                compatibility=compatibility,
             )
         )
 
@@ -177,6 +218,38 @@ async def send_message(
         is_read=False,
     )
     db.add(message)
+    await db.commit()
+    await db.refresh(message)
+    return MessageOut.model_validate(message)
+
+
+async def react_to_message(
+    db: AsyncSession,
+    user: User,
+    chat_id: uuid.UUID,
+    message_id: uuid.UUID,
+    reaction: str | None,
+) -> MessageOut:
+    """Setează (sau scoate cu None) reacția la un mesaj din chat (TZ 5.2).
+
+    Poți reacționa la orice mesaj din chatul tău. 404 dacă userul nu e
+    participant la chat sau dacă mesajul nu aparține acelui chat.
+    """
+    chat = await _get_participant_chat(db, user, chat_id)
+
+    result = await db.execute(
+        select(Message).where(
+            Message.id == message_id, Message.chat_id == chat.id
+        )
+    )
+    message = result.scalar_one_or_none()
+    if message is None:
+        # Mesaj inexistent sau din alt chat → nu divulgăm → 404.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Message not found"
+        )
+
+    message.reaction = reaction  # None scoate reacția
     await db.commit()
     await db.refresh(message)
     return MessageOut.model_validate(message)

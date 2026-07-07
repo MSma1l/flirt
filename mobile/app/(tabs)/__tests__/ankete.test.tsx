@@ -12,11 +12,15 @@ jest.mock('expo-router', () => ({
   useRouter: () => ({ push: mockPush, replace: jest.fn(), back: jest.fn() }),
 }));
 
-// Mock la feedApi: controlăm feed-ul și spionăm swipe.
+// Mock la feedApi: controlăm feed-ul și spionăm swipe / undoSwipe.
 type SwipeMockResult = { matched: boolean; matchId?: string; chatId?: string | null };
 const mockSwipe = jest.fn(
-  (_targetUserId: string, _action: string): Promise<SwipeMockResult> =>
+  (_targetUserId: string, _action: string, _message?: string): Promise<SwipeMockResult> =>
     Promise.resolve({ matched: false }),
+);
+const mockUndoSwipe = jest.fn(
+  (): Promise<{ undone: boolean; targetUserId: string | null }> =>
+    Promise.resolve({ undone: true, targetUserId: 'u1' }),
 );
 const mockFetchFeed = jest.fn(() =>
   Promise.resolve([
@@ -38,7 +42,9 @@ const mockFetchFeed = jest.fn(() =>
 
 jest.mock('@/features/feed/feedApi', () => ({
   fetchFeed: () => mockFetchFeed(),
-  swipe: (targetUserId: string, action: string) => mockSwipe(targetUserId, action),
+  swipe: (targetUserId: string, action: string, message?: string) =>
+    mockSwipe(targetUserId, action, message),
+  undoSwipe: () => mockUndoSwipe(),
 }));
 
 function renderScreen() {
@@ -57,20 +63,33 @@ function renderScreen() {
 describe('AnketeScreen', () => {
   beforeEach(() => {
     mockSwipe.mockClear();
+    mockUndoSwipe.mockClear();
     mockFetchFeed.mockClear();
     mockPush.mockClear();
   });
 
-  it('la apăsarea butonului like cheamă swipe cu user_id-ul cardului curent', async () => {
+  it('la like deschide sheet-ul de mesaj de deschidere (fără swipe imediat)', async () => {
     const { getByTestId } = renderScreen();
 
-    // Așteptăm încărcarea feed-ului (cardul de sus).
     await waitFor(() => getByTestId('swipe-like'));
-
     fireEvent.press(getByTestId('swipe-like'));
 
+    // Sheet-ul apare, dar swipe nu s-a trimis încă.
+    await waitFor(() => getByTestId('first-msg-send'));
+    expect(mockSwipe).not.toHaveBeenCalled();
+  });
+
+  it('„Doar like" trimite swipe „like" fără message', async () => {
+    const { getByTestId } = renderScreen();
+
+    await waitFor(() => getByTestId('swipe-like'));
+    fireEvent.press(getByTestId('swipe-like'));
+
+    await waitFor(() => getByTestId('first-msg-skip'));
+    fireEvent.press(getByTestId('first-msg-skip'));
+
     await waitFor(() => {
-      expect(mockSwipe).toHaveBeenCalledWith('u1', 'like');
+      expect(mockSwipe).toHaveBeenCalledWith('u1', 'like', undefined);
     });
   });
 
@@ -81,6 +100,10 @@ describe('AnketeScreen', () => {
     await waitFor(() => getByTestId('swipe-like'));
     fireEvent.press(getByTestId('swipe-like'));
 
+    // Confirmăm like-ul din sheet („Doar like"), ce declanșează match-ul.
+    await waitFor(() => getByTestId('first-msg-skip'));
+    fireEvent.press(getByTestId('first-msg-skip'));
+
     // Modalul de match apare; apăsăm „Scrie un mesaj".
     await waitFor(() => getByTestId('match-write'));
     fireEvent.press(getByTestId('match-write'));
@@ -90,12 +113,39 @@ describe('AnketeScreen', () => {
     });
   });
 
-  it('când deck-ul se epuizează, oferă buton de reîncărcare', async () => {
-    // Feed cu un singur card; după like devine gol.
+  it('dislike trimite swipe „dislike" fără a deschide sheet-ul', async () => {
+    const { getByTestId, queryByTestId } = renderScreen();
+
+    await waitFor(() => getByTestId('swipe-dislike'));
+    fireEvent.press(getByTestId('swipe-dislike'));
+
+    await waitFor(() => {
+      expect(mockSwipe).toHaveBeenCalledWith('u1', 'dislike', undefined);
+    });
+    expect(queryByTestId('first-msg-send')).toBeNull();
+  });
+
+  it('undo apelează undoSwipe și reîncarcă feed-ul după un swipe', async () => {
     const { getByTestId } = renderScreen();
 
-    await waitFor(() => getByTestId('swipe-like'));
-    fireEvent.press(getByTestId('swipe-like'));
+    // Facem un dislike ca să existe ce anula.
+    await waitFor(() => getByTestId('swipe-dislike'));
+    fireEvent.press(getByTestId('swipe-dislike'));
+
+    // Deck-ul se golește; butonul de undo devine disponibil în starea goală.
+    await waitFor(() => getByTestId('deck-undo'));
+    fireEvent.press(getByTestId('deck-undo'));
+
+    await waitFor(() => {
+      expect(mockUndoSwipe).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('când deck-ul se epuizează, oferă buton de reîncărcare', async () => {
+    const { getByTestId } = renderScreen();
+
+    await waitFor(() => getByTestId('swipe-dislike'));
+    fireEvent.press(getByTestId('swipe-dislike'));
 
     // Starea goală expune butonul de reîncărcare.
     await waitFor(() => getByTestId('deck-reload'));

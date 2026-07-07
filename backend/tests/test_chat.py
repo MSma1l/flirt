@@ -237,6 +237,88 @@ async def test_unread_count_and_mark_read(client):
     assert resp.json()[0]["unread_count"] == 0
 
 
+@pytest.mark.asyncio
+async def test_react_to_message_sets_and_clears_reaction(client):
+    """Reacția la un mesaj apare în GET messages; None o scoate (TZ 5.2)."""
+    (a_headers, _), (b_headers, _) = await _matched_pair(client)
+    chat_id = await _chat_id_for(client, a_headers)
+
+    # A trimite un mesaj.
+    resp = await client.post(
+        f"{API}/chats/{chat_id}/messages",
+        json={"body": "salut"},
+        headers=a_headers,
+    )
+    assert resp.status_code == 201, resp.text
+    message_id = resp.json()["id"]
+
+    # B reacționează cu un emoji.
+    resp = await client.post(
+        f"{API}/chats/{chat_id}/messages/{message_id}/react",
+        json={"reaction": "❤️"},
+        headers=b_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["reaction"] == "❤️"
+
+    # GET messages reflectă reacția.
+    resp = await client.get(f"{API}/chats/{chat_id}/messages", headers=a_headers)
+    assert resp.status_code == 200, resp.text
+    by_id = {m["id"]: m for m in resp.json()}
+    assert by_id[message_id]["reaction"] == "❤️"
+
+    # Scoaterea reacției (reaction=None).
+    resp = await client.post(
+        f"{API}/chats/{chat_id}/messages/{message_id}/react",
+        json={"reaction": None},
+        headers=b_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["reaction"] is None
+
+    resp = await client.get(f"{API}/chats/{chat_id}/messages", headers=b_headers)
+    by_id = {m["id"]: m for m in resp.json()}
+    assert by_id[message_id]["reaction"] is None
+
+
+@pytest.mark.asyncio
+async def test_react_in_foreign_chat_returns_404(client):
+    """Un user străin de chat nu poate reacționa la mesaje → 404 (TZ 5.2)."""
+    (a_headers, _), _ = await _matched_pair(client)
+    chat_id = await _chat_id_for(client, a_headers)
+
+    resp = await client.post(
+        f"{API}/chats/{chat_id}/messages",
+        json={"body": "mesaj privat"},
+        headers=a_headers,
+    )
+    assert resp.status_code == 201, resp.text
+    message_id = resp.json()["id"]
+
+    # User complet străin de chat.
+    c_headers, _ = await _make_user(client, "c@example.com", "Carol")
+    resp = await client.post(
+        f"{API}/chats/{chat_id}/messages/{message_id}/react",
+        json={"reaction": "👍"},
+        headers=c_headers,
+    )
+    assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.asyncio
+async def test_chat_summary_has_compatibility(client):
+    """ChatSummary.compatibility e un int în intervalul 0–100 (TZ 5.2)."""
+    (a_headers, _), _ = await _matched_pair(client)
+
+    resp = await client.get(f"{API}/chats/", headers=a_headers)
+    assert resp.status_code == 200, resp.text
+    chat = resp.json()[0]
+    assert "compatibility" in chat
+    compat = chat["compatibility"]
+    assert isinstance(compat, int)
+    assert 0 <= compat <= 100
+
+
 # --- Teste unitare pe mask_contacts ------------------------------------------
 def test_mask_phone_unit():
     """Un număr de telefon e ascuns; textul din jur rămâne."""

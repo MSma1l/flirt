@@ -4,6 +4,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useTheme } from '@theme/index';
 
+import { compatColor, compatLabel } from '@/features/feed/compat';
+
 import { ChatSummary } from './types';
 
 interface Props {
@@ -63,6 +65,19 @@ export function ChatListItem({ chat, onPress }: Props) {
           >
             {chat.otherName}
           </Text>
+          <View
+            testID="compat-pill"
+            accessibilityRole="text"
+            accessibilityLabel={`${compatLabel(chat.compatibility)}: ${chat.compatibility}%`}
+            style={[
+              styles.compat,
+              { backgroundColor: compatColor(chat.compatibility, colors), borderRadius: radius.pill },
+            ]}
+          >
+            <Text style={[typography.badge, { color: colors.onAccent }]}>
+              {chat.compatibility}%
+            </Text>
+          </View>
           <Text style={[typography.caption, { color: colors.textSecondary }]}>
             {shortTime(chat.lastMessageAt)}
           </Text>
@@ -133,6 +148,12 @@ const styles = StyleSheet.create({
     minWidth: 20,
     height: 20,
     paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  compat: {
+    height: 20,
+    paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },

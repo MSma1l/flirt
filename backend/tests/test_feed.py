@@ -314,6 +314,124 @@ async def test_feed_language_hard_gate(client):
 
 
 @pytest.mark.asyncio
+async def test_undo_removes_last_like_and_user_reappears(client):
+    """Undo elimină ultimul like; userul swipe-uit reapare în feed (TZ 4.4)."""
+    a_headers, _ = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    _, b_id = await _make_user(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    # A dă like lui B → B dispare din feed-ul lui A.
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "like"},
+        headers=a_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    resp = await client.get(f"{API}/feed/", headers=a_headers)
+    assert b_id not in {c["user_id"] for c in resp.json()}
+
+    # Undo → B revine în feed.
+    resp = await client.post(f"{API}/feed/undo", headers=a_headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["undone"] is True
+    assert data["target_user_id"] == b_id
+
+    resp = await client.get(f"{API}/feed/", headers=a_headers)
+    assert b_id in {c["user_id"] for c in resp.json()}
+
+
+@pytest.mark.asyncio
+async def test_undo_on_nothing_returns_false(client):
+    """Undo fără niciun swipe → {undone: false, target_user_id: null}."""
+    a_headers, _ = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+
+    resp = await client.post(f"{API}/feed/undo", headers=a_headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["undone"] is False
+    assert data["target_user_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_undo_dismantles_match_and_chat(client):
+    """Undo pe un like care produsese match șterge și match-ul + chat-ul (TZ 4.4)."""
+    a_headers, a_id = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    b_headers, b_id = await _make_user(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "like"},
+        headers=a_headers,
+    )
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": a_id, "action": "like"},
+        headers=b_headers,
+    )
+    chat_id = resp.json()["chat_id"]
+    assert chat_id is not None
+
+    # B face undo → match-ul dispare la ambii, iar chat-ul nu mai e accesibil.
+    resp = await client.post(f"{API}/feed/undo", headers=b_headers)
+    assert resp.json()["undone"] is True
+
+    for headers in (a_headers, b_headers):
+        resp = await client.get(f"{API}/feed/matches", headers=headers)
+        assert resp.json() == []
+
+    resp = await client.get(f"{API}/chats/{chat_id}/messages", headers=a_headers)
+    assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.asyncio
+async def test_deferred_message_delivered_on_mutual_match(client):
+    """Like cu `message` + match reciproc → mesajul apare în chat (TZ 4.7)."""
+    a_headers, a_id = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    b_headers, b_id = await _make_user(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    # A dă like lui B cu un mesaj deferred (nu e livrat încă — fără match).
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "like", "message": "Salut B!"},
+        headers=a_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["matched"] is False
+
+    # B dă like lui A → match; mesajul deferred al lui A devine vizibil.
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": a_id, "action": "like"},
+        headers=b_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    chat_id = resp.json()["chat_id"]
+    assert chat_id is not None
+
+    # B vede mesajul deferred al lui A în conversație.
+    resp = await client.get(f"{API}/chats/{chat_id}/messages", headers=b_headers)
+    assert resp.status_code == 200, resp.text
+    messages = resp.json()
+    bodies = {m["body"]: m for m in messages}
+    assert "Salut B!" in bodies, messages
+    assert bodies["Salut B!"]["sender_id"] == a_id
+
+
+@pytest.mark.asyncio
 async def test_age_separation(client):
     """Un user 18+ NU vede un profil 16–17 și invers (TZ 2.3)."""
     adult_headers, adult_id = await _make_user(

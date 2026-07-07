@@ -15,9 +15,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { fetchMessages, markRead, sendMessage } from '@/features/chat/chatApi';
+import { fetchMessages, markRead, reactToMessage, sendMessage } from '@/features/chat/chatApi';
 import { MessageBubble } from '@/features/chat/MessageBubble';
 import { ChatMessage, ChatSummary } from '@/features/chat/types';
+import { CompatBadge } from '@/features/feed/CompatBadge';
 import { ReportModal } from '@/features/moderation/ReportModal';
 import { useAuthStore } from '@/store/authStore';
 import { useTheme } from '@theme/index';
@@ -46,6 +47,7 @@ export default function ChatScreen() {
   const chats = queryClient.getQueryData<ChatSummary[]>(['chats']);
   const summary = chats?.find((c) => c.chatId === chatId);
   const headerName = summary?.otherName ?? 'Conversație';
+  const compatibility = summary?.compatibility;
 
   // Marchează dialogul ca citit la deschidere.
   useEffect(() => {
@@ -63,6 +65,14 @@ export default function ChatScreen() {
       setDraft('');
       queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
       queryClient.invalidateQueries({ queryKey: ['chats'] });
+    },
+  });
+
+  const reactMutation = useMutation({
+    mutationFn: (vars: { messageId: string; reaction: string | null }) =>
+      reactToMessage(chatId, vars.messageId, vars.reaction),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
     },
   });
 
@@ -113,6 +123,7 @@ export default function ChatScreen() {
         >
           {headerName}
         </Text>
+        {typeof compatibility === 'number' ? <CompatBadge score={compatibility} /> : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Raportează"
@@ -162,7 +173,11 @@ export default function ChatScreen() {
               keyExtractor={(m) => m.id}
               contentContainerStyle={{ padding: spacing.lg }}
               renderItem={({ item }) => (
-                <MessageBubble message={item} currentUserId={currentUserId} />
+                <MessageBubble
+                  message={item}
+                  currentUserId={currentUserId}
+                  onReact={(reaction) => reactMutation.mutate({ messageId: item.id, reaction })}
+                />
               )}
             />
           )}
