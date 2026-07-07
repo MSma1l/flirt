@@ -73,4 +73,38 @@ describe('ReportModal', () => {
     fireEvent.press(getByText('Trimite raportul'));
     expect(sendReport).not.toHaveBeenCalled();
   });
+
+  it('afișează toate categoriile disponibile', () => {
+    const { getByText } = renderModal();
+    ['Spam', 'Profil fals', 'Limbaj ofensator', 'Conținut obscen'].forEach((label) => {
+      expect(getByText(label)).toBeTruthy();
+    });
+  });
+
+  it('marchează categoria selectată în starea de accesibilitate', () => {
+    const { getByText, getByRole } = renderModal();
+    // Înainte de selecție nu există niciun buton „selected".
+    expect(() => getByRole('button', { selected: true })).toThrow();
+    fireEvent.press(getByText('Spam'));
+    // După selecție, butonul categoriei apare marcat ca selectat.
+    expect(getByRole('button', { selected: true })).toBeTruthy();
+  });
+
+  it('afișează mesajul de eroare când trimiterea eșuează', async () => {
+    (sendReport as jest.Mock).mockRejectedValue(new Error('network'));
+    const { getByText } = renderModal();
+
+    fireEvent.press(getByText('Profil fals'));
+    fireEvent.press(getByText('Trimite raportul'));
+
+    await waitFor(() => {
+      expect(getByText('Nu am putut trimite raportul. Încearcă din nou.')).toBeTruthy();
+    });
+  });
+
+  it('butonul „Anulează" apelează onClose', () => {
+    const { getByText, onClose } = renderModal();
+    fireEvent.press(getByText('Anulează'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });
