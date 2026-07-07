@@ -142,6 +142,17 @@ export default function HumorScreen() {
       <View style={{ gap: spacing.md, marginTop: spacing.lg }}>
         {submitting ? (
           <ActivityIndicator color={colors.accent} />
+        ) : submitMutation.isError ? (
+          <>
+            <Text style={[typography.body, styles.center, { color: colors.danger }]}>
+              Nu am putut salva. Reîncearcă.
+            </Text>
+            <Button
+              label="Reîncearcă"
+              onPress={() => submitMutation.mutate(answers)}
+              testID="humor-retry"
+            />
+          </>
         ) : (
           <>
             <Button

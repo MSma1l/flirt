@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Button } from '@/components/ui';
 import { fetchMessages, markRead, reactToMessage, sendMessage } from '@/features/chat/chatApi';
 import { MessageBubble } from '@/features/chat/MessageBubble';
 import { ChatMessage, ChatSummary } from '@/features/chat/types';
@@ -36,7 +37,7 @@ export default function ChatScreen() {
   const [draft, setDraft] = useState('');
   const [reportOpen, setReportOpen] = useState(false);
 
-  const { data, isLoading, isError } = useQuery<ChatMessage[]>({
+  const { data, isLoading, isError, refetch } = useQuery<ChatMessage[]>({
     queryKey: ['messages', chatId],
     queryFn: () => fetchMessages(chatId),
     enabled: !!chatId,
@@ -156,9 +157,12 @@ export default function ChatScreen() {
             </View>
           ) : isError ? (
             <View style={styles.center}>
-              <Text style={[typography.body, { color: colors.danger }]}>
+              <Text
+                style={[typography.body, { color: colors.danger, marginBottom: spacing.lg }]}
+              >
                 Nu am putut încărca mesajele.
               </Text>
+              <Button label="Reîncearcă" variant="outline" onPress={() => refetch()} />
             </View>
           ) : messages.length === 0 ? (
             <View style={styles.center}>
@@ -182,6 +186,22 @@ export default function ChatScreen() {
             />
           )}
         </View>
+
+        {sendMutation.isError ? (
+          <Text
+            style={[
+              typography.caption,
+              {
+                color: colors.danger,
+                backgroundColor: colors.surface,
+                paddingHorizontal: spacing.md,
+                paddingTop: spacing.xs,
+              },
+            ]}
+          >
+            Mesajul nu a fost trimis. Reîncearcă.
+          </Text>
+        ) : null}
 
         <View
           style={[

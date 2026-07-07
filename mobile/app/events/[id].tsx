@@ -2,7 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui';
@@ -32,6 +32,9 @@ export default function EventDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ['event', eventId] });
       queryClient.invalidateQueries({ queryKey: ['events'] });
     },
+    onError: () => {
+      Alert.alert('Ceva n-a mers', 'Nu am putut actualiza participarea. Reîncearcă.');
+    },
   });
 
   const checkinMutation = useMutation({
@@ -39,6 +42,9 @@ export default function EventDetailScreen() {
     onSuccess: () => {
       setStampMessage('Ai primit o ștampilă Flirt Passport 🎉');
       queryClient.invalidateQueries({ queryKey: ['passport'] });
+    },
+    onError: () => {
+      Alert.alert('Check-in eșuat', 'Nu am putut face check-in-ul. Reîncearcă.');
     },
   });
 

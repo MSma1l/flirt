@@ -114,7 +114,13 @@ Toate cu implementare STUB funcțională + config per provider (fără hardcodar
 - Punct rezervat: verificare facială (TZ 2.2). Migrație (subscriptions + push_devices).
 - **49 endpoint-uri**, 22 tabele. Teste: **backend 84 ✔**.
 
-## Amânat intenționat (❌ — mai târziu)
+## Integrări externe — scheletate cu stub (🔜 gata de chei, vezi Etapa 11 + docs/INTEGRATIONS.md)
+- 🔜 Telefon+OTP, Google/Apple Sign-In (backend stub; **UI mobil de adăugat**)
+- 🔜 Upload poze (endpoint `/profiles/photos` + StubStorage; S3 la chei)
+- 🔜 Monetizare (`/subscriptions/*` stub; **paywall mobil + enforcement în feed de adăugat**)
+- 🔜 Push (`/push/*` + StubPush; înregistrare device în app de adăugat)
+
+## Amânat intenționat (❌ — necesită chei/servicii/decizii de business)
 - ❌ Verificare facială / liveness (TZ 2.2).
 - ❌ Înregistrare prin telefon + OTP (TZ 2.1).
 - ❌ Upload poze anketă (TZ 2.4) — momentan doar câmp opțional de URL-uri.

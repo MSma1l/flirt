@@ -48,16 +48,18 @@ Legendă state: **[Q]** = React Query (state server) · **[Z]** = Zustand (state
 ## 3. Tab 1 — Ankete (feed de swipe)
 
 - **Rută:** `app/(tabs)/ankete.tsx` · **Feature:** `feed` (+ `stories`)
-- **Scop:** feed-ul de candidate din `GET /feed`, cu acțiuni like/dislike prin **butoane** și detectare match.
+- **Scop:** feed-ul de candidate din `GET /feed`, cu acțiuni like/dislike prin **butoane + gesturi de swipe** și detectare match.
 - **Componente cheie:**
   - `StoriesBar` (sus) — poveștile active proprii + ale match-urilor → deschide `stories/[userId]`.
-  - `ProfileCard` — foto + nume/vârstă/oraș + „despre" + top interese.
+  - `ProfileCard` — foto + nume/vârstă/oraș + `distance_km` real + „despre" + top interese; buton ⚠ raportare (`ReportModal`).
   - `CompatBadge` — badge cu % (verde >80 / galben 50–80 / gri <50).
-  - `ActionBar` — butoane **like / dislike** → `POST /feed/swipe`.
+  - `ActionBar` — butoane **like / dislike** + **undo** (`POST /feed/undo`) → `POST /feed/swipe`.
+  - **Gesturi de swipe** — `PanResponder` + `Animated` (built-in, fără Reanimated): drag stânga/dreapta = dislike/like.
+  - `SendFirstMessageSheet` — bottom sheet la like: mesaj deferred (TZ 4.7), livrat la match reciproc.
   - `MatchModal` — overlay „Connect!" la match reciproc.
-- **TZ:** 4.1 (card), 4.2 (Compatibility + culori), 4.4 (like/dislike).
-- **State:** [Q] `useFeed`, `useSwipe` · [Z] index curent.
-- **🔜 Planificat:** gesturi de swipe (Reanimated), galerie multi-foto tip Stories, `FullProfileSheet` (swipe-up), favorite din deck, `EventBadge`, limită 10 + reclamă 15s, `SendFirstMessageSheet` (mesaj la like — TZ 4.7).
+- **TZ:** 4.1 (card), 4.2 (Compatibility + culori), 4.4 (like/dislike + undo), 4.7 (mesaj la like).
+- **State:** [Q] `useFeed`, `useSwipe`, `useUndo` · [Z] index curent.
+- **🔜 Planificat:** galerie multi-foto tip Stories, `FullProfileSheet` (swipe-up), favorite din deck, `EventBadge`, limită 10 + reclamă 15s.
 
 ---
 
@@ -69,11 +71,11 @@ Legendă state: **[Q]** = React Query (state server) · **[Z]** = Zustand (state
 - **State:** [Q] `useChats` (polling).
 
 ### 4.2 Ecran de conversație — `app/chat/[id].tsx`
-- **Scop:** conversația 1:1: bule de mesaje, input + trimite (`POST /chats/{id}/messages`), mark-read (`POST /chats/{id}/read`), hint discret când un contact e mascat (`was_masked`). **Feature:** `chat`.
-- **Componente cheie:** `MessageBubble`, `MaskedContactHint`, `Composer`.
-- **TZ:** 5.2 (elemente de bază), 5.5 (mascare contacte).
-- **State:** [Q] `useMessages` (polling) · [Q] `useSendMessage`.
-- **🔜 Planificat:** `ChatHeader` cu Compatibility Score/online, `AiHintBanner` (5.3), `EventSuggestionBanner`, reacții pe mesaje, raportare, realtime WebSocket (momentan polling).
+- **Scop:** conversația 1:1: bule de mesaje, input + trimite (`POST /chats/{id}/messages`), mark-read (`POST /chats/{id}/read`), hint discret când un contact e mascat (`was_masked`), **reacții pe mesaje** (long-press → picker emoji, `POST /chats/{id}/messages/{id}/react`), **Compatibility Score în header**, **raportare** (`ReportModal` → `POST /reports/`). **Feature:** `chat` (+ `moderation`).
+- **Componente cheie:** `MessageBubble` (cu reacție), `MaskedContactHint`, `Composer`, `ReportModal`.
+- **TZ:** 5.2 (elemente de bază + reacții), 5.5 (mascare contacte + raportare).
+- **State:** [Q] `useMessages` (polling) · [Q] `useSendMessage`, `useReact`.
+- **🔜 Planificat:** status online în header, `AiHintBanner` (5.3), `EventSuggestionBanner`, Chemistry Score, realtime WebSocket (momentan polling).
 
 ---
 
@@ -101,6 +103,11 @@ Legendă state: **[Q]** = React Query (state server) · **[Z]** = Zustand (state
 - **Scop:** lista de useri blocați (`GET /social/blocks`) + deblocare (`DELETE`). **Feature:** `social`.
 - **TZ:** 6.3.
 - **State:** [Q] `useBlocks`.
+
+### 5.6 Test de umor — `app/humor.tsx`
+- **Scop:** testul de umor (`GET /humor/quiz`): carduri cu glume, marcaj amuzant / nu, trimitere (`POST /humor/submit`) → scrie `Profile.humor_vector` (intră cu 20% în Compatibility Score). Link din hub-ul Setări. **Feature:** `humor`.
+- **TZ:** 2.7.
+- **State:** [Q] `useHumorQuiz`, `useSubmitHumor`.
 
 > Ștergerea contului (cu confirmare) → `POST /settings/account/delete` este declanșată din hub-ul Setări.
 
@@ -145,15 +152,12 @@ Legendă state: **[Q]** = React Query (state server) · **[Z]** = Zustand (state
 
 | Ecran | Rută blueprint | Secțiune TZ |
 |---|---|---|
-| OTP (cod SMS) | `(auth)/otp` | 2.1 |
 | Face verify (liveness) | `(auth)/face-verify` | 2.2 |
-| Sign-in social (Apple/Google) | `(auth)/sign-in` | 2.1 |
-| Send-first-message sheet | overlay la like | 4.7 |
-| Deck cu gesturi (swipe/undo/favorite) | tab `ankete` | 4.3–4.5 |
 | Event popup card (din deck) | overlay | 4.3, 8.2 |
 | Live Events Map | `events/map` | 8.3 |
-| Preferences separat / Subscription | `settings/*` | 6.3, 9 |
 | Paywall | `paywall` (modal) | 9 |
+
+> **Notă:** UI-ul de auth social/OTP nu are ecrane dedicate în mobile încă (backend-ul are rutele stub). `SendFirstMessageSheet`, gesturile de swipe + undo și ecranul de umor sunt **✅ implementate** (vezi mai sus).
 
 ---
 
@@ -167,6 +171,7 @@ Legendă state: **[Q]** = React Query (state server) · **[Z]** = Zustand (state
 | `(tabs)/ankete` | 4.1, 4.2, 4.4 |
 | `(tabs)/mesaje` + `chat/[id]` | 5.1, 5.2, 5.5 |
 | `(tabs)/setari` | 6, 6.3 |
+| `humor` | 2.7 |
 | `profile/edit` | 6.1 |
 | `favorites` | 6.1 |
 | `ticket` | 6.2 |

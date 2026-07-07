@@ -31,7 +31,9 @@ export default function Login() {
     setLoading(true);
     try {
       await login(email.trim(), password);
-      // La succes, statusul devine 'authenticated' → index preia redirect-ul.
+      // Guard-ul din _layout preia redirect-ul; `replace('/')` e defensiv
+      // (consistent cu register.tsx) pentru a nu rămâne blocat pe login.
+      router.replace('/');
     } catch {
       setFormError('Email sau parolă incorecte. Încearcă din nou.');
     } finally {

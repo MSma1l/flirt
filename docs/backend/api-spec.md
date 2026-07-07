@@ -13,15 +13,17 @@ Toate rutele au prefixul `/api/v1`. Formatul de schimb este JSON. Autentificarea
 
 ## Cuprins
 
-**✅ Implementat (MVP):** [Auth](#1-auth-) · [Profiles](#2-profiles-) · [Feed / Swipe](#3-feed--swipe-) · [Chat](#4-chat-) · [Settings](#5-settings-) · [Social (favorites / blocks)](#6-social--favorites--blocks-) · [Ticket](#7-ticket-) · [Events + Flirt Passport](#8-events--flirt-passport-) · [Stories](#9-stories-)
+**✅ Implementat (MVP):** [Auth](#1-auth-) · [Profiles](#2-profiles-) · [Feed / Swipe](#3-feed--swipe-) · [Chat](#4-chat-) · [Settings](#5-settings-) · [Social (favorites / blocks)](#6-social--favorites--blocks-) · [Ticket](#7-ticket-) · [Events + Flirt Passport](#8-events--flirt-passport-) · [Stories](#9-stories-) · [Humor](#10-humor--test-de-umor-) · [Moderation / Reports](#11-moderation--reports-) · [Subscriptions](#12-subscriptions--stub) · [Push](#13-push--stub)
 
 **🔜 Planificat:** [Roadmap din TZ, neimplementat](#-planificat-din-tz-neimplementat)
+
+> **Legendă stub:** rutele marcate **(stub)** există în cod și răspund corect, dar folosesc un provider fals (fără rețea/chei reale). La deploy se schimbă providerul din `.env` fără a atinge rutele. Detalii în [`../INTEGRATIONS.md`](../INTEGRATIONS.md).
 
 ---
 
 # ✅ Implementat (MVP)
 
-Rutele de mai jos există în cod și sunt acoperite de teste (`backend/tests/`). Autentificarea se face exclusiv prin **email + parolă** (fără social/OTP/verificare facială în MVP).
+Rutele de mai jos există în cod și sunt acoperite de teste (`backend/tests/`). Autentificarea implicită este **email + parolă**; există în plus **social login (Google/Apple) și telefon + OTP ca stub-uri funcționale** (gata de chei — vezi mai jos). Verificarea facială rămâne planificată.
 
 ---
 
@@ -34,10 +36,16 @@ Montate sub `/api/v1/auth` (`app/api/v1/auth.py`). Detaliile de token/rotație/r
 | `POST` | `/auth/register` | Înregistrare email + parolă (min 8 caractere) | 🔓 | `201` → `TokenPair` |
 | `POST` | `/auth/login` | Login email + parolă (`401` la credențiale greșite) | 🔓 | `200` → `TokenPair` |
 | `POST` | `/auth/refresh` | Rotește refresh token-ul (cu reuse detection pe `family_id`) | 🔓 | `200` → `TokenPair` |
+| `POST` | `/auth/google` | Sign in with Google (get-or-create pe `id_token`) — ✅ **stub** (TZ 2.1) | 🔓 | `200` → `TokenPair` |
+| `POST` | `/auth/apple` | Sign in with Apple (get-or-create pe `id_token`) — ✅ **stub** (TZ 2.1) | 🔓 | `200` → `TokenPair` |
+| `POST` | `/auth/phone/request` | Trimite cod OTP către număr — ✅ **stub** (TZ 2.1) | 🔓 | `204` |
+| `POST` | `/auth/phone/verify` | Verifică OTP → autentifică (get-or-create); `401` la cod greșit — ✅ **stub** (TZ 2.1) | 🔓 | `200` → `TokenPair` |
 | `POST` | `/auth/logout` | Revocă sesiunea de refresh | 🔒* | `204` |
 | `GET` | `/auth/me` | Userul curent (`id`, `email`, `profile_completed`) | 🔒 | `200` → `UserOut` |
 
 \* `logout` primește `refresh_token` în body și revocă sesiunea.
+
+> **Auth social/OTP — stub gata de chei:** `verify_google`/`verify_apple`/`request_otp`/`verify_otp` sunt abstractizate în `auth_providers` (vezi [`../INTEGRATIONS.md`](../INTEGRATIONS.md)). În stub, OTP-ul acceptă codul de test, iar `id_token`-ul e decodat local — la deploy se comută pe providerul real din `.env`. **Verificarea facială (TZ 2.2) rămâne 🔜 Planificat.**
 
 **`TokenPair`:** `{ "access_token": "...", "refresh_token": "...", "token_type": "bearer" }`
 
@@ -53,15 +61,18 @@ Montate sub `/api/v1/auth` (`app/api/v1/auth.py`). Detaliile de token/rotație/r
 
 ## 2. Profiles ✅
 
-Montate sub `/api/v1/profiles` (`app/api/v1/profiles.py`). Anketa este **upsert** printr-un singur `PUT`; nu există (încă) upload de poze, quiz de umor sau vizualizarea altui user.
+Montate sub `/api/v1/profiles` (`app/api/v1/profiles.py`). Anketa este **upsert** printr-un singur `PUT`. Quiz-ul de umor trăiește separat sub [`/humor`](#10-humor--test-de-umor-); vizualizarea publică a altui user rămâne planificată.
 
 | Metodă | Path | Scop | Auth | Răspuns |
 |---|---|---|---|---|
 | `GET` | `/profiles/reference` | Opțiuni de referință: genuri, statusuri de cunoștință, limbi, interese (etichete RU/RO) | 🔓 | `200` → `ReferenceOut` |
 | `GET` | `/profiles/me` | Anketa proprie completă (`404` dacă nu a fost completată) | 🔒 | `200` → `ProfileOut` |
 | `PUT` | `/profiles/me` | Creează/actualizează anketa; o marchează completată | 🔒 | `200` → `ProfileOut` |
+| `POST` | `/profiles/photos` | Adaugă o poză (upload multipart **sau** URL) prin storage; `422` peste `max_photos` — ✅ **stub storage** (TZ 2.4) | 🔒 | `200` → `list[str]` |
+| `DELETE` | `/profiles/photos` | Scoate o poză după URL | 🔒 | `200` → `list[str]` |
+| `PUT` | `/profiles/photos/order` | Reordonează lista de poze | 🔒 | `200` → `list[str]` |
 
-**Notă:** `birth_date` trăiește pe **Profile** (nu pe User). `age` se calculează din `birth_date` la răspuns. `interests` sunt slug-uri validate față de catalog. `photos` este doar o listă de URL-uri (upload real — planificat).
+**Notă:** `birth_date` trăiește pe **Profile** (nu pe User). `age` se calculează din `birth_date` la răspuns. `interests` sunt slug-uri validate față de catalog. Pozele se gestionează prin `/profiles/photos*` peste un **storage abstractizat** (`StubStorage` local, gata de S3/GCS — vezi [`../INTEGRATIONS.md`](../INTEGRATIONS.md)); `min_photos=3`/`max_photos=9` din config. `Profile.photos` rămâne lista de URL-uri rezultată.
 
 **Exemplu — `PUT /profiles/me`:**
 ```json
@@ -92,18 +103,21 @@ Montate sub `/api/v1/feed` (`app/api/v1/feed.py`). Compatibility Score este **pr
 | Metodă | Path | Scop | Auth | Răspuns |
 |---|---|---|---|---|
 | `GET` | `/feed/` | Candidatele pentru swipe, sortate după compatibilitate (exclude self, deja-swipe-uiți, separare vârstă 16–17 / 18+) | 🔒 | `200` → `list[FeedCard]` |
-| `POST` | `/feed/swipe` | Înregistrează un `like`/`dislike`; întoarce dacă a produs match reciproc | 🔒 | `200` → `SwipeResult` |
+| `POST` | `/feed/swipe` | Înregistrează un `like`/`dislike`; opțional un **mesaj deferred** la like (TZ 4.7); întoarce dacă a produs match reciproc | 🔒 | `200` → `SwipeResult` |
+| `POST` | `/feed/undo` | Anulează ultimul swipe (demontează like-ul + eventualul match/chat) (TZ 4.4) | 🔒 | `200` → `UndoResult` |
 | `GET` | `/feed/matches` | Lista match-urilor userului curent | 🔒 | `200` → `list[MatchOut]` |
 
-**`FeedCard`:** `user_id, name, age, gender, city, distance_km?, about?, top_interests[], languages[], compatibility, photos[]`.
+**`FeedCard`:** `user_id, name, age, gender, city, distance_km?, about?, top_interests[], languages[], compatibility, photos[]`. `distance_km` este acum **real** (Haversine peste coordonatele geocodate — ✅ stub geocoder, vezi [`../INTEGRATIONS.md`](../INTEGRATIONS.md)).
+
+**Mesaj deferred la like (TZ 4.7):** la `action: "like"`, câmpul opțional `message` se stochează pe `Like.deferred_message` și este **livrat în chat** doar dacă apare like reciproc.
 
 **Exemplu — `POST /feed/swipe`:**
 ```json
-// request
-{ "target_user_id": "3d2a...", "action": "like" }
-// response — match imediat
+// request (cu mesaj deferred opțional)
+{ "target_user_id": "3d2a...", "action": "like", "message": "salut! ce muzică asculți?" }
+// response — match imediat (mesajul deferred devine primul mesaj din chat)
 { "matched": true, "match_id": "m17...", "chat_id": "c22..." }
-// response — like fără reciprocitate
+// response — like fără reciprocitate (mesajul rămâne ascuns până la match)
 { "matched": false, "match_id": null, "chat_id": null }
 ```
 
@@ -118,6 +132,7 @@ Montate sub `/api/v1/chats` (`app/api/v1/chat.py`). Toate protejate. Un chat exi
 | `GET` | `/chats/` | Lista dialogurilor (interlocutor, ultim mesaj, `unread_count`) | 🔒 | `200` → `list[ChatSummary]` |
 | `GET` | `/chats/{chat_id}/messages` | Istoricul mesajelor; marchează primite ca citite | 🔒 | `200` → `list[MessageOut]` |
 | `POST` | `/chats/{chat_id}/messages` | Trimite mesaj (`body`); contactele sunt mascate automat | 🔒 | `201` → `MessageOut` |
+| `POST` | `/chats/{chat_id}/messages/{message_id}/react` | Setează/șterge o reacție emoji pe un mesaj (`Message.reaction`, TZ 5.2) | 🔒 | `200` → `MessageOut` |
 | `POST` | `/chats/{chat_id}/read` | Marchează citite mesajele primite | 🔒 | `204` |
 
 **Exemplu — `POST /chats/{chat_id}/messages`:**
@@ -220,26 +235,77 @@ Montate sub `/api/v1/stories` (`app/api/v1/stories.py`). Poveștile expiră la 2
 
 ---
 
+## 10. Humor — test de umor ✅
+
+Montate sub `/api/v1/humor` (`app/api/v1/humor.py`). Testul de umor (TZ 2.7) scrie `Profile.humor_vector`, care intră cu **20%** în Compatibility Score (nu mai e neutru).
+
+| Metodă | Path | Scop | Auth | Răspuns |
+|---|---|---|---|---|
+| `GET` | `/humor/quiz` | Cardurile testului de umor (glume + tipuri) | 🔒 | `200` → `list[HumorCard]` |
+| `POST` | `/humor/submit` | Răspunsuri (amuzant / nu) → calculează și salvează `Profile.humor_vector` | 🔒 | `200` → `HumorProfileOut` |
+| `GET` | `/humor/me` | Vectorul de umor curent al userului | 🔒 | `200` → `HumorProfileOut` |
+
+---
+
+## 11. Moderation / Reports ✅
+
+Montate sub `/api/v1/reports` (`app/api/v1/reports.py`). Raportări de utilizatori (TZ 5.5 / 10), cu **auto-ban** la prag de raportori distincți (din config) → profilul raportat e ascuns.
+
+| Metodă | Path | Scop | Auth | Răspuns |
+|---|---|---|---|---|
+| `POST` | `/reports/` | Depune o jalobă (`category`: `spam`/`fake`/`offensive`/`obscene`, `reported_id`, `chat_id?`, `note?`) | 🔒 | `201` → `ReportOut` |
+| `GET` | `/reports/mine` | Jalobele depuse de userul curent | 🔒 | `200` → `list[ReportOut]` |
+
+> Auto-ban: la atingerea pragului de raportori distincți pentru un `reported_id`, statusul devine `auto_banned` și profilul e ascuns din feed. Coada de moderare manuală (👮 admin) rămâne 🔜 Planificat.
+
+---
+
+## 12. Subscriptions ✅ (stub)
+
+Montate sub `/api/v1/subscriptions` (`app/api/v1/subscriptions.py`). Monetizarea (TZ 9) — model `Subscription` + entitlements. **Achiziția e stub** (provider fals, `expires_at = acum + 30 zile`); validarea reală de receipt IAP se comută din `.env` (vezi [`../INTEGRATIONS.md`](../INTEGRATIONS.md)).
+
+| Metodă | Path | Scop | Auth | Răspuns |
+|---|---|---|---|---|
+| `GET` | `/subscriptions/plans` | Pachetele disponibile (`premium`/`no_ads`/`ai_bot`/`all_inclusive`) | 🔒 | `200` → `list[PlanOut]` |
+| `GET` | `/subscriptions/me` | Abonamentul curent (sau `null`) | 🔒 | `200` → `SubscriptionOut \| null` |
+| `POST` | `/subscriptions/purchase` | Cumpără un plan — ✅ **stub** (fără plată reală) | 🔒 | `200` → `SubscriptionOut` |
+| `GET` | `/subscriptions/entitlements` | Drepturile efective derivate din abonament | 🔒 | `200` → `EntitlementsOut` |
+
+> Webhook-urile server-to-server (`/webhook/{apple,google}`) și `/cancel` rămân 🔜 Planificat.
+
+---
+
+## 13. Push ✅ (stub)
+
+Montate sub `/api/v1/push` (`app/api/v1/push.py`). Notificări push (TZ 6.3) — model `PushDevice` + trimitere abstractizată (`StubPush`, gata de Expo/FCM/APNs — vezi [`../INTEGRATIONS.md`](../INTEGRATIONS.md)).
+
+| Metodă | Path | Scop | Auth | Răspuns |
+|---|---|---|---|---|
+| `POST` | `/push/register` | Înregistrează un token de dispozitiv (`token`, `platform` `ios`/`android`; upsert idempotent) | 🔒 | `204` |
+| `POST` | `/push/test` | Trimite o notificare de test către dispozitivele userului — ✅ **stub** | 🔒 | `204` |
+
+---
+
 # 🔜 Planificat (din TZ, neimplementat)
 
-Rutele de mai jos apar în blueprint-ul inițial din TZ, dar **nu există încă** în cod. Sunt păstrate ca referință de roadmap. Modelele lor (Photo, HumorProfile, Report, Subscription etc.) sunt marcate „planificat" în [`data-models.md`](./data-models.md).
+Rutele de mai jos apar în blueprint-ul inițial din TZ, dar **nu există încă** în cod (sau există doar ca stub gata de chei). Sunt păstrate ca referință de roadmap. Modelele lor rămase (Photo dedicat, HumorProfile dedicat etc.) sunt marcate „planificat" în [`data-models.md`](./data-models.md).
 
 ### Auth extins
 | Metodă | Path | Scop |
 |---|---|---|
-| `POST` | `/auth/apple` · `/auth/google` | Sign in with Apple / Google (TZ 2.1) |
-| `POST` | `/auth/phone/request-otp` · `/auth/phone/verify-otp` | Login telefon + OTP (TZ 2.1) |
-| `POST` | `/auth/verification/face` · `GET /auth/verification/status` | Verificare facială / liveness (TZ 2.2) |
+| `POST` | `/auth/verification/face` · `GET /auth/verification/status` | Verificare facială / liveness (TZ 2.2) — **singurul flow de auth încă neimplementat** |
 | `GET`/`POST` | `/settings/linked-accounts` | Conturi legate (Apple/Google/phone/email) |
+
+> Social login (`/auth/google`, `/auth/apple`) și telefon + OTP (`/auth/phone/request`, `/auth/phone/verify`) sunt **✅ implementate (stub)** — vezi [secțiunea Auth](#1-auth-).
 
 ### Profiles extins
 | Metodă | Path | Scop |
 |---|---|---|
 | `GET` | `/profiles/{user_id}` | Anketa publică a altui user |
 | `PATCH` | `/profiles/me/status` | Schimbă statusul de cunoștință punctual |
-| `POST`/`DELETE`/`PUT` | `/profiles/me/photos*` | Upload / ștergere / reordonare foto (min 3, max 9 — TZ 2.4) |
 | `GET` | `/interests` | (există ca parte din `/profiles/reference`; endpoint separat — opțional) |
-| `GET` | `/humor/quiz` · `POST /profiles/me/humor` | Testul de umor → vector inițial (TZ 2.7) |
+
+> Upload / ștergere / reordonare foto (`/profiles/photos*`) și testul de umor (`/humor/*`) sunt **✅ implementate** — vezi [Profiles](#2-profiles-) și [Humor](#10-humor--test-de-umor-).
 
 ### Compatibility
 | Metodă | Path | Scop |
@@ -250,17 +316,18 @@ Rutele de mai jos apar în blueprint-ul inițial din TZ, dar **nu există încă
 | Metodă | Path | Scop |
 |---|---|---|
 | `GET` | `/feed/status` | Stare sesiune: rămase, timer reclamă 15s, tip abonament (TZ 4.5) |
-| `POST` | `/swipe/favorite` · `POST /swipe/undo` | Favorite din swipe + undo (1 pas free / nelimitat premium) — în MVP favorite trăiește sub `/social` |
-| — | mesaj inițial la like (deferred, TZ 4.7) | livrare amânată a primului mesaj |
+
+> Undo (`/feed/undo`) și mesajul deferred la like (TZ 4.7) sunt **✅ implementate** — vezi [Feed / Swipe](#3-feed--swipe-). Favorite trăiește sub [`/social`](#6-social--favorites--blocks-).
 
 ### Chat extins
 | Metodă | Path | Scop |
 |---|---|---|
-| `GET` | `/chats/{chat_id}` | Header chat: online status, Compatibility Score |
-| `POST` | `/chats/{chat_id}/messages/{id}/react` | Reacție/like pe mesaj |
+| `GET` | `/chats/{chat_id}` | Header chat dedicat: online status (Compatibility Score e deja servit inline în `/chats/`) |
 | `POST` | `/chats/{chat_id}/archive` · `DELETE /chats/{chat_id}` | Arhivare / ștergere dialog |
 | `GET` | `/chats/{chat_id}/hint` | Sugestie AI de temă (TZ 5.3) |
 | `GET` | `/chats/{chat_id}/chemistry` · `/event-suggestion` | Chemistry Score + banner eveniment comun (TZ 5.4) |
+
+> Reacțiile pe mesaj (`/messages/{id}/react`) sunt **✅ implementate** — vezi [Chat](#4-chat-).
 
 ### Events extins
 | Metodă | Path | Scop |
@@ -273,12 +340,14 @@ Rutele de mai jos apar în blueprint-ul inițial din TZ, dar **nu există încă
 ### Moderation (TZ 5.5, 10)
 | Metodă | Path | Scop |
 |---|---|---|
-| `POST` | `/reports` | Jalobă (spam / fake / abuz / foto obscene) |
-| `GET`/`POST` | `/moderation/*` | Coadă moderare, resolve, ban/unban (👮) |
+| `GET`/`POST` | `/moderation/*` | Coadă de moderare manuală, resolve, ban/unban (👮 admin) |
+
+> Jaloba de utilizator (`POST /reports/`) + **auto-ban** sunt **✅ implementate** — vezi [Moderation / Reports](#11-moderation--reports-). Rămâne planificată doar coada de moderare manuală (admin).
 
 ### Subscriptions (TZ 9)
 | Metodă | Path | Scop |
 |---|---|---|
-| `GET` | `/subscriptions/plans` · `/subscriptions/me` | Planuri + entitlements |
-| `POST` | `/subscriptions/purchase` · `/cancel` | Validare achiziție IAP / anulare |
-| `POST` | `/subscriptions/webhook/{apple,google}` | Webhook server-to-server |
+| `POST` | `/subscriptions/cancel` | Anulare abonament |
+| `POST` | `/subscriptions/webhook/{apple,google}` | Webhook server-to-server (validare receipt real) |
+
+> Planuri, abonamentul curent, cumpărarea (stub) și entitlements sunt **✅ implementate** — vezi [Subscriptions](#12-subscriptions--stub). Rămân validarea reală de receipt IAP și webhook-urile.

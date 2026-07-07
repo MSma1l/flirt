@@ -25,12 +25,12 @@ from app.schemas.billing import EntitlementsOut, PlanOut, SubscriptionOut
 _STUB_PERIOD_DAYS = 30
 
 # Catalogul de planuri (TZ 9). Cheia = codul planului stocat pe Subscription.
+# Descriptiv (titlu + features); PREȚURILE vin din `settings` (vezi `_PLAN_PRICE_ATTRS`).
 # Fiecare plan mapează la drepturi via `_PLAN_ENTITLEMENTS` de mai jos.
 PLANS: dict[str, dict] = {
     "premium": {
         "code": "premium",
         "title": "Premium",
-        "price_eur": 9.99,
         "features": [
             "Swipe nelimitat",
             "Fără timer și fără reclamă",
@@ -41,7 +41,6 @@ PLANS: dict[str, dict] = {
     "no_ads": {
         "code": "no_ads",
         "title": "Fără reclamă",
-        "price_eur": 3.99,
         "features": [
             "Dezactivează bannerele și reclama video",
             "Fără ridicarea limitei de swipe",
@@ -50,7 +49,6 @@ PLANS: dict[str, dict] = {
     "ai_bot": {
         "code": "ai_bot",
         "title": "AI-bot în chat",
-        "price_eur": 4.99,
         "features": [
             "Sugestii de mesaje extinse",
             "Analiză de compatibilitate peste limita free",
@@ -59,7 +57,6 @@ PLANS: dict[str, dict] = {
     "all_inclusive": {
         "code": "all_inclusive",
         "title": "Totul inclus",
-        "price_eur": 14.99,
         "features": [
             "Premium complet",
             "Fără reclamă",
@@ -67,6 +64,14 @@ PLANS: dict[str, dict] = {
             "Preț redus față de cumpărarea separată",
         ],
     },
+}
+
+# Maparea plan -> câmpul de preț din `settings` (o singură sursă de adevăr).
+_PLAN_PRICE_ATTRS: dict[str, str] = {
+    "premium": "price_premium",
+    "no_ads": "price_no_ads",
+    "ai_bot": "price_ai_bot",
+    "all_inclusive": "price_all_inclusive",
 }
 
 # Maparea plan -> drepturi. `all_inclusive` cumulează toate flag-urile.
@@ -79,8 +84,11 @@ _PLAN_ENTITLEMENTS: dict[str, dict[str, bool]] = {
 
 
 def list_plans() -> list[PlanOut]:
-    """Catalogul public de planuri."""
-    return [PlanOut(**plan) for plan in PLANS.values()]
+    """Catalogul public de planuri; prețurile vin din `settings`."""
+    return [
+        PlanOut(price_eur=getattr(settings, _PLAN_PRICE_ATTRS[code]), **plan)
+        for code, plan in PLANS.items()
+    ]
 
 
 def _is_active(sub: Subscription | None) -> bool:

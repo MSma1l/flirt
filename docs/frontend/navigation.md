@@ -16,7 +16,7 @@ Navigația folosește **expo-router** (file-based, peste React Navigation). Arbo
 | `(auth)` | `welcome`, `login`, `register` | nu |
 | `(onboarding)` | Wizard anketă (un singur ecran multi-pas) | nu |
 | `(tabs)` | Aplicația principală cu **3 taburi**: `ankete` · `mesaje` · `setari` | **da** |
-| ecrane push (rădăcină) | `chat/[id]`, `profile/edit`, `favorites`, `ticket`, `blocklist`, `events/*`, `passport`, `stories/*` | nu (push peste taburi) |
+| ecrane push (rădăcină) | `chat/[id]`, `profile/edit`, `favorites`, `ticket`, `blocklist`, `events/*`, `passport`, `stories/*`, `humor` | nu (push peste taburi) |
 
 ---
 
@@ -52,6 +52,7 @@ app/_layout.tsx  (Providers: ThemeProvider, react-query, fonturi Manrope, hidrat
 │     ├── index.tsx .............. Listă evenimente (push)
 │     └── [id].tsx ............... Detaliu eveniment + check-in (push)
 ├── passport.tsx ................. Flirt Passport — grid ștampile (push)
+├── humor.tsx .................... Test de umor (carduri glume, push; link din Setări)
 └── stories/
       ├── [userId].tsx ........... Vizualizator povești (push)
       └── new.tsx ................ Creare poveste prin URL (push)
@@ -98,8 +99,11 @@ Cod real (`app/(tabs)/_layout.tsx`):
 | `stories/[userId]`, `stories/new` | push | vizualizator cu bare de progres / creare prin URL |
 | `MatchModal` „Connect!" | **overlay** peste feed (nu rută) | randat la match reciproc |
 | `StoriesBar` | componentă integrată în feed (tab `ankete`) | intrare spre `stories/[userId]` |
+| `SendFirstMessageSheet` | **bottom sheet** la like (nu rută) | mesaj deferred la like (TZ 4.7) |
+| `ReportModal` | **overlay** din chat + de pe card (nu rută) | raportare → `POST /reports/` |
+| Gesturi de swipe | `PanResponder` + `Animated` în tab `ankete` | drag stânga/dreapta like/dislike (fără Reanimated) |
 
-**🔜 Planificat (din blueprint, neimplementat):** `paywall` (modal abonamente), `events/map` (hartă react-native-maps), `SendFirstMessageSheet` (bottom sheet la like — TZ 4.7), `AdInterstitial` (reclamă 15s), gesturi de swipe (Reanimated/gesture-handler — momentan butoane like/dislike).
+**🔜 Planificat (din blueprint, neimplementat):** `paywall` (modal abonamente), `events/map` (hartă react-native-maps), `AdInterstitial` (reclamă 15s), favorite/swipe-up direct din deck.
 
 ---
 

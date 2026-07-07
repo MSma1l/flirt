@@ -64,7 +64,7 @@ export function ReportModal({ visible, reportedUserId, chatId, onClose }: Props)
       animationType="fade"
       onRequestClose={onClose}
     >
-      <View style={[styles.backdrop, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+      <View style={[styles.backdrop, { backgroundColor: colors.scrim }]}>
         <View
           style={[
             styles.sheet,

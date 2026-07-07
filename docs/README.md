@@ -15,6 +15,7 @@ secțiunile de detaliu (design system, frontend, backend, securitate).
 | **Frontend** | Aplicația mobilă React Native + Expo: structură, navigare, ecrane, state management (React Query). | [`./frontend/README.md`](./frontend/README.md) |
 | **Backend** | API FastAPI: module, modele de date (PostgreSQL + PostGIS), servicii AI, workeri Celery. | [`./backend/README.md`](./backend/README.md) |
 | **Securitate** | JWT, verificare de identitate (face-match/liveness), moderare AI, mascare contacte în chat, GDPR/biometrie. | [`./backend/security.md`](./backend/security.md) |
+| **Integrări externe** | Puncte de conectare cu provideri externi (geocoder, storage foto, auth social/OTP, billing/IAP, push): interfețe abstractizate + implementări **stub** gata de chei. | [`./INTEGRATIONS.md`](./INTEGRATIONS.md) |
 
 ## Surse
 

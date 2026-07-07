@@ -23,7 +23,7 @@ export function MatchModal({ visible, name, onWriteMessage, onContinue }: Props)
       animationType="fade"
       onRequestClose={onContinue}
     >
-      <View style={[styles.backdrop, { backgroundColor: colors.bg }]}>
+      <View style={[styles.backdrop, { backgroundColor: colors.scrim }]}>
         <View
           style={[
             styles.sheet,

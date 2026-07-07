@@ -259,11 +259,11 @@ async def upsert_anketa(db: AsyncSession, user, data: AnketaIn) -> ProfileOut:
             detail=f"Vârsta minimă este {settings.min_registration_age} ani.",
         )
 
-    # about ≤ 500 (Pydantic prinde deja, dar dublăm pentru siguranță)
-    if data.about is not None and len(data.about) > 500:
+    # about ≤ about_max_length (Pydantic prinde deja, dar dublăm pentru siguranță)
+    if data.about is not None and len(data.about) > settings.about_max_length:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Câmpul 'despre' depășește 500 de caractere.",
+            detail=f"Câmpul 'despre' depășește {settings.about_max_length} de caractere.",
         )
 
     # Cel puțin o limbă

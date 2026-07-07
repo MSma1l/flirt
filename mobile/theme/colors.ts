@@ -21,6 +21,7 @@ export const darkTheme = {
   warning: '#EAB308',
   danger: '#EF4444',
   onAccent: '#FFFFFF',
+  scrim: 'rgba(0,0,0,0.6)',
 } as const;
 
 export const lightTheme = {
@@ -41,6 +42,7 @@ export const lightTheme = {
   warning: '#EAB308',
   danger: '#EF4444',
   onAccent: '#FFFFFF',
+  scrim: 'rgba(0,0,0,0.5)',
 } as const;
 
 // Contract de tip: light și dark trebuie să aibă EXACT aceleași chei.

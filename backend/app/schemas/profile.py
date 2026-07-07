@@ -3,6 +3,8 @@ from datetime import date
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.config import settings
+
 
 class AnketaIn(BaseModel):
     """Datele editabile ale anketei, trimise de mobil la PUT /profiles/me."""
@@ -15,7 +17,8 @@ class AnketaIn(BaseModel):
     street: str | None = Field(default=None, max_length=200)
     nationality: str | None = Field(default=None, max_length=120)
     languages: list[str] = Field(default_factory=list)
-    about: str | None = Field(default=None, max_length=500)  # ≤500 (TZ 2.4) → 422 automat
+    # ≤ about_max_length (TZ 2.4) → 422 automat; sursa unică = settings
+    about: str | None = Field(default=None, max_length=settings.about_max_length)
     dating_statuses: list[str] = Field(default_factory=list)
     interests: list[str] = Field(default_factory=list)  # slug-uri
     photos: list[str] = Field(default_factory=list)

@@ -35,7 +35,7 @@ export function SendFirstMessageSheet({ visible, name, onSend, onSkip, onClose }
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable
-        style={[styles.backdrop, { backgroundColor: colors.bg }]}
+        style={[styles.backdrop, { backgroundColor: colors.scrim }]}
         onPress={onClose}
         accessibilityRole="button"
         accessibilityLabel="Închide"

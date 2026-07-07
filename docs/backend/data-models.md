@@ -17,8 +17,8 @@ Stack de persistență: **SQLAlchemy 2.0 async**, migrat cu **Alembic**. În pro
 User 1─1 Profile           (Profile deține birth_date, poze[], humor_vector, dating_statuses)
 User 1─* RefreshSession
 Profile *─* Interest        (profile_interests)
-User 1─* Like (from / to)   (Like.is_like: True=like, False=dislike)
-Like⇄Like ─> Match 1─1 Chat 1─* Message
+User 1─* Like (from / to)   (Like.is_like: True=like, False=dislike; Like.deferred_message opțional)
+Like⇄Like ─> Match 1─1 Chat 1─* Message   (Message.reaction opțional)
 User 1─1 UserSettings
 User *─* Favorite           (separat de Like)
 User *─* Block
@@ -27,6 +27,9 @@ User 1─1 AccountDeletionRequest
 User 1─* EventAttendance *─1 Event
 User 1─* FlirtPassportStamp *─1 Event
 User 1─* Story              (expiră la 24h)
+User *─* Report             (reporter → reported, cu auto-ban la prag)
+User 1─* Subscription       (abonament + entitlements — stub billing)
+User 1─* PushDevice         (token push per dispozitiv — stub)
 ```
 
 ---
@@ -122,6 +125,7 @@ Catalog extensibil (TZ 2.5) + M2M cu profilul.
 | `from_user_id` | `uuid` FK → User | cel care dă swipe (indexat) |
 | `to_user_id` | `uuid` FK → User | ținta (indexat) |
 | `is_like` | `bool` NOT NULL | `True` = like, `False` = dislike |
+| `deferred_message` | `Text` NULL | mesaj inițial trimis la like (TZ 4.7); livrat în chat doar la match reciproc |
 
 `UniqueConstraint(from_user_id, to_user_id)` — un singur swipe per pereche direcțională (upsert la re-swipe). Dislike-urile **se persistă** (nu doar Redis) ca să nu re-apară în feed.
 
@@ -157,8 +161,9 @@ Catalog extensibil (TZ 2.5) + M2M cu profilul.
 | `body` | `Text` NOT NULL | conținut după `mask_contacts` |
 | `was_masked` | `bool` | mascarea a modificat ceva → afișăm pastila |
 | `is_read` | `bool` | destinatarul a deschis conversația |
+| `reaction` | `String(16)` NULL | reacție emoji la mesaj (TZ 5.2); `null` = fără reacție |
 
-> Nu există (încă): `chemistry_score`, `last_message_at`, `archived_by` pe Chat; `type`, `visible` (deferred), `reactions` pe Message.
+> Nu există (încă): `chemistry_score`, `last_message_at`, `archived_by` pe Chat; `type` pe Message. Mesajul deferred de la like trăiește pe `Like.deferred_message` (nu ca flag `visible` pe Message).
 
 ---
 
@@ -238,6 +243,54 @@ Vizibilitate: autor + userii cu care are Match; filtrarea expirării se face în
 
 ---
 
+## 10. Report (`app/models/moderation.py`)
+
+Raportare de utilizator pentru moderare (TZ 5.5 + 10). La atingerea pragului de raportori distincți (config) se declanșează **auto-ban** → profilul raportat e ascuns din feed.
+
+| Câmp | Tip | Note |
+|---|---|---|
+| `id` | `uuid` PK | |
+| `reporter_id` | `uuid` FK → User | cine raportează (indexat) |
+| `reported_id` | `uuid` FK → User | cine e raportat (indexat) |
+| `category` | `String(32)` NOT NULL | `spam` / `fake` / `offensive` / `obscene` |
+| `chat_id` | `uuid` NULL | chatul din care s-a raportat (opțional, fără FK strict) |
+| `note` | `String(500)` NULL | notă liberă a raportorului |
+| `status` | `String(16)` | `open` / `auto_banned` / `reviewed` (implicit `open`) |
+
+`UniqueConstraint(reporter_id, reported_id, category)` — un singur raport per motiv, per pereche. Coada de moderare manuală (admin) rămâne planificată.
+
+---
+
+## 11. Subscription (`app/models/billing.py`)
+
+Abonament de monetizare (TZ 9). Un rând per abonament al userului. **Achiziția e stub** (provider fals), gata de comutat pe Stripe/App Store/Play din `.env` — vezi [`../INTEGRATIONS.md`](../INTEGRATIONS.md).
+
+| Câmp | Tip | Note |
+|---|---|---|
+| `id` | `uuid` PK | |
+| `user_id` | `uuid` FK → User | proprietarul (indexat) |
+| `plan` | `String(32)` NOT NULL | `premium` / `no_ads` / `ai_bot` / `all_inclusive` |
+| `status` | `String(16)` | `active` / `canceled` / `expired` (implicit `active`) |
+| `provider` | `String(16)` NOT NULL | `stub` / `stripe` / `app_store` / `play` |
+| `expires_at` | `timestamptz` NULL | în stub: `acum + 30 zile` |
+
+---
+
+## 12. PushDevice (`app/models/device.py`)
+
+Token de notificare push per dispozitiv (TZ 6.3). Trimiterea e abstractizată (`StubPush`, gata de Expo/FCM/APNs — vezi [`../INTEGRATIONS.md`](../INTEGRATIONS.md)).
+
+| Câmp | Tip | Note |
+|---|---|---|
+| `id` | `uuid` PK | |
+| `user_id` | `uuid` FK → User | proprietarul (indexat) |
+| `token` | `String(255)` NOT NULL | token Expo/FCM, opac pentru backend |
+| `platform` | `String(16)` NOT NULL | `ios` / `android` |
+
+`UniqueConstraint(user_id, token)` — upsert idempotent la re-înregistrare.
+
+---
+
 ## Compatibility Score (✅ calculat, în feed)
 
 Formula din **TZ 4.6**, implementată în serviciul de feed. Ponderile trăiesc în `core/config.py` (nu remote config, în MVP) și însumează `1.0`:
@@ -261,14 +314,14 @@ Următoarele tabele apar în blueprint dar **nu există** în `app/models/`. End
 
 | Tabel planificat | Rol | Observație |
 |---|---|---|
-| **Photo** | Fotografii anketă (min 3, max 9), poziție, badge verificat (TZ 2.4) | În MVP pozele sunt o listă de URL-uri (`Profile.photos` JSON) |
-| **HumorProfile** | Vector de umor + `quiz_completed`, rafinat de NLP (TZ 2.7 / 5.4) | În MVP vectorul e `Profile.humor_vector` (JSON, fără quiz) |
-| **Report** | Jalobe + scor de încredere + auto-ban (TZ 5.5, 10) | Moderarea nu e implementată |
-| **Subscription** | Abonamente + entitlements IAP (TZ 9) | Monetizarea nu e implementată |
+| **Photo** (dedicat) | Tabel foto cu poziție + badge verificat (TZ 2.4) | În MVP pozele sunt o listă de URL-uri (`Profile.photos` JSON), gestionată prin `/profiles/photos*` peste storage (stub). Tabelul dedicat rămâne opțional |
+| **HumorProfile** (dedicat) | Vector de umor separat + rafinare NLP din conversații (TZ 5.4) | În MVP vectorul e `Profile.humor_vector` (JSON), populat de testul de umor `/humor/*` (✅ implementat); rafinarea NLP e planificată |
+
+> **Moderarea și monetizarea SUNT implementate:** modelele `Report` (secț. 10), `Subscription` (secț. 11) și `PushDevice` (secț. 12) există în cod. `Subscription`/`PushDevice` folosesc provideri **stub** (gata de chei). Rămâne planificată doar coada de moderare manuală (admin) și validarea reală de receipt IAP.
 
 **Alte elemente de blueprint neimplementate:**
-- Câmpuri User: `phone`, `apple_sub`/`google_sub`, `role`, `status`, `verification_status`, `date_of_birth`, `deleted_at`.
+- Câmpuri User: `phone`, `apple_sub`/`google_sub`, `role`, `status`, `verification_status`, `date_of_birth`, `deleted_at`. (Auth social/OTP funcționează prin get-or-create pe email, fără coloane dedicate pe User.)
 - **PostGIS / GiST** pe `location` — codul folosește `Float` (`lat`/`lng`) portabil; distanța Haversine se calculează în aplicație, nu în DB.
 - `pgvector` pentru similaritatea vectorului de umor — `humor_vector` rămâne JSON.
-- Pe Chat/Message: `chemistry_score`, `last_message_at`, `archived_by`, `visible` (deferred likes), `reactions`, `type`.
+- Pe Chat/Message: `chemistry_score`, `last_message_at`, `archived_by`, `type`. (`Message.reaction` și mesajul deferred la like — `Like.deferred_message` — sunt ✅ implementate.)
 - Pe Ticket: stare `status`/`redeemed_at`; pe Stamp: `method` (qr/geo); pe Event: `source`/`moderation_status`.

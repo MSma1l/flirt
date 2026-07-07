@@ -64,7 +64,16 @@ export default function SetariScreen() {
   const settingsMutation = useMutation({
     mutationFn: (patch: SettingsUpdate) => updateSettings(patch),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings'] }),
+    onError: () => {
+      // Resincronizează cu serverul ca UI-ul să reflecte valorile reale.
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+    },
   });
+
+  // Deconectare: guard-ul din _layout redirecționează la starea unauthenticated.
+  const onLogout = async () => {
+    await logout();
+  };
 
   const deleteMutation = useMutation({
     mutationFn: requestAccountDeletion,
@@ -193,6 +202,15 @@ export default function SetariScreen() {
         <Text style={[typography.h1, { color: colors.textPrimary, marginBottom: spacing.xl }]}>
           Setări
         </Text>
+
+        {settingsMutation.isError ? (
+          <Text
+            testID="settings-error"
+            style={[typography.caption, { color: colors.danger, marginBottom: spacing.lg }]}
+          >
+            Nu am putut salva setarea. Am resincronizat cu serverul — reîncearcă.
+          </Text>
+        ) : null}
 
         {/* Cont */}
         <View style={{ marginBottom: spacing.xl }}>
@@ -345,7 +363,7 @@ export default function SetariScreen() {
           <Button
             label="Deconectare"
             variant="outline"
-            onPress={logout}
+            onPress={onLogout}
             testID="logout"
           />
           <Pressable

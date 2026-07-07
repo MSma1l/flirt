@@ -2,7 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { deleteStory, fetchStories } from '@/features/stories/storiesApi';
@@ -46,6 +46,7 @@ export default function StoryViewerScreen() {
       queryClient.invalidateQueries({ queryKey: ['stories'] });
       router.back();
     },
+    onError: () => Alert.alert('Ceva n-a mers', 'Nu am putut șterge povestea. Reîncearcă.'),
   });
 
   // Avans automat cu progres pe povestea curentă.

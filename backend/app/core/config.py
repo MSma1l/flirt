@@ -2,7 +2,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     max_photos: int = 9
     search_radius_default_km: int = 50
     account_deletion_grace_days: int = 30
+    about_max_length: int = 500  # lungimea maximă a câmpului „despre" (TZ 2.4)
 
     # Reguli feed / vârstă (fără hardcodare în servicii)
     adult_age: int = 18          # pragul 16-17 / 18+ (TZ 2.3)
@@ -82,6 +83,12 @@ class Settings(BaseSettings):
     billing_provider: str = "stub"
     billing_api_key: str = ""
 
+    # Prețuri planuri abonament (EUR) — catalogul din billing citește de aici (TZ 9)
+    price_premium: float = 9.99
+    price_no_ads: float = 3.99
+    price_ai_bot: float = 4.99
+    price_all_inclusive: float = 14.99
+
     # Verificare facială (TZ 2.2) — doar punct de conectare, implementare ulterioară.
     face_verify_provider: str = "stub"  # 'stub' | 'rekognition'
 
@@ -111,6 +118,30 @@ class Settings(BaseSettings):
     def _normalize_pem(cls, v: str) -> str:
         # permite chei PEM cu `\n` literal în .env
         return v.replace("\\n", "\n") if v else v
+
+    @model_validator(mode="after")
+    def _guard_production(self) -> "Settings":
+        # RO: în producție NU pornim cu default-uri nesigure. În dev/staging trecem.
+        if self.environment != "production":
+            return self
+
+        problems: list[str] = []
+        # Parolă DB implicită doar dacă ne bazăm pe credențialele Postgres
+        # (fără un DATABASE_URL explicit care ar aduce propria parolă).
+        if not self.database_url and self.postgres_password == "change_me":
+            problems.append("POSTGRES_PASSWORD folosește valoarea implicită 'change_me'")
+        if not self.database_url and not self.postgres_password:
+            problems.append("DATABASE_URL gol și fără parolă Postgres reală")
+        if not self.jwt_private_key:
+            problems.append("JWT_PRIVATE_KEY este gol")
+        if not self.jwt_public_key:
+            problems.append("JWT_PUBLIC_KEY este gol")
+
+        if problems:
+            raise ValueError(
+                "Configurare nesigură pentru producție: " + "; ".join(problems)
+            )
+        return self
 
 
 @lru_cache
