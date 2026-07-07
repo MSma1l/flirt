@@ -1,333 +1,284 @@
 # FLIRT — Specificația API REST
 
-> Specificația endpoint-urilor REST ale backend-ului FLIRT, mapate pe [Sarcina Tehnică (TZ)](../../.context/TZ.txt) și grupate pe domeniu.
+> Specificația endpoint-urilor REST ale backend-ului FLIRT. Documentul este împărțit în **✅ Implementat (MVP)** — rutele care există efectiv în cod (`app/api/v1/*.py`) — și **🔜 Planificat (din TZ, neimplementat)** — rutele din blueprint-ul inițial care încă nu au fost scrise. Pentru starea generală a proiectului vezi [`PROGRESS.md`](../../PROGRESS.md).
 
-Toate rutele au prefixul `/api/v1`. Formatul de schimb este JSON. Autentificarea se face prin Bearer JWT (detalii complete în [`security.md`](./security.md)); aici indicăm doar dacă un endpoint **necesită auth** sau este public. Numele modelelor referite (User, Profile, Like, Match, Chat, Message, Event, Ticket, Report, Block, Subscription etc.) corespund celor din [`data-models.md`](./data-models.md).
+Toate rutele au prefixul `/api/v1`. Formatul de schimb este JSON. Autentificarea se face prin Bearer JWT (detalii complete în [`security.md`](./security.md)); aici indicăm doar dacă un endpoint **necesită auth** sau este public. Numele modelelor referite corespund celor din [`data-models.md`](./data-models.md).
 
 **Convenții:**
-- `🔓 Public` — nu necesită token. `🔒 Auth` — necesită Bearer JWT valid. `👮 Admin` — rol de administrator/moderator.
-- Erorile folosesc formatul standard `{ "detail": "..." }` (sau listă de erori de validare Pydantic).
-- Paginarea listelor: query params `?limit=&cursor=` (cursor-based), răspuns `{ "items": [...], "next_cursor": "..." }`.
+- `🔓 Public` — nu necesită token. `🔒 Auth` — necesită Bearer JWT valid.
+- Erorile folosesc formatul standard `{ "detail": "..." }` (sau listă de erori de validare Pydantic 422).
+- Listele întorc în MVP un **array JSON simplu** (fără paginare cursor). Paginarea/cursor-ul este planificat (vezi secțiunea de roadmap).
 
 ---
 
-## Cuprins pe domenii
+## Cuprins
 
-1. [Auth](#1-auth) · 2. [Profiles](#2-profiles) · 3. [Swipe / Feed](#3-swipe--feed) · 4. [Compatibility](#4-compatibility) · 5. [Chat](#5-chat) · 6. [Events](#6-events) · 7. [Settings](#7-settings) · 8. [Moderation](#8-moderation) · 9. [Subscriptions](#9-subscriptions)
+**✅ Implementat (MVP):** [Auth](#1-auth-) · [Profiles](#2-profiles-) · [Feed / Swipe](#3-feed--swipe-) · [Chat](#4-chat-) · [Settings](#5-settings-) · [Social (favorites / blocks)](#6-social--favorites--blocks-) · [Ticket](#7-ticket-) · [Events + Flirt Passport](#8-events--flirt-passport-) · [Stories](#9-stories-)
+
+**🔜 Planificat:** [Roadmap din TZ, neimplementat](#-planificat-din-tz-neimplementat)
 
 ---
 
-## 1. Auth
+# ✅ Implementat (MVP)
 
-Înregistrare/login prin Apple, Google, email+parolă, telefon+OTP; plus pasul obligatoriu de **verificare facială** (TZ 2.2). Detaliile de token/refresh sunt în `security.md`.
+Rutele de mai jos există în cod și sunt acoperite de teste (`backend/tests/`). Autentificarea se face exclusiv prin **email + parolă** (fără social/OTP/verificare facială în MVP).
 
-| Metodă | Path | Scop | Auth |
-|---|---|---|---|
-| `POST` | `/auth/apple` | Sign in with Apple (schimb `identity_token`) | 🔓 |
-| `POST` | `/auth/google` | Google Sign-In (schimb `id_token`) | 🔓 |
-| `POST` | `/auth/email/register` | Înregistrare email + parolă + dată naștere | 🔓 |
-| `POST` | `/auth/email/login` | Login email + parolă | 🔓 |
-| `POST` | `/auth/phone/request-otp` | Trimite cod OTP prin SMS | 🔓 |
-| `POST` | `/auth/phone/verify-otp` | Verifică OTP, creează/loghează cont | 🔓 |
-| `POST` | `/auth/refresh` | Reînnoire access token (vezi `security.md`) | 🔓 |
-| `POST` | `/auth/logout` | Invalidează sesiunea curentă | 🔒 |
-| `POST` | `/auth/verification/face` | Upload selfie/video liveness pentru face-match | 🔒 |
-| `GET` | `/auth/verification/status` | Starea verificării faciale (`pending`/`verified`/`rejected`) | 🔒 |
+---
 
-**Notă:** `dată naștere` validează minimul de 16 ani și determină gruparea de vârstă (16–17 / 18+) conform TZ 2.3. Verificarea facială pune un task `face_tasks` în coadă; până la finalizare, profilul are `verification_status = pending` și vizibilitate redusă în feed (TZ 2.2).
+## 1. Auth ✅
 
-**Exemplu — `POST /auth/phone/verify-otp`:**
+Montate sub `/api/v1/auth` (`app/api/v1/auth.py`). Detaliile de token/rotație/refresh sunt în [`security.md`](./security.md).
+
+| Metodă | Path | Scop | Auth | Răspuns |
+|---|---|---|---|---|
+| `POST` | `/auth/register` | Înregistrare email + parolă (min 8 caractere) | 🔓 | `201` → `TokenPair` |
+| `POST` | `/auth/login` | Login email + parolă (`401` la credențiale greșite) | 🔓 | `200` → `TokenPair` |
+| `POST` | `/auth/refresh` | Rotește refresh token-ul (cu reuse detection pe `family_id`) | 🔓 | `200` → `TokenPair` |
+| `POST` | `/auth/logout` | Revocă sesiunea de refresh | 🔒* | `204` |
+| `GET` | `/auth/me` | Userul curent (`id`, `email`, `profile_completed`) | 🔒 | `200` → `UserOut` |
+
+\* `logout` primește `refresh_token` în body și revocă sesiunea.
+
+**`TokenPair`:** `{ "access_token": "...", "refresh_token": "...", "token_type": "bearer" }`
+
+**Exemplu — `POST /auth/register`:**
 ```json
 // request
-{ "phone": "+37360123456", "code": "482913" }
-// response 200
-{
-  "access_token": "eyJhbGci...",
-  "refresh_token": "eyJhbGci...",
-  "token_type": "bearer",
-  "is_new_user": true,
-  "user_id": "9f1c...",
-  "onboarding_required": true
-}
-```
-
-**Exemplu — `POST /auth/verification/face`** (multipart: `selfie` + opțional `liveness_video`):
-```json
-// response 202 (procesare async)
-{ "verification_status": "pending", "task_id": "b7a2..." }
+{ "email": "ana@example.com", "password": "parola-sigura" }
+// response 201
+{ "access_token": "eyJhbGci...", "refresh_token": "eyJhbGci...", "token_type": "bearer" }
 ```
 
 ---
 
-## 2. Profiles
+## 2. Profiles ✅
 
-CRUD anketă, fotografii, interese, status de cunoștință, profil de umor (TZ 2.4–2.7). Modelul de date: `Profile`, `Photo`, `Interest`, `HumorProfile`.
+Montate sub `/api/v1/profiles` (`app/api/v1/profiles.py`). Anketa este **upsert** printr-un singur `PUT`; nu există (încă) upload de poze, quiz de umor sau vizualizarea altui user.
 
-| Metodă | Path | Scop | Auth |
-|---|---|---|---|
-| `GET` | `/profiles/me` | Anketa proprie completă | 🔒 |
-| `PUT` | `/profiles/me` | Actualizare câmpuri anketă (nume, înălțime, oraș, limbi, „despre mine"...) | 🔒 |
-| `PATCH` | `/profiles/me/status` | Schimbă statusul de cunoștință (unul sau mai multe) | 🔒 |
-| `GET` | `/profiles/{user_id}` | Anketa publică a altui utilizator | 🔒 |
-| `POST` | `/profiles/me/photos` | Upload fotografie (min 3, max 9) | 🔒 |
-| `DELETE` | `/profiles/me/photos/{photo_id}` | Șterge o fotografie | 🔒 |
-| `PUT` | `/profiles/me/photos/order` | Reordonează fotografiile | 🔒 |
-| `GET` | `/interests` | Lista de interese disponibile (icoane, extensibilă din admin) | 🔒 |
-| `PUT` | `/profiles/me/interests` | Setează interesele selectate (multiselect) | 🔒 |
-| `GET` | `/humor/quiz` | Cardurile testului de umor (5–7 carduri) | 🔒 |
-| `POST` | `/profiles/me/humor` | Trimite răspunsurile testului → vector de umor inițial | 🔒 |
-| `GET` | `/profiles/me/favorites` | Lista anketelor adăugate la favorite | 🔒 |
+| Metodă | Path | Scop | Auth | Răspuns |
+|---|---|---|---|---|
+| `GET` | `/profiles/reference` | Opțiuni de referință: genuri, statusuri de cunoștință, limbi, interese (etichete RU/RO) | 🔓 | `200` → `ReferenceOut` |
+| `GET` | `/profiles/me` | Anketa proprie completă (`404` dacă nu a fost completată) | 🔒 | `200` → `ProfileOut` |
+| `PUT` | `/profiles/me` | Creează/actualizează anketa; o marchează completată | 🔒 | `200` → `ProfileOut` |
 
-**Notă:** interesele (TZ 2.5), statusurile de cunoștință (TZ 2.6) și tipurile de umor (TZ 2.7) sunt liste config, extensibile din admin fără release. Vectorul de umor (`HumorProfile.vector`) se inițializează din quiz și se rafinează ulterior de NLP-ul din chat (TZ 5.4).
+**Notă:** `birth_date` trăiește pe **Profile** (nu pe User). `age` se calculează din `birth_date` la răspuns. `interests` sunt slug-uri validate față de catalog. `photos` este doar o listă de URL-uri (upload real — planificat).
 
 **Exemplu — `PUT /profiles/me`:**
 ```json
 // request
 {
   "name": "Ana",
-  "height_cm": 168,
+  "birth_date": "1998-04-12",
   "gender": "female",
+  "height_cm": 168,
   "city": "Chișinău",
-  "district": "Centru",
+  "street": "Centru",
   "nationality": "Moldovan",
   "languages": ["ru", "ro", "en"],
-  "bio": "Cafea, drumeții, jazz.",
-  "relationship_statuses": ["serious", "friendship"]
+  "about": "Cafea, drumeții, jazz.",
+  "dating_statuses": ["serious", "friendship"],
+  "interests": ["music", "travel", "coffee"],
+  "photos": ["https://.../1.jpg"]
 }
-// response 200 → obiectul Profile actualizat, inclusiv verification_status și compatibility-ready flags
+// response 200 → ProfileOut (include `age`, `humor_vector`, `completed`)
 ```
 
 ---
 
-## 3. Swipe / Feed
+## 3. Feed / Swipe ✅
 
-Ecranul principal de swipe: feed cu limită de 10 ankete/sesiune, like/dislike/favorite, undo, detectare match (TZ 4.1–4.7). Modele: `Like`, `Match`.
+Montate sub `/api/v1/feed` (`app/api/v1/feed.py`). Compatibility Score este **precalculat și servit inline** pe fiecare card (`compatibility`, 0–100); ponderile sunt în `core/config.py` (vezi [`data-models.md`](./data-models.md#compatibility-score)). Nu există endpoint dedicat `/compatibility` — scorul vine în feed.
 
-| Metodă | Path | Scop | Auth |
-|---|---|---|---|
-| `GET` | `/feed` | Următoarea porție de max 10 ankete (fereastră glisantă) | 🔒 |
-| `GET` | `/feed/status` | Starea sesiunii: câte rămase, timer reclamă (15s) activ, tip abonament | 🔒 |
-| `POST` | `/swipe/like` | Like (swipe dreapta), opțional cu mesaj inițial | 🔒 |
-| `POST` | `/swipe/dislike` | Dislike / skip (swipe stânga) | 🔒 |
-| `POST` | `/swipe/favorite` | Adaugă la favorite (long-press / ★), fără like/dislike | 🔒 |
-| `POST` | `/swipe/undo` | Revine la anketa anterioară (1 pas free, nelimitat premium) | 🔒 |
-| `DELETE` | `/swipe/favorite/{user_id}` | Elimină din favorite | 🔒 |
+| Metodă | Path | Scop | Auth | Răspuns |
+|---|---|---|---|---|
+| `GET` | `/feed/` | Candidatele pentru swipe, sortate după compatibilitate (exclude self, deja-swipe-uiți, separare vârstă 16–17 / 18+) | 🔒 | `200` → `list[FeedCard]` |
+| `POST` | `/feed/swipe` | Înregistrează un `like`/`dislike`; întoarce dacă a produs match reciproc | 🔒 | `200` → `SwipeResult` |
+| `GET` | `/feed/matches` | Lista match-urilor userului curent | 🔒 | `200` → `list[MatchOut]` |
 
-**Notă limită & reclamă (TZ 4.5):** utilizatorul free primește 10 ankete per sesiune; după procesarea celor 10 → `GET /feed` întoarce `429`-like flag `ad_wait` cu `retry_after: 15`; premium: nelimitat, fără timer. Starea se ține în Redis. `GET /feed` întoarce pentru fiecare card și **Compatibility Score** precalculat (TZ 4.2) plus flag de mероприятие (TZ 4.3).
+**`FeedCard`:** `user_id, name, age, gender, city, distance_km?, about?, top_interests[], languages[], compatibility, photos[]`.
 
-**Exemplu — `GET /feed` (răspuns):**
+**Exemplu — `POST /feed/swipe`:**
 ```json
-{
-  "items": [
-    {
-      "user_id": "3d2a...",
-      "name": "Ana", "age": 27,
-      "distance_km": 3,
-      "bio": "Cafea, drumeții, jazz.",
-      "photos": ["https://cdn/.../1.jpg", "..."],
-      "top_interests": ["music", "travel", "coffee"],
-      "compatibility_score": 87,
-      "verified": true,
-      "event_badge": { "event_id": "e91...", "title": "Flirt Party #4", "date": "2026-07-12T20:00:00Z" }
-    }
-  ],
-  "remaining": 9,
-  "ad_wait": false,
-  "next_cursor": "..."
-}
-```
-
-**Exemplu — `POST /swipe/like`:**
-```json
-// request (mesaj inițial deferred — TZ 4.7)
-{ "target_user_id": "3d2a...", "message": "Привет 👋" }
+// request
+{ "target_user_id": "3d2a...", "action": "like" }
 // response — match imediat
-{ "is_match": true, "match_id": "m17...", "chat_id": "c22...", "matched_user": { "user_id": "3d2a...", "name": "Ana", "photo": "https://cdn/.../1.jpg" } }
-// response — like deferred (fără reciprocitate încă)
-{ "is_match": false, "pending": true }
+{ "matched": true, "match_id": "m17...", "chat_id": "c22..." }
+// response — like fără reciprocitate
+{ "matched": false, "match_id": null, "chat_id": null }
 ```
 
 ---
 
-## 4. Compatibility
+## 4. Chat ✅
 
-Calculul procentului de similaritate (TZ 4.6). Serviciul: `compatibility_service`. Formula și ponderile complete în [`data-models.md`](./data-models.md#compatibility-score).
+Montate sub `/api/v1/chats` (`app/api/v1/chat.py`). Toate protejate. Un chat există per match. **Mascarea contactelor** (TZ 5.5) se aplică la trimitere: `body`-ul stocat este cel mascat, iar `was_masked` semnalează UI-ul.
 
-| Metodă | Path | Scop | Auth |
-|---|---|---|---|
-| `GET` | `/compatibility/{user_id}` | Compatibility Score între utilizatorul curent și țintă, cu breakdown | 🔒 |
-
-**Exemplu — `GET /compatibility/{user_id}`:**
-```json
-{
-  "user_id": "3d2a...",
-  "score": 87,
-  "breakdown": {
-    "interests": 0.30, "status": 0.12, "humor": 0.18,
-    "distance": 0.13, "languages": 0.10, "behavior": 0.04
-  },
-  "color": "green"   // green >80, yellow 50–80, gray <50 (TZ 4.2)
-}
-```
-
-**Notă:** valoarea `score` e de obicei servită deja în `/feed` și în header-ul de chat, dar acest endpoint permite recalcul on-demand și afișarea breakdown-ului. Ponderile sunt feature-flag (remote config), fără release (TZ 4.6).
-
----
-
-## 5. Chat
-
-Dialoguri, mesaje, AI hints, Chemistry Score, mascare contacte (TZ 5.1–5.5). Modele: `Chat`, `Message`.
-
-| Metodă | Path | Scop | Auth |
-|---|---|---|---|
-| `GET` | `/chats` | Lista dialogurilor (foto, nume, ultim mesaj, badge necitite) | 🔒 |
-| `GET` | `/chats/{chat_id}` | Header chat: interlocutor, online status, Compatibility Score | 🔒 |
-| `GET` | `/chats/{chat_id}/messages` | Istoric mesaje (paginat) | 🔒 |
-| `POST` | `/chats/{chat_id}/messages` | Trimite mesaj (text/emoji/foto) — trece prin mascare NLP | 🔒 |
-| `POST` | `/chats/{chat_id}/messages/{id}/react` | Reacție/like pe un mesaj | 🔒 |
-| `POST` | `/chats/{chat_id}/read` | Marchează ca citit | 🔒 |
-| `POST` | `/chats/{chat_id}/archive` | Arhivează dialogul | 🔒 |
-| `DELETE` | `/chats/{chat_id}` | Șterge dialogul | 🔒 |
-| `GET` | `/chats/{chat_id}/hint` | Sugestie AI de temă de conversație (nu se trimite automat) | 🔒 |
-| `GET` | `/chats/{chat_id}/chemistry` | Chemistry Score curent al dialogului | 🔒 |
-| `GET` | `/chats/{chat_id}/event-suggestion` | Banner AI „mergeți împreună la [event]" dacă există potrivire | 🔒 |
-
-**Notă mascare contacte (TZ 5.5):** la `POST .../messages`, `masking_service` scanează textul (nickname-uri IG/Telegram, telefon, email, linkuri) și returnează mesajul cu date mascate (`*****`) + un flag explicativ. Mesajul stocat e cel mascat.
-
-**Notă deferred likes (TZ 4.7):** mesajele trimise la like fără reciprocitate devin vizibile în chat automat când cealaltă parte dă like înapoi.
-
-**Notă AI hints (TZ 5.3):** `hint_service` combină banca de ~100 teme cu generare pe baza intersecției interese/status/umor. Endpoint-ul de bază e gratuit cu limită zilnică; extinderea e opțiune plătită (vezi Subscriptions). Push-urile de re-engagement (conversație stinsă) sunt trimise de `hint_tasks`, nu de un endpoint.
+| Metodă | Path | Scop | Auth | Răspuns |
+|---|---|---|---|---|
+| `GET` | `/chats/` | Lista dialogurilor (interlocutor, ultim mesaj, `unread_count`) | 🔒 | `200` → `list[ChatSummary]` |
+| `GET` | `/chats/{chat_id}/messages` | Istoricul mesajelor; marchează primite ca citite | 🔒 | `200` → `list[MessageOut]` |
+| `POST` | `/chats/{chat_id}/messages` | Trimite mesaj (`body`); contactele sunt mascate automat | 🔒 | `201` → `MessageOut` |
+| `POST` | `/chats/{chat_id}/read` | Marchează citite mesajele primite | 🔒 | `204` |
 
 **Exemplu — `POST /chats/{chat_id}/messages`:**
 ```json
 // request
-{ "type": "text", "body": "hai pe telegram @ana_flirt" }
+{ "body": "hai pe telegram @ana_flirt" }
 // response 201 (contact mascat automat)
 {
   "id": "msg88...",
-  "type": "text",
+  "sender_id": "9f1c...",
   "body": "hai pe telegram *********",
-  "masked": true,
-  "masked_reason": "Datele de contact sunt ascunse pentru siguranța ta.",
+  "was_masked": true,
+  "is_read": false,
   "created_at": "2026-07-06T18:20:00Z"
 }
 ```
 
-**Exemplu — `GET /chats/{chat_id}/hint`:**
-```json
-{ "hint": "Spune-i despre ultima ta călătorie — amândoi iubiți travel ✈️", "source": "generated", "based_on": ["interests:travel"] }
-```
+---
+
+## 5. Settings ✅
+
+Montate sub `/api/v1/settings` (`app/api/v1/settings.py`). Un singur `GET`/`PUT` pentru toate setările (temă, rază, notificări, ascundere profil, regiune) + ștergere cont cu perioadă de grație (`account_deletion_grace_days` din config).
+
+| Metodă | Path | Scop | Auth | Răspuns |
+|---|---|---|---|---|
+| `GET` | `/settings/` | Toate setările curente (valori implicite dacă lipsesc) | 🔒 | `200` → `SettingsOut` |
+| `PUT` | `/settings/` | Actualizare **parțială** (toate câmpurile opționale) | 🔒 | `200` → `SettingsOut` |
+| `POST` | `/settings/account/delete` | Cerere ștergere cont (soft, cu perioadă de grație) | 🔒 | `200` → `AccountDeletionOut` |
+| `POST` | `/settings/account/delete/cancel` | Anulează cererea de ștergere | 🔒 | `204` |
+
+**`SettingsOut`:** `theme, search_radius_km, notifications{}, profile_hidden, region?`.
 
 ---
 
-## 6. Events
+## 6. Social — favorites / blocks ✅
 
-Listă mероприятия, hartă Live Events, marcaj „иду", Flirt Passport, bilet QR (TZ 6.2, 8.1–8.4). Modele: `Event`, `EventAttendance`, `FlirtPassportStamp`, `Ticket`.
+Montate sub `/api/v1/social` (`app/api/v1/social.py`). Favorite și black list, ambele idempotente pe pereche.
 
-| Metodă | Path | Scop | Auth |
-|---|---|---|---|
-| `GET` | `/events` | Lista mероприятий apropiate (filtrabile după tip, dată) | 🔒 |
-| `GET` | `/events/map` | Mероприятия pe hartă + număr de useri FLIRT care merg | 🔒 |
-| `GET` | `/events/{event_id}` | Detalii mероприятие (titlu, dată, loc, descriere, cover) | 🔒 |
-| `POST` | `/events/{event_id}/attend` | Marchează „иду" (apare badge lângă Compatibility) | 🔒 |
-| `DELETE` | `/events/{event_id}/attend` | Retrage marcajul „иду" | 🔒 |
-| `GET` | `/events/{event_id}/attendees` | Câți/care useri FLIRT merg (agregat) | 🔒 |
-| `GET` | `/tickets/me` | Biletul gratuit Flirt Party (QR / ID unic) | 🔒 |
-| `POST` | `/tickets/{ticket_id}/redeem` | Validare bilet la intrare (scanare QR) | 👮 |
-| `GET` | `/passport/me` | Ștampilele Flirt Passport ale utilizatorului | 🔒 |
-| `POST` | `/passport/checkin` | Check-in la mероприятие (QR/geo) → generează ștampilă | 🔒 |
-| `POST` | `/events` | Creează mероприятие (admin) | 👮 |
-| `PUT` | `/events/{event_id}` | Editează mероприятие (admin) | 👮 |
+| Metodă | Path | Scop | Auth | Răspuns |
+|---|---|---|---|---|
+| `GET` | `/social/favorites` | Lista de favorite (cu date de profil) | 🔒 | `200` → `list[FavoriteOut]` |
+| `POST` | `/social/favorites` | Adaugă un user la favorite (`{ target_user_id }`) | 🔒 | `201` |
+| `DELETE` | `/social/favorites/{target_user_id}` | Scoate din favorite | 🔒 | `204` |
+| `GET` | `/social/blocks` | Lista de useri blocați | 🔒 | `200` → `list[BlockOut]` |
+| `POST` | `/social/blocks` | Blochează un user (`{ target_user_id }`) | 🔒 | `201` |
+| `DELETE` | `/social/blocks/{target_user_id}` | Deblochează | 🔒 | `204` |
 
-**Notă bilet (TZ 6.2):** fiecare utilizator nou primește un `Ticket` unic, one-time, fără expirare, până la redeem. **Notă passport (TZ 8.4):** după vizită confirmată (redeem QR sau geo-checkin), se creează `FlirtPassportStamp` care crește încrederea/prioritatea în feed. **Notă agregare (TZ 8.1):** mероприятия pot fi și agregate automat de AI din surse deschise, apoi moderate (`event_tasks`).
+---
 
-**Exemplu — `GET /events/map`:**
+## 7. Ticket ✅
+
+Montat sub `/api/v1/ticket` (`app/api/v1/ticket.py`). Biletul one-time Flirt Party este **emis lazy** la prima cerere.
+
+| Metodă | Path | Scop | Auth | Răspuns |
+|---|---|---|---|---|
+| `GET` | `/ticket/` | Biletul userului; îl emite dacă lipsește (`{ code, used }`) | 🔒 | `200` → `TicketOut` |
+
+**Notă:** redeem/validare la intrare (rol admin) — planificat.
+
+---
+
+## 8. Events + Flirt Passport ✅
+
+Montate sub `/api/v1/events` (`app/api/v1/events.py`). Include marcaj „merg", check-in (ștampilă idempotentă) și listarea ștampilelor. Coordonatele `lat`/`lng` sunt stocate ca `Float` (fără PostGIS) și pot lipsi.
+
+| Metodă | Path | Scop | Auth | Răspuns |
+|---|---|---|---|---|
+| `GET` | `/events/` | Evenimentele viitoare (`attendee_count`, `i_am_going`) | 🔒 | `200` → `list[EventOut]` |
+| `GET` | `/events/passport` | Ștampilele Flirt Passport ale userului | 🔒 | `200` → `list[PassportStampOut]` |
+| `GET` | `/events/{event_id}` | Detaliile unui eveniment (`404` altfel) | 🔒 | `200` → `EventOut` |
+| `POST` | `/events/{event_id}/going` | Marchează / anulează participarea (`{ going }`) | 🔒 | `200` → `EventOut` |
+| `POST` | `/events/{event_id}/checkin` | Check-in → ștampilă Flirt Passport (idempotentă) | 🔒 | `201` → `PassportStampOut` |
+
+> Ruta `/passport` e declarată înaintea rutei parametrizate `/{event_id}` ca să nu fie „înghițită".
+
+**Exemplu — `GET /events/` (element):**
 ```json
 {
-  "events": [
-    { "event_id": "e91...", "title": "Flirt Party #4", "type": "flirt_party",
-      "date": "2026-07-12T20:00:00Z", "lat": 47.024, "lng": 28.832,
-      "attendees_count": 42 }
-  ]
+  "id": "e91...", "title": "Flirt Party #4", "description": "...",
+  "starts_at": "2026-07-12T20:00:00Z", "city": "Chișinău", "venue": "Loft",
+  "lat": 47.024, "lng": 28.832, "kind": "flirt_party", "cover_url": "https://.../c.jpg",
+  "attendee_count": 42, "i_am_going": true
 }
 ```
 
-**Exemplu — `GET /tickets/me`:**
-```json
-{ "ticket_id": "t555...", "code": "FLIRT-9X3K-22QP", "qr_url": "https://cdn/.../qr/t555.png", "status": "active", "expires_at": null }
-```
+---
+
+## 9. Stories ✅
+
+Montate sub `/api/v1/stories` (`app/api/v1/stories.py`). Poveștile expiră la 24h (`story_ttl_hours` din config) și sunt vizibile autorului + userilor cu care are Match.
+
+| Metodă | Path | Scop | Auth | Răspuns |
+|---|---|---|---|---|
+| `POST` | `/stories/` | Publică o poveste (`{ media_url, caption? }`) care expiră peste 24h | 🔒 | `201` → `StoryOut` |
+| `GET` | `/stories/` | Poveștile active proprii + ale match-urilor, grupate pe user | 🔒 | `200` → `list[UserStories]` |
+| `GET` | `/stories/mine` | Poveștile active proprii | 🔒 | `200` → `list[StoryOut]` |
+| `DELETE` | `/stories/{story_id}` | Șterge o poveste proprie (`403`/`404` altfel) | 🔒 | `204` |
+
+**`UserStories`:** `user_id, name, story_count, stories[]`. **`StoryOut`:** `id, user_id, media_url, caption?, created_at, expires_at`.
 
 ---
 
-## 7. Settings
+# 🔜 Planificat (din TZ, neimplementat)
 
-Profil, temă, notificări, blacklist, ascundere profil, ștergere cont, radius, limbi/regiune (TZ 6.1–6.3). Modele: `User`, `Block`, `Profile`.
+Rutele de mai jos apar în blueprint-ul inițial din TZ, dar **nu există încă** în cod. Sunt păstrate ca referință de roadmap. Modelele lor (Photo, HumorProfile, Report, Subscription etc.) sunt marcate „planificat" în [`data-models.md`](./data-models.md).
 
-| Metodă | Path | Scop | Auth |
-|---|---|---|---|
-| `GET` | `/settings` | Toate setările curente | 🔒 |
-| `PATCH` | `/settings/theme` | Temă: `light` / `dark` / `system` | 🔒 |
-| `PATCH` | `/settings/notifications` | Toggle push pe categorii (match, mesaje, hints, events, ads) | 🔒 |
-| `PATCH` | `/settings/discovery` | Radius de căutare (km), limbi, regiune de afișare | 🔒 |
-| `PATCH` | `/settings/visibility` | Ascunde/afișează profilul în feed (invizibilitate temporară) | 🔒 |
-| `GET` | `/settings/blacklist` | Lista utilizatorilor blocați | 🔒 |
-| `POST` | `/settings/blacklist/{user_id}` | Blochează un utilizator | 🔒 |
-| `DELETE` | `/settings/blacklist/{user_id}` | Deblochează | 🔒 |
-| `GET` | `/settings/linked-accounts` | Conturile legate (Apple/Google/phone/email) | 🔒 |
-| `POST` | `/settings/linked-accounts` | Adaugă/schimbă metodă de login | 🔒 |
-| `POST` | `/account/delete` | Cerere ștergere cont (soft, 30 zile recuperare) | 🔒 |
-| `POST` | `/account/restore` | Anulează ștergerea în perioada de grație | 🔒 |
+### Auth extins
+| Metodă | Path | Scop |
+|---|---|---|
+| `POST` | `/auth/apple` · `/auth/google` | Sign in with Apple / Google (TZ 2.1) |
+| `POST` | `/auth/phone/request-otp` · `/auth/phone/verify-otp` | Login telefon + OTP (TZ 2.1) |
+| `POST` | `/auth/verification/face` · `GET /auth/verification/status` | Verificare facială / liveness (TZ 2.2) |
+| `GET`/`POST` | `/settings/linked-accounts` | Conturi legate (Apple/Google/phone/email) |
 
-**Notă:** ascunderea profilului nu afectează conversațiile curente (TZ 6.3). Ștergerea contului e soft-delete cu perioadă de recuperare (30 zile), după care datele biometrice se șterg (TZ 6.3 + întrebarea deschisă 12 privind biometria).
+### Profiles extins
+| Metodă | Path | Scop |
+|---|---|---|
+| `GET` | `/profiles/{user_id}` | Anketa publică a altui user |
+| `PATCH` | `/profiles/me/status` | Schimbă statusul de cunoștință punctual |
+| `POST`/`DELETE`/`PUT` | `/profiles/me/photos*` | Upload / ștergere / reordonare foto (min 3, max 9 — TZ 2.4) |
+| `GET` | `/interests` | (există ca parte din `/profiles/reference`; endpoint separat — opțional) |
+| `GET` | `/humor/quiz` · `POST /profiles/me/humor` | Testul de umor → vector inițial (TZ 2.7) |
 
----
+### Compatibility
+| Metodă | Path | Scop |
+|---|---|---|
+| `GET` | `/compatibility/{user_id}` | Score on-demand cu breakdown pe componente (în MVP scorul e servit inline în `/feed`) |
 
-## 8. Moderation
+### Feed / Swipe extins
+| Metodă | Path | Scop |
+|---|---|---|
+| `GET` | `/feed/status` | Stare sesiune: rămase, timer reclamă 15s, tip abonament (TZ 4.5) |
+| `POST` | `/swipe/favorite` · `POST /swipe/undo` | Favorite din swipe + undo (1 pas free / nelimitat premium) — în MVP favorite trăiește sub `/social` |
+| — | mesaj inițial la like (deferred, TZ 4.7) | livrare amânată a primului mesaj |
 
-Jalobe, ban, cozi de moderare (TZ 5.5, 10). Modele: `Report`, `Block`, `User`.
+### Chat extins
+| Metodă | Path | Scop |
+|---|---|---|
+| `GET` | `/chats/{chat_id}` | Header chat: online status, Compatibility Score |
+| `POST` | `/chats/{chat_id}/messages/{id}/react` | Reacție/like pe mesaj |
+| `POST` | `/chats/{chat_id}/archive` · `DELETE /chats/{chat_id}` | Arhivare / ștergere dialog |
+| `GET` | `/chats/{chat_id}/hint` | Sugestie AI de temă (TZ 5.3) |
+| `GET` | `/chats/{chat_id}/chemistry` · `/event-suggestion` | Chemistry Score + banner eveniment comun (TZ 5.4) |
 
-| Metodă | Path | Scop | Auth |
-|---|---|---|---|
-| `POST` | `/reports` | Trimite jalobă (spam / fake / abuz / foto obscene) | 🔒 |
-| `GET` | `/moderation/queue` | Coada de moderare manuală (cazuri ambigue) | 👮 |
-| `POST` | `/moderation/reports/{report_id}/resolve` | Rezolvă o jalobă (ban / dismiss) | 👮 |
-| `POST` | `/moderation/users/{user_id}/ban` | Ban manual utilizator | 👮 |
-| `POST` | `/moderation/users/{user_id}/unban` | Ridică ban | 👮 |
+### Events extins
+| Metodă | Path | Scop |
+|---|---|---|
+| `GET` | `/events/map` | Evenimente pe hartă + contor useri (TZ 8.3) |
+| `GET` | `/events/{event_id}/attendees` | Agregat participanți |
+| `POST` | `/tickets/{ticket_id}/redeem` | Validare bilet la intrare (👮 admin) |
+| `POST`/`PUT` | `/events` (admin) | CRUD evenimente + agregare AI moderată (TZ 8.1) |
 
-**Notă (TZ 5.5 / 10):** `moderation_service` scorează jaloabele; la încredere mare (match cu bază de conținut interzis sau mai multe jalobe independente) → **auto-ban** fără verificare manuală; cazurile spornе intră în `/moderation/queue`. Categoriile de jalobă: `spam`, `fake_profile`, `abuse`, `obscene_photo`.
+### Moderation (TZ 5.5, 10)
+| Metodă | Path | Scop |
+|---|---|---|
+| `POST` | `/reports` | Jalobă (spam / fake / abuz / foto obscene) |
+| `GET`/`POST` | `/moderation/*` | Coadă moderare, resolve, ban/unban (👮) |
 
-**Exemplu — `POST /reports`:**
-```json
-{ "target_user_id": "3d2a...", "category": "obscene_photo", "context_type": "chat", "context_id": "c22...", "comment": "foto nepotrivit" }
-// response 201
-{ "report_id": "r77...", "status": "queued", "auto_action": null }
-```
-
----
-
-## 9. Subscriptions
-
-Premium, no-ads, AI-bot, „всё включено", purchases (TZ 9). Model: `Subscription`.
-
-| Metodă | Path | Scop | Auth |
-|---|---|---|---|
-| `GET` | `/subscriptions/plans` | Planurile disponibile și ce includ | 🔒 |
-| `GET` | `/subscriptions/me` | Abonamentul curent + entitlements active | 🔒 |
-| `POST` | `/subscriptions/purchase` | Validează o achiziție (Apple/Google IAP receipt) | 🔒 |
-| `POST` | `/subscriptions/cancel` | Anulează reînnoirea | 🔒 |
-| `POST` | `/subscriptions/webhook/apple` | Webhook server-to-server App Store | 🔓* |
-| `POST` | `/subscriptions/webhook/google` | Webhook Google Play RTDN | 🔓* |
-
-\* webhook-urile sunt publice dar verificate criptografic (semnătură provider), nu cu JWT.
-
-**Notă (TZ 9):** planuri — `premium` (fără limita de 10 + fără timer reclamă + undo nelimitat + prioritate în feed), `no_ads` (doar fără reclame), `ai_bot` (AI hints extinse peste limita zilnică gratuită), `all_inclusive` (combo). Entitlements-urile controlează limita de feed (§3), timerul de reclamă, undo (§3) și limita de hints (§5). Purchases viitoare (boost anketă, super-lakes) — roadmap TZ 9/11.
-
-**Exemplu — `GET /subscriptions/me`:**
-```json
-{
-  "plan": "premium",
-  "status": "active",
-  "entitlements": { "unlimited_swipes": true, "no_ads": true, "unlimited_undo": true, "feed_priority": true, "ai_bot_extended": false },
-  "renews_at": "2026-08-06T00:00:00Z"
-}
-```
+### Subscriptions (TZ 9)
+| Metodă | Path | Scop |
+|---|---|---|
+| `GET` | `/subscriptions/plans` · `/subscriptions/me` | Planuri + entitlements |
+| `POST` | `/subscriptions/purchase` · `/cancel` | Validare achiziție IAP / anulare |
+| `POST` | `/subscriptions/webhook/{apple,google}` | Webhook server-to-server |

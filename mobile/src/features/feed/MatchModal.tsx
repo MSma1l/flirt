@@ -8,7 +8,7 @@ import { useTheme } from '@theme/index';
 interface Props {
   visible: boolean;
   name: string;
-  /** Deocamdată doar închide modalul (chatul se implementează ulterior). */
+  /** Navighează la chatul creat la match (sau doar închide dacă nu există). */
   onWriteMessage: () => void;
   onContinue: () => void;
 }

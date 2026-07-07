@@ -38,7 +38,7 @@ function mapMessage(m: ChatMessageResponse): ChatMessage {
 
 /** Aduce lista de dialoguri și o mapează snake_case → camelCase. */
 export async function fetchChats(): Promise<ChatSummary[]> {
-  const { data } = await api.get<ChatSummaryResponse[]>('/chats');
+  const { data } = await api.get<ChatSummaryResponse[]>('/chats/');
   return (data ?? []).map((c) => ({
     chatId: c.chat_id,
     otherUserId: c.other_user_id,

@@ -20,6 +20,7 @@ from app.models.account import (
     UserSettings,
 )
 from app.models.profile import Profile
+from app.models.session import RefreshSession
 from app.models.user import User
 from app.schemas.account import (
     AccountDeletionOut,
@@ -250,7 +251,12 @@ async def get_or_issue_ticket(db: AsyncSession, user: User) -> TicketOut:
 async def request_account_deletion(
     db: AsyncSession, user: User
 ) -> AccountDeletionOut:
-    """Creează (sau întoarce) cererea de ștergere cu perioadă de grație din config."""
+    """Creează (sau întoarce) cererea de ștergere cu perioadă de grație din config.
+
+    Pe lângă cerere (I4): revocă TOATE sesiunile de refresh ale userului și
+    ascunde profilul (profile_hidden=True) ca să nu mai apară în feed în timpul
+    perioadei de grație.
+    """
     result = await db.execute(
         select(AccountDeletionRequest).where(
             AccountDeletionRequest.user_id == user.id
@@ -268,8 +274,23 @@ async def request_account_deletion(
             purge_after=purge_after,
         )
         db.add(request)
-        await db.commit()
-        await db.refresh(request)
+
+    # I4 — revocă toate sesiunile de refresh ale userului (logout global).
+    sessions_result = await db.execute(
+        select(RefreshSession).where(
+            RefreshSession.user_id == user.id,
+            RefreshSession.revoked.is_(False),
+        )
+    )
+    for session_row in sessions_result.scalars().all():
+        session_row.revoked = True
+
+    # I4 — ascunde profilul (creează setările implicite dacă lipsesc).
+    user_settings = await _get_or_create_settings(db, user)
+    user_settings.profile_hidden = True
+
+    await db.commit()
+    await db.refresh(request)
     return AccountDeletionOut(
         requested_at=request.requested_at, purge_after=request.purge_after
     )

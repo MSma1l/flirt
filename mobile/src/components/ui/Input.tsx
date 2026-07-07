@@ -1,6 +1,14 @@
 /** Câmp de intrare cu label + eroare, stilat din temă. */
-import React from 'react';
-import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
+import React, { useState } from 'react';
+import {
+  NativeSyntheticEvent,
+  StyleSheet,
+  Text,
+  TextInput,
+  TextInputFocusEventData,
+  TextInputProps,
+  View,
+} from 'react-native';
 
 import { useTheme } from '@theme/index';
 
@@ -9,8 +17,26 @@ interface Props extends TextInputProps {
   error?: string | null;
 }
 
-export function Input({ label, error, style, ...rest }: Props) {
+export function Input({ label, error, style, onFocus, onBlur, ...rest }: Props) {
   const { colors, typography, radius, spacing } = useTheme();
+  const [focused, setFocused] = useState(false);
+
+  const handleFocus = (e: NativeSyntheticEvent<TextInputFocusEventData>) => {
+    setFocused(true);
+    onFocus?.(e);
+  };
+  const handleBlur = (e: NativeSyntheticEvent<TextInputFocusEventData>) => {
+    setFocused(false);
+    onBlur?.(e);
+  };
+
+  // Eroarea are prioritate; apoi focusul (accent); altfel border neutru.
+  const borderColor = error
+    ? colors.danger
+    : focused
+      ? colors.accent
+      : colors.border;
+
   return (
     <View style={{ gap: spacing.xs, width: '100%' }}>
       {label ? (
@@ -18,12 +44,15 @@ export function Input({ label, error, style, ...rest }: Props) {
       ) : null}
       <TextInput
         placeholderTextColor={colors.textDisabled}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
         style={[
           typography.body,
           styles.input,
           {
             backgroundColor: colors.surface,
-            borderColor: error ? colors.danger : colors.border,
+            borderColor,
+            borderWidth: focused && !error ? 1.5 : 1,
             borderRadius: radius.md,
             color: colors.textPrimary,
           },

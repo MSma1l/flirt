@@ -21,6 +21,8 @@ export interface FeedCard {
 export interface SwipeResult {
   matched: boolean;
   matchId?: string;
+  /** Id-ul chatului creat la match (poate lipsi). */
+  chatId?: string | null;
 }
 
 /** Un element din lista de match-uri. */

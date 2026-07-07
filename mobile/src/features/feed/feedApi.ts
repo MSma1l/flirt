@@ -21,6 +21,7 @@ interface FeedCardResponse {
 interface SwipeResponse {
   matched: boolean;
   match_id?: string | null;
+  chat_id?: string | null;
 }
 
 interface MatchResponse {
@@ -34,7 +35,7 @@ interface MatchResponse {
 
 /** Aduce lista de carduri din feed și le mapează snake_case → camelCase. */
 export async function fetchFeed(): Promise<FeedCard[]> {
-  const { data } = await api.get<FeedCardResponse[]>('/feed');
+  const { data } = await api.get<FeedCardResponse[]>('/feed/');
   return (data ?? []).map((c) => ({
     userId: c.user_id,
     name: c.name,
@@ -62,6 +63,7 @@ export async function swipe(
   return {
     matched: !!data.matched,
     matchId: data.match_id ?? undefined,
+    chatId: data.chat_id ?? undefined,
   };
 }
 

@@ -185,6 +185,135 @@ async def test_mutual_like_creates_match(client):
 
 
 @pytest.mark.asyncio
+async def test_mutual_like_creates_chat(client):
+    """Match reciproc → chat_id ne-null și chat vizibil în GET /chats (fix)."""
+    a_headers, a_id = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    b_headers, b_id = await _make_user(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "like"},
+        headers=a_headers,
+    )
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": a_id, "action": "like"},
+        headers=b_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["matched"] is True
+    assert data["chat_id"] is not None, "Un match trebuie să producă un chat_id."
+
+    # Chat-ul apare în lista de dialoguri a ambilor.
+    for headers in (a_headers, b_headers):
+        resp = await client.get(f"{API}/chats/", headers=headers)
+        assert resp.status_code == 200, resp.text
+        chat_ids = {c["chat_id"] for c in resp.json()}
+        assert data["chat_id"] in chat_ids, resp.json()
+
+
+@pytest.mark.asyncio
+async def test_swipe_dislike_has_no_chat_id(client):
+    """Un swipe fără match întoarce chat_id None."""
+    a_headers, _ = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    _, b_id = await _make_user(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "like"},
+        headers=a_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["chat_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_feed_excludes_blocked_both_directions(client):
+    """I1: A blochează B → B nu apare la A, iar A nu apare la B."""
+    a_headers, a_id = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    b_headers, b_id = await _make_user(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    resp = await client.post(
+        f"{API}/social/blocks",
+        json={"target_user_id": b_id},
+        headers=a_headers,
+    )
+    assert resp.status_code == 201, resp.text
+
+    # B nu apare în feed-ul lui A (blochează în direcția blocker → blocked).
+    resp = await client.get(f"{API}/feed/", headers=a_headers)
+    assert b_id not in {c["user_id"] for c in resp.json()}
+
+    # A nu apare în feed-ul lui B (direcția inversă blocked → blocker).
+    resp = await client.get(f"{API}/feed/", headers=b_headers)
+    assert a_id not in {c["user_id"] for c in resp.json()}
+
+
+@pytest.mark.asyncio
+async def test_feed_respects_profile_hidden(client):
+    """I2: B ascunde profilul → B nu mai apare în feed-ul lui A."""
+    a_headers, _ = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    b_headers, b_id = await _make_user(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    # Inițial B e vizibil.
+    resp = await client.get(f"{API}/feed/", headers=a_headers)
+    assert b_id in {c["user_id"] for c in resp.json()}
+
+    # B își ascunde profilul.
+    resp = await client.put(
+        f"{API}/settings/", json={"profile_hidden": True}, headers=b_headers
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.get(f"{API}/feed/", headers=a_headers)
+    assert b_id not in {c["user_id"] for c in resp.json()}
+
+
+@pytest.mark.asyncio
+async def test_feed_language_hard_gate(client):
+    """I3: candidat fără nicio limbă comună cu userul curent → exclus (TZ 4.6)."""
+    a_headers, _ = await _make_user(
+        client,
+        "a@example.com",
+        _anketa(name="A", birth_year=_ADULT_YEAR, languages=["ru", "ro"]),
+    )
+    # B nu are nicio limbă comună cu A.
+    _, b_id = await _make_user(
+        client,
+        "b@example.com",
+        _anketa(name="B", birth_year=_ADULT_YEAR, languages=["en"]),
+    )
+    # C are o limbă comună (ro) → rămâne vizibil, ca sanity check.
+    _, c_id = await _make_user(
+        client,
+        "c@example.com",
+        _anketa(name="C", birth_year=_ADULT_YEAR, languages=["ro", "en"]),
+    )
+
+    resp = await client.get(f"{API}/feed/", headers=a_headers)
+    ids = {c["user_id"] for c in resp.json()}
+    assert b_id not in ids, "Fără limbă comună → exclus din feed."
+    assert c_id in ids, "Cu limbă comună → rămâne în feed."
+
+
+@pytest.mark.asyncio
 async def test_age_separation(client):
     """Un user 18+ NU vede un profil 16–17 și invers (TZ 2.3)."""
     adult_headers, adult_id = await _make_user(

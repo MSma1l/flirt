@@ -31,7 +31,7 @@ describe('fetchChats', () => {
 
     const chats = await fetchChats();
 
-    expect(api.get).toHaveBeenCalledWith('/chats');
+    expect(api.get).toHaveBeenCalledWith('/chats/');
     expect(chats).toEqual([
       {
         chatId: 'c1',

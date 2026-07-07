@@ -7,16 +7,17 @@ from datetime import date
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
+from app.models.account import Block, UserSettings
 from app.models.interest import Interest, ProfileInterest
 from app.models.profile import Profile
 from app.models.swipe import Like, Match
 from app.models.user import User
 from app.schemas.feed import FeedCard, MatchOut, SwipeResult
+from app.services import chat_service
 from app.services.compatibility import compute_compatibility
 
-# --- Reguli de business (nu hardcodate în mijlocul logicii) ------------------
-DEFAULT_FEED_LIMIT = 10
-ADULT_AGE = 18          # pragul 16-17 / 18+ (TZ 2.3)
+# --- Reguli de business (din config, nu hardcodate în mijlocul logicii) ------
 MAX_TOP_INTERESTS = 3   # câte interese afișăm pe cartelă (TZ 4.1)
 
 
@@ -32,7 +33,7 @@ def _calc_age(birth_date: date, today: date | None = None) -> int:
 
 def _age_group(age: int) -> str:
     """Grupa de vârstă pentru separarea din feed (TZ 2.3): 'minor' vs 'adult'."""
-    return "adult" if age >= ADULT_AGE else "minor"
+    return "adult" if age >= settings.adult_age else "minor"
 
 
 def _normalized_pair(x: uuid.UUID, y: uuid.UUID) -> tuple[uuid.UUID, uuid.UUID]:
@@ -57,14 +58,27 @@ async def _interests_by_profile(
     return mapping
 
 
+def _has_common_language(a: Profile, b: Profile) -> bool:
+    """True dacă cele două profiluri au cel puțin o limbă comună (gate TZ 4.6)."""
+    la = {str(x) for x in (a.languages or []) if x}
+    lb = {str(x) for x in (b.languages or []) if x}
+    return bool(la & lb)
+
+
 async def get_feed(
-    db: AsyncSession, user: User, limit: int = DEFAULT_FEED_LIMIT
+    db: AsyncSession, user: User, limit: int | None = None
 ) -> list[FeedCard]:
     """Feed-ul de candidate pentru `user`, sortat descrescător după compatibilitate.
 
     Candidate = profiluri `completed`, exclus userul curent și cei deja swipe-uiți,
-    din aceeași grupă de vârstă (16–17 vs 18+, TZ 2.3).
+    din aceeași grupă de vârstă (16–17 vs 18+, TZ 2.3). Sunt excluși userii
+    blocați (în orice direcție, I1), cei cu profil ascuns (I2) și cei fără nicio
+    limbă comună (gate dur, I3 / TZ 4.6).
     """
+    # Limita implicită vine din config (fără hardcodare).
+    if limit is None:
+        limit = settings.feed_limit
+
     # Profilul propriu — fără el nu putem calcula compatibilitate.
     my_result = await db.execute(select(Profile).where(Profile.user_id == user.id))
     my_profile = my_result.scalar_one_or_none()
@@ -79,8 +93,24 @@ async def get_feed(
     )
     swiped_ids = {row[0] for row in swiped_result.all()}
 
-    # Candidate: profiluri completate, nu eu, nu deja swipe-uiți.
-    excluded = swiped_ids | {user.id}
+    # I1 — userii blocați în ORICE direcție (blocat de mine SAU care m-a blocat).
+    blocked_result = await db.execute(
+        select(Block.blocker_id, Block.blocked_id).where(
+            or_(Block.blocker_id == user.id, Block.blocked_id == user.id)
+        )
+    )
+    blocked_ids: set[uuid.UUID] = set()
+    for blocker_id, blocked_id in blocked_result.all():
+        blocked_ids.add(blocked_id if blocker_id == user.id else blocker_id)
+
+    # I2 — userii cu profilul ascuns (UserSettings.profile_hidden = True).
+    hidden_result = await db.execute(
+        select(UserSettings.user_id).where(UserSettings.profile_hidden.is_(True))
+    )
+    hidden_ids = {row[0] for row in hidden_result.all()}
+
+    # Candidate: profiluri completate, nu eu, nu swipe-uiți, nu blocați, nu ascunși.
+    excluded = swiped_ids | blocked_ids | hidden_ids | {user.id}
     cand_result = await db.execute(
         select(Profile).where(
             Profile.completed.is_(True),
@@ -93,6 +123,8 @@ async def get_feed(
     candidates = [
         p for p in candidates if _age_group(_calc_age(p.birth_date)) == my_group
     ]
+    # I3 — gate dur pe limbă: fără nicio limbă comună, candidatul e EXCLUS.
+    candidates = [p for p in candidates if _has_common_language(my_profile, p)]
     if not candidates:
         return []
 
@@ -177,8 +209,12 @@ async def swipe(
         db.add(match)
         await db.flush()
 
+    # La producerea unui match asigurăm (idempotent) un chat pentru el, ca
+    # dialogul să existe imediat (TZ 4.7/5.1). Refolosim logica din chat_service.
+    chat = await chat_service.ensure_chat_for_match(db, match)
+
     await db.commit()
-    return SwipeResult(matched=True, match_id=match.id)
+    return SwipeResult(matched=True, match_id=match.id, chat_id=chat.id)
 
 
 async def get_matches(db: AsyncSession, user: User) -> list[MatchOut]:

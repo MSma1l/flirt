@@ -1,11 +1,32 @@
 """Teste pentru modulul cont/setări (rulează pe SQLite in-memory, TZ secț. 6)."""
-from datetime import datetime
+from datetime import date, datetime
 
 import pytest
 
 from app.core.config import settings
 
 API = "/api/v1"
+
+# An determinist pentru un profil adult (~25 ani).
+_ADULT_YEAR = date.today().year - 25
+
+
+def _anketa(name: str) -> dict:
+    """O anketă validă minimă pentru completarea profilului."""
+    return {
+        "name": name,
+        "birth_date": date(_ADULT_YEAR, 1, 1).isoformat(),
+        "gender": "male",
+        "height_cm": 180,
+        "city": "Chișinău",
+        "street": None,
+        "nationality": "Moldovean",
+        "languages": ["ru", "ro"],
+        "about": f"Salut, sunt {name}.",
+        "dating_statuses": ["serious"],
+        "interests": ["sport"],
+        "photos": [],
+    }
 
 
 def _extract_token(payload: dict) -> str | None:
@@ -173,3 +194,51 @@ async def test_account_deletion_and_cancel(client):
         f"{API}/settings/account/delete/cancel", headers=headers
     )
     assert resp.status_code == 204, resp.text
+
+
+@pytest.mark.asyncio
+async def test_account_deletion_revokes_sessions_and_hides_profile(client):
+    """I4: ștergerea contului revocă sesiunile de refresh și ascunde profilul."""
+    # Viewer A (profil complet) — ca să verificăm dispariția din feed.
+    a_body = {"email": "viewer@example.com", "password": "Str0ng-Passw0rd!"}
+    a_resp = await client.post(f"{API}/auth/register", json=a_body)
+    a_headers = {"Authorization": f"Bearer {a_resp.json()['access_token']}"}
+    resp = await client.put(
+        f"{API}/profiles/me", json=_anketa("Viewer"), headers=a_headers
+    )
+    assert resp.status_code == 200, resp.text
+
+    # Userul D care își va șterge contul (profil complet + refresh token).
+    d_body = {"email": "delete-me@example.com", "password": "Str0ng-Passw0rd!"}
+    d_resp = await client.post(f"{API}/auth/register", json=d_body)
+    d_tokens = d_resp.json()
+    d_refresh = d_tokens["refresh_token"]
+    d_headers = {"Authorization": f"Bearer {d_tokens['access_token']}"}
+    resp = await client.put(
+        f"{API}/profiles/me", json=_anketa("DeleteMe"), headers=d_headers
+    )
+    assert resp.status_code == 200, resp.text
+    d_id = await _me_id(client, d_headers)
+
+    # Înainte de ștergere: D e vizibil în feed-ul lui A.
+    resp = await client.get(f"{API}/feed/", headers=a_headers)
+    assert d_id in {c["user_id"] for c in resp.json()}
+
+    # D cere ștergerea contului.
+    resp = await client.post(f"{API}/settings/account/delete", headers=d_headers)
+    assert resp.status_code == 200, resp.text
+
+    # Sesiunile de refresh sunt revocate → refresh-ul e respins.
+    resp = await client.post(
+        f"{API}/auth/refresh", json={"refresh_token": d_refresh}
+    )
+    assert resp.status_code == 401, resp.text
+
+    # Profilul e ascuns → D nu mai apare în feed-ul lui A.
+    resp = await client.get(f"{API}/feed/", headers=a_headers)
+    assert d_id not in {c["user_id"] for c in resp.json()}
+
+    # Setările reflectă profile_hidden=True (creat dacă lipsea).
+    resp = await client.get(f"{API}/settings/", headers=d_headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["profile_hidden"] is True

@@ -92,6 +92,19 @@ TZ secț. 11 (roadmap adus în MVP).
 - ❌ Upload poze anketă (TZ 2.4) — momentan doar câmp opțional de URL-uri.
 - ❌ Swipe / Compatibility / Chat / Events / Monetizare — etape următoare.
 
+## Etapa 8 — Gate de revizuire finală + fix-uri (✅ făcut)
+Revizuire completă cu 4 sub-agenți (backend, mobile, design, acoperire TZ) → 3 sub-agenți de fix.
+Rezultat: nucleul confirmat solid (JWT RS256, mascare, culori exacte, zero hardcodare). Reparat:
+- ✅ **Backend siguranță**: userii blocați excluși din feed (I1), „ascunde profil" aplicat (I2),
+  gate dur pe limbă comună (I3), ștergerea contului revocă sesiunile + ascunde profilul (I4).
+- ✅ **match → chat**: `swipe` creează chat-ul și întoarce `chat_id`; popup-ul „Connect!" duce la chat.
+- ✅ **Constante de business în config** (ponderi compat, adult_age, feed_limit, story_ttl) — fără hardcodare.
+- ✅ **Mobile prod**: trailing-slash pe colecții (risc nginx 307), reload deck la epuizare,
+  badge necitite pe tab Mesaje, buton bold + input focus (fidelitate prototip).
+- ✅ **Docs sincronizate** cu MVP-ul real (api-spec, data-models, navigation, screens, overview) —
+  marcaje „✅ Implementat" vs „🔜 Planificat", Stories adăugat.
+- Teste după fix: **backend 47 ✔, mobile 85 ✔, tsc curat, linkuri docs OK**.
+
 ## 🔎 Gate de revizuire finală (cerut de user)
 La finalul întregii dezvoltări (nu doar per-etapă): revizuire completă cu **sub-agenți în paralel**
 care verifică că tot codul corespunde și funcționează conform `docs/` și prototipului de design

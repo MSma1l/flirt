@@ -130,13 +130,13 @@ function toSettingsPayload(patch: SettingsUpdate): Record<string, unknown> {
 
 /** Aduce setările contului și le mapează în camelCase. */
 export async function fetchSettings(): Promise<Settings> {
-  const { data } = await api.get<SettingsResponse>('/settings');
+  const { data } = await api.get<SettingsResponse>('/settings/');
   return mapSettings(data);
 }
 
 /** Salvează o actualizare parțială și întoarce setările rezultate. */
 export async function updateSettings(patch: SettingsUpdate): Promise<Settings> {
-  const { data } = await api.put<SettingsResponse>('/settings', toSettingsPayload(patch));
+  const { data } = await api.put<SettingsResponse>('/settings/', toSettingsPayload(patch));
   return mapSettings(data);
 }
 
@@ -153,7 +153,7 @@ export async function cancelAccountDeletion(): Promise<void> {
 
 /** Aduce biletul Flirt Party. */
 export async function fetchTicket(): Promise<Ticket> {
-  const { data } = await api.get<TicketResponse>('/ticket');
+  const { data } = await api.get<TicketResponse>('/ticket/');
   return { code: data.code, used: !!data.used };
 }
 

@@ -12,14 +12,12 @@ from fastapi import HTTPException, status
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.profile import Profile
 from app.models.story import Story
 from app.models.swipe import Match
 from app.models.user import User
 from app.schemas.story import StoryIn, StoryOut, UserStories
-
-# Durata de viață a unei povești (TZ secț. 11).
-STORY_TTL = timedelta(hours=24)
 
 
 def _to_story_out(story: Story) -> StoryOut:
@@ -35,11 +33,13 @@ def _to_story_out(story: Story) -> StoryOut:
 
 async def create_story(db: AsyncSession, user: User, data: StoryIn) -> StoryOut:
     """Creează o poveste care expiră peste 24h."""
+    # Durata de viață a poveștii vine din config (TZ secț. 11), fără hardcodare.
     story = Story(
         user_id=user.id,
         media_url=data.media_url,
         caption=data.caption,
-        expires_at=datetime.now(timezone.utc) + STORY_TTL,
+        expires_at=datetime.now(timezone.utc)
+        + timedelta(hours=settings.story_ttl_hours),
     )
     db.add(story)
     await db.commit()

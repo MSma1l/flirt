@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { fetchChats, fetchMessages, markRead, sendMessage } from '@/features/chat/chatApi';
+import { fetchMessages, markRead, sendMessage } from '@/features/chat/chatApi';
 import { MessageBubble } from '@/features/chat/MessageBubble';
 import { ChatMessage, ChatSummary } from '@/features/chat/types';
 import { useAuthStore } from '@/store/authStore';

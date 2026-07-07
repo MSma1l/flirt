@@ -1,9 +1,10 @@
 /** Deck-ul de ankete (TZ 4): feed via React Query, swipe cu butoane, modal la match. */
-import { useQuery } from '@tanstack/react-query';
-import React, { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { ScreenContainer } from '@/components/ui';
+import { Button, ScreenContainer } from '@/components/ui';
 import { fetchFeed, swipe } from '@/features/feed/feedApi';
 import { MatchModal } from '@/features/feed/MatchModal';
 import { ProfileCard } from '@/features/feed/ProfileCard';
@@ -13,6 +14,8 @@ import { useTheme } from '@theme/index';
 
 export default function AnketeScreen() {
   const { colors, typography, spacing } = useTheme();
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const { data, isLoading, isError, refetch } = useQuery<FeedCard[]>({
     queryKey: ['feed'],
     queryFn: fetchFeed,
@@ -21,20 +24,46 @@ export default function AnketeScreen() {
   const [index, setIndex] = useState(0);
   const [busy, setBusy] = useState(false);
   const [matchName, setMatchName] = useState<string | null>(null);
+  const [matchChatId, setMatchChatId] = useState<string | null>(null);
 
   const cards = data ?? [];
   const current = cards[index];
+
+  // Când sosesc date noi (reîncărcare feed), pornim iar de la primul card.
+  useEffect(() => {
+    setIndex(0);
+  }, [data]);
 
   const onSwipe = async (action: SwipeAction) => {
     if (!current || busy) return;
     setBusy(true);
     try {
       const result = await swipe(current.userId, action);
-      if (result.matched) setMatchName(current.name);
+      if (result.matched) {
+        setMatchName(current.name);
+        setMatchChatId(result.chatId ?? null);
+        queryClient.invalidateQueries({ queryKey: ['chats'] });
+      }
       setIndex((i) => i + 1);
     } finally {
       setBusy(false);
     }
+  };
+
+  const closeMatch = () => {
+    setMatchName(null);
+    setMatchChatId(null);
+  };
+
+  const onWriteMessage = () => {
+    const chatId = matchChatId;
+    closeMatch();
+    if (chatId) router.push(`/chat/${chatId}`);
+  };
+
+  const reloadDeck = () => {
+    setIndex(0);
+    refetch();
   };
 
   if (isLoading) {
@@ -64,11 +93,20 @@ export default function AnketeScreen() {
     return (
       <ScreenContainer>
         <StoriesBar />
-        <View style={styles.emptyState}>
+        <View style={[styles.emptyState, { gap: spacing.lg }]}>
           <Text style={[typography.body, styles.center, { color: colors.textSecondary }]}>
             Nu mai sunt ankete acum
           </Text>
+          <Button label="Caută mai multe" onPress={reloadDeck} testID="deck-reload" />
         </View>
+
+        {/* Match-ul poate apărea și pe ultimul card (deck golit după swipe). */}
+        <MatchModal
+          visible={matchName !== null}
+          name={matchName ?? ''}
+          onWriteMessage={onWriteMessage}
+          onContinue={closeMatch}
+        />
       </ScreenContainer>
     );
   }
@@ -113,8 +151,8 @@ export default function AnketeScreen() {
       <MatchModal
         visible={matchName !== null}
         name={matchName ?? ''}
-        onWriteMessage={() => setMatchName(null)}
-        onContinue={() => setMatchName(null)}
+        onWriteMessage={onWriteMessage}
+        onContinue={closeMatch}
       />
     </ScreenContainer>
   );

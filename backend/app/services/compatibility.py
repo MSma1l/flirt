@@ -10,15 +10,12 @@ from __future__ import annotations
 
 import math
 
+from app.core.config import settings
 from app.models.profile import Profile
 
 # --- Ponderi factori (sumă = 1.0) — TZ 4.6 -----------------------------------
-W_INTERESTS = 0.30  # suprapunere interese (Jaccard pe slug-uri)
-W_STATUS = 0.15     # suprapunere statusuri de cunoștință
-W_HUMOR = 0.20      # similaritate cosinus pe vectorul de umor
-W_DISTANCE = 0.15   # proximitate geografică (placeholder pe oraș deocamdată)
-W_LANGUAGES = 0.10  # limbi comune (GATE: min. o limbă comună obligatorie)
-W_BEHAVIOR = 0.10   # semnale comportamentale (placeholder neutru deocamdată)
+# Valorile provin din config (fără hardcodare); default-urile din `settings`
+# păstrează comportamentul numeric istoric.
 
 # --- Valori neutre / placeholder pentru factori încă neimplementați ----------
 NEUTRAL_HUMOR = 0.5      # când lipsește vectorul de umor la cel puțin unul
@@ -132,12 +129,12 @@ def compute_compatibility(
     behavior = BEHAVIOR_NEUTRAL
 
     score = (
-        W_INTERESTS * interests
-        + W_STATUS * status
-        + W_HUMOR * humor
-        + W_DISTANCE * distance
-        + W_LANGUAGES * languages
-        + W_BEHAVIOR * behavior
+        settings.compat_w_interests * interests
+        + settings.compat_w_status * status
+        + settings.compat_w_humor * humor
+        + settings.compat_w_distance * distance
+        + settings.compat_w_languages * languages
+        + settings.compat_w_behavior * behavior
     )
 
     # Normalizat 0–100, rotunjit la procent întreg (clamp de siguranță).

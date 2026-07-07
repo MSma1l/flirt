@@ -42,6 +42,21 @@ class Settings(BaseSettings):
     search_radius_default_km: int = 50
     account_deletion_grace_days: int = 30
 
+    # Reguli feed / vârstă (fără hardcodare în servicii)
+    adult_age: int = 18          # pragul 16-17 / 18+ (TZ 2.3)
+    feed_limit: int = 10         # câte cartele întoarce feed-ul implicit (TZ 4)
+
+    # Stories
+    story_ttl_hours: int = 24    # durata de viață a unei povești (TZ secț. 11)
+
+    # Ponderi Compatibility Score (sumă = 1.0) — TZ 4.6
+    compat_w_interests: float = 0.30
+    compat_w_status: float = 0.15
+    compat_w_humor: float = 0.20
+    compat_w_distance: float = 0.15
+    compat_w_languages: float = 0.10
+    compat_w_behavior: float = 0.10
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

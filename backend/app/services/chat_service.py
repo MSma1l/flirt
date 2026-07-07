@@ -46,6 +46,14 @@ async def _ensure_chat_for_match(db: AsyncSession, match: Match) -> Chat:
     return chat
 
 
+async def ensure_chat_for_match(db: AsyncSession, match: Match) -> Chat:
+    """Wrapper public reutilizabil (ex. din feed_service la producerea unui match).
+
+    Nu comite — apelantul decide momentul commit-ului.
+    """
+    return await _ensure_chat_for_match(db, match)
+
+
 async def _get_participant_chat(
     db: AsyncSession, user: User, chat_id: uuid.UUID
 ) -> Chat:

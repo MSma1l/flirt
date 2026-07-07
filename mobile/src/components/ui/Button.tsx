@@ -8,7 +8,7 @@ import {
   ViewStyle,
 } from 'react-native';
 
-import { useTheme } from '@theme/index';
+import { fonts, useTheme } from '@theme/index';
 
 type Variant = 'primary' | 'outline' | 'ghost';
 
@@ -89,4 +89,6 @@ export function Button({
   );
 }
 
-const styles = StyleSheet.create({ label: { textAlign: 'center' } });
+const styles = StyleSheet.create({
+  label: { textAlign: 'center', fontFamily: fonts.bold },
+});

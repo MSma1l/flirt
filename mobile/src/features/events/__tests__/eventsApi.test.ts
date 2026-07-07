@@ -33,7 +33,7 @@ describe('fetchEvents', () => {
 
     const events = await fetchEvents();
 
-    expect(api.get).toHaveBeenCalledWith('/events');
+    expect(api.get).toHaveBeenCalledWith('/events/');
     expect(events).toEqual([
       {
         id: 'e1',

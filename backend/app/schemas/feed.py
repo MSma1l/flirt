@@ -35,6 +35,8 @@ class SwipeResult(BaseModel):
 
     matched: bool
     match_id: uuid.UUID | None = None
+    # Chat-ul creat pentru match (None când swipe-ul nu produce match).
+    chat_id: uuid.UUID | None = None
 
 
 class MatchOut(BaseModel):

@@ -1,167 +1,122 @@
 # FLIRT — Structura de navigație (expo-router)
 
-> Vezi și: [`README.md`](./README.md) · [`screens.md`](./screens.md) · [`styling.md`](./styling.md)
+> Vezi și: [`README.md`](./README.md) · [`screens.md`](./screens.md) · [`styling.md`](./styling.md) · [`PROGRESS.md`](../../PROGRESS.md)
+>
+> Acest document a fost aliniat la rutele **reale** din `mobile/app/**`. Ecranele care apar în blueprint dar nu sunt încă implementate sunt marcate **🔜 Planificat**.
 
-Navigația folosește **expo-router v3** (file-based, peste React Navigation). Arborele de fișiere din `src/app/` **este** graful de navigație. Rutele sunt subțiri (doar compun ecrane din `features/`).
+Navigația folosește **expo-router** (file-based, peste React Navigation). Arborele de fișiere din **`app/`** (la rădăcina `mobile/`, **nu** `src/app/`) **este** graful de navigație. Rutele sunt subțiri și compun ecrane din `src/features/*`.
 
 ---
 
-## 1. Straturi de navigație
-
-Aplicația are trei zone majore, separate prin grupuri de rute expo-router (folderele `(...)`):
+## 1. Straturi de navigație (real)
 
 | Grup / zonă | Rol | Tab bar vizibil? |
 |---|---|---|
-| `index` (root) | Splash + decizie de rutare (sesiune validă?) | nu |
-| `(auth)` | Onboarding: login, verificare facială, wizard anketă | nu |
-| `(tabs)` | Aplicația principală cu **tab bar de 3 taburi** (TZ secț. 3) | **da** |
-| `events` | Stack evenimente (listă, detaliu, hartă, passport) — peste tab bar | parțial (modal/push) |
-| `paywall` | Ecran modal de abonamente, invocabil de oriunde | nu (modal) |
+| `index` (root) | Splash + decizie de rutare (sesiune? anketă completă?) | nu |
+| `(auth)` | `welcome`, `login`, `register` | nu |
+| `(onboarding)` | Wizard anketă (un singur ecran multi-pas) | nu |
+| `(tabs)` | Aplicația principală cu **3 taburi**: `ankete` · `mesaje` · `setari` | **da** |
+| ecrane push (rădăcină) | `chat/[id]`, `profile/edit`, `favorites`, `ticket`, `blocklist`, `events/*`, `passport`, `stories/*` | nu (push peste taburi) |
 
 ---
 
-## 2. Diagramă text a rutelor
+## 2. Diagramă text a rutelor (real)
 
 ```
-Root (src/app/_layout.tsx)
-│   Providers globali: QueryClientProvider, ThemeProvider,
-│   I18nProvider, GestureHandlerRootView, SafeAreaProvider
+app/_layout.tsx  (Providers: ThemeProvider, react-query, fonturi Manrope, hidratare sesiune)
 │
-├── index.tsx ................... SPLASH → verifică sesiunea
-│        │
-│        ├─ fără sesiune ──────────────► (auth)/welcome
-│        ├─ neverificat facial ────────► (auth)/face-verify
-│        ├─ anketă incompletă ─────────► (auth)/profile-setup/basics
-│        └─ totul OK ──────────────────► (tabs)/deck
+├── index.tsx ...................... SPLASH → verifică sesiunea + anketa
+│        ├─ fără sesiune ──────────► (auth)/welcome
+│        ├─ anketă incompletă ─────► (onboarding)
+│        └─ totul OK ──────────────► (tabs)/ankete
 │
 ├── (auth)/  [STACK, fără tab bar]
-│     ├── welcome ............... alegere metodă login
-│     ├── sign-in .............. Apple / Google / phone / email
-│     ├── otp .................. cod SMS/OTP (dacă login prin telefon)
-│     ├── face-verify .......... liveness-check (selfie/video)
-│     └── profile-setup/  [STACK imbricat — wizard multi-pas]
-│           basics → location → photos → about →
-│           interests → status → humor ──► (tabs)/deck
+│     ├── welcome ................. alegere: login / register
+│     ├── login .................. email + parolă
+│     └── register ............... email + parolă (min 8)
+│
+├── (onboarding)/  [STACK]
+│     └── index .................. wizard anketă multi-pas (opțiuni din backend)
 │
 ├── (tabs)/  [TAB BAR — 3 taburi]
-│     │
-│     ├── ┌─ Tab 1: "Ankete" (deck/) ──────────────┐  [default]
-│     │   │   index ......... Swipe deck             │
-│     │   │     └─ overlay: AdInterstitial (15s)     │
-│     │   │     └─ overlay: ConnectPopup (match)     │
-│     │   └────────────────────────────────────────┘
-│     │
-│     ├── ┌─ Tab 2: "Mesaje" (messages/) ──────────┐
-│     │   │   index ......... Lista de dialoguri     │
-│     │   │   [chatId] ...... Ecran de chat  (push)  │
-│     │   └────────────────────────────────────────┘
-│     │
-│     └── ┌─ Tab 3: "Setări" (settings/) ──────────┐
-│         │   index ......... Meniu setări + profil  │
-│         │   profile-edit .. Editare anketă  (push) │
-│         │   favorites ..... Anketă favorite (push) │
-│         │   ticket ........ Bilet Flirt Party(push)│
-│         │   subscription .. Gestiune abonament→ Paywall
-│         │   preferences ... Temă/notif/radius (push)│
-│         └────────────────────────────────────────┘
+│     ├── ankete .................. Feed de swipe (default) + StoriesBar
+│     ├── mesaje .................. Lista de dialoguri
+│     └── setari .................. Hub setări + profil + linkuri
 │
-├── events/  [STACK, deschis din deck event-badge / chat banner / notificare]
-│     ├── index ............... Listă evenimente
-│     ├── [eventId] ........... Detaliu eveniment ("Tot iau parte")
-│     ├── map ................. Live Events Map
-│     └── passport ............ Flirt Passport (ștampile)
-│
-└── paywall.tsx  [MODAL global]  ← invocat din deck (limită depășită),
-                                    settings/subscription, sau orice CTA premium
+├── chat/[id].tsx ................. Ecran de conversație (push)
+├── profile/edit.tsx ............. Editare anketă (push)
+├── favorites.tsx ................ Lista de favorite (push)
+├── ticket.tsx ................... Bilet Flirt Party (push)
+├── blocklist.tsx ................ Black list / deblocare (push)
+├── events/
+│     ├── index.tsx .............. Listă evenimente (push)
+│     └── [id].tsx ............... Detaliu eveniment + check-in (push)
+├── passport.tsx ................. Flirt Passport — grid ștampile (push)
+└── stories/
+      ├── [userId].tsx ........... Vizualizator povești (push)
+      └── new.tsx ................ Creare poveste prin URL (push)
 ```
 
 ---
 
-## 3. Tab bar-ul (TZ secțiunea 3)
+## 3. Tab bar-ul (real — `app/(tabs)/_layout.tsx`)
 
-Definit în `src/app/(tabs)/_layout.tsx`. Trei taburi, tabul de swipe e cel implicit:
+Trei taburi; tabul de swipe (`ankete`) e primul/implicit:
 
-| # | Rută | Etichetă (i18n) | Iconiță | Scop (TZ) |
+| # | Rută | Etichetă | Iconiță | Scop (TZ) |
 |---|---|---|---|---|
-| 1 | `deck` | Ankete | stivă de carduri | Lenta de swipe (ecran default) — TZ 4 |
-| 2 | `messages` | Mesaje | bulă de chat | Lista de dialoguri + AI-hints — TZ 5 |
-| 3 | `settings` | Setări | roată/profil | Profil, foto, bilet Flirt Party, setări — TZ 6 |
+| 1 | `ankete` | Ankete | 🂠 | Feed de swipe (ecran default) — TZ 4 |
+| 2 | `mesaje` | Mesaje | 💬 | Lista de dialoguri — TZ 5 |
+| 3 | `setari` | Setări | ⚙️ | Profil, bilet, black list, setări — TZ 6 |
 
-Caracteristici tab bar:
-- Culorile (activ/inactiv, fundal) vin din `@theme` — niciun hex hardcodat (vezi [`styling.md`](./styling.md)).
-- Tab 2 afișează un **badge de mesaje necitite** (din `chat` store).
-- Tab bar-ul se **ascunde** pe ecranele din `(auth)`, `events` și pe `paywall`.
+- Culorile (activ/inactiv, fundal, border) vin din `@theme` — niciun hex hardcodat.
+- `headerShown: false`; iconițele sunt emoji-uri simple (placeholder).
 
-Schiță `(tabs)/_layout.tsx`:
+Cod real (`app/(tabs)/_layout.tsx`):
 ```tsx
-// Ilustrativ — nu cod final de producție
-import { Tabs } from 'expo-router';
-import { useTheme } from '@theme';
-import { TabIcon } from '@components';
-
-export default function TabsLayout() {
-  const { colors } = useTheme();
-  return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.textSecondary,
-        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
-      }}
-    >
-      <Tabs.Screen name="deck"     options={{ title: t('tabs.deck'),     tabBarIcon: p => <TabIcon name="cards" {...p} /> }} />
-      <Tabs.Screen name="messages" options={{ title: t('tabs.messages'), tabBarIcon: p => <TabIcon name="chat"  {...p} /> }} />
-      <Tabs.Screen name="settings" options={{ title: t('tabs.settings'), tabBarIcon: p => <TabIcon name="gear"  {...p} /> }} />
-    </Tabs>
-  );
-}
+<Tabs screenOptions={{
+  headerShown: false,
+  tabBarActiveTintColor: colors.accent,
+  tabBarInactiveTintColor: colors.textSecondary,
+  tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
+}}>
+  <Tabs.Screen name="ankete" options={{ title: 'Ankete', tabBarIcon: ... }} />
+  <Tabs.Screen name="mesaje" options={{ title: 'Mesaje', tabBarIcon: ... }} />
+  <Tabs.Screen name="setari" options={{ title: 'Setări', tabBarIcon: ... }} />
+</Tabs>
 ```
 
 ---
 
-## 4. Stack-uri și moduri de prezentare
+## 4. Prezentare & popup-uri
 
-| Stack / ecran | Prezentare | Note |
+| Element | Prezentare (MVP) | Note |
 |---|---|---|
-| `(auth)` | stack standard (push) | fără gest de swipe-back pe pașii critici (face-verify) |
-| `profile-setup/*` | stack imbricat cu progres | bara de progres pe pași; draft persistat local |
-| `messages/[chatId]` | push în stack-ul tabului Mesaje | header cu foto + Compatibility Score |
-| `events/*` | stack modal/push | intrare din event-badge (deck), banner chat, notificare |
-| `events/map` | full-screen | `react-native-maps` |
-| `paywall` | **modal** (`presentation: 'modal'`) | invocabil global; se închide cu swipe-down |
-| `ConnectPopup` (match) | **overlay full-screen** (nu rută separată) | randat peste deck la eveniment socket |
-| `AdInterstitial` (15s) | **overlay** peste deck | apare după 10 ankete la userii free |
-| `SendFirstMessageSheet` | **bottom sheet** | apare la swipe-right (like) — TZ 4.7 |
+| `(auth)`, `(onboarding)` | stack standard (push) | fără tab bar |
+| `chat/[id]` | push la rădăcină | header cu numele interlocutorului |
+| `events/*`, `passport`, `favorites`, `ticket`, `blocklist` | push la rădăcină, deschise din hub-ul Setări sau din feed | |
+| `stories/[userId]`, `stories/new` | push | vizualizator cu bare de progres / creare prin URL |
+| `MatchModal` „Connect!" | **overlay** peste feed (nu rută) | randat la match reciproc |
+| `StoriesBar` | componentă integrată în feed (tab `ankete`) | intrare spre `stories/[userId]` |
 
-> Popup-urile efemere (match, reclamă, sheet de primul mesaj) **nu** sunt rute în `app/`. Sunt componente din feature-urile lor (`match`, `swipe`), controlate prin state, ca să nu polueze istoricul de navigație și să poată fi animate cu Reanimated.
+**🔜 Planificat (din blueprint, neimplementat):** `paywall` (modal abonamente), `events/map` (hartă react-native-maps), `SendFirstMessageSheet` (bottom sheet la like — TZ 4.7), `AdInterstitial` (reclamă 15s), gesturi de swipe (Reanimated/gesture-handler — momentan butoane like/dislike).
 
 ---
 
-## 5. Deep linking și navigație din notificări
+## 5. Deep linking și notificări
 
-expo-router mapează automat rutele la URL-uri, ceea ce permite deep linking pentru push-urile din TZ:
-
-| Sursă push (TZ) | Destinație | Exemplu link |
-|---|---|---|
-| Match nou (4.7) | `messages/[chatId]` sau ConnectPopup | `flirt://messages/abc123` |
-| Mesaj nou (5) | `messages/[chatId]` | `flirt://messages/abc123` |
-| AI-hint "reia conversația" (5.3) | `messages/[chatId]` | `flirt://messages/abc123` |
-| Sugestie eveniment (5.3 / 8) | `events/[eventId]` | `flirt://events/xyz789` |
-| Notificare bot → hartă (8.3) | `events/map` | `flirt://events/map` |
-
-Redirecturile de la `index.tsx` (sesiune / verificare / anketă incompletă) garantează că un deep link nu duce un user neautentificat direct în aplicație.
+**🔜 Planificat.** expo-router permite deep linking, dar push-urile (match nou, mesaj, AI-hint, sugestie eveniment) și maparea lor la rute nu sunt implementate în MVP. Realtime-ul din chat este **polling** (React Query), nu WebSocket.
 
 ---
 
-## 6. Guard-uri de navigație
+## 6. Guard-uri de navigație (real)
 
-Logica de "unde poate merge userul" e centralizată, nu împrăștiată prin ecrane:
+Logica de rutare inițială e centralizată în `app/index.tsx` (splash) + hidratarea sesiunii din `_layout`:
 
-1. **AuthGuard** (în `index.tsx` + `_layout` root): fără sesiune → `(auth)`.
-2. **VerificationGuard**: cont neverificat facial → vizibilitate limitată; anumite acțiuni redirectează la `(auth)/face-verify` (TZ 2.2).
-3. **OnboardingGuard**: anketă incompletă → wizard `profile-setup`.
-4. **AgeGuard**: userii 16–17 nu au acces la conținut/filtre 18+ (TZ 2.3) — aplicat la nivel de deck și filtre, nu ca rută separată.
-5. **PremiumGuard**: acțiuni premium (undo nelimitat, swipe fără limită) → `paywall` dacă userul e free (TZ 9).
+1. **AuthGuard** — fără sesiune validă → `(auth)/welcome`.
+2. **OnboardingGuard** — anketă incompletă (`profile_completed=false`) → `(onboarding)`.
+3. Totul OK → `(tabs)/ankete`.
 
-Starea folosită de guard-uri vine din `sessionStore` (`@store`), verificată în layout-uri.
+**🔜 Planificat:** `VerificationGuard` (verificare facială — TZ 2.2), `AgeGuard` explicit 16–17 / 18+ la nivel de UI (separarea pe vârstă se aplică deja în feed pe backend), `PremiumGuard` (paywall — TZ 9).
+
+Starea vine din `authStore` (Zustand) + `@/services/api` (token store: access în memorie, refresh în SecureStore).

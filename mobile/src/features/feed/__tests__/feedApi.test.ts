@@ -34,7 +34,7 @@ describe('fetchFeed', () => {
 
     const feed = await fetchFeed();
 
-    expect(api.get).toHaveBeenCalledWith('/feed');
+    expect(api.get).toHaveBeenCalledWith('/feed/');
     expect(feed).toEqual([
       {
         userId: 'u1',
@@ -78,9 +78,9 @@ describe('fetchFeed', () => {
 describe('swipe', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('trimite payload corect și mapează rezultatul', async () => {
+  it('trimite payload corect și mapează rezultatul (inclusiv chatId)', async () => {
     (api.post as jest.Mock).mockResolvedValue({
-      data: { matched: true, match_id: 'm1' },
+      data: { matched: true, match_id: 'm1', chat_id: 'c1' },
     });
 
     const result = await swipe('u1', 'like');
@@ -89,12 +89,20 @@ describe('swipe', () => {
     const [url, payload] = (api.post as jest.Mock).mock.calls[0];
     expect(url).toBe('/feed/swipe');
     expect(payload).toEqual({ target_user_id: 'u1', action: 'like' });
-    expect(result).toEqual({ matched: true, matchId: 'm1' });
+    expect(result).toEqual({ matched: true, matchId: 'm1', chatId: 'c1' });
   });
 
-  it('întoarce matchId undefined când nu e match', async () => {
+  it('întoarce matchId și chatId undefined când nu e match', async () => {
     (api.post as jest.Mock).mockResolvedValue({ data: { matched: false } });
     const result = await swipe('u2', 'dislike');
-    expect(result).toEqual({ matched: false, matchId: undefined });
+    expect(result).toEqual({ matched: false, matchId: undefined, chatId: undefined });
+  });
+
+  it('mapează chat_id null la chatId undefined', async () => {
+    (api.post as jest.Mock).mockResolvedValue({
+      data: { matched: true, match_id: 'm2', chat_id: null },
+    });
+    const result = await swipe('u3', 'like');
+    expect(result).toEqual({ matched: true, matchId: 'm2', chatId: undefined });
   });
 });

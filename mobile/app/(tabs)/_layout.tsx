@@ -1,8 +1,11 @@
 /** Tab bar principal — 3 taburi (TZ secț. 3): Ankete · Mesaje · Setări. */
+import { useQuery } from '@tanstack/react-query';
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { Text } from 'react-native';
 
+import { fetchChats } from '@/features/chat/chatApi';
+import { ChatSummary } from '@/features/chat/types';
 import { useTheme } from '@theme/index';
 
 function TabIcon({ icon, color }: { icon: string; color: string }) {
@@ -11,6 +14,14 @@ function TabIcon({ icon, color }: { icon: string; color: string }) {
 
 export default function TabsLayout() {
   const { colors } = useTheme();
+  const { data: chats } = useQuery<ChatSummary[]>({
+    queryKey: ['chats'],
+    queryFn: fetchChats,
+  });
+  const unreadTotal = (chats ?? []).reduce(
+    (sum: number, c: ChatSummary) => sum + c.unreadCount,
+    0,
+  );
   return (
     <Tabs
       screenOptions={{
@@ -35,6 +46,7 @@ export default function TabsLayout() {
         options={{
           title: 'Mesaje',
           tabBarIcon: ({ color }) => <TabIcon icon="💬" color={color} />,
+          tabBarBadge: unreadTotal > 0 ? unreadTotal : undefined,
         }}
       />
       <Tabs.Screen

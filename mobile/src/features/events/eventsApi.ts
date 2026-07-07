@@ -57,7 +57,7 @@ function mapStamp(s: PassportStampResponse): PassportStamp {
 
 /** Aduce lista de evenimente. */
 export async function fetchEvents(): Promise<EventItem[]> {
-  const { data } = await api.get<EventResponse[]>('/events');
+  const { data } = await api.get<EventResponse[]>('/events/');
   return (data ?? []).map(mapEvent);
 }
 

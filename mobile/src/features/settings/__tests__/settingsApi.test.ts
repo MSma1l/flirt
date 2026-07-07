@@ -56,7 +56,7 @@ describe('fetchSettings', () => {
 
     const settings = await fetchSettings();
 
-    expect(api.get).toHaveBeenCalledWith('/settings');
+    expect(api.get).toHaveBeenCalledWith('/settings/');
     expect(settings).toEqual(MAPPED_SETTINGS);
   });
 });
@@ -77,7 +77,7 @@ describe('updateSettings', () => {
 
     expect(api.put).toHaveBeenCalledTimes(1);
     const [url, payload] = (api.put as jest.Mock).mock.calls[0];
-    expect(url).toBe('/settings');
+    expect(url).toBe('/settings/');
     expect(payload).toEqual({
       theme: 'dark',
       search_radius_km: 25,
@@ -136,7 +136,7 @@ describe('fetchTicket', () => {
 
     const ticket = await fetchTicket();
 
-    expect(api.get).toHaveBeenCalledWith('/ticket');
+    expect(api.get).toHaveBeenCalledWith('/ticket/');
     expect(ticket).toEqual({ code: 'FP-1234', used: false });
   });
 });
