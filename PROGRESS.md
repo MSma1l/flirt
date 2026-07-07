@@ -86,6 +86,15 @@ TZ secț. 11 (roadmap adus în MVP).
 - ✅ Mobile: `StoriesBar` (integrată în feed), vizualizator `stories/[userId]` (bare progres, tap
   next/prev, ștergere), `stories/new` (creare prin URL). **82 teste ✔, tsc curat**
 
+## Etapa 9 — Moderare/Raportări + Test de umor (✅ gata & testat)
+- ✅ **Moderare (TZ 5.5/10)**: model `Report`, `POST /reports` (categorii spam/fake/offensive/obscene),
+  **auto-ban** la prag de raportori distincți (config) → ascunde profilul. Migrație. Mobile: buton ⚠
+  în chat + pe card, `ReportModal`.
+- ✅ **Test de umor (TZ 2.7)**: `GET /humor/quiz`, `POST /humor/submit` → scrie `Profile.humor_vector`,
+  `GET /humor/me`. Mobile: ecran `humor` (carduri glume + amuzant/nu), link în Setări.
+  **Compatibility Score folosește acum umorul real** (nu mai e neutru).
+- Teste: **backend 55 ✔, mobile 95 ✔, tsc curat**.
+
 ## Amânat intenționat (❌ — mai târziu)
 - ❌ Verificare facială / liveness (TZ 2.2).
 - ❌ Înregistrare prin telefon + OTP (TZ 2.1).

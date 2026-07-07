@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchMessages, markRead, sendMessage } from '@/features/chat/chatApi';
 import { MessageBubble } from '@/features/chat/MessageBubble';
 import { ChatMessage, ChatSummary } from '@/features/chat/types';
+import { ReportModal } from '@/features/moderation/ReportModal';
 import { useAuthStore } from '@/store/authStore';
 import { useTheme } from '@theme/index';
 
@@ -32,6 +33,7 @@ export default function ChatScreen() {
   const currentUserId = useAuthStore((s) => s.user?.id ?? '');
 
   const [draft, setDraft] = useState('');
+  const [reportOpen, setReportOpen] = useState(false);
 
   const { data, isLoading, isError } = useQuery<ChatMessage[]>({
     queryKey: ['messages', chatId],
@@ -68,6 +70,16 @@ export default function ChatScreen() {
   const messages = data ?? [];
   const inverted = useMemo(() => [...messages].reverse(), [messages]);
 
+  // Celălalt participant: primul senderId diferit de utilizatorul curent
+  // (fallback pe datele din lista de dialoguri).
+  const reportedUserId = useMemo(
+    () =>
+      messages.find((m: ChatMessage) => m.senderId !== currentUserId)?.senderId ??
+      summary?.otherUserId ??
+      '',
+    [messages, currentUserId, summary?.otherUserId],
+  );
+
   const trimmed = draft.trim();
   const canSend = trimmed.length > 0 && !sendMutation.isPending;
 
@@ -101,7 +113,25 @@ export default function ChatScreen() {
         >
           {headerName}
         </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Raportează"
+          onPress={() => setReportOpen(true)}
+          disabled={!reportedUserId}
+          hitSlop={8}
+        >
+          <Text style={[typography.h2, { color: colors.warning }]}>⚠</Text>
+        </Pressable>
       </View>
+
+      {reportOpen ? (
+        <ReportModal
+          visible={reportOpen}
+          reportedUserId={reportedUserId}
+          chatId={chatId}
+          onClose={() => setReportOpen(false)}
+        />
+      ) : null}
 
       <KeyboardAvoidingView
         style={styles.flex}

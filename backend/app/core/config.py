@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     # Stories
     story_ttl_hours: int = 24    # durata de viață a unei povești (TZ secț. 11)
 
+    # Moderare (TZ 10)
+    report_autoban_threshold: int = 3   # câte rapoarte distincte → auto-ascundere cont
+
     # Ponderi Compatibility Score (sumă = 1.0) — TZ 4.6
     compat_w_interests: float = 0.30
     compat_w_status: float = 0.15

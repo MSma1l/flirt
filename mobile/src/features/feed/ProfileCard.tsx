@@ -1,7 +1,8 @@
 /** Cardul de profil din deck: foto/placeholder, overlay cu date, interese, badge. */
-import React from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { ReportModal } from '@/features/moderation/ReportModal';
 import { useTheme } from '@theme/index';
 
 import { CompatBadge } from './CompatBadge';
@@ -16,6 +17,7 @@ export function ProfileCard({ card }: Props) {
   const hasPhoto = card.photos.length > 0;
   const initial = card.name.trim().charAt(0).toUpperCase() || '?';
   const interests = card.topInterests.slice(0, 3);
+  const [reportOpen, setReportOpen] = useState(false);
 
   return (
     <View
@@ -50,6 +52,20 @@ export function ProfileCard({ card }: Props) {
         <View style={styles.badgeWrap}>
           <CompatBadge score={card.compatibility} />
         </View>
+
+        {/* Buton discret de raportare sus-stânga */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Raportează"
+          onPress={() => setReportOpen(true)}
+          hitSlop={8}
+          style={[
+            styles.reportWrap,
+            { backgroundColor: colors.surface, borderRadius: radius.pill },
+          ]}
+        >
+          <Text style={[typography.badge, { color: colors.warning }]}>⚠</Text>
+        </Pressable>
 
         {/* Overlay jos cu detalii */}
         <View
@@ -106,6 +122,14 @@ export function ProfileCard({ card }: Props) {
           ) : null}
         </View>
       </View>
+
+      {reportOpen ? (
+        <ReportModal
+          visible={reportOpen}
+          reportedUserId={card.userId}
+          onClose={() => setReportOpen(false)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -132,6 +156,16 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 16,
     right: 16,
+  },
+  reportWrap: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.85,
   },
   overlay: {
     padding: 16,
