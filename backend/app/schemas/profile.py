@@ -43,6 +43,18 @@ class ProfileOut(BaseModel):
     completed: bool = False
 
 
+class PhotoUrlIn(BaseModel):
+    """URL-ul unei poze — folosit la add (mod stub) și delete."""
+
+    url: str = Field(min_length=1, max_length=1000)
+
+
+class PhotoOrderIn(BaseModel):
+    """Noua ordine a pozelor — trebuie să conțină exact aceleași URL-uri."""
+
+    urls: list[str] = Field(default_factory=list)
+
+
 class ReferenceItem(BaseModel):
     """Opțiune de referință cu valoare + etichete localizate."""
 

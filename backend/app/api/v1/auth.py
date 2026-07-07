@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+import re
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser
@@ -11,12 +13,15 @@ from app.db.session import get_db
 from app.schemas.auth import (
     LoginIn,
     LogoutIn,
+    PhoneRequestIn,
+    PhoneVerifyIn,
     RefreshIn,
     RegisterIn,
+    SocialLoginIn,
     TokenPair,
     UserOut,
 )
-from app.services import auth_service
+from app.services import auth_providers, auth_service
 
 router = APIRouter()
 
@@ -45,6 +50,47 @@ async def refresh(data: RefreshIn, db: DbSession) -> TokenPair:
 async def logout(data: LogoutIn, db: DbSession) -> None:
     """Revocă sesiunea de refresh."""
     await auth_service.logout(db, refresh_token=data.refresh_token)
+
+
+def _phone_key(phone: str) -> str:
+    """Normalizează un număr de telefon la un identificator stabil (doar cifre)."""
+    return re.sub(r"\D", "", phone)
+
+
+@router.post("/google", response_model=TokenPair)
+async def google_login(data: SocialLoginIn, db: DbSession) -> TokenPair:
+    """Google Sign-In: validează id_token-ul și autentifică (get-or-create)."""
+    claims = await auth_providers.verify_google(data.id_token)
+    # Email derivat determinist ca să refolosim modelul User existent.
+    email = f"google_{claims['sub']}@ext.flirt"
+    return await auth_service.login_with_identity(db, email=email)
+
+
+@router.post("/apple", response_model=TokenPair)
+async def apple_login(data: SocialLoginIn, db: DbSession) -> TokenPair:
+    """Apple Sign-In: validează id_token-ul și autentifică (get-or-create)."""
+    claims = await auth_providers.verify_apple(data.id_token)
+    email = f"apple_{claims['sub']}@ext.flirt"
+    return await auth_service.login_with_identity(db, email=email)
+
+
+@router.post("/phone/request", status_code=status.HTTP_204_NO_CONTENT)
+async def phone_request(data: PhoneRequestIn) -> None:
+    """Trimite un cod OTP către numărul de telefon (în stub, codul de test)."""
+    await auth_providers.request_otp(data.phone)
+
+
+@router.post("/phone/verify", response_model=TokenPair)
+async def phone_verify(data: PhoneVerifyIn, db: DbSession) -> TokenPair:
+    """Verifică OTP-ul; la cod corect autentifică (get-or-create), altfel 401."""
+    ok = await auth_providers.verify_otp(data.phone, data.code)
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired OTP code",
+        )
+    email = f"phone_{_phone_key(data.phone)}@ext.flirt"
+    return await auth_service.login_with_identity(db, email=email)
 
 
 @router.get("/me", response_model=UserOut)

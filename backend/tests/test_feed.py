@@ -3,6 +3,8 @@ from datetime import date
 
 import pytest
 
+from app.services import geo
+
 API = "/api/v1"
 
 
@@ -452,3 +454,57 @@ async def test_age_separation(client):
     assert resp.status_code == 200, resp.text
     teen_ids = {c["user_id"] for c in resp.json()}
     assert adult_id not in teen_ids
+
+
+# --- Geolocație / distanță (TZ 7) -------------------------------------------
+def test_haversine_km_known_points():
+    """`haversine_km` pe două puncte cunoscute dă o valoare rezonabilă."""
+    # Chișinău ↔ București: ~360 km în realitate (verificăm ordinul de mărime).
+    d = geo.haversine_km(47.0105, 28.8638, 44.4268, 26.1025)
+    assert 300 < d < 420, d
+    # Simetrie și punct identic.
+    assert geo.haversine_km(47.0, 28.0, 47.0, 28.0) == pytest.approx(0.0)
+    d_rev = geo.haversine_km(44.4268, 26.1025, 47.0105, 28.8638)
+    assert d == pytest.approx(d_rev)
+
+
+@pytest.mark.asyncio
+async def test_feed_distance_km_between_known_cities(client):
+    """Doi useri în orașe cunoscute diferite → distance_km ne-null și > 0."""
+    a_headers, _ = await _make_user(
+        client,
+        "a@example.com",
+        _anketa(name="A", birth_year=_ADULT_YEAR, city="Chișinău"),
+    )
+    _, b_id = await _make_user(
+        client,
+        "b@example.com",
+        _anketa(name="B", birth_year=_ADULT_YEAR, city="București"),
+    )
+
+    resp = await client.get(f"{API}/feed/", headers=a_headers)
+    assert resp.status_code == 200, resp.text
+    card = next(c for c in resp.json() if c["user_id"] == b_id)
+    assert card["distance_km"] is not None
+    assert card["distance_km"] > 0
+
+
+@pytest.mark.asyncio
+async def test_feed_distance_km_none_for_unknown_city(client):
+    """Oraș necunoscut (negeocodabil) → distance_km None, fără eroare."""
+    a_headers, _ = await _make_user(
+        client,
+        "a@example.com",
+        _anketa(name="A", birth_year=_ADULT_YEAR, city="Chișinău"),
+    )
+    # Oraș inexistent în dicționarul stub → geocode None.
+    _, b_id = await _make_user(
+        client,
+        "b@example.com",
+        _anketa(name="B", birth_year=_ADULT_YEAR, city="Necunoscutopol"),
+    )
+
+    resp = await client.get(f"{API}/feed/", headers=a_headers)
+    assert resp.status_code == 200, resp.text
+    card = next(c for c in resp.json() if c["user_id"] == b_id)
+    assert card["distance_km"] is None

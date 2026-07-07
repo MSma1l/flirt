@@ -15,6 +15,7 @@ from app.schemas.profile import (
     ReferenceItem,
     ReferenceOut,
 )
+from app.services.storage import get_storage
 
 # --- Cataloage de referință (derivate din TZ, nu hardcodate ca reguli) ---------
 
@@ -150,6 +151,94 @@ async def get_profile_out(db: AsyncSession, user) -> ProfileOut | None:
         return None
     slugs = await _interest_slugs(db, profile.id)
     return _to_out(profile, slugs)
+
+
+async def _get_profile_or_404(db: AsyncSession, user) -> Profile:
+    """Întoarce modelul Profile al userului sau ridică 404 dacă lipsește."""
+    result = await db.execute(select(Profile).where(Profile.user_id == user.id))
+    profile = result.scalar_one_or_none()
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Anketa nu există încă."
+        )
+    return profile
+
+
+async def add_photo(
+    db: AsyncSession,
+    user,
+    *,
+    filename: str,
+    content: bytes,
+    content_type: str,
+    url: str | None = None,
+) -> list[str]:
+    """Adaugă o poză (prin upload sau URL direct în stub) și întoarce lista.
+
+    Respectă `settings.max_photos` → 422 la depășire.
+    """
+    profile = await _get_profile_or_404(db, user)
+    photos = list(profile.photos or [])
+
+    if len(photos) >= settings.max_photos:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Numărul maxim de poze este {settings.max_photos}.",
+        )
+
+    storage = get_storage()
+    # RO: în stub acceptăm și un URL direct; altfel salvăm conținutul.
+    saved_url = url if url else await storage.save(filename, content, content_type)
+
+    photos.append(saved_url)
+    profile.photos = photos  # reasignare → SQLAlchemy detectează modificarea JSON
+    db.add(profile)
+    await db.commit()
+    await db.refresh(profile)
+    return list(profile.photos or [])
+
+
+async def remove_photo(db: AsyncSession, user, url: str) -> list[str]:
+    """Scoate un URL din poze + îl șterge din storage; întoarce lista."""
+    profile = await _get_profile_or_404(db, user)
+    photos = list(profile.photos or [])
+
+    if url not in photos:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Poza nu a fost găsită în profil.",
+        )
+
+    photos = [p for p in photos if p != url]
+    profile.photos = photos
+    db.add(profile)
+    await db.commit()
+    await db.refresh(profile)
+
+    # RO: ștergere din storage (no-op în stub) — după commit-ul DB.
+    storage = get_storage()
+    await storage.delete(url)
+
+    return list(profile.photos or [])
+
+
+async def reorder_photos(db: AsyncSession, user, urls: list[str]) -> list[str]:
+    """Reordonează pozele; validează că sunt exact aceleași URL-uri (422 altfel)."""
+    profile = await _get_profile_or_404(db, user)
+    current = list(profile.photos or [])
+
+    # RO: trebuie să fie exact aceeași mulțime (fără adăugări/lipsuri/duplicate).
+    if sorted(urls) != sorted(current):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Lista de reordonare trebuie să conțină exact aceleași poze.",
+        )
+
+    profile.photos = list(urls)
+    db.add(profile)
+    await db.commit()
+    await db.refresh(profile)
+    return list(profile.photos or [])
 
 
 async def upsert_anketa(db: AsyncSession, user, data: AnketaIn) -> ProfileOut:

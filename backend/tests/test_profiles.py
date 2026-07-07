@@ -125,3 +125,110 @@ async def test_about_too_long_rejected(client):
 
     resp = await client.put(f"{API}/profiles/me", json=body, headers=headers)
     assert resp.status_code == 422, resp.text
+
+
+async def _setup_profile(client) -> dict[str, str]:
+    """Creează un profil valid și întoarce headerele de autentificare."""
+    headers = await _auth_headers(client)
+    resp = await client.put(
+        f"{API}/profiles/me", json=_valid_anketa(), headers=headers
+    )
+    assert resp.status_code == 200, resp.text
+    return headers
+
+
+@pytest.mark.asyncio
+async def test_add_photo_by_url_appears_in_profile(client):
+    """POST /photos cu URL → apare în lista de poze a profilului."""
+    headers = await _setup_profile(client)
+    url = "https://cdn.flirt.local/photos/abc/pic1.jpg"
+
+    resp = await client.post(
+        f"{API}/profiles/photos", json={"url": url}, headers=headers
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == [url]
+
+    resp = await client.get(f"{API}/profiles/me", headers=headers)
+    assert resp.json()["photos"] == [url]
+
+
+@pytest.mark.asyncio
+async def test_add_photo_exceeds_max_rejected(client):
+    """Depășirea max_photos → 422."""
+    from app.core.config import settings
+
+    headers = await _setup_profile(client)
+    # Umple exact până la maxim
+    for i in range(settings.max_photos):
+        resp = await client.post(
+            f"{API}/profiles/photos",
+            json={"url": f"https://cdn.flirt.local/photos/x/pic{i}.jpg"},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+
+    # Următoarea poză depășește maximul
+    resp = await client.post(
+        f"{API}/profiles/photos",
+        json={"url": "https://cdn.flirt.local/photos/x/over.jpg"},
+        headers=headers,
+    )
+    assert resp.status_code == 422, resp.text
+
+
+@pytest.mark.asyncio
+async def test_delete_photo_removes_it(client):
+    """DELETE /photos scoate URL-ul din profil."""
+    headers = await _setup_profile(client)
+    url = "https://cdn.flirt.local/photos/abc/pic1.jpg"
+    await client.post(f"{API}/profiles/photos", json={"url": url}, headers=headers)
+
+    resp = await client.request(
+        "DELETE", f"{API}/profiles/photos", json={"url": url}, headers=headers
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == []
+
+    resp = await client.get(f"{API}/profiles/me", headers=headers)
+    assert resp.json()["photos"] == []
+
+
+@pytest.mark.asyncio
+async def test_reorder_photos_changes_order(client):
+    """PUT /photos/order schimbă ordinea (aceleași URL-uri)."""
+    headers = await _setup_profile(client)
+    urls = [
+        "https://cdn.flirt.local/photos/a/1.jpg",
+        "https://cdn.flirt.local/photos/b/2.jpg",
+        "https://cdn.flirt.local/photos/c/3.jpg",
+    ]
+    for url in urls:
+        await client.post(
+            f"{API}/profiles/photos", json={"url": url}, headers=headers
+        )
+
+    reordered = [urls[2], urls[0], urls[1]]
+    resp = await client.put(
+        f"{API}/profiles/photos/order", json={"urls": reordered}, headers=headers
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == reordered
+
+    resp = await client.get(f"{API}/profiles/me", headers=headers)
+    assert resp.json()["photos"] == reordered
+
+
+@pytest.mark.asyncio
+async def test_reorder_photos_mismatch_rejected(client):
+    """PUT /photos/order cu URL-uri diferite → 422."""
+    headers = await _setup_profile(client)
+    url = "https://cdn.flirt.local/photos/a/1.jpg"
+    await client.post(f"{API}/profiles/photos", json={"url": url}, headers=headers)
+
+    resp = await client.put(
+        f"{API}/profiles/photos/order",
+        json={"urls": ["https://cdn.flirt.local/photos/z/other.jpg"]},
+        headers=headers,
+    )
+    assert resp.status_code == 422, resp.text

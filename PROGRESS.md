@@ -104,6 +104,16 @@ Fără dependențe native noi.
 - ✅ **Compatibility în chat**: header conversație + listă dialoguri afișează scorul.
 - Migrație pentru coloanele noi. Teste: **backend 62 ✔, mobile ✔ (tsc curat)**.
 
+## Etapa 11 — Schelete integrări externe (✅ stub-uri gata de chei)
+Toate cu implementare STUB funcțională + config per provider (fără hardcodare). Vezi `docs/INTEGRATIONS.md`.
+- ✅ **Geo/haversine** (TZ 7): `geo.py` (StubGeocoder + haversine) → `distance_km` REAL în feed.
+- ✅ **Storage foto** (TZ 2.4): `storage.py` (StubStorage) + `POST/DELETE /profiles/photos`, reorder.
+- ✅ **Auth providers** (TZ 2.1): Google/Apple/phone-OTP stub → `/auth/google|apple|phone/request|verify`.
+- ✅ **Billing/abonamente** (TZ 9): model `Subscription`, `/subscriptions` (plans/purchase/entitlements) stub.
+- ✅ **Push** (TZ 6.3): model `PushDevice`, `push.py` StubPush, `/push/register|test`.
+- Punct rezervat: verificare facială (TZ 2.2). Migrație (subscriptions + push_devices).
+- **49 endpoint-uri**, 22 tabele. Teste: **backend 84 ✔**.
+
 ## Amânat intenționat (❌ — mai târziu)
 - ❌ Verificare facială / liveness (TZ 2.2).
 - ❌ Înregistrare prin telefon + OTP (TZ 2.1).

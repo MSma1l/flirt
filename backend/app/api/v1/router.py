@@ -8,10 +8,12 @@ from app.api.v1 import (
     feed,
     humor,
     profiles,
+    push,
     reports,
     settings,
     social,
     stories,
+    subscriptions,
     ticket,
 )
 
@@ -27,3 +29,5 @@ api_router.include_router(events.router, prefix="/events", tags=["events"])
 api_router.include_router(stories.router, prefix="/stories", tags=["stories"])
 api_router.include_router(humor.router, prefix="/humor", tags=["humor"])
 api_router.include_router(reports.router, prefix="/reports", tags=["moderation"])
+api_router.include_router(subscriptions.router, prefix="/subscriptions", tags=["billing"])
+api_router.include_router(push.router, prefix="/push", tags=["push"])

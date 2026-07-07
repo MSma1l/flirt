@@ -2,6 +2,8 @@
 import pytest
 from httpx import AsyncClient
 
+from app.core.config import settings
+
 pytestmark = pytest.mark.asyncio
 
 BASE = "/api/v1/auth"
@@ -89,6 +91,82 @@ async def test_refresh_reuse_detection(client: AsyncClient):
         f"{BASE}/refresh", json={"refresh_token": refresh_token}
     )
     assert second.status_code == 401
+
+
+async def _assert_token_pair(body: dict) -> None:
+    assert body["access_token"]
+    assert body["refresh_token"]
+    assert body["token_type"] == "bearer"
+
+
+async def test_google_stub_login_and_me(client: AsyncClient):
+    # În modul stub tokenul de test ESTE emailul (sau `stub:{email}`).
+    resp = await client.post(
+        f"{BASE}/google", json={"id_token": "stub:heidi@gmail.com"}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    await _assert_token_pair(body)
+
+    # Userul nou-creat poate accesa ruta protejată /me.
+    me = await client.get(
+        f"{BASE}/me", headers={"Authorization": f"Bearer {body['access_token']}"}
+    )
+    assert me.status_code == 200
+    assert me.json()["profile_completed"] is False
+
+
+async def test_google_stub_login_is_idempotent(client: AsyncClient):
+    # Aceeași identitate → get-or-create: același user, autentificări repetate OK.
+    first = await client.post(f"{BASE}/google", json={"id_token": "ivan@gmail.com"})
+    second = await client.post(f"{BASE}/google", json={"id_token": "ivan@gmail.com"})
+    assert first.status_code == 200
+    assert second.status_code == 200
+
+
+async def test_apple_stub_login_and_me(client: AsyncClient):
+    resp = await client.post(f"{BASE}/apple", json={"id_token": "judy@icloud.com"})
+    assert resp.status_code == 200
+    body = resp.json()
+    await _assert_token_pair(body)
+
+    me = await client.get(
+        f"{BASE}/me", headers={"Authorization": f"Bearer {body['access_token']}"}
+    )
+    assert me.status_code == 200
+
+
+async def test_phone_request_then_verify(client: AsyncClient):
+    phone = "+40712345678"
+
+    req = await client.post(f"{BASE}/phone/request", json={"phone": phone})
+    assert req.status_code == 204
+
+    ver = await client.post(
+        f"{BASE}/phone/verify",
+        json={"phone": phone, "code": settings.otp_test_code},
+    )
+    assert ver.status_code == 200
+    body = ver.json()
+    await _assert_token_pair(body)
+
+    me = await client.get(
+        f"{BASE}/me", headers={"Authorization": f"Bearer {body['access_token']}"}
+    )
+    assert me.status_code == 200
+
+
+async def test_phone_verify_wrong_code_returns_401(client: AsyncClient):
+    phone = "+40799999999"
+
+    req = await client.post(f"{BASE}/phone/request", json={"phone": phone})
+    assert req.status_code == 204
+
+    bad = await client.post(
+        f"{BASE}/phone/verify",
+        json={"phone": phone, "code": "999999" if settings.otp_test_code != "999999" else "111111"},
+    )
+    assert bad.status_code == 401
 
 
 async def test_logout_revokes_session(client: AsyncClient):

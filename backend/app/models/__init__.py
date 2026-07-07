@@ -22,3 +22,5 @@ from app.models.event import (  # noqa: F401
 )
 from app.models.story import Story  # noqa: F401
 from app.models.moderation import Report  # noqa: F401
+from app.models.billing import Subscription  # noqa: F401
+from app.models.device import PushDevice  # noqa: F401

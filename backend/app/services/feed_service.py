@@ -15,7 +15,7 @@ from app.models.profile import Profile
 from app.models.swipe import Like, Match
 from app.models.user import User
 from app.schemas.feed import FeedCard, MatchOut, SwipeResult, UndoResult
-from app.services import chat_service
+from app.services import chat_service, geo
 from app.services.compatibility import compute_compatibility
 
 # --- Reguli de business (din config, nu hardcodate în mijlocul logicii) ------
@@ -139,13 +139,18 @@ async def get_feed(
     for p in candidates:
         p_interests = interests_map.get(p.id, set())
         score = compute_compatibility(my_profile, p, my_interests, p_interests)
+        # Distanța reală prin geocoding (TZ 7). Robust: None dacă vreun oraș nu
+        # poate fi geocodat (provider stub cu oraș necunoscut etc.).
+        distance_km = await geo.distance_km_between(
+            my_profile.city, my_profile.street, p.city, p.street
+        )
         card = FeedCard(
             user_id=p.user_id,
             name=p.name,
             age=_calc_age(p.birth_date),
             gender=p.gender,
             city=p.city,
-            distance_km=None,  # fără geocoding încă (TZ 4.6 placeholder)
+            distance_km=distance_km,  # geocoding real (TZ 7); None dacă nu se poate
             about=p.about,
             top_interests=sorted(p_interests)[:MAX_TOP_INTERESTS],
             languages=list(p.languages or []),

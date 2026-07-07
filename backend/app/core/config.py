@@ -52,6 +52,39 @@ class Settings(BaseSettings):
     # Moderare (TZ 10)
     report_autoban_threshold: int = 3   # câte rapoarte distincte → auto-ascundere cont
 
+    # === Integrări externe (stub implicit; setează providerul + cheile la deploy) ===
+    # Storage foto (TZ 2.4). Provider: 'stub' | 's3'
+    storage_provider: str = "stub"
+    storage_base_url: str = "https://cdn.flirt.local"   # bază URL pentru stub
+    s3_bucket: str = ""
+    s3_region: str = ""
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+
+    # Geolocație / geocoding (TZ 7). Provider: 'stub' | 'google' | 'mapbox'
+    geo_provider: str = "stub"
+    geo_api_key: str = ""
+
+    # Auth providers (TZ 2.1). În 'stub', verificarea acceptă tokenuri/coduri de test.
+    social_auth_mode: str = "stub"      # 'stub' | 'live'
+    apple_client_id: str = ""
+    google_client_id: str = ""
+    otp_mode: str = "stub"              # 'stub' (cod fix de test) | 'live' (SMS real)
+    otp_test_code: str = "000000"       # cod acceptat în modul stub
+    otp_ttl_seconds: int = 300
+    sms_api_key: str = ""
+
+    # Push notifications (TZ 6.3). Provider: 'stub' | 'expo' | 'fcm'
+    push_provider: str = "stub"
+    push_api_key: str = ""
+
+    # Billing / abonamente (TZ 9). Provider: 'stub' | 'stripe' | 'app_store' | 'play'
+    billing_provider: str = "stub"
+    billing_api_key: str = ""
+
+    # Verificare facială (TZ 2.2) — doar punct de conectare, implementare ulterioară.
+    face_verify_provider: str = "stub"  # 'stub' | 'rekognition'
+
     # Ponderi Compatibility Score (sumă = 1.0) — TZ 4.6
     compat_w_interests: float = 0.30
     compat_w_status: float = 0.15

@@ -92,6 +92,31 @@ async def authenticate(db: AsyncSession, email: str, password: str) -> TokenPair
     return pair
 
 
+async def login_with_identity(db: AsyncSession, email: str) -> TokenPair:
+    """Get-or-create pentru o identitate externă (Apple/Google/telefon).
+
+    `email` este un email derivat determinist (ex. `google_{sub}@ext.flirt` sau
+    `phone_{msisdn}@ext.flirt`), ca să refolosim modelul `User` existent fără a-l
+    modifica. Nu există parolă utilizabilă: userul se autentifică doar prin
+    provider, așa că stocăm un hash aleator, imposibil de reprodus.
+    """
+    normalized = email.strip().lower()
+
+    user = await db.scalar(select(User).where(User.email == normalized))
+    if user is None:
+        user = User(
+            email=normalized,
+            password_hash=hash_password(uuid.uuid4().hex),  # parolă inutilizabilă
+            profile_completed=False,
+        )
+        db.add(user)
+        await db.flush()  # obținem user.id înainte de a crea sesiunea
+
+    pair = await _issue_token_pair(db, user, family_id=uuid.uuid4().hex)
+    await db.commit()
+    return pair
+
+
 async def _revoke_family(db: AsyncSession, family_id: str) -> None:
     """Revocă toate sesiunile dintr-o familie (folosit la reuse detection)."""
     await db.execute(
