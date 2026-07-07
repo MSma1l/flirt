@@ -71,6 +71,14 @@ TZ secț. 6.
 - ✅ Mobile setări: hub `setari` (temă/rază/notificări/ascundere), `ticket` (cod + QR placeholder),
   `blocklist` (deblocare), ștergere cont cu confirmare. **63 teste ✔**
 
+## Etapa 6 — Evenimente + Flirt Passport (✅ gata & testat)
+TZ secț. 8.
+- ✅ Backend: modele `Event`/`EventAttendance`/`FlirtPassportStamp`; `GET /events` (seed demo +
+  attendee_count + i_am_going), `GET /events/{id}`, `POST /going`, `POST /checkin` (ștampilă),
+  `GET /events/passport`. Migrație Alembic. **37 teste ✔**
+- ✅ Mobile: `events/index` (listă), `events/[id]` (detaliu + hartă placeholder + going + check-in QR),
+  `passport` (grid ștampile). Linkuri din hub-ul Setări. **73 teste ✔, tsc curat**
+
 ## Amânat intenționat (❌ — mai târziu)
 - ❌ Verificare facială / liveness (TZ 2.2).
 - ❌ Înregistrare prin telefon + OTP (TZ 2.1).

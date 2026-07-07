@@ -299,6 +299,8 @@ export default function SetariScreen() {
           {sectionLabel('Mai multe')}
           {linkRow('Editează profilul', '/profile/edit', 'link-profile-edit')}
           {linkRow('Favorite', '/favorites', 'link-favorites')}
+          {linkRow('Evenimente', '/events', 'link-events')}
+          {linkRow('Flirt Passport', '/passport', 'link-passport')}
           {linkRow('Biletul meu Flirt Party', '/ticket', 'link-ticket')}
           {linkRow('Utilizatori blocați', '/blocklist', 'link-blocklist')}
         </View>

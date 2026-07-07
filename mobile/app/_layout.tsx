@@ -45,6 +45,9 @@ export default function RootLayout() {
             <Stack.Screen name="favorites" />
             <Stack.Screen name="ticket" />
             <Stack.Screen name="blocklist" />
+            <Stack.Screen name="events/index" />
+            <Stack.Screen name="events/[id]" />
+            <Stack.Screen name="passport" />
           </Stack>
         </ThemeProvider>
       </QueryClientProvider>

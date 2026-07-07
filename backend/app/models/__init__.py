@@ -15,3 +15,8 @@ from app.models.account import (  # noqa: F401
     Ticket,
     AccountDeletionRequest,
 )
+from app.models.event import (  # noqa: F401
+    Event,
+    EventAttendance,
+    FlirtPassportStamp,
+)
