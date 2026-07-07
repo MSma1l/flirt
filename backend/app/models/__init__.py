@@ -20,3 +20,4 @@ from app.models.event import (  # noqa: F401
     EventAttendance,
     FlirtPassportStamp,
 )
+from app.models.story import Story  # noqa: F401

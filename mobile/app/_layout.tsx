@@ -48,6 +48,8 @@ export default function RootLayout() {
             <Stack.Screen name="events/index" />
             <Stack.Screen name="events/[id]" />
             <Stack.Screen name="passport" />
+            <Stack.Screen name="stories/[userId]" options={{ presentation: 'fullScreenModal' }} />
+            <Stack.Screen name="stories/new" options={{ presentation: 'modal' }} />
           </Stack>
         </ThemeProvider>
       </QueryClientProvider>

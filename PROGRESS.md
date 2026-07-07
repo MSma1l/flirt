@@ -79,6 +79,13 @@ TZ secț. 8.
 - ✅ Mobile: `events/index` (listă), `events/[id]` (detaliu + hartă placeholder + going + check-in QR),
   `passport` (grid ștampile). Linkuri din hub-ul Setări. **73 teste ✔, tsc curat**
 
+## Etapa 7 — Stories (✅ gata & testat)
+TZ secț. 11 (roadmap adus în MVP).
+- ✅ Backend: model `Story` (expiră 24h), `POST/GET /stories` (grupat pe user, doar match-uri + self),
+  `GET /stories/mine`, `DELETE /stories/{id}`. Migrație Alembic. **41 teste ✔**
+- ✅ Mobile: `StoriesBar` (integrată în feed), vizualizator `stories/[userId]` (bare progres, tap
+  next/prev, ștergere), `stories/new` (creare prin URL). **82 teste ✔, tsc curat**
+
 ## Amânat intenționat (❌ — mai târziu)
 - ❌ Verificare facială / liveness (TZ 2.2).
 - ❌ Înregistrare prin telefon + OTP (TZ 2.1).

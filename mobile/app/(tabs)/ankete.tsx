@@ -8,6 +8,7 @@ import { fetchFeed, swipe } from '@/features/feed/feedApi';
 import { MatchModal } from '@/features/feed/MatchModal';
 import { ProfileCard } from '@/features/feed/ProfileCard';
 import { FeedCard, SwipeAction } from '@/features/feed/types';
+import { StoriesBar } from '@/features/stories/StoriesBar';
 import { useTheme } from '@theme/index';
 
 export default function AnketeScreen() {
@@ -61,16 +62,20 @@ export default function AnketeScreen() {
 
   if (!current) {
     return (
-      <ScreenContainer center>
-        <Text style={[typography.body, styles.center, { color: colors.textSecondary }]}>
-          Nu mai sunt ankete acum
-        </Text>
+      <ScreenContainer>
+        <StoriesBar />
+        <View style={styles.emptyState}>
+          <Text style={[typography.body, styles.center, { color: colors.textSecondary }]}>
+            Nu mai sunt ankete acum
+          </Text>
+        </View>
       </ScreenContainer>
     );
   }
 
   return (
     <ScreenContainer>
+      <StoriesBar />
       <View style={styles.deck}>
         <ProfileCard card={current} />
       </View>
@@ -138,5 +143,10 @@ const styles = StyleSheet.create({
   },
   center: {
     textAlign: 'center',
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
