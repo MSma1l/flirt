@@ -6,6 +6,13 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.core.validators import optional_safe_str
+
+# Plafoane de lungime aliniate cu coloanele din model (UserSettings.theme = 16,
+# UserSettings.region = 120).
+THEME_MAX_LENGTH = 16
+REGION_MAX_LENGTH = 120
+
 
 class SettingsOut(BaseModel):
     """Setările curente ale userului, așa cum sunt afișate."""
@@ -18,13 +25,17 @@ class SettingsOut(BaseModel):
 
 
 class SettingsIn(BaseModel):
-    """Payload pentru actualizarea setărilor (toate câmpurile opționale)."""
+    """Payload pentru actualizarea setărilor (toate câmpurile opționale).
 
-    theme: str | None = None
-    search_radius_km: int | None = None
+    Câmpurile text (`theme`, `region`) sunt validate defensiv când sunt trimise:
+    trim, non-gol, plafon lungime, fără HTML/caractere de control.
+    """
+
+    theme: optional_safe_str(THEME_MAX_LENGTH) | None = None
+    search_radius_km: int | None = Field(default=None, ge=0)
     notifications: dict | None = None
     profile_hidden: bool | None = None
-    region: str | None = None
+    region: optional_safe_str(REGION_MAX_LENGTH) | None = None
 
 
 class FavoriteOut(BaseModel):

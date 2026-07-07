@@ -17,7 +17,13 @@ from app.schemas.profile import (
     ReferenceOut,
 )
 from app.services.face_verify import get_face_verifier
-from app.services.storage import get_storage
+from app.services.storage import (
+    allowed_hosts,
+    build_photo_key,
+    get_storage,
+    key_from_own_url,
+)
+from app.core.validators import is_https_url
 
 # --- Cataloage de referință (derivate din TZ, nu hardcodate ca reguli) ---------
 
@@ -167,6 +173,16 @@ async def _get_profile_or_404(db: AsyncSession, user) -> Profile:
     return profile
 
 
+async def require_profile_id(db: AsyncSession, user) -> str:
+    """Întoarce id-ul (str) profilului userului curent sau ridică 404.
+
+    Folosit de endpoint-uri pentru a valida URL-urile de poze (allowlist +
+    prefix `photos/{profile_id}/`) înainte de a atinge storage-ul.
+    """
+    profile = await _get_profile_or_404(db, user)
+    return str(profile.id)
+
+
 async def add_photo(
     db: AsyncSession,
     user,
@@ -190,8 +206,13 @@ async def add_photo(
         )
 
     storage = get_storage()
-    # RO: în stub acceptăm și un URL direct; altfel salvăm conținutul.
-    saved_url = url if url else await storage.save(filename, content, content_type)
+    if url:
+        # RO: URL direct (mod stub) — deja validat de endpoint (allowlist + prefix).
+        saved_url = url
+    else:
+        # RO: cheie sigură server-side (uuid + ext), fără `filename` brut de la user.
+        key = build_photo_key(profile.id, content_type)
+        saved_url = await storage.save(key, content, content_type)
 
     photos.append(saved_url)
     profile.photos = photos  # reasignare → SQLAlchemy detectează modificarea JSON
@@ -277,6 +298,30 @@ async def upsert_anketa(db: AsyncSession, user, data: AnketaIn) -> ProfileOut:
             detail="Selectează cel puțin o limbă de comunicare.",
         )
 
+    # Poze — limită număr + allowlist (https + domeniu propriu). Dublăm validarea
+    # din schemă pentru siguranță (defense in depth).
+    photos = list(data.photos or [])
+    if len(photos) > settings.max_photos:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Numărul maxim de poze este {settings.max_photos}.",
+        )
+    hosts = allowed_hosts()
+    from urllib.parse import urlparse as _urlparse
+    for photo_url in photos:
+        try:
+            is_https_url(photo_url)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="URL de poză invalid (se acceptă doar https).",
+            )
+        if _urlparse(photo_url).netloc not in hosts:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="URL de poză în afara domeniului permis.",
+            )
+
     # Statusuri de cunoștință — doar valori din catalog
     valid_statuses = {s.value for s in DATING_STATUSES}
     dating_statuses = [s for s in (data.dating_statuses or []) if s in valid_statuses]
@@ -311,7 +356,7 @@ async def upsert_anketa(db: AsyncSession, user, data: AnketaIn) -> ProfileOut:
     profile.languages = languages
     profile.about = data.about
     profile.dating_statuses = dating_statuses
-    profile.photos = data.photos or []
+    profile.photos = photos
     profile.completed = True
 
     # Necesită id-ul profilului pentru legături — flush înainte de M2M
@@ -344,7 +389,15 @@ async def verify_face(db: AsyncSession, user, selfie: bytes) -> FaceVerifyOut:
     profile = await _get_profile_or_404(db, user)
 
     verifier = get_face_verifier()
-    verified, similarity = await verifier.compare(selfie, list(profile.photos or []))
+    # RO: comparăm DOAR pozele proprii (host permis + prefix photos/{profile_id}/).
+    # URL-urile străine / ale altui user sunt excluse → nu se descarcă (anti citire
+    # arbitrară de obiecte prin URL controlat de user).
+    own_refs = [
+        u
+        for u in (profile.photos or [])
+        if key_from_own_url(u, profile.id) is not None
+    ]
+    verified, similarity = await verifier.compare(selfie, own_refs)
 
     profile.verified = verified
     db.add(profile)

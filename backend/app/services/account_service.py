@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -19,8 +19,11 @@ from app.models.account import (
     Ticket,
     UserSettings,
 )
+from app.models.chat import Chat, Message
 from app.models.profile import Profile
 from app.models.session import RefreshSession
+from app.models.story import Story
+from app.models.swipe import Like, Match
 from app.models.user import User
 from app.schemas.account import (
     AccountDeletionOut,
@@ -307,3 +310,123 @@ async def cancel_account_deletion(db: AsyncSession, user: User) -> None:
     if request is not None:
         await db.delete(request)
         await db.commit()
+
+
+# --- GDPR purge (ștergere/anonimizare la expirarea grației) -------------------
+def _anonymized_email(user_id: uuid.UUID) -> str:
+    """Email anonim, unic și DETERMINIST per user (idempotent la re-rulare).
+
+    Domeniul `.invalid` (RFC 2606) nu poate fi înregistrat, deci contul devine
+    ne-contactabil și ne-autentificabil.
+    """
+    return f"deleted+{user_id.hex}@deleted.invalid"
+
+
+async def _purge_user_data(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Șterge/anonimizează TOATE datele personale ale unui user (GDPR).
+
+    Idempotent: apelabil de mai multe ori fără efecte secundare (ștergerile pe
+    seturi goale sunt no-op, iar anonimizarea e deterministă).
+    """
+    # Chat-urile la care userul participă (împreună cu mesajele lor).
+    chat_ids = (
+        await db.execute(
+            select(Chat.id).where(
+                or_(Chat.user_a_id == user_id, Chat.user_b_id == user_id)
+            )
+        )
+    ).scalars().all()
+
+    # Mesajele: cele trimise de user + toate cele din chat-urile lui.
+    msg_filter = Message.sender_id == user_id
+    if chat_ids:
+        msg_filter = or_(msg_filter, Message.chat_id.in_(chat_ids))
+    await db.execute(delete(Message).where(msg_filter))
+    if chat_ids:
+        await db.execute(delete(Chat).where(Chat.id.in_(chat_ids)))
+
+    # Profil (inclusiv referințele la poze din câmpul JSON), povești.
+    await db.execute(delete(Profile).where(Profile.user_id == user_id))
+    await db.execute(delete(Story).where(Story.user_id == user_id))
+
+    # Like-uri și match-uri (oricare direcție).
+    await db.execute(
+        delete(Like).where(
+            or_(Like.from_user_id == user_id, Like.to_user_id == user_id)
+        )
+    )
+    await db.execute(
+        delete(Match).where(
+            or_(Match.user_a_id == user_id, Match.user_b_id == user_id)
+        )
+    )
+
+    # Favorite și block-uri care implică userul (oricare rol).
+    await db.execute(
+        delete(Favorite).where(
+            or_(
+                Favorite.user_id == user_id,
+                Favorite.target_user_id == user_id,
+            )
+        )
+    )
+    await db.execute(
+        delete(Block).where(
+            or_(Block.blocker_id == user_id, Block.blocked_id == user_id)
+        )
+    )
+
+    # Setări + sesiuni de refresh (logout definitiv).
+    await db.execute(delete(UserSettings).where(UserSettings.user_id == user_id))
+    await db.execute(
+        delete(RefreshSession).where(RefreshSession.user_id == user_id)
+    )
+
+    # Anonimizează contul în sine: email unic anonim + hash de parolă invalid.
+    # Nu ștergem rândul `users` ca să nu rupem FK-urile păstrate (ex. rapoarte),
+    # dar userul devine ne-autentificabil și ne-identificabil.
+    user = await db.get(User, user_id)
+    if user is not None:
+        user.email = _anonymized_email(user_id)
+        user.password_hash = ""  # hash invalid → nicio parolă nu se potrivește
+        user.profile_completed = False
+
+
+async def purge_expired_accounts(
+    db: AsyncSession, now: datetime | None = None
+) -> int:
+    """Purjează conturile cu cererea de ștergere expirată (`purge_after < now`).
+
+    Pentru fiecare `AccountDeletionRequest` cu grația expirată, șterge/anonimizează
+    datele userului (vezi `_purge_user_data`) și consumă cererea. Întoarce numărul
+    de conturi purjate.
+
+    Apelabilă dintr-un cron/script (nu are nevoie de worker real), ex.:
+
+        import asyncio
+        from app.db.session import AsyncSessionLocal
+        from app.services.account_service import purge_expired_accounts
+
+        async def main():
+            async with AsyncSessionLocal() as db:
+                n = await purge_expired_accounts(db)
+                print(f"Purjate: {n}")
+
+        asyncio.run(main())
+
+    Idempotentă: după purjare cererea e ștearsă, deci re-rularea nu reprocesează.
+    """
+    now = now or datetime.now(timezone.utc)
+    result = await db.execute(
+        select(AccountDeletionRequest).where(
+            AccountDeletionRequest.purge_after < now
+        )
+    )
+    requests = list(result.scalars().all())
+    for request in requests:
+        await _purge_user_data(db, request.user_id)
+        await db.delete(request)
+
+    if requests:
+        await db.commit()
+    return len(requests)

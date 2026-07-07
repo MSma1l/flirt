@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser
+from app.core.ratelimit import rate_limit
 from app.db.session import get_db
 from app.schemas.auth import (
     LoginIn,
@@ -27,14 +28,25 @@ router = APIRouter()
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
+# Dependency-uri de rate limiting, per IP + endpoint (praguri din `settings`).
+_login_rl = rate_limit("login", "rate_limit_login_per_min", 60)
+_register_rl = rate_limit("register", "rate_limit_register_per_hour", 3600)
+_otp_request_rl = rate_limit("otp_request", "otp_request_per_hour", 3600)
+_otp_verify_rl = rate_limit("otp_verify", "rate_limit_login_per_min", 60)
 
-@router.post("/register", response_model=TokenPair, status_code=status.HTTP_201_CREATED)
+
+@router.post(
+    "/register",
+    response_model=TokenPair,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(_register_rl)],
+)
 async def register(data: RegisterIn, db: DbSession) -> TokenPair:
     """Creează un cont nou și returnează perechea de token-uri."""
     return await auth_service.register(db, email=data.email, password=data.password)
 
 
-@router.post("/login", response_model=TokenPair)
+@router.post("/login", response_model=TokenPair, dependencies=[Depends(_login_rl)])
 async def login(data: LoginIn, db: DbSession) -> TokenPair:
     """Autentifică userul; 401 la credențiale greșite."""
     return await auth_service.authenticate(db, email=data.email, password=data.password)
@@ -74,13 +86,21 @@ async def apple_login(data: SocialLoginIn, db: DbSession) -> TokenPair:
     return await auth_service.login_with_identity(db, email=email)
 
 
-@router.post("/phone/request", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/phone/request",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(_otp_request_rl)],
+)
 async def phone_request(data: PhoneRequestIn) -> None:
     """Trimite un cod OTP către numărul de telefon (în stub, codul de test)."""
     await auth_providers.request_otp(data.phone)
 
 
-@router.post("/phone/verify", response_model=TokenPair)
+@router.post(
+    "/phone/verify",
+    response_model=TokenPair,
+    dependencies=[Depends(_otp_verify_rl)],
+)
 async def phone_verify(data: PhoneVerifyIn, db: DbSession) -> TokenPair:
     """Verifică OTP-ul; la cod corect autentifică (get-or-create), altfel 401."""
     ok = await auth_providers.verify_otp(data.phone, data.code)

@@ -5,9 +5,10 @@ import uuid
 from datetime import date
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.account import Block
 from app.models.chat import Chat, Message
 from app.models.interest import Interest, ProfileInterest
 from app.models.profile import Profile
@@ -85,6 +86,29 @@ async def _get_participant_chat(
             status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found"
         )
     return chat
+
+
+async def _ensure_not_blocked(
+    db: AsyncSession, user_id: uuid.UUID, other_id: uuid.UUID
+) -> None:
+    """403 dacă există un Block în ORICARE direcție între cei doi participanți.
+
+    Un user blocat nu mai poate interacționa (scrie / reacționa) într-un chat
+    deja existent, chiar dacă apartenența la chat e validă (breșă CHAT-BLOCK).
+    """
+    result = await db.execute(
+        select(Block.id).where(
+            or_(
+                and_(Block.blocker_id == user_id, Block.blocked_id == other_id),
+                and_(Block.blocker_id == other_id, Block.blocked_id == user_id),
+            )
+        )
+    )
+    if result.first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Interaction blocked between these users",
+        )
 
 
 async def list_chats(db: AsyncSession, user: User) -> list[ChatSummary]:
@@ -208,6 +232,8 @@ async def send_message(
 ) -> MessageOut:
     """Trimite un mesaj: aplică mascarea contactelor și persistă (TZ 5.5)."""
     chat = await _get_participant_chat(db, user, chat_id)
+    # Breșă CHAT-BLOCK: un user blocat (oricare direcție) nu poate scrie.
+    await _ensure_not_blocked(db, user.id, _other_id(chat, user.id))
 
     masked_body, was_masked = mask_contacts(body)
     message = Message(
@@ -236,6 +262,8 @@ async def react_to_message(
     participant la chat sau dacă mesajul nu aparține acelui chat.
     """
     chat = await _get_participant_chat(db, user, chat_id)
+    # Breșă CHAT-BLOCK: un user blocat (oricare direcție) nu poate reacționa.
+    await _ensure_not_blocked(db, user.id, _other_id(chat, user.id))
 
     result = await db.execute(
         select(Message).where(

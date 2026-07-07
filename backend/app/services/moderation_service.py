@@ -10,11 +10,12 @@ from __future__ import annotations
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.account import UserSettings
+from app.models.chat import Chat
 from app.models.moderation import Report
 from app.models.user import User
 from app.schemas.moderation import ReportIn, ReportOut
@@ -40,6 +41,33 @@ async def create_report(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Cannot report yourself",
         )
+
+    # Userul raportat trebuie să existe (altfel abuz / rapoarte fantomă → 404).
+    reported_exists = await db.scalar(
+        select(User.id).where(User.id == data.reported_user_id)
+    )
+    if reported_exists is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Reported user not found"
+        )
+
+    # Dacă se indică un chat, raportorul trebuie să fie participant la el
+    # (nu poți lega raportul de o conversație străină).
+    if data.chat_id is not None:
+        chat_ok = await db.scalar(
+            select(Chat.id).where(
+                Chat.id == data.chat_id,
+                or_(
+                    Chat.user_a_id == reporter.id,
+                    Chat.user_b_id == reporter.id,
+                ),
+            )
+        )
+        if chat_ok is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not a participant of the referenced chat",
+            )
 
     # Idempotență pe (reporter, reported, category): dacă există deja, îl întoarcem.
     existing_result = await db.execute(

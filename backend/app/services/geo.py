@@ -203,6 +203,36 @@ def get_geocoder() -> Geocoder:
     )
 
 
+# --- Cache simplu de geocoding pe oraș (memoizare la nivel de modul) ---------
+# RO: multe cartele din feed împart același oraș; re-geocodarea per candidat e
+# risipă (și, la provider LIVE, un vector de DoS/cost). Memoizăm rezultatul pe
+# (oraș, stradă) normalizate. IMPORTANT: în producție acest cache ar trebui să
+# fie Redis (partajat între workeri, cu TTL); aici un dict de proces e suficient.
+_GEOCODE_CACHE: dict[str, tuple[float, float] | None] = {}
+
+
+def clear_geocode_cache() -> None:
+    """Golește cache-ul de geocoding (util în teste / la schimbarea providerului)."""
+    _GEOCODE_CACHE.clear()
+
+
+async def geocode_cached(
+    city: str, street: str | None = None
+) -> tuple[float, float] | None:
+    """Geocodează cu memoizare pe (oraș, stradă) normalizate.
+
+    Rezultatul (inclusiv `None` pentru orașe necunoscute) e cache-uit ca să nu
+    re-lovim providerul pentru aceeași adresă. RO: în prod → Redis cu TTL.
+    """
+    key = f"{_normalize_city(city)}|{_normalize_city(street)}"
+    if key in _GEOCODE_CACHE:
+        return _GEOCODE_CACHE[key]
+    geocoder = get_geocoder()
+    coord = await geocoder.geocode(city, street)
+    _GEOCODE_CACHE[key] = coord
+    return coord
+
+
 async def distance_km_between(
     city_a: str,
     street_a: str | None,
@@ -211,12 +241,12 @@ async def distance_km_between(
 ) -> int | None:
     """Distanța rotunjită (km) între două adrese, sau None dacă nu se poate.
 
-    Geocodează ambele locuri și aplică `haversine_km`. Dacă vreunul nu poate fi
-    geocodat (oraș necunoscut), întoarce None — apelantul tratează absența.
+    Geocodează ambele locuri (prin cache) și aplică `haversine_km`. Dacă vreunul
+    nu poate fi geocodat (oraș necunoscut), întoarce None — apelantul tratează
+    absența.
     """
-    geocoder = get_geocoder()
-    coord_a = await geocoder.geocode(city_a, street_a)
-    coord_b = await geocoder.geocode(city_b, street_b)
+    coord_a = await geocode_cached(city_a, street_a)
+    coord_b = await geocode_cached(city_b, street_b)
     if coord_a is None or coord_b is None:
         return None
     return round(haversine_km(coord_a[0], coord_a[1], coord_b[0], coord_b[1]))

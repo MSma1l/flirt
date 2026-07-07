@@ -5,6 +5,14 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from app.core.validators import safe_str
+
+# Plafoane aliniate cu modelele (Subscription.plan = 32, PushDevice.token = 255,
+# PushDevice.platform = 16).
+PLAN_MAX_LENGTH = 32
+PUSH_TOKEN_MAX_LENGTH = 255
+PUSH_PLATFORM_MAX_LENGTH = 16
+
 
 class PlanOut(BaseModel):
     """Un plan din catalog (public)."""
@@ -24,9 +32,13 @@ class SubscriptionOut(BaseModel):
 
 
 class PurchaseIn(BaseModel):
-    """Payload la cumpărarea unui plan."""
+    """Payload la cumpărarea unui plan.
 
-    plan: str
+    `plan` e validat defensiv (trim, non-gol, plafon lungime, fără HTML/control
+    chars); apartenența la catalog se verifică în serviciu (plan necunoscut → 400).
+    """
+
+    plan: safe_str(PLAN_MAX_LENGTH)
 
 
 class EntitlementsOut(BaseModel):
@@ -38,7 +50,11 @@ class EntitlementsOut(BaseModel):
 
 
 class PushRegisterIn(BaseModel):
-    """Payload la înregistrarea unui dispozitiv de push."""
+    """Payload la înregistrarea unui dispozitiv de push.
 
-    token: str
-    platform: str
+    `token` și `platform` sunt validate defensiv (trim, non-gol, plafon lungime,
+    fără HTML/control chars).
+    """
+
+    token: safe_str(PUSH_TOKEN_MAX_LENGTH)
+    platform: safe_str(PUSH_PLATFORM_MAX_LENGTH)

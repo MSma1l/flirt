@@ -47,6 +47,24 @@ async def test_login_correct_and_wrong(client: AsyncClient):
     assert bad.status_code == 401
 
 
+async def test_login_no_user_enumeration(client: AsyncClient):
+    """Anti-enumerare: user inexistent și parolă greșită dau AMBELE 401 identic."""
+    await _register(client, "enum@example.com", "password12345")
+
+    wrong_pw = await client.post(
+        f"{BASE}/login",
+        json={"email": "enum@example.com", "password": "wrong-password"},
+    )
+    unknown_user = await client.post(
+        f"{BASE}/login",
+        json={"email": "does-not-exist@example.com", "password": "whatever12345"},
+    )
+    assert wrong_pw.status_code == 401
+    assert unknown_user.status_code == 401
+    # Mesaj generic identic — fără indiciu că adresa există sau nu.
+    assert wrong_pw.json()["detail"] == unknown_user.json()["detail"]
+
+
 async def test_me_with_and_without_token(client: AsyncClient):
     reg = await _register(client, "dave@example.com")
     access = reg.json()["access_token"]

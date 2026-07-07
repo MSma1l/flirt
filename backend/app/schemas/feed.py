@@ -6,6 +6,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.core.validators import optional_safe_str
+
+# Lungimea maximă a unui mesaj deferred atașat la like (anti-DoS payload, TZ 4.7).
+SWIPE_MESSAGE_MAX_LENGTH = 2000
+
 
 class FeedCard(BaseModel):
     """O carte din feed-ul de swipe (TZ 4.1–4.2)."""
@@ -29,7 +34,8 @@ class SwipeIn(BaseModel):
     target_user_id: uuid.UUID
     action: Literal["like", "dislike"]
     # Mesaj opțional trimis odată cu like-ul; devine vizibil la match (TZ 4.7).
-    message: str | None = None
+    # Validat defensiv: trim, fără HTML/control chars, plafon lungime (anti-DoS).
+    message: optional_safe_str(SWIPE_MESSAGE_MAX_LENGTH) | None = None
 
 
 class SwipeResult(BaseModel):

@@ -3,6 +3,8 @@
 Acoperă: stub (True, 99), Rekognition cu similaritate peste/sub prag și
 endpoint-ul `/profiles/verify-face` în modul stub.
 """
+from datetime import date
+
 import boto3
 import pytest
 
@@ -105,6 +107,102 @@ async def test_rekognition_no_reference_photos(monkeypatch):
     verified, score = await RekognitionFaceVerifier().compare(b"selfie", [])
     assert verified is False
     assert score == 0.0
+
+
+# --- Securitate: citire arbitrară de obiecte prin URL (fix #1) ----------------
+def test_download_reference_rejects_foreign_host(monkeypatch):
+    """`_download_reference` refuză (ValueError) un URL din afara host-ului nostru."""
+    _patch_boto3(monkeypatch, similarity=95.0)
+    with pytest.raises(ValueError):
+        RekognitionFaceVerifier()._download_reference(
+            "https://evil.example/photos/victim/secret.jpg"
+        )
+
+
+def test_download_reference_rejects_key_outside_photos(monkeypatch):
+    """`_download_reference` refuză o cheie în afara namespace-ului `photos/`."""
+    _patch_boto3(monkeypatch, similarity=95.0)
+    with pytest.raises(ValueError):
+        RekognitionFaceVerifier()._download_reference(
+            "https://flirt-media.s3.eu-central-1.amazonaws.com/backups/db.sql"
+        )
+
+
+@pytest.mark.asyncio
+async def test_verify_face_excludes_cross_user_photo(db_session, monkeypatch):
+    """verify_face NU descarcă poza altui user (cheie din alt profil) → respins.
+
+    Chiar dacă URL-ul e în bucketul nostru, prefixul photos/{alt_profil}/ e
+    exclus → Rekognition primește 0 referințe și nu se face niciun get_object.
+    """
+    from sqlalchemy import select
+
+    from app.core.security import hash_password
+    from app.models.profile import Profile
+    from app.models.user import User
+    from app.schemas.profile import AnketaIn
+    from app.services import profile_service as PS
+
+    downloaded = {"called": False}
+
+    class _TrackingS3:
+        def get_object(self, **kwargs):
+            downloaded["called"] = True
+            return {"Body": _FakeBody()}
+
+    rek = _FakeRekognitionClient(95.0)
+
+    def _fake_client(service, *args, **kwargs):
+        if service == "rekognition":
+            return rek
+        if service == "s3":
+            return _TrackingS3()
+        raise AssertionError(f"Serviciu neașteptat: {service}")
+
+    monkeypatch.setattr(boto3, "client", _fake_client)
+    monkeypatch.setattr(face_verify.settings, "face_verify_provider", "rekognition")
+    monkeypatch.setattr(face_verify.settings, "s3_bucket", "flirt-media")
+    monkeypatch.setattr(face_verify.settings, "s3_region", "eu-central-1")
+
+    user = User(
+        email="crossuser@example.com",
+        password_hash=hash_password("Str0ng-Passw0rd!"),
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    await PS.upsert_anketa(
+        db_session,
+        user,
+        AnketaIn(
+            name="Ion",
+            birth_date=date(2000, 1, 1),
+            gender="male",
+            height_cm=180,
+            city="Chișinău",
+            languages=["ru"],
+            dating_statuses=["serious"],
+            interests=["sport"],
+            photos=[],
+        ),
+    )
+    # Injectează direct în DB un URL către cheia ALTUI profil (același bucket).
+    result = await db_session.execute(
+        select(Profile).where(Profile.user_id == user.id)
+    )
+    profile = result.scalar_one()
+    profile.photos = [
+        "https://flirt-media.s3.eu-central-1.amazonaws.com/photos/OTHER-PROFILE/secret.jpg"
+    ]
+    db_session.add(profile)
+    await db_session.commit()
+
+    out = await PS.verify_face(db_session, user, b"selfie-bytes")
+    # Poza altui user a fost exclusă → nicio descărcare, rezultat negativ.
+    assert downloaded["called"] is False
+    assert out.verified is False
+    assert rek.compare_calls == []
 
 
 # --- Endpoint (stub) ---------------------------------------------------------

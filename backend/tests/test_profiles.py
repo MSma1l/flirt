@@ -1,9 +1,29 @@
 """Teste pentru modulul de anketă/profil (rulează pe SQLite in-memory)."""
+import uuid
 from datetime import date
 
 import pytest
+from sqlalchemy import select
+
+from app.core.config import settings
+from app.models.profile import Profile
 
 API = "/api/v1"
+
+
+async def _profile_id(client, db_session, headers) -> str:
+    """Id-ul profilului userului curent (pentru a construi URL-uri scoped)."""
+    me = await client.get(f"{API}/auth/me", headers=headers)
+    user_id = uuid.UUID(me.json()["id"])
+    result = await db_session.execute(
+        select(Profile).where(Profile.user_id == user_id)
+    )
+    return str(result.scalar_one().id)
+
+
+def _own_photo_url(profile_id: str, name: str = "pic.jpg") -> str:
+    """URL de poză valid: în storage-ul propriu, sub prefixul profilului."""
+    return f"{settings.storage_base_url}/photos/{profile_id}/{name}"
 
 
 def _extract_token(payload: dict) -> str | None:
@@ -138,10 +158,11 @@ async def _setup_profile(client) -> dict[str, str]:
 
 
 @pytest.mark.asyncio
-async def test_add_photo_by_url_appears_in_profile(client):
-    """POST /photos cu URL → apare în lista de poze a profilului."""
+async def test_add_photo_by_url_appears_in_profile(client, db_session):
+    """POST /photos cu URL propriu (scoped) → apare în lista de poze."""
     headers = await _setup_profile(client)
-    url = "https://cdn.flirt.local/photos/abc/pic1.jpg"
+    pid = await _profile_id(client, db_session, headers)
+    url = _own_photo_url(pid, "pic1.jpg")
 
     resp = await client.post(
         f"{API}/profiles/photos", json={"url": url}, headers=headers
@@ -154,16 +175,15 @@ async def test_add_photo_by_url_appears_in_profile(client):
 
 
 @pytest.mark.asyncio
-async def test_add_photo_exceeds_max_rejected(client):
+async def test_add_photo_exceeds_max_rejected(client, db_session):
     """Depășirea max_photos → 422."""
-    from app.core.config import settings
-
     headers = await _setup_profile(client)
+    pid = await _profile_id(client, db_session, headers)
     # Umple exact până la maxim
     for i in range(settings.max_photos):
         resp = await client.post(
             f"{API}/profiles/photos",
-            json={"url": f"https://cdn.flirt.local/photos/x/pic{i}.jpg"},
+            json={"url": _own_photo_url(pid, f"pic{i}.jpg")},
             headers=headers,
         )
         assert resp.status_code == 200, resp.text
@@ -171,17 +191,18 @@ async def test_add_photo_exceeds_max_rejected(client):
     # Următoarea poză depășește maximul
     resp = await client.post(
         f"{API}/profiles/photos",
-        json={"url": "https://cdn.flirt.local/photos/x/over.jpg"},
+        json={"url": _own_photo_url(pid, "over.jpg")},
         headers=headers,
     )
     assert resp.status_code == 422, resp.text
 
 
 @pytest.mark.asyncio
-async def test_delete_photo_removes_it(client):
+async def test_delete_photo_removes_it(client, db_session):
     """DELETE /photos scoate URL-ul din profil."""
     headers = await _setup_profile(client)
-    url = "https://cdn.flirt.local/photos/abc/pic1.jpg"
+    pid = await _profile_id(client, db_session, headers)
+    url = _own_photo_url(pid, "pic1.jpg")
     await client.post(f"{API}/profiles/photos", json={"url": url}, headers=headers)
 
     resp = await client.request(
@@ -195,13 +216,14 @@ async def test_delete_photo_removes_it(client):
 
 
 @pytest.mark.asyncio
-async def test_reorder_photos_changes_order(client):
+async def test_reorder_photos_changes_order(client, db_session):
     """PUT /photos/order schimbă ordinea (aceleași URL-uri)."""
     headers = await _setup_profile(client)
+    pid = await _profile_id(client, db_session, headers)
     urls = [
-        "https://cdn.flirt.local/photos/a/1.jpg",
-        "https://cdn.flirt.local/photos/b/2.jpg",
-        "https://cdn.flirt.local/photos/c/3.jpg",
+        _own_photo_url(pid, "1.jpg"),
+        _own_photo_url(pid, "2.jpg"),
+        _own_photo_url(pid, "3.jpg"),
     ]
     for url in urls:
         await client.post(
@@ -220,15 +242,16 @@ async def test_reorder_photos_changes_order(client):
 
 
 @pytest.mark.asyncio
-async def test_reorder_photos_mismatch_rejected(client):
+async def test_reorder_photos_mismatch_rejected(client, db_session):
     """PUT /photos/order cu URL-uri diferite → 422."""
     headers = await _setup_profile(client)
-    url = "https://cdn.flirt.local/photos/a/1.jpg"
+    pid = await _profile_id(client, db_session, headers)
+    url = _own_photo_url(pid, "1.jpg")
     await client.post(f"{API}/profiles/photos", json={"url": url}, headers=headers)
 
     resp = await client.put(
         f"{API}/profiles/photos/order",
-        json={"urls": ["https://cdn.flirt.local/photos/z/other.jpg"]},
+        json={"urls": [_own_photo_url(pid, "other.jpg")]},
         headers=headers,
     )
     assert resp.status_code == 422, resp.text

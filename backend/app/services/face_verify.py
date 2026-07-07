@@ -6,9 +6,9 @@ Provider-ul se alege din `settings.face_verify_provider`:
   Rekognition (`compare_faces`). Import boto3 LAZY, doar când e folosit.
 """
 from typing import Protocol
-from urllib.parse import urlparse
 
 from app.core.config import settings
+from app.services.storage import key_within_namespace
 
 
 class FaceVerifier(Protocol):
@@ -64,8 +64,14 @@ class RekognitionFaceVerifier:
         )
 
     def _download_reference(self, url: str) -> bytes:
-        """Descarcă bytes-ii primei poze de referință din S3 (cheie din URL)."""
-        key = urlparse(url).path.lstrip("/")
+        """Descarcă bytes-ii primei poze de referință din S3 (cheie din URL).
+
+        Refuză (ValueError) orice URL în afara host-ului propriu / prefixului
+        `photos/` — anti citire arbitrară de obiecte prin URL controlat de user.
+        """
+        key = key_within_namespace(url)
+        if not key:
+            raise ValueError("URL de referință în afara storage-ului permis.")
         obj = self._s3_client().get_object(Bucket=settings.s3_bucket, Key=key)
         return obj["Body"].read()
 

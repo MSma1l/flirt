@@ -10,12 +10,94 @@ from uuid import uuid4
 
 from app.core.config import settings
 
+# RO: mapare tip-conținut → extensie (allowlist intrinsecă, aliniată cu
+# settings.allowed_image_types). Sursa de adevăr pentru extensia sigură a cheii.
+_CONTENT_TYPE_EXT: dict[str, str] = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+}
+
+
+def ext_for_content_type(content_type: str) -> str | None:
+    """Extensia sigură pentru un tip de conținut permis (None dacă nepermis)."""
+    if content_type not in settings.allowed_image_types_set:
+        return None
+    return _CONTENT_TYPE_EXT.get(content_type)
+
+
+def allowed_hosts() -> set[str]:
+    """Domeniile permise pentru URL-urile de poze (storage propriu + bucket S3).
+
+    Se derivă exclusiv din settings (fără hardcodare): host-ul din
+    `storage_base_url` și, dacă e configurat S3, domeniul standard al bucketului.
+    """
+    hosts: set[str] = set()
+    base_host = urlparse(settings.storage_base_url).netloc
+    if base_host:
+        hosts.add(base_host)
+    if settings.s3_bucket and settings.s3_region:
+        hosts.add(f"{settings.s3_bucket}.s3.{settings.s3_region}.amazonaws.com")
+    return hosts
+
+
+def photo_prefix(profile_id) -> str:
+    """Prefixul de cheie S3 rezervat pozelor unui profil."""
+    return f"photos/{profile_id}/"
+
+
+def build_photo_key(profile_id, content_type: str) -> str:
+    """Cheie S3 sigură, generată server-side: `photos/{profile_id}/{uuid}.{ext}`.
+
+    Numele NU provine din `filename` controlat de user (anti path traversal);
+    extensia vine din `content_type` validat față de allowlist (ValueError altfel).
+    """
+    ext = ext_for_content_type(content_type)
+    if ext is None:
+        raise ValueError(f"Tip de conținut nepermis: {content_type!r}")
+    return f"{photo_prefix(profile_id)}{uuid4().hex}.{ext}"
+
+
+def key_from_own_url(url: str, profile_id) -> str | None:
+    """Întoarce cheia S3 dacă `url` e în storage-ul nostru ȘI sub prefixul
+    `photos/{profile_id}/` al userului curent; altfel None (respins).
+
+    Blochează ștergerea/citirea arbitrară de obiecte prin URL controlat de user
+    (inclusiv cheile altui profil din același bucket).
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.netloc not in allowed_hosts():
+        return None
+    key = parsed.path.lstrip("/")
+    if not key.startswith(photo_prefix(profile_id)):
+        return None
+    return key
+
+
+def key_within_namespace(url: str) -> str | None:
+    """Defense-in-depth: cheia dacă host-ul e al nostru și cheia e sub `photos/`.
+
+    Nu leagă de un profil anume — folosit în layerul de storage/verify unde
+    `profile_id` nu e disponibil, pentru a refuza chei în afara namespace-ului.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.netloc not in allowed_hosts():
+        return None
+    key = parsed.path.lstrip("/")
+    if not key.startswith("photos/"):
+        return None
+    return key
+
 
 class Storage(Protocol):
     """Contractul minim de storage foto folosit de servicii/endpoint-uri."""
 
-    async def save(self, filename: str, content: bytes, content_type: str) -> str:
-        """Salvează conținutul și întoarce URL-ul public al fișierului."""
+    async def save(self, key: str, content: bytes, content_type: str) -> str:
+        """Salvează `content` sub cheia (deja sigură) `key` și întoarce URL-ul.
+
+        Cheia e calculată de apelant cu `build_photo_key` (uuid + extensie
+        validă, prefix `photos/{profile_id}/`) — niciodată din `filename` brut.
+        """
         ...
 
     async def delete(self, url: str) -> None:
@@ -30,10 +112,10 @@ class StubStorage:
     dar unic prin `uuid4`. `delete` este no-op.
     """
 
-    async def save(self, filename: str, content: bytes, content_type: str) -> str:
-        """Întoarce un URL fără a persista nimic (RO: doar pentru stub)."""
+    async def save(self, key: str, content: bytes, content_type: str) -> str:
+        """Întoarce un URL determinist ca formă din `key`, fără a persista."""
         # RO: nu citim/scriem `content` — semnătura rămâne compatibilă cu S3.
-        return f"{settings.storage_base_url}/photos/{uuid4().hex}/{filename}"
+        return f"{settings.storage_base_url}/{key.lstrip('/')}"
 
     async def delete(self, url: str) -> None:
         """No-op în stub — nimic de șters."""
@@ -65,21 +147,27 @@ class S3Storage:
             f".amazonaws.com/{key}"
         )
 
-    async def save(self, filename: str, content: bytes, content_type: str) -> str:
-        """Urcă `content` în bucket sub o cheie unică și întoarce URL-ul public."""
-        # RO: cheie unică (uuid) sub prefixul photos/, păstrând numele fișierului.
-        key = f"photos/{uuid4().hex}/{filename}"
+    async def save(self, key: str, content: bytes, content_type: str) -> str:
+        """Urcă `content` sub cheia sigură `key` (calculată de apelant).
+
+        `ContentType` e forțat dintr-o listă sigură de apelant (nu din header-ul
+        de upload direct). Cheia nu conține `filename` brut de la user.
+        """
         self._client().put_object(
             Bucket=settings.s3_bucket,
-            Key=key,
+            Key=key.lstrip("/"),
             Body=content,
             ContentType=content_type,
         )
-        return self._public_url(key)
+        return self._public_url(key.lstrip("/"))
 
     async def delete(self, url: str) -> None:
-        """Șterge obiectul din bucket, derivând cheia din URL (idempotent)."""
-        key = urlparse(url).path.lstrip("/")
+        """Șterge obiectul din bucket doar dacă cheia e în namespace-ul nostru.
+
+        Derivă cheia din URL, dar refuză (no-op) orice URL în afara host-ului
+        propriu sau a prefixului `photos/` — anti ștergere arbitrară de obiecte.
+        """
+        key = key_within_namespace(url)
         if not key:
             return None
         self._client().delete_object(Bucket=settings.s3_bucket, Key=key)

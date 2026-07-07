@@ -3,15 +3,34 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel
+from pydantic import AfterValidator, BaseModel, StringConstraints
+
+from app.core.validators import is_https_url, optional_safe_str
+
+# Plafon lungime caption aliniat cu coloana Story.caption = String(500).
+CAPTION_MAX_LENGTH = 500
+# Plafon URL aliniat cu coloana Story.media_url = String(500).
+MEDIA_URL_MAX_LENGTH = 500
+
+# URL de media: obligatoriu https (anti-mixed-content / SSRF pe scheme exotice).
+HttpsUrl = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=MEDIA_URL_MAX_LENGTH),
+    AfterValidator(is_https_url),
+]
 
 
 class StoryIn(BaseModel):
-    """Payload la crearea unei povești."""
+    """Payload la crearea unei povești.
 
-    media_url: str
-    caption: str | None = None
+    `media_url` trebuie să fie un URL https valid; `caption` (opțional) e curățat
+    defensiv (trim, non-gol, fără HTML/control chars, plafon lungime).
+    """
+
+    media_url: HttpsUrl
+    caption: optional_safe_str(CAPTION_MAX_LENGTH) | None = None
 
 
 class StoryOut(BaseModel):

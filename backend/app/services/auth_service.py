@@ -26,6 +26,12 @@ from app.models.session import RefreshSession
 from app.models.user import User
 from app.schemas.auth import TokenPair
 
+# RO: Hash Argon2 „dummy", constant, pentru a rula MEREU o verificare de parolă
+# la login — chiar și când userul nu există — ca timpul de răspuns să nu dezvăluie
+# existența contului (anti user-enumeration prin timing).
+# EN: constant dummy hash so login timing is uniform whether the user exists or not.
+_DUMMY_PASSWORD_HASH = hash_password("timing-uniform-dummy-password")
+
 
 async def _issue_token_pair(
     db: AsyncSession, user: User, family_id: str
@@ -81,7 +87,12 @@ async def authenticate(db: AsyncSession, email: str, password: str) -> TokenPair
     normalized = email.strip().lower()
 
     user = await db.scalar(select(User).where(User.email == normalized))
-    if user is None or not verify_password(password, user.password_hash):
+    # Rulăm verify_password MEREU (pe hash-ul real sau pe cel dummy) pentru timing
+    # uniform, apoi întoarcem un 401 generic, identic pentru „user inexistent" și
+    # „parolă greșită" — fără oracol de enumerare.
+    password_hash = user.password_hash if user is not None else _DUMMY_PASSWORD_HASH
+    password_ok = verify_password(password, password_hash)
+    if user is None or not password_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",

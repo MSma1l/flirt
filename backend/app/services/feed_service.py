@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import or_, select
+from fastapi import HTTPException, status
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -15,8 +16,9 @@ from app.models.profile import Profile
 from app.models.swipe import Like, Match
 from app.models.user import User
 from app.schemas.feed import FeedCard, MatchOut, SwipeResult, UndoResult
-from app.services import chat_service, geo
+from app.services import billing, chat_service, geo
 from app.services.compatibility import compute_compatibility
+from app.services.contact_masker import mask_contacts
 
 # --- Reguli de business (din config, nu hardcodate în mijlocul logicii) ------
 MAX_TOP_INTERESTS = 3   # câte interese afișăm pe cartelă (TZ 4.1)
@@ -111,12 +113,17 @@ async def get_feed(
     hidden_ids = {row[0] for row in hidden_result.all()}
 
     # Candidate: profiluri completate, nu eu, nu swipe-uiți, nu blocați, nu ascunși.
+    # Anti-DoS: PLAFONĂM scanarea la nivel SQL (`.limit`) ca un feed să nu poată
+    # forța încărcarea + procesarea întregii baze de profiluri (D1). Limita vine
+    # din config (`feed_scan_limit`), nu hardcodată.
     excluded = swiped_ids | blocked_ids | hidden_ids | {user.id}
     cand_result = await db.execute(
-        select(Profile).where(
+        select(Profile)
+        .where(
             Profile.completed.is_(True),
             Profile.user_id.notin_(excluded),
         )
+        .limit(max(0, settings.feed_scan_limit))
     )
     candidates = list(cand_result.scalars().all())
 
@@ -134,34 +141,148 @@ async def get_feed(
     interests_map = await _interests_by_profile(db, profile_ids)
     my_interests = interests_map.get(my_profile.id, set())
 
-    # Calcul compatibilitate + construcție cartelă.
-    cards: list[tuple[int, FeedCard]] = []
+    # Calcul compatibilitate (fără I/O de rețea) + sortare, ÎNAINTE de geocoding.
+    scored: list[tuple[int, Profile, set[str]]] = []
     for p in candidates:
         p_interests = interests_map.get(p.id, set())
         score = compute_compatibility(my_profile, p, my_interests, p_interests)
+        scored.append((score, p, p_interests))
+
+    # Sortare descrescătoare după compatibilitate, apoi tăiere la `limit`.
+    scored.sort(key=lambda item: item[0], reverse=True)
+    top = scored[: max(0, limit)]
+
+    # Geocoding DOAR pentru cardurile efectiv returnate (anti-DoS, D1): nu mai
+    # geocodăm toți candidații scanați, ci strict rezultatele afișate.
+    cards: list[FeedCard] = []
+    for score, p, p_interests in top:
         # Distanța reală prin geocoding (TZ 7). Robust: None dacă vreun oraș nu
         # poate fi geocodat (provider stub cu oraș necunoscut etc.).
         distance_km = await geo.distance_km_between(
             my_profile.city, my_profile.street, p.city, p.street
         )
-        card = FeedCard(
-            user_id=p.user_id,
-            name=p.name,
-            age=_calc_age(p.birth_date),
-            gender=p.gender,
-            city=p.city,
-            distance_km=distance_km,  # geocoding real (TZ 7); None dacă nu se poate
-            about=p.about,
-            top_interests=sorted(p_interests)[:MAX_TOP_INTERESTS],
-            languages=list(p.languages or []),
-            compatibility=score,
-            photos=list(p.photos or []),
+        cards.append(
+            FeedCard(
+                user_id=p.user_id,
+                name=p.name,
+                age=_calc_age(p.birth_date),
+                gender=p.gender,
+                city=p.city,
+                distance_km=distance_km,  # geocoding real (TZ 7); None dacă nu se poate
+                about=p.about,
+                top_interests=sorted(p_interests)[:MAX_TOP_INTERESTS],
+                languages=list(p.languages or []),
+                compatibility=score,
+                photos=list(p.photos or []),
+            )
         )
-        cards.append((score, card))
+    return cards
 
-    # Sortare descrescătoare după compatibilitate, apoi tăiere la `limit`.
-    cards.sort(key=lambda item: item[0], reverse=True)
-    return [card for _, card in cards[: max(0, limit)]]
+
+async def _authorize_swipe(
+    db: AsyncSession, user: User, target_user_id: uuid.UUID
+) -> None:
+    """Validează dreptul de a face swipe pe `target_user_id` (breșă critică).
+
+    Reproduce controalele din `get_feed` la nivel de acțiune, ca ținta să nu
+    poată fi lovită direct prin `POST /feed/swipe` ocolind feed-ul. Ridică
+    HTTPException (403/404) la orice încălcare; 404 „neutru" acolo unde nu vrem
+    să divulgăm existența/starea contului țintă.
+    """
+    # Self-match interzis (nu-ți poți da like ție însuți).
+    if target_user_id == user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Nu poți face swipe pe propriul profil.",
+        )
+
+    # Profilul propriu — necesar pentru grupa de vârstă; incomplet ⇒ interzis.
+    my_result = await db.execute(select(Profile).where(Profile.user_id == user.id))
+    my_profile = my_result.scalar_one_or_none()
+    if my_profile is None or not my_profile.completed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Profilul tău nu este complet.",
+        )
+
+    # Profilul țintei — inexistent SAU incomplet ⇒ 404 (nu divulgăm starea).
+    target_result = await db.execute(
+        select(Profile).where(Profile.user_id == target_user_id)
+    )
+    target_profile = target_result.scalar_one_or_none()
+    if target_profile is None or not target_profile.completed:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Utilizator indisponibil."
+        )
+
+    # Age-gate (TZ 2.3): swipe DOAR în aceeași grupă (siguranța minorilor).
+    my_group = _age_group(_calc_age(my_profile.birth_date))
+    target_group = _age_group(_calc_age(target_profile.birth_date))
+    if my_group != target_group:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Swipe interzis între grupe de vârstă diferite.",
+        )
+
+    # I1 — block în ORICE direcție (eu → el sau el → eu).
+    block_result = await db.execute(
+        select(Block.id).where(
+            or_(
+                and_(
+                    Block.blocker_id == user.id,
+                    Block.blocked_id == target_user_id,
+                ),
+                and_(
+                    Block.blocker_id == target_user_id,
+                    Block.blocked_id == user.id,
+                ),
+            )
+        )
+    )
+    if block_result.first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Interacțiune blocată."
+        )
+
+    # I2 — profil ascuns ⇒ indisponibil pentru swipe (404 neutru).
+    hidden_result = await db.execute(
+        select(UserSettings.user_id).where(
+            UserSettings.user_id == target_user_id,
+            UserSettings.profile_hidden.is_(True),
+        )
+    )
+    if hidden_result.first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Utilizator indisponibil."
+        )
+
+
+async def _enforce_daily_swipe_limit(db: AsyncSession, user: User) -> None:
+    """Aplică limita de swipe/zi pentru useri non-premium (TZ 4.5).
+
+    Premium (entitlement `premium`) = fără limită. Non-premium: numărăm Like-urile
+    userului din ultimele 24h; la atingerea `settings.free_daily_swipe_limit`
+    ridicăm 429 (Too Many Requests). Limita vine din config, nu hardcodată.
+    """
+    ent = await billing.entitlements(db, user)
+    if ent.premium:
+        return
+
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    count_result = await db.execute(
+        select(func.count())
+        .select_from(Like)
+        .where(Like.from_user_id == user.id, Like.created_at >= since)
+    )
+    used = int(count_result.scalar_one())
+    if used >= settings.free_daily_swipe_limit:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "Ai atins limita zilnică de swipe-uri. "
+                "Treci pe Premium pentru swipe nelimitat."
+            ),
+        )
 
 
 async def swipe(
@@ -175,7 +296,15 @@ async def swipe(
 
     Un `message` opțional se atașează like-ului (`deferred_message`) și devine
     vizibil ca mesaj de chat abia când swipe-ul produce un match reciproc (TZ 4.7).
+
+    Securitate (breșă critică): `swipe` aplică ACELEAȘI controale ca feed-ul —
+    age-gate (separarea minor/adult), block în orice direcție, profil ascuns,
+    profil incomplet/inexistent și interdicția de self-match — ca ținta să nu
+    poată fi swipe-uită direct, ocolind filtrele din `get_feed`.
     """
+    # --- Age-gate + authz pe țintă (înainte de ORICE scriere) -----------------
+    await _authorize_swipe(db, user, target_user_id)
+
     is_like = action == "like"
     # Mesajul deferred are sens doar pentru like (nu pentru dislike).
     deferred = message if (is_like and message) else None
@@ -189,6 +318,9 @@ async def swipe(
     )
     like = existing_result.scalar_one_or_none()
     if like is None:
+        # Limită de swipe/zi pentru non-premium (TZ 4.5) — se aplică DOAR la un
+        # swipe NOU (re-swipe pe același target nu consumă din cotă).
+        await _enforce_daily_swipe_limit(db, user)
         like = Like(
             from_user_id=user.id,
             to_user_id=target_user_id,
@@ -251,18 +383,21 @@ async def _deliver_deferred_messages(
 ) -> None:
     """Creează câte un `Message` pentru fiecare like cu `deferred_message` (TZ 4.7).
 
-    Inserează direct prin modelul `Message` (fără chat_service, deci fără mascare
-    și fără commit — apelantul comite). Textul deferred e consumat după livrare.
+    Inserează direct prin modelul `Message` (fără commit — apelantul comite), dar
+    APLICĂ mascarea contactelor (breșă: mesajul deferred ajungea în chat nemascat,
+    permițând schimb de telefon/telegram/email la primul match, ocolind TZ 5.5).
+    `was_masked` reflectă dacă s-a ascuns ceva. Textul e consumat după livrare.
     """
     for like in like_pair:
         if like is None or not like.deferred_message:
             continue
+        masked_body, was_masked = mask_contacts(like.deferred_message)
         db.add(
             Message(
                 chat_id=chat.id,
                 sender_id=like.from_user_id,
-                body=like.deferred_message,
-                was_masked=False,
+                body=masked_body,
+                was_masked=was_masked,
                 is_read=False,
             )
         )

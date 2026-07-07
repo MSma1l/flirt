@@ -6,6 +6,11 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.validators import safe_str
+
+# Lungimea maximă a unui mesaj de chat (TZ 5) — anti-DoS payload.
+MESSAGE_MAX_LENGTH = 2000
+
 
 class ChatSummary(BaseModel):
     """O intrare din lista de dialoguri (TZ 5.1)."""
@@ -37,9 +42,13 @@ class MessageOut(BaseModel):
 
 
 class MessageIn(BaseModel):
-    """Payload-ul de trimitere a unui mesaj."""
+    """Payload-ul de trimitere a unui mesaj.
 
-    body: str = Field(min_length=1, max_length=2000)
+    `body` e validat defensiv: trim, non-gol (gol/spații → 422), plafon lungime,
+    fără caractere de control și fără marcaje HTML (anti-XSS stocat).
+    """
+
+    body: safe_str(MESSAGE_MAX_LENGTH)
 
 
 class ReactionIn(BaseModel):

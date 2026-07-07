@@ -108,6 +108,21 @@ class Settings(BaseSettings):
     # FCM (push live)
     fcm_server_key: str = ""
 
+    # === Securitate / hardening ===
+    rate_limit_enabled: bool = True
+    rate_limit_login_per_min: int = 5       # încercări login / IP / minut
+    rate_limit_register_per_hour: int = 10  # înregistrări / IP / oră
+    otp_request_per_hour: int = 5           # cereri OTP / telefon / oră
+    otp_max_attempts: int = 5               # încercări verify / cod, apoi invalidare
+    max_upload_bytes: int = 8_388_608       # 8 MB limită upload
+    allowed_image_types: str = "image/jpeg,image/png,image/webp"
+    free_daily_swipe_limit: int = 50        # limită swipe/zi pentru non-premium (TZ 4.5)
+    feed_scan_limit: int = 500              # câți candidați scanează feed-ul (anti-DoS)
+
+    @property
+    def allowed_image_types_set(self) -> set[str]:
+        return {t.strip() for t in self.allowed_image_types.split(",") if t.strip()}
+
     # Ponderi Compatibility Score (sumă = 1.0) — TZ 4.6
     compat_w_interests: float = 0.30
     compat_w_status: float = 0.15
@@ -152,6 +167,29 @@ class Settings(BaseSettings):
             problems.append("JWT_PRIVATE_KEY este gol")
         if not self.jwt_public_key:
             problems.append("JWT_PUBLIC_KEY este gol")
+
+        # RO: în producție NU acceptăm integrări în modul 'stub' — ar însemna
+        # verificări false (social login, OTP, plăți, KYC facial, storage, push).
+        # EN: reject any integration left in 'stub' mode for production.
+        stub_integrations = {
+            "SOCIAL_AUTH_MODE": self.social_auth_mode,
+            "OTP_MODE": self.otp_mode,
+            "BILLING_PROVIDER": self.billing_provider,
+            "FACE_VERIFY_PROVIDER": self.face_verify_provider,
+            "STORAGE_PROVIDER": self.storage_provider,
+            "PUSH_PROVIDER": self.push_provider,
+        }
+        for name, value in stub_integrations.items():
+            if value == "stub":
+                problems.append(f"{name} este în modul 'stub' (nesigur în producție)")
+
+        # RO: debug expune stack-trace-uri și trebuie oprit în producție.
+        if self.debug is True:
+            problems.append("DEBUG este activ (True) în producție")
+
+        # RO: CORS wildcard '*' + credențiale = expunere; interzis în producție.
+        if "*" in self.cors_origins_list:
+            problems.append("CORS_ORIGINS conține wildcard '*' (nesigur în producție)")
 
         if problems:
             raise ValueError(

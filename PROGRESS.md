@@ -124,6 +124,19 @@ extern simulat (mock). Vezi `docs/INTEGRATIONS.md`.
 - Config complet + `pip install .[live]` + Dockerfile producție. **Backend 137 teste ✔**
 - Rămâne UI mobil (paywall, login social, push register, ecran selfie) — endpoint-urile există.
 
+## Etapa 13 — Teste comprehensive (✅)
+- Backend: acoperire 76%→87%, unit teste servicii/scheme/securitate/masker.
+- Mobile: teste UI de componente (Button/Input/Card/Badge...) + teste UX de ecrane (toate ecranele).
+
+## Etapa 14 — Pentest + hardening + validare input (✅ vezi SECURITY.md)
+Audit defensiv 4 dimensiuni (sub-agenți) + remediere + teste de regresie.
+- ✅ CRITICE: guard producție blochează `stub`/`debug`/`CORS*`, age-gate pe swipe (minori),
+  rate-limiting (app+nginx), OTP brute-force.
+- ✅ ÎNALTE: mesaj-la-like mascat, ștergere arbitrară S3 închisă, upload validat (anti stored-XSS),
+  feed DoS limitat, enforcement swipe premium, GDPR purge real.
+- ✅ Validare universală input (XSS/lungime/non-gol/control-chars) pe TOATE schemele (`core/validators.py`).
+- ✅ **Backend 313 teste** (~87% acoperire). Nucleu confirmat SIGUR: JWT/IDOR/mass-assignment/SQLi/SSRF.
+
 ## Amânat intenționat (❌ — necesită chei/servicii/decizii de business)
 - ❌ Verificare facială / liveness (TZ 2.2).
 - ❌ Înregistrare prin telefon + OTP (TZ 2.1).

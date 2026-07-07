@@ -22,13 +22,25 @@ def test_production_defaults_raise():
 
 
 def test_production_real_values_ok():
-    """Prod + valori reale → instanțiere reușită."""
+    """Prod + valori reale → instanțiere reușită.
+
+    Guard-ul întărit cere și integrări în modul 'live' (nu 'stub'), debug oprit
+    și CORS fără wildcard — le furnizăm explicit aici.
+    """
     s = Settings(
         environment="production",
         postgres_password="a-strong-secret",
         jwt_private_key=_FAKE_PRIV,
         jwt_public_key=_FAKE_PUB,
         database_url="",
+        social_auth_mode="live",
+        otp_mode="live",
+        billing_provider="stripe",
+        face_verify_provider="rekognition",
+        storage_provider="s3",
+        push_provider="expo",
+        debug=False,
+        cors_origins="https://app.flirt.example",
     )
     assert s.environment == "production"
 
