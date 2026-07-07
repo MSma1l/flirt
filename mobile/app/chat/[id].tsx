@@ -22,6 +22,7 @@ import { ChatMessage, ChatSummary } from '@/features/chat/types';
 import { CompatBadge } from '@/features/feed/CompatBadge';
 import { ReportModal } from '@/features/moderation/ReportModal';
 import { useAuthStore } from '@/store/authStore';
+import { firstError, LIMITS, maxLen, noHtml } from '@/utils/validation';
 import { useTheme } from '@theme/index';
 
 const REFETCH_MS = 3000;
@@ -92,7 +93,13 @@ export default function ChatScreen() {
   );
 
   const trimmed = draft.trim();
-  const canSend = trimmed.length > 0 && !sendMutation.isPending;
+  // Non-gol + ≤2000 + fără marcaje HTML (simetric cu backend-ul).
+  const messageError =
+    trimmed.length > 0
+      ? firstError(maxLen(trimmed, LIMITS.message), noHtml(trimmed))
+      : null;
+  const canSend =
+    trimmed.length > 0 && !messageError && !sendMutation.isPending;
 
   const handleSend = () => {
     if (!canSend) return;
@@ -187,7 +194,22 @@ export default function ChatScreen() {
           )}
         </View>
 
-        {sendMutation.isError ? (
+        {messageError ? (
+          <Text
+            testID="message-error"
+            style={[
+              typography.caption,
+              {
+                color: colors.danger,
+                backgroundColor: colors.surface,
+                paddingHorizontal: spacing.md,
+                paddingTop: spacing.xs,
+              },
+            ]}
+          >
+            {messageError}
+          </Text>
+        ) : sendMutation.isError ? (
           <Text
             style={[
               typography.caption,
@@ -219,6 +241,7 @@ export default function ChatScreen() {
             onChangeText={setDraft}
             placeholder="Scrie un mesaj…"
             placeholderTextColor={colors.textDisabled}
+            maxLength={LIMITS.message}
             multiline
             style={[
               typography.body,

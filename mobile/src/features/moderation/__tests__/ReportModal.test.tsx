@@ -102,6 +102,20 @@ describe('ReportModal', () => {
     });
   });
 
+  it('nota cu marcaje HTML blochează trimiterea și arată eroarea', () => {
+    const { getByText, getByPlaceholderText } = renderModal();
+
+    fireEvent.press(getByText('Spam'));
+    fireEvent.changeText(
+      getByPlaceholderText('Detalii suplimentare…'),
+      '<script>alert(1)</script>',
+    );
+    fireEvent.press(getByText('Trimite raportul'));
+
+    expect(getByText('Textul nu poate conține marcaje HTML.')).toBeTruthy();
+    expect(sendReport).not.toHaveBeenCalled();
+  });
+
   it('butonul „Anulează" apelează onClose', () => {
     const { getByText, onClose } = renderModal();
     fireEvent.press(getByText('Anulează'));

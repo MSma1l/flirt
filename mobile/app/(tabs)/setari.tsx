@@ -29,6 +29,7 @@ import {
   updateSettings,
 } from '@/features/settings/settingsApi';
 import { useAuthStore } from '@/store/authStore';
+import { searchRadiusKm } from '@/utils/validation';
 import { useTheme } from '@theme/index';
 
 const MODE_OPTIONS: { value: ThemeMode; label: string }[] = [
@@ -54,6 +55,7 @@ export default function SetariScreen() {
   const logout = useAuthStore((s) => s.logout);
 
   const [radiusText, setRadiusText] = useState('');
+  const [radiusError, setRadiusError] = useState<string | null>(null);
   const [deletion, setDeletion] = useState<AccountDeletion | null>(null);
 
   const { data, isLoading, isError, refetch } = useQuery<Settings>({
@@ -101,11 +103,14 @@ export default function SetariScreen() {
   };
 
   const commitRadius = () => {
-    const parsed = parseInt(radiusText, 10);
-    if (Number.isNaN(parsed) || parsed <= 0) {
-      if (data) setRadiusText(String(data.searchRadiusKm));
+    // Rază de căutare: număr întreg pozitiv rezonabil (1–1000 km).
+    const err = searchRadiusKm(radiusText);
+    if (err) {
+      setRadiusError(err);
       return;
     }
+    setRadiusError(null);
+    const parsed = parseInt(radiusText, 10);
     if (data && parsed === data.searchRadiusKm) return;
     settingsMutation.mutate({ searchRadiusKm: parsed });
   };
@@ -266,6 +271,7 @@ export default function SetariScreen() {
             label="Distanță maximă (km)"
             keyboardType="number-pad"
             value={radiusText}
+            error={radiusError}
             onChangeText={setRadiusText}
             onEndEditing={commitRadius}
             onBlur={commitRadius}

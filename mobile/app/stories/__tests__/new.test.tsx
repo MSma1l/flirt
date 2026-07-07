@@ -62,4 +62,25 @@ describe('NewStoryScreen', () => {
 
     await waitFor(() => expect(mockCreateStory).toHaveBeenCalledWith('https://x/1.jpg', undefined));
   });
+
+  it('URL non-https blochează publicarea și arată eroarea', () => {
+    const { getByTestId, getByText } = renderScreen();
+
+    fireEvent.changeText(getByTestId('story-media-url'), 'ftp://x/1.jpg');
+    fireEvent.press(getByTestId('story-submit'));
+
+    expect(getByText('URL invalid (se acceptă doar https).')).toBeTruthy();
+    expect(mockCreateStory).not.toHaveBeenCalled();
+  });
+
+  it('descrierea cu marcaje HTML blochează publicarea', () => {
+    const { getByTestId, getByText } = renderScreen();
+
+    fireEvent.changeText(getByTestId('story-media-url'), 'https://x/1.jpg');
+    fireEvent.changeText(getByTestId('story-caption'), '<script>alert(1)</script>');
+    fireEvent.press(getByTestId('story-submit'));
+
+    expect(getByText('Textul nu poate conține marcaje HTML.')).toBeTruthy();
+    expect(mockCreateStory).not.toHaveBeenCalled();
+  });
 });

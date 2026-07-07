@@ -81,6 +81,18 @@ describe('ChatScreen', () => {
     await waitFor(() => expect(getByPlaceholderText('Scrie un mesaj…').props.value).toBe(''));
   });
 
+  it('nu trimite un mesaj gol / doar spații', async () => {
+    const { getByPlaceholderText, getByLabelText } = renderScreen();
+
+    const input = getByPlaceholderText('Scrie un mesaj…');
+    fireEvent.changeText(input, '    ');
+    fireEvent.press(getByLabelText('Trimite'));
+
+    // Butonul rămâne blocat, mutația nu se declanșează.
+    await waitFor(() => expect(mockMarkRead).toHaveBeenCalled());
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
   it('long-press pe bulă deschide reacțiile și aplică o reacție', async () => {
     mockFetchMessages.mockResolvedValue([receivedMessage]);
     const { getByText, getByLabelText, getByTestId } = renderScreen();

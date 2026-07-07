@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Button, Input } from '@/components/ui';
+import { firstError, LIMITS, maxLen, noHtml } from '@/utils/validation';
 import { useTheme } from '@theme/index';
 
 import { sendReport } from './reportApi';
@@ -50,7 +51,9 @@ export function ReportModal({ visible, reportedUserId, chatId, onClose }: Props)
     onSuccess: () => setSent(true),
   });
 
-  const canSubmit = category !== null && !mutation.isPending;
+  // Nota e opțională: ≤500 caractere + fără marcaje HTML (simetric cu backend).
+  const noteError = firstError(maxLen(note, LIMITS.note), noHtml(note));
+  const canSubmit = category !== null && !noteError && !mutation.isPending;
 
   const handleSubmit = () => {
     if (!canSubmit) return;
@@ -124,6 +127,8 @@ export function ReportModal({ visible, reportedUserId, chatId, onClose }: Props)
                 label="Notă (opțional)"
                 value={note}
                 onChangeText={setNote}
+                error={noteError}
+                maxLength={LIMITS.note}
                 placeholder="Detalii suplimentare…"
                 multiline
               />

@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Button, Input, ScreenContainer } from '@/components/ui';
 import { createStory } from '@/features/stories/storiesApi';
+import { firstError, isHttpsUrl, LIMITS, maxLen, noHtml } from '@/utils/validation';
 import { useTheme } from '@theme/index';
 
 export default function NewStoryScreen() {
@@ -16,6 +17,7 @@ export default function NewStoryScreen() {
   const [mediaUrl, setMediaUrl] = useState('');
   const [caption, setCaption] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [captionError, setCaptionError] = useState<string | null>(null);
 
   const mutation = useMutation({
     mutationFn: () => createStory(mediaUrl.trim(), caption.trim() || undefined),
@@ -26,12 +28,19 @@ export default function NewStoryScreen() {
     onError: () => setError('Nu am putut publica povestea. Încearcă din nou.'),
   });
 
+  /** URL media: non-gol (mesaj propriu) + https valid, simetric cu backend. */
+  const validateMediaUrl = (value: string): string | null => {
+    if (!value.trim()) return 'Adaugă un URL de media.';
+    return isHttpsUrl(value);
+  };
+
   const submit = () => {
-    if (!mediaUrl.trim()) {
-      setError('Adaugă un URL de media.');
-      return;
-    }
-    setError(null);
+    // Descrierea e opțională: ≤500 caractere + fără marcaje HTML.
+    const urlErr = validateMediaUrl(mediaUrl);
+    const capErr = firstError(maxLen(caption, LIMITS.caption), noHtml(caption));
+    setError(urlErr);
+    setCaptionError(capErr);
+    if (urlErr || capErr) return;
     mutation.mutate();
   };
 
@@ -73,6 +82,8 @@ export default function NewStoryScreen() {
           placeholder="Adaugă un text…"
           value={caption}
           onChangeText={setCaption}
+          error={captionError}
+          maxLength={LIMITS.caption}
           testID="story-caption"
         />
 

@@ -1,38 +1,41 @@
-/** Funcții pure de validare pentru wizardul de anketă. Mesaje în română. */
+/** Funcții pure de validare pentru wizardul de anketă. Mesaje în română.
+ * Reutilizează modulul central `@/utils/validation` (simetric cu backend-ul:
+ * name/city ≤120, about ≤500, fără marcaje HTML, înălțime 100–250, vârstă ≥16).
+ */
+import {
+  age16plus,
+  computeAge as computeAgeUtil,
+  heightCm as heightCmUtil,
+  LIMITS,
+  MAX_HEIGHT_CM as MAX_HEIGHT_CM_UTIL,
+  maxLen,
+  MIN_AGE as MIN_AGE_UTIL,
+  MIN_HEIGHT_CM as MIN_HEIGHT_CM_UTIL,
+  noHtml,
+} from '@/utils/validation';
+
 import { AnketaDraft } from './types';
 
-export const MIN_AGE = 16;
-export const MIN_HEIGHT_CM = 100;
-export const MAX_HEIGHT_CM = 250;
-export const MAX_ABOUT_LENGTH = 500;
+// Re-export din modulul central pentru compatibilitate cu ecranele existente.
+export const MIN_AGE = MIN_AGE_UTIL;
+export const MIN_HEIGHT_CM = MIN_HEIGHT_CM_UTIL;
+export const MAX_HEIGHT_CM = MAX_HEIGHT_CM_UTIL;
+export const MAX_ABOUT_LENGTH = LIMITS.about;
+export const MAX_NAME_LENGTH = LIMITS.name;
+export const MAX_CITY_LENGTH = LIMITS.city;
 
 /** Calculează vârsta în ani împliniți la data `now`, pe baza datei de naștere. */
-export function computeAge(birthDate: Date, now: Date = new Date()): number {
-  let age = now.getFullYear() - birthDate.getFullYear();
-  const monthDiff = now.getMonth() - birthDate.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < birthDate.getDate())) {
-    age -= 1;
-  }
-  return age;
-}
+export const computeAge = computeAgeUtil;
 
-/** Numele trebuie să fie ne-gol. */
+/** Numele trebuie să fie ne-gol, ≤120 caractere, fără marcaje HTML. */
 export function validateName(value?: string): string | null {
   if (!value || !value.trim()) return 'Introdu numele tău.';
-  return null;
+  return noHtml(value) ?? maxLen(value, MAX_NAME_LENGTH);
 }
 
 /** Data nașterii trebuie să fie validă, în trecut, iar vârsta ≥ 16 ani. */
 export function validateBirthDate(value?: string): string | null {
-  if (!value || !value.trim()) return 'Introdu data nașterii.';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Data nașterii nu este validă.';
-  const now = new Date();
-  if (date.getTime() > now.getTime()) return 'Data nașterii nu poate fi în viitor.';
-  if (computeAge(date, now) < MIN_AGE) {
-    return `Trebuie să ai cel puțin ${MIN_AGE} ani.`;
-  }
-  return null;
+  return age16plus(value);
 }
 
 /** Genul trebuie ales. */
@@ -43,17 +46,13 @@ export function validateGender(value?: string): string | null {
 
 /** Înălțimea (cm) trebuie să fie un număr rezonabil (100–250). */
 export function validateHeight(value?: number): string | null {
-  if (value == null || Number.isNaN(value)) return 'Introdu înălțimea în cm.';
-  if (value < MIN_HEIGHT_CM || value > MAX_HEIGHT_CM) {
-    return `Înălțimea trebuie să fie între ${MIN_HEIGHT_CM} și ${MAX_HEIGHT_CM} cm.`;
-  }
-  return null;
+  return heightCmUtil(value);
 }
 
-/** Orașul trebuie să fie ne-gol. */
+/** Orașul trebuie să fie ne-gol, ≤120 caractere, fără marcaje HTML. */
 export function validateCity(value?: string): string | null {
   if (!value || !value.trim()) return 'Introdu orașul.';
-  return null;
+  return noHtml(value) ?? maxLen(value, MAX_CITY_LENGTH);
 }
 
 /** Cel puțin o limbă de comunicare. */
@@ -62,12 +61,12 @@ export function validateLanguages(value?: string[]): string | null {
   return null;
 }
 
-/** Câmpul „despre" este opțional, dar limitat la 500 de caractere. */
+/** Câmpul „despre" este opțional, dar ≤500 caractere și fără marcaje HTML. */
 export function validateAbout(value?: string): string | null {
   if (value && value.length > MAX_ABOUT_LENGTH) {
     return `Textul depășește ${MAX_ABOUT_LENGTH} de caractere.`;
   }
-  return null;
+  return noHtml(value);
 }
 
 /** Cel puțin un interes. */

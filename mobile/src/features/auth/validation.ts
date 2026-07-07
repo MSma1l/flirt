@@ -1,20 +1,19 @@
-/** Funcții pure de validare pentru formularele de autentificare. Mesaje în română. */
+/** Funcții pure de validare pentru formularele de autentificare. Mesaje în română.
+ * Reutilizează modulul central `@/utils/validation` (simetric cu backend-ul);
+ * API-ul rămâne cel folosit de ecranele de login / register.
+ */
+import { isEmail, noHtml } from '@/utils/validation';
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-/** Returnează un mesaj de eroare sau `null` dacă emailul este valid. */
+/** Returnează un mesaj de eroare sau `null` dacă emailul este valid (non-gol, format, fără marcaje). */
 export function validateEmail(value: string): string | null {
-  const email = value.trim();
-  if (!email) return 'Introdu adresa de email.';
-  if (!EMAIL_REGEX.test(email)) return 'Adresa de email nu este validă.';
-  return null;
+  return isEmail(value);
 }
 
-/** Returnează un mesaj de eroare sau `null` dacă parola respectă cerințele (min 8). */
+/** Returnează un mesaj de eroare sau `null` dacă parola respectă cerințele (non-gol, min 8, fără marcaje). */
 export function validatePassword(value: string): string | null {
   if (!value) return 'Introdu o parolă.';
   if (value.length < 8) return 'Parola trebuie să aibă cel puțin 8 caractere.';
-  return null;
+  return noHtml(value);
 }
 
 /** Returnează un mesaj de eroare sau `null` dacă cele două parole coincid. */
