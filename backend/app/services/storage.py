@@ -1,10 +1,11 @@
-"""Schelet de storage foto (TZ 2.4) — abstracție Storage + implementare STUB.
+"""Schelet de storage foto (TZ 2.4) — abstracție Storage + implementări.
 
 Provider-ul se alege din `settings.storage_provider`:
 - 'stub' (implicit): nu scrie pe disc/rețea, întoarce un URL determinist.
-- 's3': punct de conectare pentru boto3 (nu e implementat încă).
+- 's3': stochează în AWS S3 prin boto3 (import LAZY, doar când e folosit).
 """
 from typing import Protocol
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from app.core.config import settings
@@ -39,22 +40,59 @@ class StubStorage:
         return None
 
 
+class S3Storage:
+    """Storage live pe AWS S3 (TZ 2.4). Import boto3 LAZY, din interiorul metodelor.
+
+    Astfel stub-ul și restul aplicației nu depind de boto3 la import.
+    Credențialele/regiunea/bucket-ul vin exclusiv din `settings`.
+    """
+
+    def _client(self):
+        """Construiește un client S3 boto3 (import LAZY, config din settings)."""
+        import boto3  # RO: import LAZY — doar când chiar folosim S3.
+
+        return boto3.client(
+            "s3",
+            region_name=settings.s3_region,
+            aws_access_key_id=settings.aws_access_key_id,
+            aws_secret_access_key=settings.aws_secret_access_key,
+        )
+
+    def _public_url(self, key: str) -> str:
+        """URL-ul public standard S3 pentru o cheie dată."""
+        return (
+            f"https://{settings.s3_bucket}.s3.{settings.s3_region}"
+            f".amazonaws.com/{key}"
+        )
+
+    async def save(self, filename: str, content: bytes, content_type: str) -> str:
+        """Urcă `content` în bucket sub o cheie unică și întoarce URL-ul public."""
+        # RO: cheie unică (uuid) sub prefixul photos/, păstrând numele fișierului.
+        key = f"photos/{uuid4().hex}/{filename}"
+        self._client().put_object(
+            Bucket=settings.s3_bucket,
+            Key=key,
+            Body=content,
+            ContentType=content_type,
+        )
+        return self._public_url(key)
+
+    async def delete(self, url: str) -> None:
+        """Șterge obiectul din bucket, derivând cheia din URL (idempotent)."""
+        key = urlparse(url).path.lstrip("/")
+        if not key:
+            return None
+        self._client().delete_object(Bucket=settings.s3_bucket, Key=key)
+        return None
+
+
 def get_storage() -> Storage:
     """Fabrică de storage în funcție de `settings.storage_provider`."""
     provider = settings.storage_provider
     if provider == "stub":
         return StubStorage()
     if provider == "s3":
-        # RO: aici se adaugă S3Storage cu boto3 (client S3), folosind
-        # settings.s3_bucket / s3_region / aws_access_key_id / aws_secret_access_key.
-        # save(): boto3 put_object(Bucket=..., Key=..., Body=content,
-        #         ContentType=content_type) → întoarce URL-ul public/CDN.
-        # delete(): boto3 delete_object(Bucket=..., Key=...) derivat din URL.
-        raise NotImplementedError(
-            "Storage S3 nu este implementat încă. Setează AWS_* "
-            "(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET, S3_REGION) "
-            "și adaugă implementarea boto3."
-        )
+        return S3Storage()
     raise NotImplementedError(
         f"Provider de storage necunoscut: '{provider}'. Valori permise: 'stub', 's3'."
     )

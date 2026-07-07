@@ -9,7 +9,15 @@ from __future__ import annotations
 import math
 from typing import Protocol
 
+import httpx
+
 from app.core.config import settings
+
+# --- Constante rețea pentru providerii LIVE ----------------------------------
+# Endpoint-urile publice de geocoding + timeout implicit (secunde).
+GOOGLE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
+MAPBOX_GEOCODE_URL = "https://api.mapbox.com/geocoding/v5/mapbox.places"
+HTTP_TIMEOUT_S = 10.0
 
 # --- Constante geo -----------------------------------------------------------
 EARTH_RADIUS_KM = 6371.0088  # raza medie a Pământului (IUGG)
@@ -89,30 +97,106 @@ class StubGeocoder:
         return _STUB_CITIES.get(_normalize_city(city))
 
 
+def _build_query(city: str, street: str | None = None) -> str:
+    """Compune un șir de căutare din stradă (opțional) + oraș.
+
+    Ex.: ("București", "Calea Victoriei") -> "Calea Victoriei, București".
+    Fără stradă rămâne doar orașul. Trim pe fiecare parte, ignoră părțile goale.
+    """
+    parts = [p.strip() for p in (street, city) if p and p.strip()]
+    return ", ".join(parts)
+
+
+class GoogleGeocoder:
+    """Geocoder LIVE peste Google Geocoding API.
+
+    Citește cheia din `settings.geo_api_key`. Robust la erori: orice problemă de
+    rețea/HTTP/parse întoarce None (nu propagă excepția, ca să nu cadă app-ul).
+    """
+
+    def __init__(self, api_key: str) -> None:
+        self._api_key = api_key
+
+    async def geocode(
+        self, city: str, street: str | None = None
+    ) -> tuple[float, float] | None:
+        query = _build_query(city, street)
+        if not query:
+            return None
+        params = {"address": query, "key": self._api_key}
+        try:
+            async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_S) as http:
+                resp = await http.get(GOOGLE_GEOCODE_URL, params=params)
+                resp.raise_for_status()
+                data = resp.json()
+        except Exception:
+            # Orice eroare (timeout, HTTP != 2xx, JSON invalid) => rezultat absent.
+            return None
+        results = (data or {}).get("results") or []
+        if not results:
+            return None
+        location = (results[0].get("geometry") or {}).get("location") or {}
+        lat = location.get("lat")
+        lng = location.get("lng")
+        if lat is None or lng is None:
+            return None
+        return (float(lat), float(lng))
+
+
+class MapboxGeocoder:
+    """Geocoder LIVE peste Mapbox Geocoding API (mapbox.places).
+
+    Citește cheia din `settings.geo_api_key`. Mapbox întoarce coordonatele ca
+    `center = [lng, lat]` — le rearanjăm în (lat, lng). Robust la erori => None.
+    """
+
+    def __init__(self, api_key: str) -> None:
+        self._api_key = api_key
+
+    async def geocode(
+        self, city: str, street: str | None = None
+    ) -> tuple[float, float] | None:
+        query = _build_query(city, street)
+        if not query:
+            return None
+        # Interogarea intră în path-ul URL; o encodăm ca segment sigur.
+        from urllib.parse import quote
+
+        url = f"{MAPBOX_GEOCODE_URL}/{quote(query)}.json"
+        params = {"access_token": self._api_key}
+        try:
+            async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_S) as http:
+                resp = await http.get(url, params=params)
+                resp.raise_for_status()
+                data = resp.json()
+        except Exception:
+            return None
+        features = (data or {}).get("features") or []
+        if not features:
+            return None
+        center = features[0].get("center") or []
+        # center = [lng, lat]; avem nevoie de exact două valori numerice.
+        if len(center) < 2:
+            return None
+        lng, lat = center[0], center[1]
+        if lat is None or lng is None:
+            return None
+        return (float(lat), float(lng))
+
+
 def get_geocoder() -> Geocoder:
     """Alege implementarea de geocoder după `settings.geo_provider`.
 
-    Momentan doar 'stub'. Pentru 'google'/'mapbox' ridicăm NotImplementedError
-    până când cheile + clientul real sunt adăugate mai jos.
+    'stub' (implicit) => StubGeocoder (fără rețea). 'google'/'mapbox' => clientul
+    LIVE corespunzător, care citește cheia din `settings.geo_api_key`.
     """
     provider = (settings.geo_provider or "stub").strip().lower()
     if provider == "stub":
         return StubGeocoder()
-    # === Punct de extindere pentru providerul REAL ==========================
-    # Aici se adaugă geocoderele de producție. Ele vor citi cheia din
-    # `settings.geo_api_key` și vor face request-uri HTTP (async) la API-ul lor:
-    #
-    #   if provider == "google":
-    #       return GoogleGeocoder(api_key=settings.geo_api_key)
-    #   if provider == "mapbox":
-    #       return MapboxGeocoder(api_key=settings.geo_api_key)
-    #
-    # ========================================================================
-    if provider in ("google", "mapbox"):
-        raise NotImplementedError(
-            f"Providerul de geocoding '{provider}' nu e încă implementat: "
-            f"setează cheile (geo_api_key) și adaugă clientul real în geo.py."
-        )
+    if provider == "google":
+        return GoogleGeocoder(api_key=settings.geo_api_key)
+    if provider == "mapbox":
+        return MapboxGeocoder(api_key=settings.geo_api_key)
     raise NotImplementedError(
         f"Provider de geocoding necunoscut: '{provider}' "
         f"(valori valide: 'stub' | 'google' | 'mapbox')."

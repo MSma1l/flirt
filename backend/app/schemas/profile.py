@@ -44,6 +44,20 @@ class ProfileOut(BaseModel):
     photos: list[str] = Field(default_factory=list)
     humor_vector: dict | None = None
     completed: bool = False
+    verified: bool = False  # verificare facială reușită (TZ 2.2)
+
+
+class FaceVerifyIn(BaseModel):
+    """Body opțional pentru verificarea facială în modul stub (fără fișier)."""
+
+    selfie_url: str | None = Field(default=None, max_length=1000)
+
+
+class FaceVerifyOut(BaseModel):
+    """Rezultatul verificării faciale: dacă a trecut + scorul de similaritate."""
+
+    verified: bool
+    similarity: float
 
 
 class PhotoUrlIn(BaseModel):

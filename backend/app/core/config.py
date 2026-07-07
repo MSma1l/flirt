@@ -89,8 +89,24 @@ class Settings(BaseSettings):
     price_ai_bot: float = 4.99
     price_all_inclusive: float = 14.99
 
-    # Verificare facială (TZ 2.2) — doar punct de conectare, implementare ulterioară.
-    face_verify_provider: str = "stub"  # 'stub' | 'rekognition'
+    # Verificare facială (TZ 2.2). Provider: 'stub' | 'rekognition'
+    face_verify_provider: str = "stub"
+    face_match_threshold: float = 90.0   # scor minim de similaritate (0-100)
+
+    # Redis (store OTP live, cache) — ex. redis://localhost:6379/0
+    redis_url: str = ""
+    # SMS (Twilio REST prin HTTP) — pentru OTP live
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_from: str = ""
+    # Stripe (billing live prin HTTP)
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    # App Store / Google Play (verificare receipt)
+    app_store_shared_secret: str = ""
+    google_play_package: str = ""
+    # FCM (push live)
+    fcm_server_key: str = ""
 
     # Ponderi Compatibility Score (sumă = 1.0) — TZ 4.6
     compat_w_interests: float = 0.30

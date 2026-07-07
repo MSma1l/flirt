@@ -10,11 +10,13 @@ from app.models.interest import Interest, ProfileInterest
 from app.models.profile import Profile
 from app.schemas.profile import (
     AnketaIn,
+    FaceVerifyOut,
     InterestItem,
     ProfileOut,
     ReferenceItem,
     ReferenceOut,
 )
+from app.services.face_verify import get_face_verifier
 from app.services.storage import get_storage
 
 # --- Cataloage de referință (derivate din TZ, nu hardcodate ca reguli) ---------
@@ -140,6 +142,7 @@ def _to_out(profile: Profile, interest_slugs: list[str]) -> ProfileOut:
         photos=profile.photos or [],
         humor_vector=profile.humor_vector,
         completed=profile.completed,
+        verified=profile.verified,
     )
 
 
@@ -330,3 +333,22 @@ async def upsert_anketa(db: AsyncSession, user, data: AnketaIn) -> ProfileOut:
 
     slugs = await _interest_slugs(db, profile.id)
     return _to_out(profile, slugs)
+
+
+async def verify_face(db: AsyncSession, user, selfie: bytes) -> FaceVerifyOut:
+    """Verifică selfie-ul față de pozele profilului și persistă rezultatul (TZ 2.2).
+
+    Cheamă providerul din `settings.face_verify_provider` (stub/rekognition),
+    compară cu `profile.photos` și setează `Profile.verified` la rezultat.
+    """
+    profile = await _get_profile_or_404(db, user)
+
+    verifier = get_face_verifier()
+    verified, similarity = await verifier.compare(selfie, list(profile.photos or []))
+
+    profile.verified = verified
+    db.add(profile)
+    await db.commit()
+    await db.refresh(profile)
+
+    return FaceVerifyOut(verified=verified, similarity=similarity)

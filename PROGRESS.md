@@ -114,11 +114,15 @@ Toate cu implementare STUB funcțională + config per provider (fără hardcodar
 - Punct rezervat: verificare facială (TZ 2.2). Migrație (subscriptions + push_devices).
 - **49 endpoint-uri**, 22 tabele. Teste: **backend 84 ✔**.
 
-## Integrări externe — scheletate cu stub (🔜 gata de chei, vezi Etapa 11 + docs/INTEGRATIONS.md)
-- 🔜 Telefon+OTP, Google/Apple Sign-In (backend stub; **UI mobil de adăugat**)
-- 🔜 Upload poze (endpoint `/profiles/photos` + StubStorage; S3 la chei)
-- 🔜 Monetizare (`/subscriptions/*` stub; **paywall mobil + enforcement în feed de adăugat**)
-- 🔜 Push (`/push/*` + StubPush; înregistrare device în app de adăugat)
+## Etapa 12 — Integrări externe LIVE (✅ implementate, driven din .env)
+Stub rămâne default; live-ul se activează din `.env`. Fiecare ramură live e testată cu API-ul
+extern simulat (mock). Vezi `docs/INTEGRATIONS.md`.
+- ✅ Storage **S3** (boto3) + **Verificare facială Rekognition** + `/profiles/verify-face` + `Profile.verified`
+- ✅ Geocoding **Google/Mapbox** (httpx) → distanță reală
+- ✅ **Google/Apple Sign-In** (verificare JWKS) + **OTP** (Redis + Twilio SMS)
+- ✅ Push **Expo/FCM** (httpx); Billing **Stripe + App Store** (verificare receipt)
+- Config complet + `pip install .[live]` + Dockerfile producție. **Backend 137 teste ✔**
+- Rămâne UI mobil (paywall, login social, push register, ecran selfie) — endpoint-urile există.
 
 ## Amânat intenționat (❌ — necesită chei/servicii/decizii de business)
 - ❌ Verificare facială / liveness (TZ 2.2).

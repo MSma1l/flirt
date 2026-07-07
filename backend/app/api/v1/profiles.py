@@ -9,6 +9,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.profile import (
     AnketaIn,
+    FaceVerifyOut,
     PhotoOrderIn,
     PhotoUrlIn,
     ProfileOut,
@@ -93,3 +94,29 @@ async def delete_photo(data: PhotoUrlIn, db: DbDep, user: UserDep) -> list[str]:
 async def reorder_photos(data: PhotoOrderIn, db: DbDep, user: UserDep) -> list[str]:
     """Reordonează pozele (aceleași URL-uri); întoarce lista actualizată."""
     return await profile_service.reorder_photos(db, user, data.urls)
+
+
+@router.post("/verify-face", response_model=FaceVerifyOut)
+async def verify_face(request: Request, db: DbDep, user: UserDep) -> FaceVerifyOut:
+    """Verificare facială (TZ 2.2): compară un selfie cu pozele profilului.
+
+    Acceptă fie un fișier (multipart, câmp 'file'), fie un body JSON simplu
+    (mod stub — conținutul nu contează). Setează `Profile.verified` și întoarce
+    `{verified, similarity}`.
+    """
+    content_type = request.headers.get("content-type", "")
+
+    if content_type.startswith("multipart/form-data"):
+        form = await request.form()
+        upload = form.get("file")
+        if upload is None or not hasattr(upload, "read"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Lipsește câmpul 'file' (multipart).",
+            )
+        selfie = await upload.read()
+    else:
+        # RO: în stub nu avem nevoie de bytes reali — corpul poate lipsi.
+        selfie = b""
+
+    return await profile_service.verify_face(db, user, selfie)

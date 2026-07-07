@@ -1,11 +1,15 @@
-"""Schelet de push notifications (TZ 6.3) — abstracție PushSender + STUB.
+"""Push notifications (TZ 6.3) — abstracție PushSender + STUB / Expo / FCM.
 
 Provider-ul se alege din `settings.push_provider`:
 - 'stub' (implicit): nu trimite nimic, doar „loghează".
-- 'expo' | 'fcm': punct de conectare (nu e implementat încă).
+- 'expo': trimite prin Expo Push API (https://exp.host/--/api/v2/push/send).
+- 'fcm' : trimite prin Firebase Cloud Messaging (legacy HTTP).
 
 `register_device` face upsert pe (user_id, token); `send_to_user` trimite către
-toate dispozitivele active ale unui user (în stub, doar loghează).
+toate dispozitivele active ale unui user, prin sender-ul ales în config.
+
+Notă: providerii live sunt robuști la erori HTTP — o eroare pe un token nu
+oprește restul și nu propagă excepția către apelant (`send_to_user` nu crapă).
 """
 from __future__ import annotations
 
@@ -13,6 +17,7 @@ import logging
 import uuid
 from typing import Protocol
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +26,13 @@ from app.models.device import PushDevice
 from app.models.user import User
 
 logger = logging.getLogger("app.push")
+
+# Endpoint-urile oficiale ale provider-ilor (fără hardcodare la nivel de apel).
+EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
+FCM_PUSH_URL = "https://fcm.googleapis.com/fcm/send"
+
+# Timeout comun pentru apelurile HTTP către provideri (secunde).
+_HTTP_TIMEOUT = 10.0
 
 
 class PushSender(Protocol):
@@ -43,25 +55,73 @@ class StubPush:
         )
 
 
+class ExpoPush:
+    """Sender live prin Expo Push API.
+
+    Trimite câte un mesaj `{to, title, body}` pentru fiecare token. Dacă
+    `settings.push_api_key` e setat, adaugă header-ul `Authorization: Bearer ...`.
+    """
+
+    async def send(self, tokens: list[str], title: str, body: str) -> None:
+        """POST la Expo Push API pentru fiecare token; robust la erori HTTP."""
+        if not tokens:
+            return
+
+        # Header-ul de autorizare e opțional (Expo acceptă și fără cheie).
+        headers = {"Content-Type": "application/json"}
+        if settings.push_api_key:
+            headers["Authorization"] = f"Bearer {settings.push_api_key}"
+
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+            for token in tokens:
+                payload = {"to": token, "title": title, "body": body}
+                try:
+                    resp = await client.post(
+                        EXPO_PUSH_URL, json=payload, headers=headers
+                    )
+                    resp.raise_for_status()
+                except httpx.HTTPError as exc:  # RO: nu oprim restul token-urilor
+                    logger.warning("Expo push failed for token %r: %s", token, exc)
+
+
+class FcmPush:
+    """Sender live prin Firebase Cloud Messaging (legacy HTTP).
+
+    Folosește `settings.fcm_server_key` în header-ul `Authorization: key=...` și
+    payload-ul `{to, notification:{title, body}}` pentru fiecare token.
+    """
+
+    async def send(self, tokens: list[str], title: str, body: str) -> None:
+        """POST la FCM pentru fiecare token; robust la erori HTTP."""
+        if not tokens:
+            return
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"key={settings.fcm_server_key}",
+        }
+
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+            for token in tokens:
+                payload = {"to": token, "notification": {"title": title, "body": body}}
+                try:
+                    resp = await client.post(
+                        FCM_PUSH_URL, json=payload, headers=headers
+                    )
+                    resp.raise_for_status()
+                except httpx.HTTPError as exc:  # RO: nu oprim restul token-urilor
+                    logger.warning("FCM push failed for token %r: %s", token, exc)
+
+
 def get_push_sender() -> PushSender:
     """Fabrică de sender în funcție de `settings.push_provider`."""
     provider = settings.push_provider
     if provider == "stub":
         return StubPush()
     if provider == "expo":
-        # RO: aici se adaugă ExpoPush — POST la https://exp.host/--/api/v2/push/send
-        # cu lista de mesaje {to, title, body}, folosind settings.push_api_key.
-        raise NotImplementedError(
-            "Push Expo nu este implementat încă. Setează PUSH_API_KEY și "
-            "adaugă clientul HTTP către Expo Push API."
-        )
+        return ExpoPush()
     if provider == "fcm":
-        # RO: aici se adaugă FcmPush — POST la endpoint-ul FCM v1
-        # (messaging.send) cu credențialele service account / settings.push_api_key.
-        raise NotImplementedError(
-            "Push FCM nu este implementat încă. Setează PUSH_API_KEY și "
-            "adaugă clientul HTTP către Firebase Cloud Messaging."
-        )
+        return FcmPush()
     raise NotImplementedError(
         f"Provider de push necunoscut: '{provider}'. "
         "Valori permise: 'stub', 'expo', 'fcm'."
@@ -92,7 +152,7 @@ async def register_device(
 async def send_to_user(
     db: AsyncSession, user_id: uuid.UUID, title: str, body: str
 ) -> None:
-    """Trimite o notificare către toate dispozitivele userului (stub: loghează)."""
+    """Trimite o notificare către toate dispozitivele userului, prin sender-ul ales."""
     result = await db.execute(
         select(PushDevice.token).where(PushDevice.user_id == user_id)
     )

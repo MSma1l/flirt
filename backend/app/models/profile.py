@@ -44,3 +44,6 @@ class Profile(Base):
 
     # Marcat True când anketa a fost completată integral
     completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Verificare facială reușită (TZ 2.2) — setat de /profiles/verify-face
+    verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
