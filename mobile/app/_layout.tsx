@@ -92,6 +92,8 @@ export default function RootLayout() {
             <Stack.Screen name="stories/[userId]" options={{ presentation: 'fullScreenModal' }} />
             <Stack.Screen name="stories/new" options={{ presentation: 'modal' }} />
             <Stack.Screen name="humor" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="paywall" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="verify-face" options={{ presentation: 'modal' }} />
           </Stack>
         </ThemeProvider>
       </QueryClientProvider>

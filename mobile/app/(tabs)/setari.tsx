@@ -322,6 +322,8 @@ export default function SetariScreen() {
         <View style={{ marginBottom: spacing.xl, gap: spacing.sm }}>
           {sectionLabel('Mai multe')}
           {linkRow('Editează profilul', '/profile/edit', 'link-profile-edit')}
+          {linkRow('Verificare (selfie)', '/verify-face', 'link-verify-face')}
+          {linkRow('Abonamente Premium', '/paywall', 'link-paywall')}
           {linkRow('Test de umor', '/humor', 'link-humor')}
           {linkRow('Favorite', '/favorites', 'link-favorites')}
           {linkRow('Evenimente', '/events', 'link-events')}

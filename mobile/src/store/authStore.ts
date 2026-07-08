@@ -22,6 +22,9 @@ interface AuthState {
   user: AuthUser | null;
   register: (email: string, password: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
+  loginWithProvider: (provider: 'google' | 'apple', idToken: string) => Promise<void>;
+  requestPhoneOtp: (phone: string) => Promise<void>;
+  verifyPhoneOtp: (phone: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
   hydrate: () => Promise<void>;
   setProfileCompleted: (v: boolean) => void;
@@ -45,6 +48,24 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   login: async (email, password) => {
     const { data } = await api.post<TokenPair>('/auth/login', { email, password });
+    await tokenStore.setTokens(data.access_token, data.refresh_token);
+    const user = await fetchMe();
+    set({ status: 'authenticated', user });
+  },
+
+  loginWithProvider: async (provider, idToken) => {
+    const { data } = await api.post<TokenPair>(`/auth/${provider}`, { id_token: idToken });
+    await tokenStore.setTokens(data.access_token, data.refresh_token);
+    const user = await fetchMe();
+    set({ status: 'authenticated', user });
+  },
+
+  requestPhoneOtp: async (phone) => {
+    await api.post('/auth/phone/request', { phone });
+  },
+
+  verifyPhoneOtp: async (phone, code) => {
+    const { data } = await api.post<TokenPair>('/auth/phone/verify', { phone, code });
     await tokenStore.setTokens(data.access_token, data.refresh_token);
     const user = await fetchMe();
     set({ status: 'authenticated', user });
