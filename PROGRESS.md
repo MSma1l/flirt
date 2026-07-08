@@ -122,7 +122,9 @@ extern simulat (mock). Vezi `docs/INTEGRATIONS.md`.
 - ✅ **Google/Apple Sign-In** (verificare JWKS) + **OTP** (Redis + Twilio SMS)
 - ✅ Push **Expo/FCM** (httpx); Billing **Stripe + App Store** (verificare receipt)
 - Config complet + `pip install .[live]` + Dockerfile producție. **Backend 137 teste ✔**
-- Rămâne UI mobil (paywall, login social, push register, ecran selfie) — endpoint-urile există.
+- UI mobil pentru integrări (✅ Etapa 15): login social Google/Apple + telefon/OTP, paywall
+  abonamente, ecran verificare selfie, înregistrare push. Achiziția nativă de token (SDK social,
+  cameră, expo-notifications) = wiring final la build; fluxurile + UI + backend sunt gata și testate.
 
 ## Etapa 13 — Teste comprehensive (✅)
 - Backend: acoperire 76%→87%, unit teste servicii/scheme/securitate/masker.
