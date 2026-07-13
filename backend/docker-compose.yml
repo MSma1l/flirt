@@ -1,5 +1,8 @@
-# FLIRT backend — stack complet pentru deploy (backend + Postgres + Redis + nginx)
+# FLIRT backend — stack complet pentru deploy
+# (API + Postgres + Redis + nginx/TLS + certbot + backup + purjare GDPR)
 # Mobilul e o aplicație SEPARATĂ și NU face parte din acest compose.
+#
+# Variabilele ${...} se citesc din `.env` (vezi .env.example). Nimic hardcodat.
 services:
   db:
     image: postgres:16-alpine
@@ -22,6 +25,11 @@ services:
     command: ["redis-server", "--save", "60", "1"]
     volumes:
       - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   api:
     build: .
@@ -30,24 +38,114 @@ services:
     environment:
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
+      # Rate limiting PARTAJAT între workeri/instanțe (app/core/ratelimit.py) +
+      # store OTP live. Fără Redis, limita e per proces × 4 workeri.
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     depends_on:
       db:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     expose:
       - "8000"
+    # Readiness REAL (SELECT 1 pe DB + PING pe Redis) — nu un 200 static.
+    # `start_period` acoperă migrațiile Alembic din entrypoint.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
 
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
+    environment:
+      # Domeniul public — decide ce certificat caută nginx în /etc/letsencrypt.
+      DOMAIN: ${DOMAIN:-localhost}
     ports:
-      - "80:80"
+      - "80:80"     # doar ACME + redirect 301 către HTTPS
+      - "443:443"   # tot traficul real
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/40-ensure-cert.sh:/usr/local/bin/ensure-cert.sh:ro
+      - letsencrypt:/etc/letsencrypt          # certificate emise de certbot
+      - certbot_www:/var/www/certbot           # webroot pentru HTTP-01
+      - nginx_certs:/etc/nginx/certs           # certificatul activ (LE sau self-signed)
+    # 1) asigurăm un certificat (LE dacă există, altfel self-signed) ca nginx să
+    #    poată porni și să servească provocarea ACME pe :80;
+    # 2) la fiecare 12h re-verificăm certificatul și dăm reload — așa preluăm
+    #    automat emiterea inițială și reînnoirile certbot, fără downtime.
+    command:
+      - /bin/sh
+      - -c
+      - |
+        sh /usr/local/bin/ensure-cert.sh
+        while :; do
+          sleep 12h
+          sh /usr/local/bin/ensure-cert.sh
+          nginx -s reload
+        done &
+        exec nginx -g 'daemon off;'
     depends_on:
       - api
+
+  # Emite și reînnoiește certificatul Let's Encrypt (HTTP-01, prin webroot).
+  # Prima emitere se face manual (o singură dată) — vezi docs/DEPLOYMENT.md:
+  #   docker compose run --rm certbot certonly --webroot -w /var/www/certbot \
+  #     -d "$DOMAIN" --email "$CERTBOT_EMAIL" --agree-tos --no-eff-email
+  # Apoi acest serviciu reînnoiește singur (LE expiră la 90 de zile).
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint:
+      - /bin/sh
+      - -c
+      - trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done
+
+  # Purjare GDPR: șterge definitiv conturile a căror perioadă de grație a expirat.
+  # Serviciu SEPARAT, o singură instanță — dacă ar rula în lifespan-ul API-ului,
+  # s-ar executa de 4 ori (câți workeri gunicorn are entrypoint.sh).
+  purge:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      GDPR_PURGE_INTERVAL_SECONDS: ${GDPR_PURGE_INTERVAL_SECONDS:-3600}
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["python", "scripts/gdpr_purge.py", "--loop"]
+
+  # Backup periodic (pg_dump comprimat) + retenție. Restore: vezi DEPLOYMENT.md.
+  # Un backup NETESTAT nu e backup — `scripts/restore_db.sh` e procedura testabilă.
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-flirt}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-change_me}
+      PGDATABASE: ${POSTGRES_DB:-flirt}
+      BACKUP_DIR: /backups
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - ./scripts:/scripts:ro
+      - ${BACKUP_HOST_DIR:-./backups}:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["/bin/sh", "/scripts/backup_db.sh", "--loop"]
 
 volumes:
   pgdata:
   redisdata:
+  letsencrypt:
+  certbot_www:
+  nginx_certs:

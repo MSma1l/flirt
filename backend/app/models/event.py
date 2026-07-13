@@ -31,8 +31,10 @@ class Event(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Momentul de start (cu timezone) — folosit pentru filtrarea „viitor".
+    # Indexat: `WHERE starts_at >= now() ORDER BY starts_at` e query-ul listării
+    # (și cheia de paginare); fără index, orice listare sortează întreaga tabelă.
     starts_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
+        DateTime(timezone=True), index=True, nullable=False
     )
     city: Mapped[str] = mapped_column(String(120), nullable=False)
     venue: Mapped[str | None] = mapped_column(String(200), nullable=True)

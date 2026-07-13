@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class EventOut(BaseModel):
@@ -23,6 +23,17 @@ class EventOut(BaseModel):
     # Câți useri au going=True + dacă userul curent merge.
     attendee_count: int
     i_am_going: bool
+
+
+class EventPage(BaseModel):
+    """O pagină de evenimente viitoare + cursorul spre următoarea.
+
+    Convenția `/feed`: cursorul e expus în header-ul `X-Next-Cursor`, corpul
+    rămâne o listă simplă de `EventOut` (compatibil cu clienții existenți).
+    """
+
+    items: list[EventOut] = Field(default_factory=list)
+    next_cursor: str | None = None
 
 
 class PassportStampOut(BaseModel):

@@ -1,7 +1,7 @@
 """Modele pentru chat: un dialog per match + mesajele lui (TZ secț. 5)."""
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, String, Text
+from sqlalchemy import Boolean, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -35,6 +35,16 @@ class Message(Base):
     """Un mesaj dintr-un chat. `body` conține DEJA textul mascat (TZ 5.5)."""
 
     __tablename__ = "messages"
+    __table_args__ = (
+        # Listarea paginată a conversației + ultimul mesaj din fiecare chat
+        # (`ORDER BY created_at DESC` / window function în `GET /chats`).
+        # Fără el, fiecare deschidere de chat scanează toate mesajele chat-ului.
+        Index("ix_messages_chat_created", "chat_id", "created_at"),
+        # Numărul de necitite: `WHERE chat_id = ? AND sender_id <> ? AND
+        # is_read = false` — predicatul exact al badge-ului din lista de chat-uri,
+        # cel mai *polled* query al aplicației. `sender_id` nu era indexat DELOC.
+        Index("ix_messages_chat_sender_unread", "chat_id", "sender_id", "is_read"),
+    )
 
     chat_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("chats.id", ondelete="CASCADE"), index=True, nullable=False

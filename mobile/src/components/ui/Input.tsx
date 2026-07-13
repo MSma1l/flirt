@@ -1,14 +1,6 @@
 /** Câmp de intrare cu label + eroare, stilat din temă. */
 import React, { useState } from 'react';
-import {
-  NativeSyntheticEvent,
-  StyleSheet,
-  Text,
-  TextInput,
-  TextInputFocusEventData,
-  TextInputProps,
-  View,
-} from 'react-native';
+import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
 
 import { useTheme } from '@theme/index';
 
@@ -17,15 +9,23 @@ interface Props extends TextInputProps {
   error?: string | null;
 }
 
+/**
+ * Tipurile evenimentelor de focus le derivăm din `TextInputProps`, nu le scriem manual:
+ * React Native le-a redenumit (`NativeSyntheticEvent<TextInputFocusEventData>` → `FocusEvent`/`BlurEvent`)
+ * și derivarea rămâne corectă indiferent de versiune.
+ */
+type FocusHandler = NonNullable<TextInputProps['onFocus']>;
+type BlurHandler = NonNullable<TextInputProps['onBlur']>;
+
 export function Input({ label, error, style, onFocus, onBlur, ...rest }: Props) {
   const { colors, typography, radius, spacing } = useTheme();
   const [focused, setFocused] = useState(false);
 
-  const handleFocus = (e: NativeSyntheticEvent<TextInputFocusEventData>) => {
+  const handleFocus: FocusHandler = (e) => {
     setFocused(true);
     onFocus?.(e);
   };
-  const handleBlur = (e: NativeSyntheticEvent<TextInputFocusEventData>) => {
+  const handleBlur: BlurHandler = (e) => {
     setFocused(false);
     onBlur?.(e);
   };

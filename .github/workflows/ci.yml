@@ -1,0 +1,82 @@
+name: CI
+
+# Rulează la fiecare push și pe fiecare PR. Fără asta, nimic nu garantează că
+# ce ajunge pe `main` mai trece testele.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+# Un PR cu mai multe push-uri rapide: anulăm rulările vechi, păstrăm ultima.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend — pytest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Instalez dependențele (inclusiv extras `test`)
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[test]"
+
+      - name: Rulez testele
+        # Testele merg pe SQLite in-memory (vezi tests/conftest.py) — fără
+        # Postgres/Redis în CI. ENVIRONMENT=development ca guardrail-urile de
+        # producție din config.py să nu ceară chei reale.
+        env:
+          ENVIRONMENT: development
+        run: python -m pytest -q
+
+      - name: Verific sintaxa nginx (config-ul de TLS chiar trebuie să pornească)
+        run: |
+          docker run --rm \
+            -v "$PWD/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+            nginx:1.27-alpine nginx -t 2>&1 | tee /tmp/nginx-t.log || true
+          # Certificatele lipsesc în CI (le pune ensure-cert.sh la runtime), deci
+          # acceptăm DOAR eroarea de certificat lipsă, nu erori de sintaxă.
+          if grep -qE "syntax is ok|cannot load certificate" /tmp/nginx-t.log; then
+            echo "nginx.conf: sintaxă validă"
+          else
+            echo "nginx.conf: EROARE de sintaxă"; cat /tmp/nginx-t.log; exit 1
+          fi
+
+  mobile:
+    name: Mobile — typecheck + jest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Instalez dependențele
+        # `npm ci` cere package-lock.json; dacă lipsește, cădem pe `npm install`.
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: Typecheck (tsc --noEmit)
+        run: npm run typecheck
+
+      - name: Teste (jest)
+        run: npm test -- --ci

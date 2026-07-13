@@ -2,7 +2,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user
@@ -10,18 +10,35 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.account import BlockOut, FavoriteOut, TargetIn
 from app.services import account_service
+from app.services.pagination import MAX_CURSOR_LENGTH, SOCIAL_MAX_LIMIT
 
 router = APIRouter()
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
 
+LimitQuery = Annotated[int | None, Query(ge=1, le=SOCIAL_MAX_LIMIT)]
+CursorQuery = Annotated[str | None, Query(max_length=MAX_CURSOR_LENGTH)]
+
 
 # --- Favorite ----------------------------------------------------------------
 @router.get("/favorites", response_model=list[FavoriteOut])
-async def list_favorites(db: DbDep, user: UserDep) -> list[FavoriteOut]:
-    """Lista de favorite a userului curent (protejat)."""
-    return await account_service.list_favorites(db, user)
+async def list_favorites(
+    db: DbDep,
+    user: UserDep,
+    response: Response,
+    limit: LimitQuery = None,
+    cursor: CursorQuery = None,
+) -> list[FavoriteOut]:
+    """Lista de favorite a userului curent (protejat), paginată pe cursor.
+
+    Cursorul paginii următoare vine în header-ul `X-Next-Cursor` (convenția
+    `/feed`).
+    """
+    page = await account_service.list_favorites(db, user, limit=limit, cursor=cursor)
+    if page.next_cursor:
+        response.headers["X-Next-Cursor"] = page.next_cursor
+    return page.items
 
 
 @router.post("/favorites", status_code=status.HTTP_201_CREATED)
@@ -44,9 +61,21 @@ async def remove_favorite(
 
 # --- Black list --------------------------------------------------------------
 @router.get("/blocks", response_model=list[BlockOut])
-async def list_blocks(db: DbDep, user: UserDep) -> list[BlockOut]:
-    """Lista de useri blocați (protejat)."""
-    return await account_service.list_blocks(db, user)
+async def list_blocks(
+    db: DbDep,
+    user: UserDep,
+    response: Response,
+    limit: LimitQuery = None,
+    cursor: CursorQuery = None,
+) -> list[BlockOut]:
+    """Lista de useri blocați (protejat), paginată pe cursor.
+
+    Cursorul paginii următoare vine în header-ul `X-Next-Cursor`.
+    """
+    page = await account_service.list_blocks(db, user, limit=limit, cursor=cursor)
+    if page.next_cursor:
+        response.headers["X-Next-Cursor"] = page.next_cursor
+    return page.items
 
 
 @router.post("/blocks", status_code=status.HTTP_201_CREATED)

@@ -6,7 +6,7 @@ ruta parametrizată.
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user
@@ -14,6 +14,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.event import EventOut, GoingIn, PassportStampOut
 from app.services import event_service
+from app.services.pagination import EVENTS_MAX_LIMIT, MAX_CURSOR_LENGTH
 
 router = APIRouter()
 
@@ -22,9 +23,22 @@ UserDep = Annotated[User, Depends(get_current_user)]
 
 
 @router.get("/", response_model=list[EventOut])
-async def list_events(db: DbDep, user: UserDep) -> list[EventOut]:
-    """Evenimentele viitoare cu numărul de participanți (protejat)."""
-    return await event_service.list_events(db, user)
+async def list_events(
+    db: DbDep,
+    user: UserDep,
+    response: Response,
+    limit: Annotated[int | None, Query(ge=1, le=EVENTS_MAX_LIMIT)] = None,
+    cursor: Annotated[str | None, Query(max_length=MAX_CURSOR_LENGTH)] = None,
+) -> list[EventOut]:
+    """Evenimentele viitoare cu numărul de participanți (protejat).
+
+    Paginare pe cursor (convenția `/feed`): cursorul paginii următoare vine în
+    header-ul `X-Next-Cursor`.
+    """
+    page = await event_service.list_events(db, user, limit=limit, cursor=cursor)
+    if page.next_cursor:
+        response.headers["X-Next-Cursor"] = page.next_cursor
+    return page.items
 
 
 @router.get("/passport", response_model=list[PassportStampOut])

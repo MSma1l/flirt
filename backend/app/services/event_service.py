@@ -9,17 +9,34 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.event import Event, EventAttendance, FlirtPassportStamp
 from app.models.user import User
-from app.schemas.event import EventOut, PassportStampOut
+from app.schemas.event import EventOut, EventPage, PassportStampOut
+from app.services.pagination import (
+    EVENTS_MAX_LIMIT,
+    EVENTS_PAGE_LIMIT,
+    clamp_limit,
+    decode_cursor,
+    encode_cursor,
+)
 
 
 # --- Seed --------------------------------------------------------------------
 async def seed_events(db: AsyncSession) -> None:
-    """Inserează evenimente demo dacă tabela e goală (idempotent)."""
+    """Inserează evenimente demo dacă tabela e goală (idempotent).
+
+    NU RULEAZĂ ÎN PRODUCȚIE. Seed-ul e apelat automat din `list_events`, deci
+    până acum baza de PRODUCȚIE se umplea cu 4 evenimente FALSE („Flirt Party
+    Downtown" & co.) la prima cerere `GET /events` a primului utilizator real.
+    Rămâne util în dev/staging, unde nu există un flux de creare a evenimentelor.
+    """
+    if settings.environment == "production":
+        return
+
     existing = await db.execute(select(func.count()).select_from(Event))
     if existing.scalar_one() > 0:
         return
@@ -77,27 +94,57 @@ async def seed_events(db: AsyncSession) -> None:
 
 
 # --- Listare / detalii -------------------------------------------------------
-async def list_events(db: AsyncSession, user: User) -> list[EventOut]:
-    """Evenimentele viitoare cu `attendee_count` și `i_am_going`.
+async def list_events(
+    db: AsyncSession,
+    user: User,
+    limit: int | None = None,
+    cursor: str | None = None,
+) -> EventPage:
+    """Evenimentele viitoare cu `attendee_count` și `i_am_going` (paginat).
 
-    Apelează seed-ul dacă nu există niciun eveniment.
+    Înainte întorcea TOATE evenimentele viitoare, fără limită. Acum: paginare pe
+    cursor peste `(starts_at, id)`, cele mai apropiate primele.
+
+    Apelează seed-ul demo — care în PRODUCȚIE nu face nimic (vezi `seed_events`).
     """
     await seed_events(db)
 
     now = datetime.now(timezone.utc)
+    limit = clamp_limit(limit, EVENTS_PAGE_LIMIT, EVENTS_MAX_LIMIT)
+
+    stmt = select(Event).where(Event.starts_at >= now)
+    if cursor:
+        anchor_id = decode_cursor(cursor)
+        # Momentul evenimentului-ancoră, citit DB-side (vezi pagination.py).
+        anchor_at = (
+            select(Event.starts_at).where(Event.id == anchor_id).scalar_subquery()
+        )
+        stmt = stmt.where(
+            or_(
+                Event.starts_at > anchor_at,
+                and_(Event.starts_at == anchor_at, Event.id > anchor_id),
+            )
+        )
+
+    # Ordonare TOTALĂ (starts_at, id) → fără duplicate / fără evenimente sărite.
     result = await db.execute(
-        select(Event).where(Event.starts_at >= now).order_by(Event.starts_at)
+        stmt.order_by(Event.starts_at.asc(), Event.id.asc()).limit(limit + 1)
     )
     events = list(result.scalars().all())
+
+    has_more = len(events) > limit
+    events = events[:limit]
     if not events:
-        return []
+        return EventPage(items=[], next_cursor=None)
 
-    counts = await _attendee_counts(db, [e.id for e in events])
-    going = await _going_event_ids(db, user, [e.id for e in events])
+    event_ids = [e.id for e in events]
+    counts = await _attendee_counts(db, event_ids)
+    going = await _going_event_ids(db, user, event_ids)
 
-    return [
-        _to_event_out(e, counts.get(e.id, 0), e.id in going) for e in events
-    ]
+    return EventPage(
+        items=[_to_event_out(e, counts.get(e.id, 0), e.id in going) for e in events],
+        next_cursor=encode_cursor(events[-1].id) if has_more else None,
+    )
 
 
 async def get_event(db: AsyncSession, user: User, event_id: uuid.UUID) -> EventOut:

@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, StringConstraints
+from pydantic import AfterValidator, BaseModel, Field, StringConstraints
 
 from app.core.validators import is_https_url, optional_safe_str
 
@@ -51,3 +51,25 @@ class UserStories(BaseModel):
     name: str
     story_count: int
     stories: list[StoryOut]
+
+
+class StoryPage(BaseModel):
+    """O pagină de povești proprii (`/stories/mine`) + cursorul spre următoarea.
+
+    Convenția `/feed`: cursorul e expus în header-ul `X-Next-Cursor`, corpul
+    rămâne o listă simplă (compatibil cu clienții existenți).
+    """
+
+    items: list[StoryOut] = Field(default_factory=list)
+    next_cursor: str | None = None
+
+
+class UserStoriesPage(BaseModel):
+    """O pagină de GRUPURI de povești (`/stories/`) + cursorul spre următoarea.
+
+    Paginarea e la nivel de USER (un grup nu se rupe între pagini), deci un user
+    nu poate apărea în două pagini.
+    """
+
+    items: list[UserStories] = Field(default_factory=list)
+    next_cursor: str | None = None

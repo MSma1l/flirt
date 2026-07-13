@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -17,7 +17,20 @@ from app.models.profile import Profile
 from app.models.story import Story
 from app.models.swipe import Match
 from app.models.user import User
-from app.schemas.story import StoryIn, StoryOut, UserStories
+from app.schemas.story import (
+    StoryIn,
+    StoryOut,
+    StoryPage,
+    UserStories,
+    UserStoriesPage,
+)
+from app.services.pagination import (
+    STORIES_MAX_LIMIT,
+    STORIES_PAGE_LIMIT,
+    clamp_limit,
+    decode_cursor,
+    encode_cursor,
+)
 
 
 def _to_story_out(story: Story) -> StoryOut:
@@ -60,57 +73,135 @@ async def _match_user_ids(db: AsyncSession, user: User) -> set[uuid.UUID]:
     return ids
 
 
-async def list_active_grouped(db: AsyncSession, user: User) -> list[UserStories]:
-    """Poveștile active proprii + ale match-urilor, grupate pe user.
+async def list_active_grouped(
+    db: AsyncSession,
+    user: User,
+    limit: int | None = None,
+    cursor: str | None = None,
+) -> UserStoriesPage:
+    """Poveștile active proprii + ale match-urilor, grupate pe user (paginat).
 
-    Sortare: userul curent primul, apoi ceilalți după cea mai recentă poveste.
+    Sortare (neschimbată): userul curent primul, apoi ceilalți după cea mai
+    recentă poveste, desc.
+
+    Înainte încărca TOATE poveștile active ale TUTUROR match-urilor, fără nicio
+    limită. Acum paginăm la nivel de USER (cursorul e ancorat de ultimul grup
+    redat), deci un grup nu se rupe între pagini și un user nu poate apărea de
+    două ori. Numărul de query-uri e constant (4), indiferent de câte grupuri.
     """
     now = datetime.now(timezone.utc)
+    limit = clamp_limit(limit, STORIES_PAGE_LIMIT, STORIES_MAX_LIMIT)
     visible_ids = {user.id} | await _match_user_ids(db, user)
 
-    result = await db.execute(
-        select(Story)
+    # Cheia de sortare a unui GRUP: (userul curent primul, cea mai recentă
+    # poveste desc, user_id desc — tiebreak determinist).
+    me_first = case((Story.user_id == user.id, 0), else_=1)
+    last_at = func.max(Story.created_at)
+
+    groups_stmt = (
+        select(Story.user_id, last_at.label("last_at"))
         .where(Story.user_id.in_(visible_ids), Story.expires_at > now)
-        .order_by(Story.created_at.desc())
+        .group_by(Story.user_id)
     )
-    stories = list(result.scalars().all())
-    if not stories:
-        return []
 
-    # Numele de afișare din Profile pentru userii implicați.
-    names = await _display_names(db, {s.user_id for s in stories})
+    if cursor:
+        anchor_uid = decode_cursor(cursor)
+        if anchor_uid == user.id:
+            # Grupul propriu e mereu primul → după el vin exact toți ceilalți.
+            groups_stmt = groups_stmt.where(Story.user_id != user.id)
+        else:
+            # Momentul ultimei povești a grupului-ancoră, citit DB-side.
+            anchor_at = (
+                select(func.max(Story.created_at))
+                .where(Story.user_id == anchor_uid, Story.expires_at > now)
+                .scalar_subquery()
+            )
+            groups_stmt = groups_stmt.where(Story.user_id != user.id).having(
+                or_(
+                    last_at < anchor_at,
+                    and_(last_at == anchor_at, Story.user_id < anchor_uid),
+                )
+            )
 
-    # Grupăm păstrând ordinea desc după created_at (cel mai recent primul).
+    groups_result = await db.execute(
+        groups_stmt.order_by(me_first, last_at.desc(), Story.user_id.desc()).limit(
+            limit + 1
+        )
+    )
+    group_rows = list(groups_result.all())
+
+    has_more = len(group_rows) > limit
+    group_rows = group_rows[:limit]
+    if not group_rows:
+        return UserStoriesPage(items=[], next_cursor=None)
+
+    ordered_ids = [row.user_id for row in group_rows]
+    next_cursor = encode_cursor(ordered_ids[-1]) if has_more else None
+
+    # Poveștile grupurilor din PAGINA curentă (o singură interogare).
+    stories_result = await db.execute(
+        select(Story)
+        .where(Story.user_id.in_(ordered_ids), Story.expires_at > now)
+        .order_by(Story.created_at.desc(), Story.id.desc())
+    )
     grouped: dict[uuid.UUID, list[Story]] = {}
-    for story in stories:
+    for story in stories_result.scalars().all():
         grouped.setdefault(story.user_id, []).append(story)
 
-    def _sort_key(uid: uuid.UUID) -> tuple:
-        # Userul curent primul; apoi după cea mai recentă poveste, desc.
-        latest = grouped[uid][0].created_at
-        return (0 if uid == user.id else 1, -latest.timestamp())
+    names = await _display_names(db, set(ordered_ids))
 
-    ordered_ids = sorted(grouped.keys(), key=_sort_key)
-    return [
-        UserStories(
-            user_id=uid,
-            name=names.get(uid, ""),
-            story_count=len(grouped[uid]),
-            stories=[_to_story_out(s) for s in grouped[uid]],
-        )
-        for uid in ordered_ids
-    ]
-
-
-async def list_mine(db: AsyncSession, user: User) -> list[StoryOut]:
-    """Poveștile active proprii, cea mai recentă prima."""
-    now = datetime.now(timezone.utc)
-    result = await db.execute(
-        select(Story)
-        .where(Story.user_id == user.id, Story.expires_at > now)
-        .order_by(Story.created_at.desc())
+    return UserStoriesPage(
+        items=[
+            UserStories(
+                user_id=uid,
+                name=names.get(uid, ""),
+                story_count=len(grouped.get(uid, [])),
+                stories=[_to_story_out(s) for s in grouped.get(uid, [])],
+            )
+            for uid in ordered_ids
+        ],
+        next_cursor=next_cursor,
     )
-    return [_to_story_out(s) for s in result.scalars().all()]
+
+
+async def list_mine(
+    db: AsyncSession,
+    user: User,
+    limit: int | None = None,
+    cursor: str | None = None,
+) -> StoryPage:
+    """Poveștile active proprii, cea mai recentă prima (paginat pe cursor)."""
+    now = datetime.now(timezone.utc)
+    limit = clamp_limit(limit, STORIES_PAGE_LIMIT, STORIES_MAX_LIMIT)
+
+    stmt = select(Story).where(Story.user_id == user.id, Story.expires_at > now)
+    if cursor:
+        anchor_id = decode_cursor(cursor)
+        # Momentul poveștii-ancoră, citit DB-side (vezi pagination.py).
+        anchor_at = (
+            select(Story.created_at)
+            .where(Story.id == anchor_id, Story.user_id == user.id)
+            .scalar_subquery()
+        )
+        stmt = stmt.where(
+            or_(
+                Story.created_at < anchor_at,
+                and_(Story.created_at == anchor_at, Story.id < anchor_id),
+            )
+        )
+
+    # Ordonare TOTALĂ (created_at, id) → fără duplicate / fără povești sărite.
+    result = await db.execute(
+        stmt.order_by(Story.created_at.desc(), Story.id.desc()).limit(limit + 1)
+    )
+    rows = list(result.scalars().all())
+
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    return StoryPage(
+        items=[_to_story_out(s) for s in rows],
+        next_cursor=encode_cursor(rows[-1].id) if (has_more and rows) else None,
+    )
 
 
 async def delete_story(db: AsyncSession, user: User, story_id: uuid.UUID) -> None:

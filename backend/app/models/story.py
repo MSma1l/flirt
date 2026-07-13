@@ -28,6 +28,9 @@ class Story(Base):
     # Text opțional afișat peste conținut.
     caption: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # Momentul expirării (created_at + 24h); după el povestea nu mai apare.
+    # Indexat: `WHERE expires_at > now()` e predicatul PRINCIPAL al modulului —
+    # apare în fiecare listare (proprii + grupate). Fără index se scanează
+    # întreaga tabelă, inclusiv toate poveștile expirate care nu sunt purjate.
     expires_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
+        DateTime(timezone=True), index=True, nullable=False
     )

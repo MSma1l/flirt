@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, or_, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -30,10 +30,19 @@ from app.models.user import User
 from app.schemas.account import (
     AccountDeletionOut,
     BlockOut,
+    BlockPage,
     FavoriteOut,
+    FavoritePage,
     SettingsIn,
     SettingsOut,
     TicketOut,
+)
+from app.services.pagination import (
+    SOCIAL_MAX_LIMIT,
+    SOCIAL_PAGE_LIMIT,
+    clamp_limit,
+    decode_cursor,
+    encode_cursor,
 )
 
 # Flag-urile de notificări suportate (TZ 6) — implicit toate active.
@@ -355,15 +364,47 @@ async def remove_favorite(
         await db.commit()
 
 
-async def list_favorites(db: AsyncSession, user: User) -> list[FavoriteOut]:
-    """Favoritele userului, cu datele de profil pentru afișare."""
+async def list_favorites(
+    db: AsyncSession,
+    user: User,
+    limit: int | None = None,
+    cursor: str | None = None,
+) -> FavoritePage:
+    """Favoritele userului, cu datele de profil pentru afișare (paginat).
+
+    Înainte întorcea lista NEMĂRGINITĂ (și fără `ORDER BY`, deci ordinea nici nu
+    era determinist reproductibilă). Acum: cursor peste `(created_at, id)`, cele
+    mai recent adăugate primele.
+    """
+    limit = clamp_limit(limit, SOCIAL_PAGE_LIMIT, SOCIAL_MAX_LIMIT)
+
+    stmt = select(Favorite).where(Favorite.user_id == user.id)
+    if cursor:
+        anchor_id = decode_cursor(cursor)
+        # Momentul rândului-ancoră, citit DB-side (vezi pagination.py).
+        anchor_at = (
+            select(Favorite.created_at)
+            .where(Favorite.id == anchor_id, Favorite.user_id == user.id)
+            .scalar_subquery()
+        )
+        stmt = stmt.where(
+            or_(
+                Favorite.created_at < anchor_at,
+                and_(Favorite.created_at == anchor_at, Favorite.id < anchor_id),
+            )
+        )
+
     result = await db.execute(
-        select(Favorite).where(Favorite.user_id == user.id)
+        stmt.order_by(Favorite.created_at.desc(), Favorite.id.desc()).limit(limit + 1)
     )
     favorites = list(result.scalars().all())
-    if not favorites:
-        return []
 
+    has_more = len(favorites) > limit
+    favorites = favorites[:limit]
+    if not favorites:
+        return FavoritePage(items=[], next_cursor=None)
+
+    next_cursor = encode_cursor(favorites[-1].id) if has_more else None
     target_ids = [f.target_user_id for f in favorites]
     profiles_result = await db.execute(
         select(Profile).where(Profile.user_id.in_(target_ids))
@@ -381,7 +422,7 @@ async def list_favorites(db: AsyncSession, user: User) -> list[FavoriteOut]:
                 city=p.city if p is not None else "",
             )
         )
-    return out
+    return FavoritePage(items=out, next_cursor=next_cursor)
 
 
 # --- Black list --------------------------------------------------------------
@@ -416,14 +457,44 @@ async def remove_block(
         await db.commit()
 
 
-async def list_blocks(db: AsyncSession, user: User) -> list[BlockOut]:
-    """Lista de useri blocați, cu numele pentru afișare."""
+async def list_blocks(
+    db: AsyncSession,
+    user: User,
+    limit: int | None = None,
+    cursor: str | None = None,
+) -> BlockPage:
+    """Lista de useri blocați, cu numele pentru afișare (paginat).
+
+    Înainte întorcea lista NEMĂRGINITĂ (și fără `ORDER BY`). Acum: cursor peste
+    `(created_at, id)`, cele mai recente blocări primele.
+    """
+    limit = clamp_limit(limit, SOCIAL_PAGE_LIMIT, SOCIAL_MAX_LIMIT)
+
+    stmt = select(Block).where(Block.blocker_id == user.id)
+    if cursor:
+        anchor_id = decode_cursor(cursor)
+        # Momentul rândului-ancoră, citit DB-side (vezi pagination.py).
+        anchor_at = (
+            select(Block.created_at)
+            .where(Block.id == anchor_id, Block.blocker_id == user.id)
+            .scalar_subquery()
+        )
+        stmt = stmt.where(
+            or_(
+                Block.created_at < anchor_at,
+                and_(Block.created_at == anchor_at, Block.id < anchor_id),
+            )
+        )
+
     result = await db.execute(
-        select(Block).where(Block.blocker_id == user.id)
+        stmt.order_by(Block.created_at.desc(), Block.id.desc()).limit(limit + 1)
     )
     blocks = list(result.scalars().all())
+
+    has_more = len(blocks) > limit
+    blocks = blocks[:limit]
     if not blocks:
-        return []
+        return BlockPage(items=[], next_cursor=None)
 
     blocked_ids = [b.blocked_id for b in blocks]
     profiles_result = await db.execute(
@@ -431,17 +502,20 @@ async def list_blocks(db: AsyncSession, user: User) -> list[BlockOut]:
     )
     profiles_by_user = {p.user_id: p for p in profiles_result.scalars().all()}
 
-    return [
-        BlockOut(
-            blocked_id=b.blocked_id,
-            name=(
-                profiles_by_user[b.blocked_id].name
-                if b.blocked_id in profiles_by_user
-                else ""
-            ),
-        )
-        for b in blocks
-    ]
+    return BlockPage(
+        items=[
+            BlockOut(
+                blocked_id=b.blocked_id,
+                name=(
+                    profiles_by_user[b.blocked_id].name
+                    if b.blocked_id in profiles_by_user
+                    else ""
+                ),
+            )
+            for b in blocks
+        ],
+        next_cursor=encode_cursor(blocks[-1].id) if has_more else None,
+    )
 
 
 # --- Bilet Flirt Party -------------------------------------------------------

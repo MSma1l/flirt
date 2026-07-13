@@ -33,14 +33,21 @@ os.environ["JWT_PUBLIC_KEY"] = _pub
 
 
 @pytest_asyncio.fixture
-async def db_session():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
+async def engine():
+    """Engine-ul de test, expus separat ca testele de performanță să poată atașa
+    un event listener (`before_cursor_execute`) și să NUMERE query-urile SQL."""
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    yield eng
+    await eng.dispose()
+
+
+@pytest_asyncio.fixture
+async def db_session(engine):
     maker = async_sessionmaker(engine, expire_on_commit=False)
     async with maker() as session:
         yield session
-    await engine.dispose()
 
 
 @pytest_asyncio.fixture

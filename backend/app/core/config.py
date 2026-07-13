@@ -147,6 +147,24 @@ class Settings(BaseSettings):
     free_daily_swipe_limit: int = 50        # limită swipe/zi pentru non-premium (TZ 4.5)
     feed_scan_limit: int = 500              # câți candidați scanează feed-ul (anti-DoS)
 
+    # Observabilitate (folosite de app/core/logging.py)
+    log_level: str = "INFO"
+    log_format: str = "json"                # json | text (text doar pentru dev local)
+
+    # Purjarea GDPR (folosită de scripts/gdpr_purge.py, rulat ca proces separat)
+    gdpr_purge_interval_seconds: int = 3600
+
+    # Plafoane de paginare (folosite de app/services/pagination.py). Fără ele,
+    # un client putea cere o pagină arbitrar de mare = vector de DoS.
+    messages_page_limit: int = 50
+    messages_max_limit: int = 200
+    stories_page_limit: int = 20
+    stories_max_limit: int = 100
+    events_page_limit: int = 20
+    events_max_limit: int = 100
+    social_page_limit: int = 50
+    social_max_limit: int = 200
+
     @property
     def allowed_image_types_set(self) -> set[str]:
         return {t.strip() for t in self.allowed_image_types.split(",") if t.strip()}
@@ -265,9 +283,17 @@ class Settings(BaseSettings):
                     "SOCIAL_AUTH_MODE=live, dar nici GOOGLE_CLIENT_ID, nici "
                     "APPLE_CLIENT_ID nu sunt setate"
                 )
+        # REDIS_URL e obligatoriu în producție INDIFERENT de OTP: rate-limiting-ul
+        # cade tăcut pe implementarea in-memory dacă lipsește, iar `entrypoint.sh`
+        # pornește 4 workeri gunicorn ⇒ limita reală devine 4× cea configurată, și
+        # 0 la scale-out orizontal. Adică protecția anti-brute-force nu există.
+        if not self.redis_url:
+            problems.append(
+                "REDIS_URL este gol: rate-limiting-ul ar cădea pe in-memory, iar cu "
+                "4 workeri gunicorn limita reală devine 4× cea configurată"
+            )
         if self.otp_mode == "live":
             required_keys["OTP_MODE=live"] = [
-                ("REDIS_URL", self.redis_url),
                 ("TWILIO_ACCOUNT_SID", self.twilio_account_sid),
                 ("TWILIO_AUTH_TOKEN", self.twilio_auth_token),
                 ("TWILIO_FROM", self.twilio_from),

@@ -50,8 +50,10 @@ async def test_create_and_list_mine(db_session):
     assert out.caption == "Salut"
     assert out.expires_at > out.created_at
 
+    # `list_mine` întoarce acum o PAGINĂ (items + next_cursor), ca `/feed`.
     mine = await S.list_mine(db_session, user)
-    assert len(mine) == 1
+    assert len(mine.items) == 1
+    assert mine.next_cursor is None
 
 
 @pytest.mark.asyncio
@@ -64,8 +66,8 @@ async def test_expired_story_excluded(db_session):
         )
     )
     await db_session.commit()
-    assert await S.list_mine(db_session, user) == []
-    assert await S.list_active_grouped(db_session, user) == []
+    assert (await S.list_mine(db_session, user)).items == []
+    assert (await S.list_active_grouped(db_session, user)).items == []
 
 
 @pytest.mark.asyncio
@@ -82,7 +84,7 @@ async def test_grouped_shows_self_and_match_only(db_session):
     await S.create_story(db_session, b, StoryIn(media_url="https://cdn/b.jpg"))
     await S.create_story(db_session, c, StoryIn(media_url="https://cdn/c.jpg"))
 
-    grouped = await S.list_active_grouped(db_session, a)
+    grouped = (await S.list_active_grouped(db_session, a)).items
     seen = {g.user_id for g in grouped}
     assert a.id in seen  # proprii
     assert b.id in seen  # match
@@ -98,7 +100,7 @@ async def test_delete_own_story(db_session):
     user = await _make_user(db_session, "st3@example.com")
     out = await S.create_story(db_session, user, StoryIn(media_url="https://cdn/x.jpg"))
     await S.delete_story(db_session, user, out.id)
-    assert await S.list_mine(db_session, user) == []
+    assert (await S.list_mine(db_session, user)).items == []
 
 
 @pytest.mark.asyncio

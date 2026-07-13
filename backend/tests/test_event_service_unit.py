@@ -22,9 +22,12 @@ async def test_seed_is_idempotent(db_session):
     await E.seed_events(db_session)
     await E.seed_events(db_session)  # a doua oară nu adaugă
     user = await _make_user(db_session, "e1@example.com")
-    events = await E.list_events(db_session, user)
-    # Cele 4 evenimente demo sunt viitoare → toate listate.
+    # `list_events` întoarce acum o PAGINĂ (items + next_cursor), ca `/feed`.
+    page = await E.list_events(db_session, user)
+    events = page.items
+    # Cele 4 evenimente demo sunt viitoare → toate listate (încap într-o pagină).
     assert len(events) == 4
+    assert page.next_cursor is None
     assert all(e.attendee_count == 0 for e in events)
     assert all(e.i_am_going is False for e in events)
 
@@ -48,7 +51,7 @@ async def test_set_going_404(db_session):
 @pytest.mark.asyncio
 async def test_set_going_toggle_and_count(db_session):
     user = await _make_user(db_session, "e4@example.com")
-    events = await E.list_events(db_session, user)
+    events = (await E.list_events(db_session, user)).items
     ev = events[0]
 
     out = await E.set_going(db_session, user, ev.id, True)
@@ -72,7 +75,7 @@ async def test_checkin_404(db_session):
 @pytest.mark.asyncio
 async def test_checkin_idempotent_and_passport(db_session):
     user = await _make_user(db_session, "e6@example.com")
-    events = await E.list_events(db_session, user)
+    events = (await E.list_events(db_session, user)).items
     ev = events[0]
 
     stamp1 = await E.checkin(db_session, user, ev.id)

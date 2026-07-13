@@ -97,7 +97,8 @@ async def test_favorite_list_includes_profile_data(db_session):
     await _make_profile(db_session, target, name="Diana", city="Bălți")
     await A.add_favorite(db_session, user, target.id)
 
-    favs = await A.list_favorites(db_session, user)
+    # `list_favorites` întoarce acum o PAGINĂ (items + next_cursor), ca `/feed`.
+    favs = (await A.list_favorites(db_session, user)).items
     assert len(favs) == 1
     assert favs[0].name == "Diana"
     assert favs[0].city == "Bălți"
@@ -106,7 +107,7 @@ async def test_favorite_list_includes_profile_data(db_session):
 @pytest.mark.asyncio
 async def test_favorite_list_empty(db_session):
     user = await _make_user(db_session, "f3@example.com")
-    assert await A.list_favorites(db_session, user) == []
+    assert (await A.list_favorites(db_session, user)).items == []
 
 
 @pytest.mark.asyncio
@@ -116,7 +117,7 @@ async def test_favorite_remove(db_session):
     await A.add_favorite(db_session, user, target)
     await A.remove_favorite(db_session, user, target)
     await A.remove_favorite(db_session, user, target)  # no-op a doua oară
-    assert await A.list_favorites(db_session, user) == []
+    assert (await A.list_favorites(db_session, user)).items == []
 
 
 # --- Block -------------------------------------------------------------------
@@ -135,19 +136,19 @@ async def test_block_add_idempotent_and_list(db_session):
     ).scalars().all()
     assert len(rows) == 1
 
-    blocks = await A.list_blocks(db_session, user)
+    blocks = (await A.list_blocks(db_session, user)).items
     assert blocks[0].name == "Marin"
 
 
 @pytest.mark.asyncio
 async def test_block_list_empty_and_remove(db_session):
     user = await _make_user(db_session, "b2@example.com")
-    assert await A.list_blocks(db_session, user) == []
+    assert (await A.list_blocks(db_session, user)).items == []
     target = uuid.uuid4()
     await A.add_block(db_session, user, target)
     await A.remove_block(db_session, user, target)
     await A.remove_block(db_session, user, target)  # no-op
-    assert await A.list_blocks(db_session, user) == []
+    assert (await A.list_blocks(db_session, user)).items == []
 
 
 # --- Bilet Flirt Party -------------------------------------------------------

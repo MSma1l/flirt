@@ -74,6 +74,20 @@ class BlockOut(BaseModel):
     name: str
 
 
+class FavoritePage(BaseModel):
+    """O pagină de favorite + cursorul spre următoarea (convenția `/feed`)."""
+
+    items: list[FavoriteOut] = Field(default_factory=list)
+    next_cursor: str | None = None
+
+
+class BlockPage(BaseModel):
+    """O pagină din black list + cursorul spre următoarea (convenția `/feed`)."""
+
+    items: list[BlockOut] = Field(default_factory=list)
+    next_cursor: str | None = None
+
+
 class TicketOut(BaseModel):
     """Biletul Flirt Party al userului."""
 

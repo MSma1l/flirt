@@ -31,12 +31,17 @@ function AuthGuard() {
     // Splash: nu facem nimic până când starea nu e cunoscută.
     if (status === 'loading') return;
 
+    // expo-router 6 tipează `useSegments()` ca uniune de tuple literale (lungime ≥ 1),
+    // deși la cold-start, pe ruta index, chiar întoarce o listă goală. O privim ca
+    // listă de string-uri ca să putem testa cazul real, fără `any`.
+    const path: readonly string[] = segments;
+
     // Ruta index (splash) își gestionează singură redirect-ul la cold-start;
     // evităm redirecturi duble ieșind devreme când suntem pe ea.
-    if (segments.length === 0) return;
+    if (path.length === 0) return;
 
-    const inAuth = segments[0] === '(auth)';
-    const inOnboarding = segments[0] === '(onboarding)';
+    const inAuth = path[0] === '(auth)';
+    const inOnboarding = path[0] === '(onboarding)';
 
     if (status === 'unauthenticated') {
       if (!inAuth) router.replace('/(auth)/welcome');

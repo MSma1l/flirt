@@ -41,6 +41,19 @@ class MessageOut(BaseModel):
     created_at: datetime
 
 
+class MessagePage(BaseModel):
+    """O pagină de mesaje: mesajele + cursorul spre pagina mai VECHE.
+
+    Aceeași convenție ca `FeedPage` (TZ 4): ruta expune `next_cursor` în
+    header-ul `X-Next-Cursor`, iar corpul rămâne o listă simplă de `MessageOut`
+    (compatibil cu clienții existenți). `next_cursor` e `None` când nu mai există
+    istoric mai vechi.
+    """
+
+    items: list[MessageOut] = Field(default_factory=list)
+    next_cursor: str | None = None
+
+
 class MessageIn(BaseModel):
     """Payload-ul de trimitere a unui mesaj.
 
