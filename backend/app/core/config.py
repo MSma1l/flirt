@@ -229,10 +229,80 @@ class Settings(BaseSettings):
             "FACE_VERIFY_PROVIDER": self.face_verify_provider,
             "STORAGE_PROVIDER": self.storage_provider,
             "PUSH_PROVIDER": self.push_provider,
+            # GEO lipsea din listă: producția putea porni TĂCUT cu geocoderul stub
+            # (un dicționar de ~20 de orașe hardcodate), iar orice alt oraș primea
+            # `distance_km = None` — adică raza de căutare și factorul de distanță
+            # din Compatibility Score deveneau inoperante, fără nicio eroare.
+            "GEO_PROVIDER": self.geo_provider,
         }
         for name, value in stub_integrations.items():
             if value == "stub":
                 problems.append(f"{name} este în modul 'stub' (nesigur în producție)")
+
+        # RO: modul 'live' fără CHEI e la fel de rău ca stub-ul — doar că eșuează
+        # mai târziu și mai urât: aplicația pornește „sănătoasă" și crapă abia la
+        # primul upload / primul SMS / prima verificare de plată, în producție, pe
+        # utilizatori reali. Verificăm cheile cerute de providerul efectiv ales.
+        # (nume_variabilă_env → valoare) cerute doar dacă providerul e activ:
+        required_keys: dict[str, list[tuple[str, str]]] = {}
+        if self.storage_provider == "s3":
+            required_keys["STORAGE_PROVIDER=s3"] = [
+                ("S3_BUCKET", self.s3_bucket),
+                ("S3_REGION", self.s3_region),
+                ("AWS_ACCESS_KEY_ID", self.aws_access_key_id),
+                ("AWS_SECRET_ACCESS_KEY", self.aws_secret_access_key),
+            ]
+        if self.face_verify_provider == "rekognition":
+            required_keys["FACE_VERIFY_PROVIDER=rekognition"] = [
+                ("AWS_ACCESS_KEY_ID", self.aws_access_key_id),
+                ("AWS_SECRET_ACCESS_KEY", self.aws_secret_access_key),
+            ]
+        if self.social_auth_mode == "live":
+            # Cel puțin un provider social trebuie configurat, altfel butoanele
+            # „Continuă cu Google/Apple" din UI duc într-un zid.
+            if not self.google_client_id and not self.apple_client_id:
+                problems.append(
+                    "SOCIAL_AUTH_MODE=live, dar nici GOOGLE_CLIENT_ID, nici "
+                    "APPLE_CLIENT_ID nu sunt setate"
+                )
+        if self.otp_mode == "live":
+            required_keys["OTP_MODE=live"] = [
+                ("REDIS_URL", self.redis_url),
+                ("TWILIO_ACCOUNT_SID", self.twilio_account_sid),
+                ("TWILIO_AUTH_TOKEN", self.twilio_auth_token),
+                ("TWILIO_FROM", self.twilio_from),
+            ]
+        if self.billing_provider == "stripe":
+            required_keys["BILLING_PROVIDER=stripe"] = [
+                ("STRIPE_SECRET_KEY", self.stripe_secret_key),
+            ]
+        if self.billing_provider == "app_store":
+            required_keys["BILLING_PROVIDER=app_store"] = [
+                ("APP_STORE_SHARED_SECRET", self.app_store_shared_secret),
+            ]
+        if self.push_provider == "fcm":
+            required_keys["PUSH_PROVIDER=fcm"] = [
+                ("FCM_SERVER_KEY", self.fcm_server_key),
+            ]
+        if self.geo_provider in {"google", "mapbox"}:
+            required_keys[f"GEO_PROVIDER={self.geo_provider}"] = [
+                ("GEO_API_KEY", self.geo_api_key),
+            ]
+        if self.geo_provider == "nominatim":
+            # Politica Nominatim cere un User-Agent identificabil; cel implicit
+            # (contact@example.com) duce la blocare de către OSM.
+            if "example.com" in self.geo_user_agent:
+                problems.append(
+                    "GEO_USER_AGENT folosește valoarea implicită (example.com); "
+                    "politica Nominatim cere un contact real, altfel OSM blochează"
+                )
+
+        for provider, keys in required_keys.items():
+            missing = [name for name, value in keys if not value]
+            if missing:
+                problems.append(
+                    f"{provider}, dar lipsesc cheile: {', '.join(missing)}"
+                )
 
         # RO: debug expune stack-trace-uri și trebuie oprit în producție.
         if self.debug is True:

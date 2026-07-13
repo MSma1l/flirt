@@ -38,7 +38,11 @@ _FAKE_PUB = "-----BEGIN PUBLIC KEY-----\nfake\n-----END PUBLIC KEY-----"
 
 
 def _prod_kwargs(**overrides):
-    """Configurare de producție VALIDĂ (toate integrările în modul live)."""
+    """Configurare de producție VALIDĂ: integrări live + CHEILE pe care le cer.
+
+    Guard-ul verifică acum și cheile, nu doar modul: `storage_provider="s3"` cu
+    `S3_BUCKET` gol trecea înainte și crăpa abia la primul upload, în producție.
+    """
     base = dict(
         environment="production",
         postgres_password="a-strong-secret",
@@ -46,11 +50,24 @@ def _prod_kwargs(**overrides):
         jwt_public_key=_FAKE_PUB,
         database_url="",
         social_auth_mode="live",
+        google_client_id="123.apps.googleusercontent.com",
+        apple_client_id="md.flirt.app",
         otp_mode="live",
+        redis_url="redis://redis:6379/0",
+        twilio_account_sid="AC_test",
+        twilio_auth_token="tok_test",
+        twilio_from="+37312345678",
         billing_provider="stripe",
+        stripe_secret_key="sk_test",
         face_verify_provider="rekognition",
         storage_provider="s3",
+        s3_bucket="flirt-media",
+        s3_region="eu-central-1",
+        aws_access_key_id="AKIA_test",
+        aws_secret_access_key="secret_test",
         push_provider="expo",
+        geo_provider="nominatim",
+        geo_user_agent="FLIRT/1.0 (contact@flirt.md)",
         debug=False,
         cors_origins="https://app.flirt.example",
     )
@@ -76,6 +93,9 @@ def test_production_all_live_ok():
         {"face_verify_provider": "stub"},
         {"storage_provider": "stub"},
         {"push_provider": "stub"},
+        {"geo_provider": "stub"},          # lipsea din guard: geocoder fals în prod
+        {"s3_bucket": ""},                 # provider live, cheie goală
+        {"twilio_auth_token": ""},         # idem
         {"debug": True},
         {"cors_origins": "https://app.flirt.example,*"},
     ],
