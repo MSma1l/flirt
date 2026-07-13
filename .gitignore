@@ -19,6 +19,16 @@ mobile/.env
 npm-debug.*
 *.tsbuildinfo
 
+# === Build nativ / secrete de submit (NU le comite) ===
+# Foldere native generate de `expo prebuild` (workflow managed: sursa e app.json).
+mobile/ios/
+mobile/android/
+# Cheia contului de serviciu Google Play, referită din eas.json → submit.
+mobile/play-service-account.json
+# Keystore-uri de semnare Android.
+*.jks
+*.keystore
+
 # === OS / editor ===
 .DS_Store
 *.log

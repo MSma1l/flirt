@@ -13,8 +13,46 @@ const extra = (Constants.expoConfig?.extra ?? {}) as {
   supportUrl?: string;
 };
 
+/**
+ * URL-ul API. Sursa de adevăr e variabila de mediu `EXPO_PUBLIC_API_URL`, setată
+ * per profil în `eas.json` și inline-uită în bundle la build de babel-preset-expo.
+ *
+ * NU mai există un `localhost` hardcodat pentru build-urile reale: pe un telefon
+ * fizic `localhost` nu există, iar App Transport Security blochează HTTP cleartext,
+ * deci un build de producție care ar cădea pe localhost ar avea EROARE DE REȚEA pe
+ * fiecare ecran (respingere sigură pe Guideline 2.1).
+ *
+ * Ordinea: variabila de mediu → `extra.apiUrl` din app.json (override local/teste)
+ * → fallback localhost DOAR în development. În producție, lipsa variabilei sau un
+ * URL non-HTTPS opresc aplicația imediat, ca greșeala să iasă la iveală în timpul
+ * testării interne, nu în fața recenzentului Apple.
+ */
+function resolveApiUrl(): string {
+  const fromEnv = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (fromEnv) return fromEnv;
+
+  const fromExtra = extra.apiUrl?.trim();
+  if (fromExtra) return fromExtra;
+
+  if (__DEV__) return 'http://localhost:8000/api/v1';
+
+  throw new Error(
+    'EXPO_PUBLIC_API_URL lipsește din build-ul de producție. ' +
+      'Setează-l în eas.json (profilul `production`) înainte de build.',
+  );
+}
+
+const apiUrl = resolveApiUrl();
+
+if (!__DEV__ && !apiUrl.startsWith('https://')) {
+  throw new Error(
+    `EXPO_PUBLIC_API_URL trebuie să fie HTTPS în producție (primit: ${apiUrl}). ` +
+      'App Transport Security blochează HTTP cleartext pe device-uri reale.',
+  );
+}
+
 export const config = {
-  apiUrl: extra.apiUrl ?? 'http://localhost:8000/api/v1',
+  apiUrl,
 
   /**
    * Hartă: tiles OpenStreetMap prin Leaflet, randate într-un WebView.
