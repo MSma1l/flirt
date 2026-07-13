@@ -37,3 +37,7 @@ mobile/play-service-account.json
 
 # Extras de lucru
 .context/tz_extract/
+
+# Admin panel
+admin/node_modules/
+admin/dist/

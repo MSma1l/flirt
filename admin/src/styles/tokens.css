@@ -1,0 +1,83 @@
+/*
+ * Design tokens FLIRT — sursa: .context/DESIGN_TOKENS.md
+ * Tema se aplică prin atributul [data-theme="dark"|"light"] pe <html>.
+ * Accentul roz se folosește pe MAX ~10% din ecran.
+ */
+
+:root {
+  /* Tipografie */
+  --font-sans: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Accent — identic în ambele teme */
+  --color-accent: #ff2d78;
+
+  /* Formă */
+  --radius-pill: 999px;
+  --radius-card: 18px;
+  --radius-input: 12px;
+  --radius-sm: 8px;
+
+  /* Umbre */
+  --shadow-accent: 0 4px 14px rgba(255, 45, 120, 0.35);
+  --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.08);
+
+  /* Tranziții */
+  --transition-fast: 150ms ease-out;
+  --transition-base: 200ms ease-out;
+
+  /* Gradient CTA */
+  --gradient-cta: linear-gradient(120deg, #ff2d78, #e01b63);
+
+  /* Semafor pentru badge-uri de compatibilitate / stare */
+  --color-success: #2ecc71;
+  --color-warning: #f5c542;
+  --color-neutral: #8a8a94;
+  --color-danger: #ff4d4d;
+
+  /* Spațiere */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+}
+
+/* ---------- DARK (principal) ---------- */
+[data-theme='dark'] {
+  --color-bg: #0d0d0f;
+  --color-surface: #1a1a1e;
+  --color-card-hover: #232329;
+  --color-border: #2c2c33;
+  --color-text: #ffffff;
+  --color-text-secondary: #a6a6af;
+  --color-text-disabled: #5a5a63;
+  --color-link: #ff6ba0;
+  --color-accent-hover: #ff4d8d;
+  --color-accent-pressed: #e01b63;
+  --color-accent-disabled: #6e2c46;
+  --color-tag-bg: #2b1420;
+
+  --color-overlay: rgba(0, 0, 0, 0.65);
+  color-scheme: dark;
+}
+
+/* ---------- LIGHT ---------- */
+[data-theme='light'] {
+  --color-bg: #ffffff;
+  --color-surface: #f7f7f9;
+  --color-card-hover: #efeff3;
+  --color-border: #e4e4ea;
+  --color-text: #141416;
+  --color-text-secondary: #6e6e78;
+  --color-text-disabled: #b4b4bc;
+  --color-link: #e01b63;
+  --color-accent-hover: #e01b63;
+  --color-accent-pressed: #c41556;
+  --color-accent-disabled: #f5a8c4;
+  --color-tag-bg: #ffe4ee;
+
+  --color-overlay: rgba(20, 20, 22, 0.45);
+  color-scheme: light;
+}

@@ -22,7 +22,7 @@
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://staging-api.flirt.eu/api/v1"
+        "EXPO_PUBLIC_API_URL": "https://staging-api.flirt.md/api/v1"
       },
       "ios": {
         "simulator": false
@@ -36,7 +36,7 @@
       "channel": "production",
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.flirt.eu/api/v1"
+        "EXPO_PUBLIC_API_URL": "https://api.flirt.md/api/v1"
       },
       "android": {
         "buildType": "app-bundle"

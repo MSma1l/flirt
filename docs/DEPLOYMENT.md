@@ -1,304 +1,407 @@
-# Deployment — de la server gol la aplicație live
+# Deployment — de la server gol la `api.flirt.md` live
 
-Procedura completă pentru backend-ul FLIRT (FastAPI + Postgres + Redis + nginx/TLS).
-Mobilul e o aplicație separată și nu face parte din acest stack.
+Backend-ul FLIRT (FastAPI + Postgres + Redis + nginx/TLS) și panoul de admin.
+Aplicația mobilă e separată și nu face parte din acest stack.
 
-Tot ce urmează pornește din `backend/` și e verificabil: fiecare pas are un
-**check** care spune dacă a mers sau nu.
+**Deploy-ul, în întregime:**
+
+```bash
+cd /opt/flirt && git pull
+cd backend && docker compose up --build -d
+```
+
+Atât. Migrațiile rulează singure, certificatul TLS se emite singur, panoul de admin
+se construiește singur. Singurul pas manual e completarea fișierului `.env` — **o
+singură dată, înainte de primul deploy** (secțiunea 3).
 
 ---
 
 ## 0. Ce rulează, de fapt
 
-| Serviciu  | Rol | Expus public |
-|-----------|-----|--------------|
-| `nginx`   | TLS (443), redirect 80→443, rate limiting la margine, reverse proxy | da (80, 443) |
-| `api`     | FastAPI pe gunicorn (4 workeri uvicorn), migrații Alembic la pornire | nu (doar prin nginx) |
-| `db`      | Postgres 16, volum `pgdata` | nu |
-| `redis`   | rate limiting partajat + store OTP live | nu |
-| `certbot` | emite/reînnoiește certificatul Let's Encrypt | nu |
-| `purge`   | purjare GDPR periodică (conturi cu grația expirată) | nu |
-| `backup`  | `pg_dump` periodic + retenție | nu |
+| Serviciu      | Rol                                                                   | Expus public   |
+|---------------|-----------------------------------------------------------------------|----------------|
+| `nginx`       | TLS (443), redirect 80→443, rate limiting la margine, reverse proxy    | **da** (80,443)|
+| `api`         | FastAPI pe gunicorn (4 workeri uvicorn); rulează migrațiile la pornire | nu (prin nginx)|
+| `db`          | Postgres 16, volum `pgdata`                                            | **nu**         |
+| `redis`       | rate limiting partajat între workeri + store OTP                       | **nu**         |
+| `certbot`     | emite **și** reînnoiește certificatul Let's Encrypt, automat           | nu             |
+| `admin-build` | construiește panoul de admin (`admin/`) și îl publică pentru nginx     | nu             |
+| `purge`       | purjare GDPR (conturi cu grația expirată)                              | nu             |
+| `backup`      | `pg_dump` periodic + retenție                                          | nu             |
+
+**Postgres și Redis nu au niciun port publicat pe host** — trăiesc exclusiv în
+rețeaua internă Docker. Un Redis expus pe internet e preluat în minute (nu are
+autentificare implicită, iar `CONFIG SET` duce la execuție de cod pe server).
+Singura ușă către exterior e nginx.
+
+### Cele două domenii
+
+| Nume             | Ce servește                                  |
+|------------------|----------------------------------------------|
+| `api.flirt.md`   | API-ul (aplicația mobilă vorbește doar aici) |
+| `admin.flirt.md` | panoul de admin (SPA static, build Vite)     |
+
+Ambele stau pe **același server, același nginx, același certificat** (un singur
+certificat Let's Encrypt cu ambele nume în SAN).
 
 ---
 
-## 1. Cerințe pe server
+## 1. Cerințe de server
 
-- Docker Engine + plugin `docker compose` (v2).
-- Porturile **80** și **443** libere și deschise în firewall.
-- Un **domeniu** cu record DNS `A`/`AAAA` care arată către IP-ul serverului.
-  Fără DNS corect, Let's Encrypt **nu poate** emite certificatul.
+Estimare onestă, pe baza a ce rulează efectiv (Postgres + Redis + 4 workeri
+gunicorn + nginx + 2 procese auxiliare + daemonul Docker):
+
+| Resursă | Minim (merge, dar strâmt)     | **Recomandat**            | De ce                                                                                                        |
+|---------|-------------------------------|---------------------------|--------------------------------------------------------------------------------------------------------------|
+| RAM     | 2 GB **+ 2 GB swap**          | **4 GB**                  | 4 workeri gunicorn ≈ 800 MB–1 GB (boto3/httpx sunt grei), Postgres ≈ 250 MB, restul ≈ 250 MB, Docker+OS ≈ 400 MB. La 2 GB **build-ul** (pip + `npm run build` pentru admin) e cel care te omoară, nu rularea — de aici swap-ul. |
+| CPU     | 1 vCPU                        | **2 vCPU**                | `WEB_CONCURRENCY=4` presupune ~2 vCPU (regula: 2 × vCPU + 1). Cu 1 vCPU, scade la `WEB_CONCURRENCY=2`.         |
+| Disk    | 25 GB SSD                     | **40 GB SSD**             | imagini Docker ≈ 2–3 GB, Postgres crește cu userii, backup-uri = 14 × dump zilnic. **Fotografiile NU stau pe disc** (merg în S3), deci DB-ul rămâne mic mult timp. |
+| Rețea   | IP public, porturi 80+443     | idem                      | Portul **80 e obligatoriu**: fără el Let's Encrypt nu poate valida domeniul (HTTP-01) și rămâi fără certificat.|
+
+Un VPS de ~5–8 €/lună (2 vCPU / 4 GB — Hetzner CX22, Contabo, DigitalOcean) e
+suficient pentru primii utilizatori. Ce cedează primul, la creștere: **Postgres**
+(mută-l pe o instanță gestionată) și **RAM-ul** (crește `WEB_CONCURRENCY` doar
+odată cu vCPU-urile).
+
+Software: Ubuntu 22.04/24.04, Docker Engine + plugin `docker compose` (v2).
+`scripts/bootstrap_server.sh` le instalează singur.
+
+---
+
+## 2. DNS (înainte de orice)
+
+Creează **două** înregistrări `A` către IP-ul serverului:
+
+| Tip | Nume    | Valoare            | TTL |
+|-----|---------|--------------------|-----|
+| A   | `api`   | `<IP-ul serverului>` | 300 |
+| A   | `admin` | `<IP-ul serverului>` | 300 |
+
+(La registrarul lui `flirt.md`. Dacă serverul are IPv6, adaugă și `AAAA`.)
 
 ```bash
-# check DNS (trebuie să întoarcă IP-ul serverului)
-dig +short api.exemplu.com
+# check — ambele TREBUIE să întoarcă IP-ul serverului
+dig +short api.flirt.md
+dig +short admin.flirt.md
 ```
+
+> Fără DNS corect, Let's Encrypt **nu poate** emite certificatul, iar aplicația
+> mobilă nu se poate conecta (iOS refuză certificatele self-signed). Dacă DNS-ul
+> pentru `admin` întârzie, nu-i nimic: certbot emite certificatul doar pentru
+> `api.flirt.md` și adaugă `admin` automat la un ciclu următor.
 
 ---
 
-## 2. Cheile JWT (RS256)
+## 3. `.env` — singurul pas manual
 
-API-ul semnează tokenurile cu RS256; fără chei, `ENVIRONMENT=production` refuză
-să pornească (guardrail din `app/core/config.py`).
+```bash
+cd backend
+cp .env.production.example .env
+chmod 600 .env
+nano .env        # completează tot ce e marcat cu  <<< COMPLETEAZĂ >>>
+```
+
+`.env.production.example` conține **toate** variabilele cerute de guardul de
+producție (`app/core/config.py`), fiecare cu explicație și cu URL-ul de unde se ia
+cheia. Rezumat al valorilor pe care **trebuie** să le pui tu:
+
+| Variabilă                                      | De unde o iei                                                          |
+|------------------------------------------------|------------------------------------------------------------------------|
+| `POSTGRES_PASSWORD`                            | `openssl rand -base64 32` (bootstrap-ul o generează singur)            |
+| `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY`           | `openssl genrsa` — vezi mai jos (bootstrap-ul le generează singur)     |
+| `CERTBOT_EMAIL`                                | email real al tău (avertizări de expirare)                             |
+| `S3_BUCKET`, `S3_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | consola AWS (S3 + IAM). Aceleași chei servesc și verificarea facială (Rekognition) |
+| `GEO_USER_AGENT`                               | pune un **email real** — Nominatim/OSM blochează valoarea implicită     |
+| `GOOGLE_CLIENT_ID` / `APPLE_CLIENT_ID`         | Google Cloud Console / Apple Developer (Sign in with Apple)            |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` | consola Twilio (SMS-urile OTP costă bani per mesaj)           |
+| `APP_STORE_SHARED_SECRET`                      | App Store Connect → App Information → App-Specific Shared Secret       |
+
+Deja completate corect în șablon (nu le schimba fără motiv): `DOMAIN=api.flirt.md`,
+`ADMIN_DOMAIN=admin.flirt.md`, `CORS_ORIGINS=https://admin.flirt.md`,
+`REDIS_URL=redis://redis:6379/0`, `ENVIRONMENT=production`, `DEBUG=false`,
+`GEO_PROVIDER=nominatim` (gratuit, fără cheie), `PUSH_PROVIDER=expo` (fără cheie).
+
+### Cheile JWT (RS256)
+
+Se generează **pe server**; cheia privată nu pleacă niciodată de acolo.
 
 ```bash
 openssl genrsa -out private.pem 2048
 openssl rsa -in private.pem -pubout -out public.pem
-```
 
-Pune-le în `.env` pe o singură linie, cu `\n` literal:
-
-```bash
-# generează exact liniile de pus în .env
+# generează exact liniile de lipit în .env (PEM pe o linie, cu \n literal)
 echo "JWT_PRIVATE_KEY=$(awk '{printf "%s\\n", $0}' private.pem)"
-echo "JWT_PUBLIC_KEY=$(awk '{printf "%s\\n", $0}' public.pem)"
+echo "JWT_PUBLIC_KEY=$(awk  '{printf "%s\\n", $0}' public.pem)"
 ```
 
-Config-ul normalizează `\n` în linii reale (`_normalize_pem`).
+> Rotația cheii invalidează **toate** tokenurile emise (toți userii se reloghează).
 
-> Cheia privată nu se comite NICIODATĂ și nu iese de pe server. Rotația ei
-> invalidează toate tokenurile emise (userii trebuie să se relogheze).
-
----
-
-## 3. `.env`
+### Check
 
 ```bash
-cd backend
-cp .env.example .env
+make config      # sau: docker compose run --rm --no-deps api \
+                 #        python -c "from app.core.config import Settings; Settings(); print('OK')"
 ```
 
-Setează **obligatoriu** (altfel config-ul refuză să pornească în producție):
-
-| Cheie | Valoare |
-|-------|---------|
-| `ENVIRONMENT` | `production` |
-| `DEBUG` | `false` |
-| `POSTGRES_PASSWORD` | parolă generată (`openssl rand -base64 32`) |
-| `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` | de la pasul 2 |
-| `CORS_ORIGINS` | originile reale ale clientului (fără `*`) |
-| `DOMAIN` | domeniul public (ex. `api.exemplu.com`) |
-| `CERTBOT_EMAIL` | email real (avertizări de expirare) |
-| `REDIS_URL` | lasă gol — compose îl setează la `redis://redis:6379/0` |
-
-Și providerii de integrare (config-ul refuză modul `stub` în producție):
-`STORAGE_PROVIDER`, `GEO_PROVIDER`, `SOCIAL_AUTH_MODE`, `OTP_MODE`,
-`BILLING_PROVIDER`, `FACE_VERIFY_PROVIDER`, `PUSH_PROVIDER` — fiecare cu cheile
-lui (vezi `docs/INTEGRATIONS.md`).
-
-```bash
-# check: config-ul e valid pentru producție?
-docker compose run --rm api python -c "from app.core.config import Settings; Settings(); print('config OK')"
-```
 Dacă lipsește ceva, primești o listă explicită de probleme, nu o pornire tăcută.
+Iar dacă ai uitat un `<<< COMPLETEAZĂ >>>` în `.env`, containerul `api` refuză să
+pornească și îți spune exact care variabilă e necompletată.
 
 ---
 
-## 4. Prima pornire + certificat TLS
+## 4. Pornirea
 
 ```bash
-docker compose up -d db redis api nginx
+docker compose up --build -d
 ```
 
-La pornire, nginx nu are încă certificat Let's Encrypt, așa că
-`nginx/40-ensure-cert.sh` generează unul **self-signed** — exact cât să pornească
-și să poată servi provocarea ACME pe `:80` (fără el ai un ou-și-găina: nginx nu
-pornește fără cert, certbot nu emite cert fără nginx).
+Ce se întâmplă, în ordine, **fără intervenția ta**:
 
-Emite certificatul REAL (o singură dată):
+1. `db` și `redis` pornesc și devin healthy.
+2. `api` rulează `alembic upgrade head` (migrațiile) și abia apoi pornește gunicorn.
+   Dacă migrațiile eșuează, containerul **nu** servește trafic cu o schemă necunoscută.
+3. `nginx` randează configul cu `DOMAIN`/`ADMIN_DOMAIN` din `.env`, își generează un
+   certificat **self-signed** temporar (ca să poată porni deloc) și începe să servească
+   provocarea ACME pe portul 80.
+4. `certbot` cere certificatul **real** pentru `api.flirt.md` + `admin.flirt.md`.
+5. `nginx` observă certificatul nou (verifică din minut în minut) și dă `reload`.
+   **Fără downtime.** De aici încolo, TLS-ul e real.
+6. `admin-build` construiește panoul de admin din `admin/` și îl publică. Dacă
+   folderul nu există sau build-ul pică, **backend-ul nu e afectat** — se servește
+   o pagină explicativă pe `admin.flirt.md`, iar API-ul merge normal.
+
+Prima pornire durează câteva minute (build-uri + emiterea certificatului).
 
 ```bash
-docker compose run --rm certbot certonly \
-  --webroot -w /var/www/certbot \
-  -d "$DOMAIN" \
-  --email "$CERTBOT_EMAIL" --agree-tos --no-eff-email
-
-# nginx preia certificatul (relink + reload)
-docker compose exec nginx sh /usr/local/bin/ensure-cert.sh
-docker compose exec nginx nginx -s reload
+docker compose ps         # toate 'running'; `api` → 'healthy'; `admin-build` → 'exited (0)'
+docker compose logs -f certbot   # urmărește emiterea certificatului
 ```
 
-Reînnoirea e automată: serviciul `certbot` rulează `certbot renew` la 12h, iar
-`nginx` re-verifică certificatul și dă `reload` tot la 12h.
+### Dacă certificatul nu apare
+
+Aproape întotdeauna e DNS-ul sau firewall-ul:
 
 ```bash
-# check TLS
-curl -I https://$DOMAIN/health                  # 200, fără avertisment de certificat
-curl -I http://$DOMAIN/health                   # 301 → https
-curl -sI https://$DOMAIN/health | grep -i strict-transport-security   # HSTS prezent
+docker compose logs certbot | tail -30
+dig +short api.flirt.md          # arată IP-ul ACESTUI server?
+curl -I http://api.flirt.md/.well-known/acme-challenge/test   # portul 80 e accesibil din afară?
+```
+
+Certbot reîncearcă singur la fiecare oră. Dacă vrei să forțezi acum, după ce ai
+reparat DNS-ul, o singură comandă:
+
+```bash
+docker compose restart certbot
 ```
 
 ---
 
-## 5. Migrațiile
-
-Rulează **automat** la pornirea containerului `api` (`entrypoint.sh` →
-`alembic upgrade head`). Manual, dacă e nevoie:
+## 5. Verificarea că merge cu adevărat
 
 ```bash
-docker compose exec api alembic upgrade head
-docker compose exec api alembic current      # check: revizia curentă
-```
-
----
-
-## 6. Pornirea completă
-
-```bash
-docker compose up -d          # inclusiv certbot, purge, backup
-docker compose ps             # toate `running`; `api` trebuie să fie `healthy`
-```
-
-### Verificarea că merge cu adevărat
-
-```bash
-# 1. liveness (procesul e viu)
-curl -fsS https://$DOMAIN/health
+# 1. liveness + certificat REAL (fără -k! dacă merge fără -k, TLS-ul e valid)
+curl -I https://api.flirt.md/health
 
 # 2. readiness REAL (SELECT 1 pe Postgres + PING pe Redis)
-curl -fsS https://$DOMAIN/health/ready
+curl -s https://api.flirt.md/health/ready
 # → {"status":"ready","checks":{"database":"ok","redis":"ok"}}
 
-# 3. cu DB oprit, readiness TREBUIE să dea 503 (nu 200)
+# 3. redirect + HSTS
+curl -I http://api.flirt.md/health | grep -i location          # → https://...
+curl -sI https://api.flirt.md/health | grep -i strict-transport-security
+
+# 4. emitentul certificatului (trebuie Let's Encrypt, NU self-signed)
+echo | openssl s_client -connect api.flirt.md:443 -servername api.flirt.md 2>/dev/null \
+  | openssl x509 -noout -issuer -dates
+
+# 5. cu DB oprit, readiness TREBUIE să dea 503 (nu 200)
 docker compose stop db
-curl -s -o /dev/null -w '%{http_code}\n' https://$DOMAIN/health/ready   # → 503
+curl -s -o /dev/null -w '%{http_code}\n' https://api.flirt.md/health/ready   # → 503
 docker compose start db
 
-# 4. log-uri structurate (o linie JSON per cerere, cu request_id)
-docker compose logs api --tail 20
-
-# 5. rate limiting partajat: al 6-lea login greșit într-un minut → 429
+# 6. rate limiting partajat: al 6-lea login greșit într-un minut → 429
 for i in $(seq 1 6); do
-  curl -s -o /dev/null -w '%{http_code} ' -X POST https://$DOMAIN/api/v1/auth/login \
+  curl -s -o /dev/null -w '%{http_code} ' -X POST https://api.flirt.md/api/v1/auth/login \
     -H 'Content-Type: application/json' \
     -d '{"email":"nobody@example.com","password":"wrong-password"}'
 done; echo
+
+# 7. panoul de admin
+curl -I https://admin.flirt.md/                 # → 200
+curl -I https://admin.flirt.md/users            # → 200 (fallback SPA, nu 404)
+
+# 8. serverul NU răspunde pe Host necunoscut (scanere pe IP brut)
+curl -sk -o /dev/null -w '%{http_code}\n' https://<IP-ul-serverului>/    # → conexiune închisă (444)
+```
+
+Sau, scurt: `make check`.
+
+---
+
+## 6. `make` — comenzile uzuale
+
+```bash
+make up        # docker compose up --build -d + așteaptă 'healthy'  (= deploy-ul)
+make down      # oprește tot (datele rămân în volume)
+make logs      # log-urile, live
+make ps        # starea serviciilor
+make check     # readiness prin nginx + emitentul certificatului
+make config    # validează .env pentru producție, fără să pornească nimic
+make migrate   # migrații manuale (normal se fac singure la `up`)
+make backup    # backup ACUM
+make restore FILE=/backups/flirt-....sql.gz            # restore de TEST
+make restore FILE=/backups/flirt-....sql.gz FORCE=1    # restore PESTE producție
 ```
 
 ---
 
 ## 7. Observabilitate
 
-- **Log-uri**: JSON pe stdout (`LOG_FORMAT=json`), colectate de Docker. Fiecare
-  cerere are `request_id` — corelabil cu antetul `X-Request-ID` din răspuns.
-- Nu se loghează niciodată: tokenuri, parole, mesaje de chat, query string-uri, PII.
-- Un client care raportează o eroare îți dă `request_id`-ul din răspunsul 500;
-  cauți direct:
+- **Log-uri**: JSON pe stdout, colectate de Docker, **rotite** la 10 MB × 5 fișiere
+  per serviciu (fără rotație, log-urile umplu discul, iar când discul e plin cade
+  Postgres — adică tot produsul).
+- Fiecare cerere are un `request_id`, întors și în antetul `X-Request-ID`.
+- Nu se loghează niciodată: tokenuri, parole, mesaje de chat, PII.
 
 ```bash
 docker compose logs api | grep <request_id>
 ```
 
-Pentru agregare centralizată, trimite stdout-ul containerelor către Loki/ELK
-(driver de logging Docker) — formatul e deja JSON, nu mai trebuie parsat.
+Pentru agregare centralizată (Loki/ELK), trimite stdout-ul containerelor — formatul
+e deja JSON, nu mai trebuie parsat.
 
 ---
 
 ## 8. Backup și restore
 
-Backup automat: serviciul `backup` face `pg_dump` comprimat la
-`BACKUP_INTERVAL_SECONDS` (implicit zilnic), în `BACKUP_HOST_DIR` (implicit
-`./backups`), cu retenție `BACKUP_RETENTION_DAYS` (implicit 14 zile).
+Serviciul `backup` face `pg_dump` comprimat la `BACKUP_INTERVAL_SECONDS` (implicit
+zilnic), în `BACKUP_HOST_DIR` (implicit `./backups`), cu retenție
+`BACKUP_RETENTION_DAYS` (implicit 14 zile).
+
+> Pune `BACKUP_HOST_DIR` pe un **disc separat** sau sincronizează-l off-site (S3,
+> Backblaze). Un backup pe același disc cu baza de date dispare odată cu discul.
+
+### Testul de restore — fă-l lunar/trimestrial
+
+Un backup pe care nu l-ai restaurat niciodată **nu e un backup, e o presupunere.**
 
 ```bash
-# backup manual, acum
-docker compose exec backup sh /scripts/backup_db.sh
-ls -lh backups/
+make backup                                     # sau: docker compose exec backup sh /scripts/backup_db.sh
+docker compose exec backup ls -1 /backups       # alege un dump
+
+make restore FILE=/backups/flirt-20260713-030000.sql.gz
+# → restaurează într-o bază de TEST (flirt_restore_test), NU atinge producția,
+#   și afișează numărul de utilizatori. Dacă numărul e plauzibil → backup-ul e bun.
 ```
 
-> Pune `BACKUP_HOST_DIR` pe un disc/volum SEPARAT (sau sincronizează-l off-site:
-> S3, Backblaze). Un backup pe același disc cu DB-ul dispare odată cu discul.
-
-### Restore (procedura testabilă)
-
-**Testul de restore (fă-l lunar/trimestrial — un backup nerestaurat nu e backup):**
+### Restore real (dezastru)
 
 ```bash
-docker compose run --rm -e PGDATABASE=flirt_restore_test backup \
-  sh /scripts/restore_db.sh /backups/flirt-20260712-030000.sql.gz
-# → restaurează într-o bază de TEST și afișează numărul de utilizatori
+make restore FILE=/backups/<dump>.sql.gz FORCE=1
+# oprește api+purge, restaurează peste producție, repornește, verifică readiness
 ```
 
-**Restore real (dezastru, pierdere de date):**
-
-```bash
-docker compose stop api purge          # oprim scrierile
-docker compose run --rm backup \
-  sh /scripts/restore_db.sh /backups/<dump>.sql.gz --force
-docker compose exec api alembic upgrade head   # dacă dump-ul e dintr-o schemă mai veche
-docker compose start api purge
-curl -fsS https://$DOMAIN/health/ready
-```
-
-`restore_db.sh` refuză implicit baza de producție fără `--force` (protecție
-anti-degete-grase) și se oprește la prima eroare (`ON_ERROR_STOP`), ca să nu
-rămâi cu un restore „pe jumătate reușit" pe care să-l crezi complet.
+`restore_db.sh` refuză baza de producție fără `--force` (protecție anti-degete-grase)
+și se oprește la prima eroare (`ON_ERROR_STOP`), ca să nu rămâi cu un restore „pe
+jumătate reușit" pe care să-l crezi complet. Dacă dump-ul e dintr-o schemă mai veche,
+rulează după el `make migrate`.
 
 ---
 
-## 9. GDPR — purjarea conturilor șterse
+## 9. Update (versiune nouă)
+
+```bash
+make backup                      # ÎNTOTDEAUNA înainte de un deploy cu migrații
+git pull
+docker compose up --build -d     # migrațiile rulează în entrypoint
+make check
+```
+
+## 10. Rollback
+
+```bash
+# 1. Codul: înapoi la commit-ul/tag-ul anterior
+git checkout <tag_anterior>
+docker compose up --build -d
+
+# 2. Schema — DOAR dacă versiunea nouă a adus migrații incompatibile:
+docker compose exec api alembic downgrade -1        # sau: alembic downgrade <revizie>
+
+# 3. Dacă schema nu se poate coborî curat → restore din backup (secțiunea 8),
+#    apoi redeploy versiunea veche.
+
+make check
+```
+
+Certificatul TLS **nu** e afectat de rollback (trăiește în volumul `letsencrypt`).
+
+---
+
+## 11. GDPR — purjarea conturilor șterse
 
 Serviciul `purge` rulează `scripts/gdpr_purge.py --loop`: la fiecare
 `GDPR_PURGE_INTERVAL_SECONDS` (implicit o oră) șterge definitiv conturile a căror
 perioadă de grație (`ACCOUNT_DELETION_GRACE_DAYS`, implicit 30 de zile) a expirat.
 
-Rulează într-un proces SEPARAT, nu în API: `entrypoint.sh` pornește 4 workeri
+Rulează într-un proces **separat**, nu în API: `entrypoint.sh` pornește 4 workeri
 gunicorn, iar un task în lifespan s-ar executa de 4 ori în paralel.
 
 ```bash
-# purjare manuală, o singură trecere
-docker compose exec api python scripts/gdpr_purge.py
-# → "Conturi purjate: N"
-
 docker compose logs purge --tail 20
+docker compose exec api python scripts/gdpr_purge.py   # o singură trecere, manual
 ```
 
 ---
 
-## 10. Update (deploy de versiune nouă)
+## 12. Server nou, de la zero (opțional)
+
+`scripts/bootstrap_server.sh` face pașii 1→4 automat: instalează Docker, deschide
+porturile, clonează repo-ul, generează parola Postgres și cheile JWT, apoi se oprește
+și îți cere să completezi cheile externe din `.env`.
 
 ```bash
-git pull
-docker compose build api
-docker compose up -d api          # migrațiile rulează în entrypoint
-docker compose ps                 # `api` → healthy
-curl -fsS https://$DOMAIN/health/ready
+sudo REPO_URL=https://github.com/<org>/flirt.git bash backend/scripts/bootstrap_server.sh
+nano /opt/flirt/backend/.env        # completează <<< COMPLETEAZĂ >>>
+sudo bash backend/scripts/bootstrap_server.sh    # rulează-l din nou: pornește stack-ul
 ```
 
-## 11. Rollback
-
-```bash
-# 1. Codul: revino la commit-ul/tag-ul anterior
-git checkout <tag_anterior>
-docker compose build api
-docker compose up -d api
-
-# 2. Schema (DOAR dacă noua versiune a adus migrații incompatibile):
-docker compose exec api alembic downgrade -1     # sau: alembic downgrade <revizie>
-
-# 3. Dacă schema nu se poate coborî curat → restore din backup (secțiunea 8),
-#    apoi redeploy versiunea veche.
-
-# check
-curl -fsS https://$DOMAIN/health/ready
-```
-
-> Înainte de orice deploy cu migrații: **fă un backup manual**
-> (`docker compose exec backup sh /scripts/backup_db.sh`). E singura cale de
-> întoarcere dacă migrația distruge date.
+E idempotent: nu suprascrie `.env`, nu regenerează cheile JWT, nu reinstalează Docker.
 
 ---
 
-## 12. Checklist final (înainte de a lăsa useri reali înăuntru)
+## 13. Checklist final — înainte de a lăsa useri reali înăuntru
 
+**Configurare**
 - [ ] `ENVIRONMENT=production`, `DEBUG=false`
-- [ ] `https://$DOMAIN/health` → 200, certificat valid (nu self-signed)
-- [ ] `http://$DOMAIN/...` → 301 către HTTPS; HSTS prezent
-- [ ] `/health/ready` → 200 cu `database: ok`, `redis: ok`
-- [ ] `/health/ready` → 503 cu DB oprit (l-ai testat, nu îl presupui)
-- [ ] `REDIS_URL` setat → rate limiting partajat între cei 4 workeri
-- [ ] Niciun provider de integrare în modul `stub`
-- [ ] Backup rulat cel puțin o dată **și restaurat** cu succes într-o bază de test
-- [ ] Serviciul `purge` rulează (verifică log-urile)
+- [ ] Niciun `<<< COMPLETEAZĂ >>>` rămas în `.env` (`grep COMPLETEAZĂ .env` → nimic)
+- [ ] `make config` → OK
+- [ ] Parola Postgres nu e `change_me`; `.env` e `chmod 600`
 - [ ] Cheia privată JWT există DOAR pe server (nu în git)
-- [ ] Parola Postgres nu e `change_me`
+- [ ] `GEO_USER_AGENT` are un email real (altfel OSM blochează geocodarea)
+- [ ] Niciun provider de integrare pe `stub`
+
+**Rețea și TLS**
+- [ ] `dig +short api.flirt.md` și `admin.flirt.md` → IP-ul serverului
+- [ ] `curl -I https://api.flirt.md/health` → 200 **fără `-k`** (certificat real)
+- [ ] Emitentul certificatului e Let's Encrypt (nu self-signed)
+- [ ] `http://api.flirt.md` → 301 spre HTTPS; HSTS prezent
+- [ ] `https://<IP>/` → conexiune închisă (444), nu API-ul
+
+**Funcționare**
+- [ ] `/health/ready` → 200 cu `database: ok`, `redis: ok`
+- [ ] `/health/ready` → **503** cu DB oprit (l-ai testat, nu îl presupui)
+- [ ] Al 6-lea login greșit într-un minut → 429 (rate limiting partajat, prin Redis)
+- [ ] `https://admin.flirt.md/<rută-internă>` → 200 (fallback SPA), nu 404
+
+**Securitate operațională**
+- [ ] `docker compose ps` — **doar** `nginx` are porturi publicate (80, 443)
+- [ ] Postgres și Redis: **fără** porturi pe host
+- [ ] Firewall: doar 22, 80, 443 deschise (și în panoul providerului, nu doar `ufw`)
+
+**Date**
+- [ ] Un backup a rulat **și a fost restaurat** cu succes într-o bază de test
+- [ ] `BACKUP_HOST_DIR` e pe alt disc / sincronizat off-site
+- [ ] Serviciul `purge` rulează (`docker compose logs purge`)
+
+**Mobil**
+- [ ] `mobile/eas.json`, profilul `production`: `EXPO_PUBLIC_API_URL=https://api.flirt.md/api/v1`
