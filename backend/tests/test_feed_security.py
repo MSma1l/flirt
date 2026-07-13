@@ -1,7 +1,7 @@
 """Teste de regresie pentru breșele de securitate din zona FEED/SWIPE (pentest).
 
 Fiecare test demonstrează că o breșă concretă e ÎNCHISĂ:
-  1. CRITIC — age-gate + authz pe `swipe()` (bypass-ul filtrelor din feed).
+  1. CRITIC — gate 18+ + authz pe `swipe()` (bypass-ul filtrelor din feed).
   2. ÎNALT — mesajul deferred ajunge MASCAT în chat la match (TZ 5.5).
   3. ÎNALT — feed DoS: distanța se geocodează doar pentru rezultate.
   4. RIDICAT — enforcement limită swipe/zi pentru non-premium (TZ 4.5).
@@ -9,10 +9,13 @@ Fiecare test demonstrează că o breșă concretă e ÎNCHISĂ:
 Rulează pe SQLite in-memory, refolosind helperele din stilul lui `test_feed.py`.
 """
 from datetime import date
+from uuid import UUID
 
 import pytest
+from sqlalchemy import update
 
 from app.core.config import settings
+from app.models.profile import Profile
 from app.services import geo
 
 API = "/api/v1"
@@ -97,28 +100,50 @@ async def _swipe(client, headers, target_user_id, action="like", message=None):
 
 # --- Vârste deterministe -----------------------------------------------------
 _ADULT_YEAR = date.today().year - 25   # ~25 ani → 18+
-_TEEN_YEAR = date.today().year - 17    # ~17 ani → 16–17
+_MINOR_YEAR = date.today().year - 17   # ~17 ani → sub prag (aplicația e 18+ only)
+
+
+async def _widen_radius(client, headers, km: int = 1000) -> None:
+    """Lărgește raza de căutare prin API-ul real (implicit: 50 km, ACUM se aplică)."""
+    resp = await client.put(
+        f"{API}/settings/", json={"search_radius_km": km}, headers=headers
+    )
+    assert resp.status_code == 200, resp.text
 
 
 # ============================================================================
-# 1. CRITIC — age-gate + authz pe swipe()
+# 1. CRITIC — gate 18+ pe swipe()
 # ============================================================================
 @pytest.mark.asyncio
-async def test_swipe_minor_adult_forbidden_both_directions(client):
-    """Un adult NU poate face swipe pe un minor și invers (age-gate direct)."""
+async def test_swipe_on_underage_profile_forbidden(client, db_session):
+    """Un profil sub 18 nu poate fi swipe-uit și nu poate da swipe (gate dur).
+
+    Aplicația e 18+ ONLY, deci separarea minor/adult de dinainte nu mai are
+    obiect. Ce rămâne — și e mai important — e ca un cont sub prag rămas în DB
+    (creat înainte de decizia 18+) să nu poată participa la swipe în NICIUN sens,
+    nici ca sursă, nici ca țintă. Nu ne bazăm doar pe validarea de la intrare.
+    """
     adult_headers, adult_id = await _make_user(
         client, "adult@example.com", _anketa(name="Adult", birth_year=_ADULT_YEAR)
     )
-    teen_headers, teen_id = await _make_user(
-        client, "teen@example.com", _anketa(name="Teen", birth_year=_TEEN_YEAR)
+    minor_headers, minor_id = await _make_user(
+        client, "old@example.com", _anketa(name="Old", birth_year=_ADULT_YEAR)
     )
+    # Coborâm profilul sub prag direct în DB, ocolind validarea API.
+    await db_session.execute(
+        update(Profile)
+        .where(Profile.user_id == UUID(minor_id))
+        .values(birth_date=date(_MINOR_YEAR, 1, 1))
+    )
+    await db_session.commit()
 
-    # Adult → minor: respins (nu se poate ocoli separarea din feed prin swipe).
-    resp = await _swipe(client, adult_headers, teen_id)
-    assert resp.status_code == 403, resp.text
+    # Adult → sub-prag: respins cu 404 NEUTRU, intenționat — un 403 explicit ar
+    # divulga că ținta există și e minoră (vector de enumerare).
+    resp = await _swipe(client, adult_headers, minor_id)
+    assert resp.status_code == 404, resp.text
 
-    # Minor → adult: la fel respins.
-    resp = await _swipe(client, teen_headers, adult_id)
+    # Sub-prag → adult: 403 explicit (îi spunem propriului user de ce e blocat).
+    resp = await _swipe(client, minor_headers, adult_id)
     assert resp.status_code == 403, resp.text
 
 
@@ -285,6 +310,9 @@ async def test_feed_geocodes_only_returned_cards(client, monkeypatch):
             f"cand{i}@example.com",
             _anketa(name=f"C{i}", birth_year=_ADULT_YEAR, city="București"),
         )
+    # Candidații sunt în alt oraș (~350 km): peste raza implicită de 50 km, care
+    # ACUM chiar se aplică. Lărgim, altfel feed-ul e — corect — gol.
+    await _widen_radius(client, a_headers)
 
     resp = await client.get(f"{API}/feed/", headers=a_headers)
     assert resp.status_code == 200, resp.text

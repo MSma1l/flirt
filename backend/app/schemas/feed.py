@@ -28,6 +28,19 @@ class FeedCard(BaseModel):
     photos: list[str] = Field(default_factory=list)
 
 
+class FeedPage(BaseModel):
+    """O pagină din feed: cartelele + cursorul către pagina următoare.
+
+    `next_cursor` e opac (base64url peste cheia de sortare a ultimei cartele) și
+    `None` când nu mai există candidați. Ruta îl expune în header-ul
+    `X-Next-Cursor`, iar corpul rămâne o listă de `FeedCard` (compatibil cu
+    clienții existenți).
+    """
+
+    items: list[FeedCard] = Field(default_factory=list)
+    next_cursor: str | None = None
+
+
 class SwipeIn(BaseModel):
     """Payload-ul unui swipe (TZ 4.4)."""
 

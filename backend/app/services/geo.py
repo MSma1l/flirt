@@ -30,6 +30,8 @@ HTTP_TIMEOUT_S = 10.0
 
 # --- Constante geo -----------------------------------------------------------
 EARTH_RADIUS_KM = 6371.0088  # raza medie a Pământului (IUGG)
+# Lungimea unui grad de latitudine, în km (constantă fizică, nu regulă de business).
+KM_PER_DEG_LAT = 111.132
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -47,6 +49,48 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     )
     c = 2 * math.asin(min(1.0, math.sqrt(a)))
     return EARTH_RADIUS_KM * c
+
+
+def bounding_box(
+    lat: float, lng: float, radius_km: float
+) -> tuple[float, float, float | None, float | None]:
+    """Dreptunghiul care ÎNCADREAZĂ cercul de rază `radius_km` în jurul punctului.
+
+    Funcție PURĂ, fără I/O. Întoarce `(min_lat, max_lat, min_lng, max_lng)` în
+    grade. Folosită de feed ca PRE-filtru ieftin în SQL (interogare pe index-ul
+    `(lat, lng)`), înainte de haversine-ul exact în Python — un `WHERE` pe
+    haversine nu poate folosi indexul, un `BETWEEN` pe coloane poate.
+
+    Cutia e un superset al cercului (colțurile sunt mai departe decât raza), deci
+    NU poate elimina din greșeală un candidat valid; haversine-ul exact taie
+    surplusul.
+
+    Lângă poli / peste antimeridian, longitudinea nu se poate încadra corect:
+    întoarcem `(min_lng, max_lng) = (None, None)` ⇒ apelantul NU aplică filtrul
+    pe longitudine (rămâne doar cel pe latitudine + haversine-ul exact — corect,
+    doar puțin mai puțin selectiv).
+    """
+    radius_km = max(0.0, float(radius_km))
+    dlat = radius_km / KM_PER_DEG_LAT
+    min_lat = max(-90.0, lat - dlat)
+    max_lat = min(90.0, lat + dlat)
+
+    # Un grad de longitudine se scurtează cu cos(latitudine); folosim latitudinea
+    # cea mai apropiată de pol din cutie (cazul cel mai defavorabil ⇒ cutie mai
+    # largă, niciodată prea îngustă).
+    worst_lat = max(abs(min_lat), abs(max_lat))
+    cos_lat = math.cos(math.radians(worst_lat))
+    if cos_lat <= 1e-6:  # practic la pol — longitudinea își pierde sensul
+        return (min_lat, max_lat, None, None)
+
+    dlng = radius_km / (KM_PER_DEG_LAT * cos_lat)
+    min_lng = lng - dlng
+    max_lng = lng + dlng
+    if min_lng < -180.0 or max_lng > 180.0:
+        # Cutia trece peste antimeridian: un BETWEEN simplu ar fi GREȘIT
+        # (ar exclude candidați valizi), așa că renunțăm la filtrul pe longitudine.
+        return (min_lat, max_lat, None, None)
+    return (min_lat, max_lat, min_lng, max_lng)
 
 
 class Geocoder(Protocol):

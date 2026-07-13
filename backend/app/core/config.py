@@ -36,7 +36,9 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:19006,http://localhost:8081"
 
     # Reguli produs
-    min_registration_age: int = 16
+    # APP 18+ ONLY (cerință App Store / Google Play pentru dating): vârsta minimă
+    # de înregistrare NU poate coborî sub `adult_age` (validat mai jos).
+    min_registration_age: int = 18
     min_photos: int = 3
     max_photos: int = 9
     search_radius_default_km: int = 50
@@ -44,8 +46,27 @@ class Settings(BaseSettings):
     about_max_length: int = 500  # lungimea maximă a câmpului „despre" (TZ 2.4)
 
     # Reguli feed / vârstă (fără hardcodare în servicii)
-    adult_age: int = 18          # pragul 16-17 / 18+ (TZ 2.3)
+    adult_age: int = 18          # pragul legal de adult — aplicația e 18+ only
     feed_limit: int = 10         # câte cartele întoarce feed-ul implicit (TZ 4)
+    feed_max_limit: int = 50     # plafon pentru `?limit=` pe GET /feed (anti-DoS)
+
+    # --- Preferințe de căutare (implicite, când userul nu a setat nimic) -------
+    # Intervalul de vârstă căutat implicit. `search_age_min_default` e ridicat
+    # automat la `adult_age` (nu se poate căuta sub pragul legal).
+    search_age_min_default: int = 18
+    search_age_max_default: int = 99
+    search_age_max_limit: int = 120    # plafon absolut acceptat de la client
+    search_radius_max_km: int = 1000   # plafon absolut pentru raza de căutare
+    # Raza de căutare se aplică efectiv în feed (SQL bounding-box + haversine).
+    # Poate fi oprită global (ex. piață mică, densitate slabă de useri).
+    feed_radius_filter_enabled: bool = True
+
+    # --- Activitate (users.last_active_at) -----------------------------------
+    # Candidații inactivi de mai mult de N zile nu mai apar în feed (conturi
+    # abandonate). 0 = filtru dezactivat.
+    feed_max_inactive_days: int = 30
+    # Prag de scriere pentru `last_active_at` (evită un UPDATE la fiecare cerere).
+    last_active_touch_minutes: int = 15
 
     # Stories
     story_ttl_hours: int = 24    # durata de viață a unei povești (TZ secț. 11)
@@ -162,6 +183,23 @@ class Settings(BaseSettings):
     def _normalize_pem(cls, v: str) -> str:
         # permite chei PEM cu `\n` literal în .env
         return v.replace("\\n", "\n") if v else v
+
+    @model_validator(mode="after")
+    def _guard_adult_only(self) -> "Settings":
+        """Aplicația e 18+ ONLY — configurarea NU poate coborî sub pragul legal.
+
+        Blochează o configurare greșită (ex. `MIN_REGISTRATION_AGE=16`) care ar
+        readuce minorii în aplicație. `search_age_min_default` e ridicat automat
+        la `adult_age` (nu se poate căuta sub pragul legal).
+        """
+        if self.min_registration_age < self.adult_age:
+            raise ValueError(
+                "MIN_REGISTRATION_AGE nu poate fi sub ADULT_AGE "
+                f"({self.adult_age}): aplicația este 18+ only."
+            )
+        if self.search_age_min_default < self.adult_age:
+            self.search_age_min_default = self.adult_age
+        return self
 
     @model_validator(mode="after")
     def _guard_production(self) -> "Settings":

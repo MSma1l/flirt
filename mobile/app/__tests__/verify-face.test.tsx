@@ -38,10 +38,17 @@ describe('VerifyFaceScreen', () => {
     mockBack.mockReset();
   });
 
-  it('afișează placeholder-ul de cameră și butonul de verificare', () => {
+  it('afișează cadrul de captură și butonul de verificare', () => {
     const { getByTestId, getByText } = renderScreen();
     expect(getByTestId('camera-placeholder')).toBeTruthy();
     expect(getByText('Fă un selfie și verifică')).toBeTruthy();
+  });
+
+  it('NU afișează texte tehnice / de dezvoltare (App Store Guideline 2.1)', () => {
+    const { queryByText } = renderScreen();
+    expect(queryByText(/expo/i)).toBeNull();
+    expect(queryByText(/se activează/i)).toBeNull();
+    expect(queryByText(/curând/i)).toBeNull();
   });
 
   it('apelează verifyFace și afișează succesul', async () => {

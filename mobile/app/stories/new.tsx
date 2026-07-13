@@ -1,4 +1,4 @@
-/** Publicare story nou (TZ secț. 11): URL media + caption opțional. Uploadul de fișiere vine curând. */
+/** Publicare story nou (TZ secț. 11): URL media + caption opțional. */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Stack, useRouter } from 'expo-router';
 import React, { useState } from 'react';
@@ -61,7 +61,7 @@ export default function NewStoryScreen() {
       </View>
 
       <Text style={[typography.caption, { color: colors.textSecondary, marginTop: spacing.sm, marginBottom: spacing.lg }]}>
-        Uploadul de fișiere vine curând — momentan prin URL.
+        Adaugă linkul imaginii pe care vrei s-o publici.
       </Text>
 
       <View style={{ gap: spacing.lg }}>

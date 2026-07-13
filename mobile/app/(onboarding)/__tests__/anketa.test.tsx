@@ -78,16 +78,16 @@ describe('AnketaWizard (onboarding)', () => {
     expect(mockFetchReference).toHaveBeenCalled();
   });
 
-  it('validarea blochează avansarea cu vârstă sub 16 ani', async () => {
+  it('validarea blochează avansarea cu vârstă sub 18 ani (aplicația e 18+ only)', async () => {
     const utils = renderWizard();
     await waitFor(() => utils.getByText('Despre tine'));
 
-    // Data nașterii implică ~11 ani → sub limita de 16.
+    // Data nașterii implică o vârstă sub prag → blocat.
     fillStep0(utils, '2015-01-01');
     fireEvent.press(utils.getByText('Continuă'));
 
     // Mesajul de eroare apare și rămânem pe primul pas.
-    await waitFor(() => utils.getByText('Trebuie să ai cel puțin 16 ani.'));
+    await waitFor(() => utils.getByText('Trebuie să ai cel puțin 18 ani.'));
     expect(utils.getByText('Despre tine')).toBeTruthy();
     expect(utils.queryByText('Localizare')).toBeNull();
   });

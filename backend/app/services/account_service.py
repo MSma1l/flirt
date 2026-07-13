@@ -6,8 +6,10 @@ Toate valorile implicite provin din config, nimic hardcodat.
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
+from fastapi import HTTPException, status
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,6 +45,144 @@ def _default_notifications() -> dict:
     return {flag: True for flag in _NOTIFICATION_FLAGS}
 
 
+# --- Preferințe de căutare (filtrele DURE ale feed-ului) ---------------------
+@dataclass(frozen=True)
+class SearchPreferences:
+    """Preferințele EFECTIVE de căutare ale unui user (default-uri deja aplicate).
+
+    „Efective" = ce aplică feed-ul de fapt: valorile userului dacă există,
+    altfel default-urile din config, cu pragul 18+ forțat peste `age_min`.
+    Feed-ul primește un obiect gata de folosit, fără să repete regulile.
+    """
+
+    interested_in: tuple[str, ...] = ()   # gol = fără restricție de gen
+    age_min: int = 0
+    age_max: int = 0
+    radius_km: int = 0
+
+
+def _effective_preferences(record: UserSettings | None) -> SearchPreferences:
+    """Aplică default-urile din config peste o linie de setări (posibil absentă).
+
+    `age_min` e ridicat SIEMPRE la `settings.adult_age`: aplicația e 18+ only,
+    deci nici măcar o linie coruptă din DB nu poate produce un feed cu minori.
+    """
+    age_min = settings.search_age_min_default
+    age_max = settings.search_age_max_default
+    radius = settings.search_radius_default_km
+    genders: tuple[str, ...] = ()
+
+    if record is not None:
+        if record.age_min is not None:
+            age_min = record.age_min
+        if record.age_max is not None:
+            age_max = record.age_max
+        radius = record.search_radius_km
+        genders = tuple(
+            str(g) for g in (record.interested_in or []) if g and str(g).strip()
+        )
+
+    # 18+ ONLY: pragul legal bate orice preferință salvată.
+    age_min = max(age_min, settings.adult_age)
+    # Interval degenerat (age_max < age_min) → îl normalizăm la age_min.
+    age_max = max(age_max, age_min)
+    return SearchPreferences(
+        interested_in=genders,
+        age_min=age_min,
+        age_max=age_max,
+        radius_km=max(0, radius),
+    )
+
+
+async def get_search_preferences(
+    db: AsyncSession, user_id: uuid.UUID
+) -> SearchPreferences:
+    """Preferințele efective de căutare ale unui user, FĂRĂ a-i crea setările.
+
+    Feed-ul e read-only: nu vrem ca o simplă citire de feed să insereze o linie
+    de setări. Lipsa liniei ⇒ default-urile din config.
+    """
+    result = await db.execute(
+        select(UserSettings).where(UserSettings.user_id == user_id)
+    )
+    return _effective_preferences(result.scalar_one_or_none())
+
+
+def _validate_preferences(data: SettingsIn) -> None:
+    """Validează preferințele de căutare trimise de client (422 la eșec).
+
+    Reguli: genuri din catalog, `age_min ≥ adult_age` (18+ only), interval
+    coerent, plafoane din config pentru vârstă și rază.
+    """
+    if data.interested_in is not None:
+        # Import lazy: `profile_service` importă `account_service` (evită ciclul).
+        from app.services.profile_service import GENDERS
+
+        valid = {g.value for g in GENDERS}
+        unknown = [g for g in data.interested_in if g not in valid]
+        if unknown:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Gen invalid în preferințe. Valori permise: {sorted(valid)}",
+            )
+
+    if data.age_min is not None and data.age_min < settings.adult_age:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Vârsta minimă căutată nu poate fi sub {settings.adult_age} ani "
+                "(aplicația este 18+)."
+            ),
+        )
+    if data.age_max is not None and data.age_max > settings.search_age_max_limit:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Vârsta maximă căutată nu poate depăși {settings.search_age_max_limit}.",
+        )
+    if (
+        data.age_min is not None
+        and data.age_max is not None
+        and data.age_min > data.age_max
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Intervalul de vârstă este inversat (min > max).",
+        )
+    if (
+        data.search_radius_km is not None
+        and data.search_radius_km > settings.search_radius_max_km
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Raza de căutare nu poate depăși {settings.search_radius_max_km} km.",
+        )
+
+
+# --- Activitate (users.last_active_at) ---------------------------------------
+async def touch_last_active(db: AsyncSession, user: User) -> None:
+    """Marchează userul ca activ ACUM — scriere RARĂ, cu prag din config.
+
+    Se apelează din cererile autentificate „grele" (feed, swipe, salvare anketă).
+    Ca să nu adăugăm un UPDATE la fiecare request, scriem doar dacă au trecut cel
+    puțin `settings.last_active_touch_minutes` de la ultima marcare.
+
+    Feed-ul folosește semnalul ca să nu mai promoveze conturile abandonate la
+    egalitate cu cele active (vezi `feed_service.get_feed`).
+    """
+    now = datetime.now(timezone.utc)
+    last = user.last_active_at
+    if last is not None:
+        # DB-urile fără timezone (SQLite) întorc datetime naive → le atașăm UTC.
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        if now - last < timedelta(minutes=settings.last_active_touch_minutes):
+            return  # prea recent — nu mai scriem
+
+    user.last_active_at = now
+    db.add(user)
+    await db.commit()
+
+
 def _calc_age(birth_date: date, today: date | None = None) -> int:
     """Vârsta în ani împliniți la `today` (implicit azi)."""
     today = today or date.today()
@@ -63,7 +203,12 @@ async def get_settings(db: AsyncSession, user: User) -> SettingsOut:
 async def update_settings(
     db: AsyncSession, user: User, data: SettingsIn
 ) -> SettingsOut:
-    """Actualizează parțial setările (doar câmpurile trimise)."""
+    """Actualizează parțial setările (doar câmpurile trimise).
+
+    Preferințele de căutare sunt validate ÎNAINTE de orice scriere (422 la
+    genuri necunoscute, vârstă sub pragul 18+, interval inversat, plafoane).
+    """
+    _validate_preferences(data)
     record = await _get_or_create_settings(db, user)
 
     if data.theme is not None:
@@ -80,9 +225,68 @@ async def update_settings(
     if data.region is not None:
         record.region = data.region
 
+    # Preferințe de căutare (filtre dure în feed). Deduplicate, ordine stabilă.
+    if data.interested_in is not None:
+        record.interested_in = sorted(set(data.interested_in))
+    if data.age_min is not None:
+        record.age_min = data.age_min
+    if data.age_max is not None:
+        record.age_max = data.age_max
+
+    # Interval coerent și după un update PARȚIAL (ex. doar `age_min`, peste un
+    # `age_max` mai mic salvat anterior).
+    effective = _effective_preferences(record)
+    record.age_min = effective.age_min
+    record.age_max = effective.age_max
+
     await db.commit()
     await db.refresh(record)
     return _to_settings_out(record)
+
+
+async def set_search_preferences(
+    db: AsyncSession,
+    user: User,
+    *,
+    interested_in: list[str] | None,
+    age_min: int | None,
+    age_max: int | None,
+) -> None:
+    """Salvează preferințele de căutare venite din ANKETĂ (fără commit propriu).
+
+    Refolosește exact validarea de la `PUT /settings` (o singură sursă de reguli).
+    Commit-ul îl face apelantul (`profile_service.upsert_anketa`), ca anketa și
+    preferințele să intre în aceeași tranzacție.
+    """
+    if interested_in is None and age_min is None and age_max is None:
+        return  # nimic de setat — păstrăm ce era (sau default-urile din config)
+
+    _validate_preferences(
+        SettingsIn(interested_in=interested_in, age_min=age_min, age_max=age_max)
+    )
+
+    result = await db.execute(
+        select(UserSettings).where(UserSettings.user_id == user.id)
+    )
+    record = result.scalar_one_or_none()
+    if record is None:
+        record = UserSettings(
+            user_id=user.id,
+            search_radius_km=settings.search_radius_default_km,
+            notifications=_default_notifications(),
+        )
+        db.add(record)
+
+    if interested_in is not None:
+        record.interested_in = sorted(set(interested_in))
+    if age_min is not None:
+        record.age_min = age_min
+    if age_max is not None:
+        record.age_max = age_max
+
+    effective = _effective_preferences(record)
+    record.age_min = effective.age_min
+    record.age_max = effective.age_max
 
 
 async def _get_or_create_settings(db: AsyncSession, user: User) -> UserSettings:
@@ -104,12 +308,18 @@ async def _get_or_create_settings(db: AsyncSession, user: User) -> UserSettings:
 
 
 def _to_settings_out(record: UserSettings) -> SettingsOut:
+    # Preferințele sunt expuse cu valorile EFECTIVE (default-urile din config
+    # deja aplicate), ca mobilul să afișeze exact ce filtrează feed-ul.
+    effective = _effective_preferences(record)
     return SettingsOut(
         theme=record.theme,
         search_radius_km=record.search_radius_km,
         notifications=record.notifications or {},
         profile_hidden=record.profile_hidden,
         region=record.region,
+        interested_in=list(effective.interested_in),
+        age_min=effective.age_min,
+        age_max=effective.age_max,
     )
 
 

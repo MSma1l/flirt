@@ -21,6 +21,7 @@ import { MessageBubble } from '@/features/chat/MessageBubble';
 import { ChatMessage, ChatSummary } from '@/features/chat/types';
 import { CompatBadge } from '@/features/feed/CompatBadge';
 import { ReportModal } from '@/features/moderation/ReportModal';
+import { useBlockUser } from '@/features/social/useBlockUser';
 import { useAuthStore } from '@/store/authStore';
 import { firstError, LIMITS, maxLen, noHtml } from '@/utils/validation';
 import { useTheme } from '@theme/index';
@@ -92,6 +93,9 @@ export default function ChatScreen() {
     [messages, currentUserId, summary?.otherUserId],
   );
 
+  // Blocare (Guideline 1.2): după blocare ieșim din conversație.
+  const { confirmBlock, isBlocking } = useBlockUser({ onBlocked: () => router.back() });
+
   const trimmed = draft.trim();
   // Non-gol + ≤2000 + fără marcaje HTML (simetric cu backend-ul).
   const messageError =
@@ -138,8 +142,19 @@ export default function ChatScreen() {
           onPress={() => setReportOpen(true)}
           disabled={!reportedUserId}
           hitSlop={8}
+          testID="chat-report"
         >
           <Text style={[typography.h2, { color: colors.warning }]}>⚠</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Blochează"
+          onPress={() => confirmBlock(reportedUserId, summary?.otherName)}
+          disabled={!reportedUserId || isBlocking}
+          hitSlop={8}
+          testID="chat-block"
+        >
+          <Text style={[typography.h2, { color: colors.danger }]}>🚫</Text>
         </Pressable>
       </View>
 

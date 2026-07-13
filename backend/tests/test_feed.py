@@ -1,8 +1,11 @@
 """Teste pentru feed-ul de swipe + compatibilitate (rulează pe SQLite in-memory)."""
 from datetime import date
+from uuid import UUID
 
 import pytest
+from sqlalchemy import update
 
+from app.models.profile import Profile
 from app.services import geo
 
 API = "/api/v1"
@@ -80,7 +83,21 @@ async def _make_user(client, email: str, anketa: dict) -> tuple[dict, str]:
 
 # --- Anul curent pentru vârste deterministe ---------------------------------
 _ADULT_YEAR = date.today().year - 25   # ~25 ani → 18+
-_TEEN_YEAR = date.today().year - 17    # ~17 ani → 16–17
+_MINOR_YEAR = date.today().year - 17   # ~17 ani → sub prag (aplicația e 18+ only)
+
+
+async def _widen_radius(client, headers, km: int = 1000) -> None:
+    """Lărgește raza de căutare prin API-ul real.
+
+    Raza de căutare CHIAR se aplică acum (înainte era salvată și ignorată), iar
+    implicitul e `search_radius_default_km` = 50 km. Testele care pun candidați
+    în alt oraș (Chișinău↔București ≈ 350 km) trebuie să o lărgească explicit,
+    altfel candidatul e — corect — în afara razei.
+    """
+    resp = await client.put(
+        f"{API}/settings/", json={"search_radius_km": km}, headers=headers
+    )
+    assert resp.status_code == 200, resp.text
 
 
 @pytest.mark.asyncio
@@ -434,26 +451,46 @@ async def test_deferred_message_delivered_on_mutual_match(client):
 
 
 @pytest.mark.asyncio
-async def test_age_separation(client):
-    """Un user 18+ NU vede un profil 16–17 și invers (TZ 2.3)."""
-    adult_headers, adult_id = await _make_user(
+async def test_minor_cannot_complete_anketa(client):
+    """Aplicația e 18+ ONLY: o anketă sub prag e respinsă la validare.
+
+    Înlocuiește vechiul `test_age_separation` (separarea 16-17 / 18+), care nu
+    mai are obiect: segmentul de minori a fost eliminat complet, pentru că Apple
+    clasifică obligatoriu dating-ul la 18+ și o aplicație 18+ nu poate avea
+    conturi de minori.
+    """
+    headers = await _register(client, "minor@example.com")
+    resp = await client.put(
+        f"{API}/profiles/me",
+        json=_anketa(name="Minor", birth_year=_MINOR_YEAR),
+        headers=headers,
+    )
+    assert resp.status_code == 422, resp.text
+
+
+@pytest.mark.asyncio
+async def test_underage_profile_never_appears_in_feed(client, db_session):
+    """Defense-in-depth: chiar dacă un profil sub 18 ajunge în DB (cont vechi,
+    dinainte de trecerea la 18+), gate-ul dur din feed îl ascunde — nu ne bazăm
+    doar pe validarea de la intrare."""
+    adult_headers, _ = await _make_user(
         client, "adult@example.com", _anketa(name="Adult", birth_year=_ADULT_YEAR)
     )
-    teen_headers, teen_id = await _make_user(
-        client, "teen@example.com", _anketa(name="Teen", birth_year=_TEEN_YEAR)
+    # Profil valid la creare, apoi coborât sub prag direct în DB (ocolind API-ul),
+    # exact ca un cont existent de dinaintea deciziei 18+.
+    _, minor_id = await _make_user(
+        client, "old@example.com", _anketa(name="Old", birth_year=_ADULT_YEAR)
     )
+    await db_session.execute(
+        update(Profile)
+        .where(Profile.user_id == UUID(minor_id))
+        .values(birth_date=date(_MINOR_YEAR, 1, 1))
+    )
+    await db_session.commit()
 
-    # Adultul nu vede minorul.
     resp = await client.get(f"{API}/feed/", headers=adult_headers)
     assert resp.status_code == 200, resp.text
-    adult_ids = {c["user_id"] for c in resp.json()}
-    assert teen_id not in adult_ids
-
-    # Minorul nu vede adultul.
-    resp = await client.get(f"{API}/feed/", headers=teen_headers)
-    assert resp.status_code == 200, resp.text
-    teen_ids = {c["user_id"] for c in resp.json()}
-    assert adult_id not in teen_ids
+    assert minor_id not in {c["user_id"] for c in resp.json()}
 
 
 # --- Geolocație / distanță (TZ 7) -------------------------------------------
@@ -481,6 +518,8 @@ async def test_feed_distance_km_between_known_cities(client):
         "b@example.com",
         _anketa(name="B", birth_year=_ADULT_YEAR, city="București"),
     )
+    # ~350 km între orașe: peste raza implicită de 50 km, care ACUM chiar se aplică.
+    await _widen_radius(client, a_headers)
 
     resp = await client.get(f"{API}/feed/", headers=a_headers)
     assert resp.status_code == 200, resp.text

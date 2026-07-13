@@ -8,6 +8,7 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,6 +18,7 @@ import {
 } from 'react-native';
 
 import { Button, Input, ScreenContainer } from '@/components/ui';
+import { config } from '@/config';
 import {
   AccountDeletion,
   cancelAccountDeletion,
@@ -178,11 +180,11 @@ export default function SetariScreen() {
     </Text>
   );
 
-  const linkRow = (label: string, target: string, testID: string) => (
+  const rowShell = (label: string, testID: string, onPress: () => void, trailing: string) => (
     <Pressable
       testID={testID}
       accessibilityRole="button"
-      onPress={() => router.push(target)}
+      onPress={onPress}
       style={({ pressed }) => [
         styles.row,
         {
@@ -197,9 +199,29 @@ export default function SetariScreen() {
       <Text style={[typography.body, styles.rowLabel, { color: colors.textPrimary }]}>
         {label}
       </Text>
-      <Text style={[typography.body, { color: colors.textSecondary }]}>›</Text>
+      <Text style={[typography.body, { color: colors.textSecondary }]}>{trailing}</Text>
     </Pressable>
   );
+
+  /** Rând care navighează într-un ecran din aplicație. */
+  const linkRow = (label: string, target: string, testID: string) =>
+    rowShell(label, testID, () => router.push(target), '›');
+
+  /**
+   * Rând care deschide un document public în browser (termeni, confidențialitate,
+   * suport). URL-urile vin din config (app.json → extra), nu sunt hardcodate aici.
+   */
+  const externalRow = (label: string, url: string, testID: string) =>
+    rowShell(
+      label,
+      testID,
+      () => {
+        Linking.openURL(url).catch(() =>
+          Alert.alert('Ceva n-a mers', 'Nu am putut deschide pagina. Încearcă din nou.'),
+        );
+      },
+      '↗',
+    );
 
   return (
     <ScreenContainer>
@@ -330,6 +352,18 @@ export default function SetariScreen() {
           {linkRow('Flirt Passport', '/passport', 'link-passport')}
           {linkRow('Biletul meu Flirt Party', '/ticket', 'link-ticket')}
           {linkRow('Utilizatori blocați', '/blocklist', 'link-blocklist')}
+        </View>
+
+        {/* Legal & suport — obligatorii în aplicație (Guideline 1.2 / 5.1.1). */}
+        <View style={{ marginBottom: spacing.xl, gap: spacing.sm }}>
+          {sectionLabel('Legal și suport')}
+          {externalRow('Termeni și condiții', config.legal.termsUrl, 'link-terms')}
+          {externalRow(
+            'Politica de confidențialitate',
+            config.legal.privacyUrl,
+            'link-privacy',
+          )}
+          {externalRow('Suport', config.legal.supportUrl, 'link-support')}
         </View>
 
         {/* Ștergere programată */}

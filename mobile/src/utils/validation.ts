@@ -23,7 +23,9 @@ export const LIMITS = {
   mediaUrl: 500,
 } as const;
 
-export const MIN_AGE = 16;
+// APLICAȚIA E 18+ ONLY (cerință App Store / Google Play pentru dating).
+// Simetric cu backend-ul: MIN_REGISTRATION_AGE / ADULT_AGE din config.
+export const MIN_AGE = 18;
 export const MIN_HEIGHT_CM = 100;
 export const MAX_HEIGHT_CM = 250;
 export const MIN_SEARCH_RADIUS_KM = 1;
@@ -95,8 +97,8 @@ export function computeAge(birthDate: Date, now: Date = new Date()): number {
   return age;
 }
 
-/** Data nașterii (ISO YYYY-MM-DD): validă, în trecut, vârsta ≥ 16 ani. */
-export function age16plus(
+/** Data nașterii (ISO YYYY-MM-DD): validă, în trecut, vârsta ≥ `MIN_AGE` (18). */
+export function isAdultAge(
   birthDate?: string | null,
   now: Date = new Date(),
 ): string | null {

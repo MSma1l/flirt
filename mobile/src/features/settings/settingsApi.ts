@@ -163,6 +163,11 @@ export async function fetchBlocks(): Promise<BlockedUser[]> {
   return (data ?? []).map((b) => ({ blockedId: b.blocked_id, name: b.name }));
 }
 
+/** Blochează un utilizator (nu te mai poate contacta și dispare din feed). */
+export async function blockUser(targetUserId: string): Promise<void> {
+  await api.post('/social/blocks', { target_user_id: targetUserId });
+}
+
 /** Deblochează un utilizator. */
 export async function unblock(blockedId: string): Promise<void> {
   await api.delete(`/social/blocks/${blockedId}`);

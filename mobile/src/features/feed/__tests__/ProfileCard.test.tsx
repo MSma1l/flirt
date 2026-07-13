@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
+import { Alert, AlertButton } from 'react-native';
 
 import { ThemeProvider } from '@theme/index';
 
@@ -11,6 +12,19 @@ import { FeedCard } from '../types';
 jest.mock('@/features/moderation/reportApi', () => ({
   sendReport: jest.fn(),
 }));
+
+// Blocarea lovește backendul → mock la API-ul de setări.
+const mockBlockUser = jest.fn((_userId: string) => Promise.resolve());
+jest.mock('@/features/settings/settingsApi', () => ({
+  blockUser: (userId: string) => mockBlockUser(userId),
+}));
+
+/** Apasă butonul distructiv din Alert-ul de confirmare. */
+function pressConfirm(spy: jest.SpyInstance): void {
+  const buttons = spy.mock.calls[0][2] as AlertButton[] | undefined;
+  const destructive = buttons?.find((b) => b.style === 'destructive');
+  destructive?.onPress?.();
+}
 
 function makeCard(over: Partial<FeedCard> = {}): FeedCard {
   return {
@@ -68,10 +82,41 @@ describe('ProfileCard', () => {
   });
 
   it('apăsarea pe „Raportează" deschide ReportModal', () => {
-    const { getByLabelText, getByText } = renderCard(makeCard());
-    fireEvent.press(getByLabelText('Raportează'));
+    const { getByTestId, getByText } = renderCard(makeCard());
+    fireEvent.press(getByTestId('card-report'));
     // Titlul modalului de raportare.
     expect(getByText('Raportează')).toBeTruthy();
     expect(getByText('Spam')).toBeTruthy();
+  });
+
+  /* --- Blocare din card (App Store Guideline 1.2) --- */
+
+  describe('blocare', () => {
+    beforeEach(() => mockBlockUser.mockClear());
+
+    it('„Blochează" cere confirmare și NU blochează înainte de accept', () => {
+      const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+      const { getByTestId } = renderCard(makeCard());
+
+      fireEvent.press(getByTestId('card-block'));
+
+      expect(alertSpy).toHaveBeenCalledTimes(1);
+      expect(alertSpy.mock.calls[0][0]).toBe('Blochează utilizatorul');
+      expect(mockBlockUser).not.toHaveBeenCalled();
+
+      alertSpy.mockRestore();
+    });
+
+    it('după confirmare apelează blockUser cu id-ul din card', async () => {
+      const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+      const { getByTestId } = renderCard(makeCard({ userId: 'u42' }));
+
+      fireEvent.press(getByTestId('card-block'));
+      pressConfirm(alertSpy);
+
+      await waitFor(() => expect(mockBlockUser).toHaveBeenCalledWith('u42'));
+
+      alertSpy.mockRestore();
+    });
   });
 });

@@ -9,6 +9,8 @@ from app.core.validators import is_https_url, optional_safe_str, safe_str
 
 # Limite anti-DoS pe listele scurte (bounded input). Nu sunt reguli de business.
 _MAX_LIST_ITEMS = 50
+# Plafon pe lista de genuri căutate (catalogul are 3 valori).
+_MAX_GENDERS = 8
 
 
 class AnketaIn(BaseModel):
@@ -33,6 +35,15 @@ class AnketaIn(BaseModel):
     )  # slug-uri
     # ≤ max_photos (din settings) → 422; fiecare URL validat mai jos.
     photos: list[str] = Field(default_factory=list, max_length=settings.max_photos)
+
+    # --- Preferințe de căutare (TZ 4) ----------------------------------------
+    # Culese în anketă, dar PERSISTATE în `UserSettings` (aceeași sursă ca
+    # `PUT /settings`) — vezi `account_service.set_search_preferences`.
+    # Toate opționale: `None` = nu le atinge (păstrează ce era / default-urile).
+    # Listă goală pe `interested_in` = fără restricție de gen.
+    interested_in: list[str] | None = Field(default=None, max_length=_MAX_GENDERS)
+    age_min: int | None = Field(default=None, ge=0)
+    age_max: int | None = Field(default=None, ge=0)
 
     @field_validator("photos")
     @classmethod
@@ -69,6 +80,12 @@ class ProfileOut(BaseModel):
     humor_vector: dict | None = None
     completed: bool = False
     verified: bool = False  # verificare facială reușită (TZ 2.2)
+
+    # Preferințele de căutare EFECTIVE (din `UserSettings`, cu default-urile din
+    # config aplicate) — ca mobilul să reafișeze anketa completă dintr-un GET.
+    interested_in: list[str] = Field(default_factory=list)
+    age_min: int | None = None
+    age_max: int | None = None
 
 
 class FaceVerifyIn(BaseModel):

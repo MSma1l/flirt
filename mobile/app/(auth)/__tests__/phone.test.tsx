@@ -66,4 +66,26 @@ describe('Phone', () => {
 
     expect(mockRequestPhoneOtp).not.toHaveBeenCalled();
   });
+
+  /* --- Fără texte de dezvoltare în UI (App Store Guideline 2.1) --- */
+
+  it('în build de producție (__DEV__ = false) nu apare niciun indiciu de dev', async () => {
+    const globals = globalThis as unknown as { __DEV__: boolean };
+    const previous = globals.__DEV__;
+    globals.__DEV__ = false;
+
+    try {
+      const { getByTestId, queryByTestId, queryByText } = renderScreen();
+
+      fireEvent.changeText(getByTestId('phone-input'), '+40700000000');
+      fireEvent.press(getByTestId('phone-request'));
+      await waitFor(() => getByTestId('phone-code'));
+
+      expect(queryByTestId('phone-dev-hint')).toBeNull();
+      expect(queryByText(/dev/i)).toBeNull();
+      expect(queryByText(/cod de test/i)).toBeNull();
+    } finally {
+      globals.__DEV__ = previous;
+    }
+  });
 });

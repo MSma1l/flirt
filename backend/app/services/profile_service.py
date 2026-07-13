@@ -16,6 +16,7 @@ from app.schemas.profile import (
     ReferenceItem,
     ReferenceOut,
 )
+from app.services import account_service, geo
 from app.services.face_verify import get_face_verifier
 from app.services.storage import (
     allowed_hosts,
@@ -130,8 +131,12 @@ async def _interest_slugs(db: AsyncSession, profile_id) -> list[str]:
     return [row[0] for row in result.all()]
 
 
-def _to_out(profile: Profile, interest_slugs: list[str]) -> ProfileOut:
-    """Construiește ProfileOut din model + slug-uri de interese + vârsta."""
+def _to_out(
+    profile: Profile,
+    interest_slugs: list[str],
+    prefs: account_service.SearchPreferences | None = None,
+) -> ProfileOut:
+    """Construiește ProfileOut din model + slug-uri de interese + vârsta + prefs."""
     return ProfileOut(
         name=profile.name,
         birth_date=profile.birth_date,
@@ -149,6 +154,9 @@ def _to_out(profile: Profile, interest_slugs: list[str]) -> ProfileOut:
         humor_vector=profile.humor_vector,
         completed=profile.completed,
         verified=profile.verified,
+        interested_in=list(prefs.interested_in) if prefs is not None else [],
+        age_min=prefs.age_min if prefs is not None else None,
+        age_max=prefs.age_max if prefs is not None else None,
     )
 
 
@@ -159,7 +167,8 @@ async def get_profile_out(db: AsyncSession, user) -> ProfileOut | None:
     if profile is None:
         return None
     slugs = await _interest_slugs(db, profile.id)
-    return _to_out(profile, slugs)
+    prefs = await account_service.get_search_preferences(db, user.id)
+    return _to_out(profile, slugs, prefs)
 
 
 async def _get_profile_or_404(db: AsyncSession, user) -> Profile:
@@ -266,7 +275,11 @@ async def reorder_photos(db: AsyncSession, user, urls: list[str]) -> list[str]:
 
 
 async def upsert_anketa(db: AsyncSession, user, data: AnketaIn) -> ProfileOut:
-    """Validează și creează/actualizează anketa, marcând-o drept completată."""
+    """Validează și creează/actualizează anketa, marcând-o drept completată.
+
+    Geocodează orașul O SINGURĂ DATĂ, aici, și persistă `lat`/`lng` pe profil —
+    feed-ul nu mai face niciun apel de rețea per candidat (TZ 7).
+    """
     # --- Validări de business (422 la eșec) ---
     valid_genders = {g.value for g in GENDERS}
     if data.gender not in valid_genders:
@@ -275,7 +288,9 @@ async def upsert_anketa(db: AsyncSession, user, data: AnketaIn) -> ProfileOut:
             detail=f"Gen invalid. Valori permise: {sorted(valid_genders)}",
         )
 
-    # Vârsta minimă din setări (nu hardcodat)
+    # Vârsta minimă din setări (nu hardcodat). Aplicația e 18+ ONLY: config-ul
+    # garantează `min_registration_age >= adult_age`, deci un minor nu poate
+    # crea/actualiza o anketă.
     age = _calc_age(data.birth_date)
     if age < settings.min_registration_age:
         raise HTTPException(
@@ -359,6 +374,25 @@ async def upsert_anketa(db: AsyncSession, user, data: AnketaIn) -> ProfileOut:
     profile.photos = photos
     profile.completed = True
 
+    # --- Geocodare la SALVARE (nu la fiecare feed), TZ 7 ----------------------
+    # Un singur apel (cache-uit pe oraș) când adresa se schimbă. Rezultatul se
+    # persistă pe profil: feed-ul filtrează pe rază în SQL și calculează distanța
+    # reală DIN DB, fără niciun apel de rețea per candidat.
+    # Oraș negeocodabil → lat/lng rămân None (distanță necunoscută = scor neutru).
+    coords = await geo.geocode_cached(data.city, data.street)
+    profile.lat = coords[0] if coords else None
+    profile.lng = coords[1] if coords else None
+
+    # Preferințele de căutare culese în anketă → `UserSettings` (aceeași sursă ca
+    # `PUT /settings`). Fără commit propriu: intră în tranzacția anketei.
+    await account_service.set_search_preferences(
+        db,
+        user,
+        interested_in=data.interested_in,
+        age_min=data.age_min,
+        age_max=data.age_max,
+    )
+
     # Necesită id-ul profilului pentru legături — flush înainte de M2M
     await db.flush()
 
@@ -369,15 +403,17 @@ async def upsert_anketa(db: AsyncSession, user, data: AnketaIn) -> ProfileOut:
     for interest in interests:
         db.add(ProfileInterest(profile_id=profile.id, interest_id=interest.id))
 
-    # Marchează user-ul ca având anketa completată
+    # Marchează user-ul ca având anketa completată + activ acum (semnal de feed).
     user.profile_completed = True
     db.add(user)
 
     await db.commit()
     await db.refresh(profile)
+    await account_service.touch_last_active(db, user)
 
     slugs = await _interest_slugs(db, profile.id)
-    return _to_out(profile, slugs)
+    prefs = await account_service.get_search_preferences(db, user.id)
+    return _to_out(profile, slugs, prefs)
 
 
 async def verify_face(db: AsyncSession, user, selfie: bytes) -> FaceVerifyOut:

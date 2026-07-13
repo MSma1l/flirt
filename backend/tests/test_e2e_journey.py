@@ -90,6 +90,14 @@ async def test_full_user_journey(client):
     )
     assert resp.status_code == 200, resp.text
 
+    # Orașele sunt intenționat diferite (~350 km), ca să testăm distanța reală.
+    # Raza de căutare CHIAR se aplică acum (implicit 50 km), deci o lărgim —
+    # altfel B ar fi, corect, în afara razei lui A.
+    resp = await client.put(
+        f"{API}/settings/", json={"search_radius_km": 1000}, headers=a_headers
+    )
+    assert resp.status_code == 200, resp.text
+
     # --- Pas 3: A vede B în feed cu compatibility (int 0-100) + distance_km --
     resp = await client.get(f"{API}/feed/", headers=a_headers)
     assert resp.status_code == 200, resp.text

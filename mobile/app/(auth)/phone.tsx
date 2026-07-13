@@ -159,10 +159,16 @@ export default function Phone() {
             testID="phone-back"
           />
 
-          {/* Notă discretă pentru dezvoltare: backend-ul în mod stub acceptă acest cod. */}
-          <Text style={[typography.caption, { color: colors.textDisabled }]}>
-            În dev: cod de test 000000
-          </Text>
+          {/* Notă vizibilă DOAR în build-urile de dezvoltare — niciodată în producție
+              (App Store Guideline 2.1: fără texte de dev în UI). */}
+          {__DEV__ ? (
+            <Text
+              testID="phone-dev-hint"
+              style={[typography.caption, { color: colors.textDisabled }]}
+            >
+              Cod de test: 000000
+            </Text>
+          ) : null}
         </View>
       )}
     </ScreenContainer>

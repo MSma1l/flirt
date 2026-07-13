@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ReportModal } from '@/features/moderation/ReportModal';
+import { useBlockUser } from '@/features/social/useBlockUser';
 import { useTheme } from '@theme/index';
 
 import { CompatBadge } from './CompatBadge';
@@ -18,6 +19,7 @@ export function ProfileCard({ card }: Props) {
   const initial = card.name.trim().charAt(0).toUpperCase() || '?';
   const interests = card.topInterests.slice(0, 3);
   const [reportOpen, setReportOpen] = useState(false);
+  const { confirmBlock, isBlocking } = useBlockUser();
 
   return (
     <View
@@ -53,19 +55,37 @@ export function ProfileCard({ card }: Props) {
           <CompatBadge score={card.compatibility} />
         </View>
 
-        {/* Buton discret de raportare sus-stânga */}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Raportează"
-          onPress={() => setReportOpen(true)}
-          hitSlop={8}
-          style={[
-            styles.reportWrap,
-            { backgroundColor: colors.surface, borderRadius: radius.pill },
-          ]}
-        >
-          <Text style={[typography.badge, { color: colors.warning }]}>⚠</Text>
-        </Pressable>
+        {/* Butoane discrete de siguranță sus-stânga: raportare + blocare */}
+        <View style={[styles.safetyWrap, { gap: spacing.sm }]}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Raportează"
+            onPress={() => setReportOpen(true)}
+            hitSlop={8}
+            testID="card-report"
+            style={[
+              styles.safetyBtn,
+              { backgroundColor: colors.surface, borderRadius: radius.pill },
+            ]}
+          >
+            <Text style={[typography.badge, { color: colors.warning }]}>⚠</Text>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Blochează"
+            disabled={isBlocking}
+            onPress={() => confirmBlock(card.userId, card.name)}
+            hitSlop={8}
+            testID="card-block"
+            style={[
+              styles.safetyBtn,
+              { backgroundColor: colors.surface, borderRadius: radius.pill },
+            ]}
+          >
+            <Text style={[typography.badge, { color: colors.danger }]}>🚫</Text>
+          </Pressable>
+        </View>
 
         {/* Overlay jos cu detalii */}
         <View
@@ -157,10 +177,13 @@ const styles = StyleSheet.create({
     top: 16,
     right: 16,
   },
-  reportWrap: {
+  safetyWrap: {
     position: 'absolute',
     top: 16,
     left: 16,
+    flexDirection: 'row',
+  },
+  safetyBtn: {
     width: 32,
     height: 32,
     alignItems: 'center',

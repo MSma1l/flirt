@@ -1,7 +1,7 @@
 """Modele pentru swipe: like-uri și match-uri (TZ secț. 4)."""
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Index, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -14,6 +14,11 @@ class Like(Base):
     __table_args__ = (
         # Un singur swipe per pereche direcțională (upsert la re-swipe).
         UniqueConstraint("from_user_id", "to_user_id", name="uq_like_pair"),
+        # Index compus pentru limita zilnică de swipe-uri
+        # (`WHERE from_user_id = ? AND created_at >= ?`) și pentru `undo`
+        # (`ORDER BY created_at DESC`) — fără el se scanează toate like-urile
+        # userului la fiecare swipe.
+        Index("ix_likes_from_user_created", "from_user_id", "created_at"),
     )
 
     from_user_id: Mapped[uuid.UUID] = mapped_column(

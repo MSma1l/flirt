@@ -1,7 +1,8 @@
 /**
  * Verificare facială (TZ secț. 2.2): ecran modal care explică pasul de
- * verificare prin selfie, arată un placeholder de „cameră" și declanșează
- * verificarea la backend. Captura reală se activează ulterior cu expo-camera.
+ * verificare prin selfie, arată cadrul de captură și declanșează verificarea
+ * la backend. (Captura nativă din cameră se conectează într-un val separat;
+ * nicio mențiune despre asta nu apare în UI — App Store Guideline 2.1.)
  */
 import { useMutation } from '@tanstack/react-query';
 import { Stack, useRouter } from 'expo-router';
@@ -117,7 +118,7 @@ export default function VerifyFaceScreen() {
           { color: colors.textSecondary, marginTop: spacing.lg },
         ]}
       >
-        Captura reală a selfie-ului se activează cu camera (expo-camera).
+        Selfie-ul este folosit doar pentru verificare și nu apare în profilul tău.
       </Text>
     </ScreenContainer>
   );

@@ -1,11 +1,28 @@
-"""Logica feed-ului de swipe + match-uri (TZ secț. 4)."""
+"""Logica feed-ului de swipe + match-uri (TZ secț. 4).
+
+Feed-ul are DOUĂ etape distincte (ca orice sistem de recomandare corect):
+
+1. RETRIEVAL (SQL) — toate filtrele DURE se aplică în bază, pe index-uri:
+   profil completat, 18+ (aplicația e 18+ only), genurile căutate
+   (`interested_in`), intervalul de vârstă, raza de căutare (bounding-box pe
+   `lat`/`lng`), excluderile (swipe-uit / blocat / ascuns) prin `NOT EXISTS`,
+   inactivitatea. Ordinea e DETERMINISTĂ (recența activității + tie-break pe id),
+   deci fereastra de candidați nu mai e un eșantion arbitrar din heap.
+
+2. RANKING (Python, pur) — `compute_compatibility` peste fereastra retrievată,
+   cu distanța reală injectată (calculată din coordonatele PERSISTATE, fără
+   niciun apel de rețea per candidat). Rezultatul e paginat cu cursor pe
+   (scor, user_id) — fără duplicate între pagini.
+"""
 from __future__ import annotations
 
+import base64
+import binascii
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import String, and_, cast, func, nullslast, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -15,13 +32,16 @@ from app.models.interest import Interest, ProfileInterest
 from app.models.profile import Profile
 from app.models.swipe import Like, Match
 from app.models.user import User
-from app.schemas.feed import FeedCard, MatchOut, SwipeResult, UndoResult
-from app.services import billing, chat_service, geo
+from app.schemas.feed import FeedCard, FeedPage, MatchOut, SwipeResult, UndoResult
+from app.services import account_service, billing, chat_service, geo
 from app.services.compatibility import compute_compatibility
 from app.services.contact_masker import mask_contacts
 
 # --- Reguli de business (din config, nu hardcodate în mijlocul logicii) ------
 MAX_TOP_INTERESTS = 3   # câte interese afișăm pe cartelă (TZ 4.1)
+# Caracterul de escape pentru LIKE (pre-filtrul pe limbi): neutralizează `%`/`_`
+# dintr-o valoare venită de la user.
+_LIKE_ESCAPE = "\\"
 
 
 def _calc_age(birth_date: date, today: date | None = None) -> int:
@@ -34,14 +54,68 @@ def _calc_age(birth_date: date, today: date | None = None) -> int:
     )
 
 
-def _age_group(age: int) -> str:
-    """Grupa de vârstă pentru separarea din feed (TZ 2.3): 'minor' vs 'adult'."""
-    return "adult" if age >= settings.adult_age else "minor"
+def _shift_years(d: date, years: int) -> date:
+    """`d` mutat cu `years` ani în trecut (29 feb → 28 feb în anii nebisecți)."""
+    try:
+        return d.replace(year=d.year - years)
+    except ValueError:  # 29 februarie într-un an nebisect
+        return d.replace(year=d.year - years, day=28)
+
+
+def _birth_date_bounds(
+    age_min: int, age_max: int, today: date | None = None
+) -> tuple[date, date]:
+    """Intervalul de `birth_date` care corespunde vârstelor [age_min, age_max].
+
+    Convertim intervalul de VÂRSTĂ într-un interval de DATE ca filtrul să fie o
+    comparație pe coloana indexată `birth_date` (SARGable, folosește indexul),
+    nu un calcul de vârstă per rând în Python.
+
+    Întoarce `(earliest, latest)` cu semantica: `earliest <= birth_date <= latest`
+      - `latest`   = azi − age_min ani  ⇒ cine s-a născut mai târziu are < age_min;
+      - `earliest` = azi − (age_max+1) ani + 1 zi ⇒ cine s-a născut mai devreme
+        are deja > age_max.
+    """
+    today = today or date.today()
+    latest = _shift_years(today, age_min)
+    earliest = _shift_years(today, age_max + 1) + timedelta(days=1)
+    return earliest, latest
 
 
 def _normalized_pair(x: uuid.UUID, y: uuid.UUID) -> tuple[uuid.UUID, uuid.UUID]:
     """Ordonează perechea (mai mic, mai mare) după reprezentarea string a UUID."""
     return (x, y) if str(x) <= str(y) else (y, x)
+
+
+# --- Cursor de paginare ------------------------------------------------------
+def _encode_cursor(score: int, user_id: uuid.UUID) -> str:
+    """Cursor opac (base64url) peste cheia de sortare a ultimei cartele redate."""
+    raw = f"{score}:{user_id}".encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _decode_cursor(cursor: str) -> tuple[int, str]:
+    """Decodează cursorul → (scor, user_id ca string). 422 dacă e stricat."""
+    try:
+        padding = "=" * (-len(cursor) % 4)
+        raw = base64.urlsafe_b64decode(cursor + padding).decode()
+        score_str, user_id_str = raw.split(":", 1)
+        # Validăm forma UUID; un cursor fabricat nu poate injecta nimic.
+        return int(score_str), str(uuid.UUID(user_id_str))
+    except (ValueError, binascii.Error, UnicodeDecodeError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cursor de paginare invalid.",
+        )
+
+
+def _sort_key(score: int, user_id: uuid.UUID | str) -> tuple[int, str]:
+    """Cheia de ordonare a feed-ului: scor DESCRESCĂTOR, apoi user_id (tie-break).
+
+    Ordonarea e TOTALĂ (user_id e unic), deci paginarea pe cursor nu poate
+    întoarce duplicate și nici nu poate sări cartele la scoruri egale.
+    """
+    return (-score, str(user_id))
 
 
 async def _interests_by_profile(
@@ -68,115 +142,249 @@ def _has_common_language(a: Profile, b: Profile) -> bool:
     return bool(la & lb)
 
 
-async def get_feed(
-    db: AsyncSession, user: User, limit: int | None = None
-) -> list[FeedCard]:
-    """Feed-ul de candidate pentru `user`, sortat descrescător după compatibilitate.
+def _distance_between(a: Profile, b: Profile) -> float | None:
+    """Distanța reală (km) între două profiluri, din coordonatele PERSISTATE.
 
-    Candidate = profiluri `completed`, exclus userul curent și cei deja swipe-uiți,
-    din aceeași grupă de vârstă (16–17 vs 18+, TZ 2.3). Sunt excluși userii
-    blocați (în orice direcție, I1), cei cu profil ascuns (I2) și cei fără nicio
-    limbă comună (gate dur, I3 / TZ 4.6).
+    Funcție PURĂ, fără I/O: geocodarea s-a făcut o dată, la salvarea anketei.
+    `None` = cel puțin unul dintre orașe nu a putut fi geocodat ⇒ distanță
+    necunoscută (scor neutru, fără penalizare).
     """
-    # Limita implicită vine din config (fără hardcodare).
-    if limit is None:
-        limit = settings.feed_limit
+    if a.lat is None or a.lng is None or b.lat is None or b.lng is None:
+        return None
+    return geo.haversine_km(float(a.lat), float(a.lng), float(b.lat), float(b.lng))
+
+
+def _language_prefilter(my_languages: list[str]):
+    """PRE-filtru SQL pentru gate-ul pe limbă (I3 / TZ 4.6).
+
+    `Profile.languages` e o listă JSON; intersecția de liste nu are un operator
+    PORTABIL între SQLite și Postgres, așa că prefiltrăm cu un `LIKE` pe forma
+    textuală a JSON-ului (`… "ro" …`) — suficient de selectiv ca fereastra de
+    candidați să nu se irosească pe profiluri fără limbă comună. Gate-ul EXACT
+    rămâne `_has_common_language`, aplicat după retrieval: un eventual fals
+    pozitiv al LIKE-ului nu poate trece de el.
+
+    `%` și `_` din valoarea userului sunt escape-uite (o limbă „custom" nu poate
+    lărgi predicatul).
+    """
+    clauses = []
+    for lang in my_languages:
+        literal = str(lang).replace(_LIKE_ESCAPE, _LIKE_ESCAPE * 2)
+        literal = literal.replace("%", f"{_LIKE_ESCAPE}%").replace(
+            "_", f"{_LIKE_ESCAPE}_"
+        )
+        clauses.append(
+            cast(Profile.languages, String).like(f'%"{literal}"%', escape=_LIKE_ESCAPE)
+        )
+    return or_(*clauses) if clauses else None
+
+
+async def get_feed(
+    db: AsyncSession,
+    user: User,
+    limit: int | None = None,
+    cursor: str | None = None,
+) -> FeedPage:
+    """O pagină din feed-ul lui `user`, sortată descrescător după compatibilitate.
+
+    Filtre DURE (toate în SQL, pe index-uri):
+      - profil completat, nu userul curent;
+      - **18+** (aplicația e 18+ only) — gate dur, independent de preferințe;
+      - genurile căutate (`interested_in`) și intervalul de vârstă (`age_min`,
+        `age_max`) — fără ele un bărbat heterosexual primea bărbați în feed;
+      - raza de căutare (`search_radius_km`) — bounding-box pe `lat`/`lng`, apoi
+        haversine EXACT în Python (setarea nu mai e decorativă);
+      - excluderi prin `NOT EXISTS` (nu prin `NOT IN` cu liste materializate):
+        deja swipe-uiți, blocați în orice direcție (I1), profil ascuns (I2);
+      - conturi inactive de peste `feed_max_inactive_days`;
+      - limbă comună (I3): pre-filtru în SQL + gate exact în Python.
+
+    Ranking: `compute_compatibility` (pur), cu distanța reală injectată.
+    Paginare: cursor pe (scor, user_id) — fără duplicate între pagini.
+    """
+    # Limita implicită + plafonul vin din config (fără hardcodare).
+    limit = settings.feed_limit if limit is None else limit
+    limit = max(0, min(limit, settings.feed_max_limit))
 
     # Profilul propriu — fără el nu putem calcula compatibilitate.
     my_result = await db.execute(select(Profile).where(Profile.user_id == user.id))
     my_profile = my_result.scalar_one_or_none()
     if my_profile is None or not my_profile.completed:
-        return []
+        return FeedPage(items=[], next_cursor=None)
 
-    my_group = _age_group(_calc_age(my_profile.birth_date))
+    # 18+ ONLY, defense-in-depth: un cont vechi rămas cu vârstă sub prag NU
+    # primește feed (chiar dacă anketa lui a trecut cândva de validare).
+    if _calc_age(my_profile.birth_date) < settings.adult_age:
+        return FeedPage(items=[], next_cursor=None)
 
-    # Userii deja swipe-uiți de mine (nu-i mai arăt).
-    swiped_result = await db.execute(
-        select(Like.to_user_id).where(Like.from_user_id == user.id)
-    )
-    swiped_ids = {row[0] for row in swiped_result.all()}
+    # Cererea de feed e o dovadă de activitate (scriere rară, cu prag din config).
+    await account_service.touch_last_active(db, user)
 
-    # I1 — userii blocați în ORICE direcție (blocat de mine SAU care m-a blocat).
-    blocked_result = await db.execute(
-        select(Block.blocker_id, Block.blocked_id).where(
-            or_(Block.blocker_id == user.id, Block.blocked_id == user.id)
-        )
-    )
-    blocked_ids: set[uuid.UUID] = set()
-    for blocker_id, blocked_id in blocked_result.all():
-        blocked_ids.add(blocked_id if blocker_id == user.id else blocker_id)
+    prefs = await account_service.get_search_preferences(db, user.id)
+    today = date.today()
 
-    # I2 — userii cu profilul ascuns (UserSettings.profile_hidden = True).
-    hidden_result = await db.execute(
-        select(UserSettings.user_id).where(UserSettings.profile_hidden.is_(True))
-    )
-    hidden_ids = {row[0] for row in hidden_result.all()}
-
-    # Candidate: profiluri completate, nu eu, nu swipe-uiți, nu blocați, nu ascunși.
-    # Anti-DoS: PLAFONĂM scanarea la nivel SQL (`.limit`) ca un feed să nu poată
-    # forța încărcarea + procesarea întregii baze de profiluri (D1). Limita vine
-    # din config (`feed_scan_limit`), nu hardcodată.
-    excluded = swiped_ids | blocked_ids | hidden_ids | {user.id}
-    cand_result = await db.execute(
-        select(Profile)
-        .where(
-            Profile.completed.is_(True),
-            Profile.user_id.notin_(excluded),
-        )
-        .limit(max(0, settings.feed_scan_limit))
-    )
-    candidates = list(cand_result.scalars().all())
-
-    # Filtrare pe grupa de vârstă (calc din birth_date).
-    candidates = [
-        p for p in candidates if _age_group(_calc_age(p.birth_date)) == my_group
+    # --- 1. RETRIEVAL: filtre dure în SQL ------------------------------------
+    conditions = [
+        Profile.completed.is_(True),
+        Profile.user_id != user.id,
     ]
-    # I3 — gate dur pe limbă: fără nicio limbă comună, candidatul e EXCLUS.
-    candidates = [p for p in candidates if _has_common_language(my_profile, p)]
-    if not candidates:
-        return []
 
-    # Interesele mele + ale candidaților (o singură interogare batch).
-    profile_ids = [my_profile.id] + [p.id for p in candidates]
-    interests_map = await _interests_by_profile(db, profile_ids)
-    my_interests = interests_map.get(my_profile.id, set())
+    # 18+ (gate dur, NU derivat din preferințe) — un profil sub prag nu apare
+    # niciodată în feed, oricât de permisive ar fi preferințele salvate.
+    conditions.append(Profile.birth_date <= _shift_years(today, settings.adult_age))
 
-    # Calcul compatibilitate (fără I/O de rețea) + sortare, ÎNAINTE de geocoding.
-    scored: list[tuple[int, Profile, set[str]]] = []
-    for p in candidates:
-        p_interests = interests_map.get(p.id, set())
-        score = compute_compatibility(my_profile, p, my_interests, p_interests)
-        scored.append((score, p, p_interests))
+    # Intervalul de vârstă căutat (preferință) — tot pe coloana indexată.
+    earliest, latest = _birth_date_bounds(prefs.age_min, prefs.age_max, today)
+    conditions.append(Profile.birth_date >= earliest)
+    conditions.append(Profile.birth_date <= latest)
 
-    # Sortare descrescătoare după compatibilitate, apoi tăiere la `limit`.
-    scored.sort(key=lambda item: item[0], reverse=True)
-    top = scored[: max(0, limit)]
+    # Gen / orientare: genurile căutate. Listă goală = fără restricție.
+    if prefs.interested_in:
+        conditions.append(Profile.gender.in_(list(prefs.interested_in)))
 
-    # Geocoding DOAR pentru cardurile efectiv returnate (anti-DoS, D1): nu mai
-    # geocodăm toți candidații scanați, ci strict rezultatele afișate.
-    cards: list[FeedCard] = []
-    for score, p, p_interests in top:
-        # Distanța reală prin geocoding (TZ 7). Robust: None dacă vreun oraș nu
-        # poate fi geocodat (provider stub cu oraș necunoscut etc.).
-        distance_km = await geo.distance_km_between(
-            my_profile.city, my_profile.street, p.city, p.street
-        )
-        cards.append(
-            FeedCard(
-                user_id=p.user_id,
-                name=p.name,
-                age=_calc_age(p.birth_date),
-                gender=p.gender,
-                city=p.city,
-                distance_km=distance_km,  # geocoding real (TZ 7); None dacă nu se poate
-                about=p.about,
-                top_interests=sorted(p_interests)[:MAX_TOP_INTERESTS],
-                languages=list(p.languages or []),
-                compatibility=score,
-                photos=list(p.photos or []),
+    # Excluderi prin NOT EXISTS (semi-join pe index), nu `NOT IN (…10.000 uuid)`.
+    conditions.append(
+        ~select(Like.id)
+        .where(Like.from_user_id == user.id, Like.to_user_id == Profile.user_id)
+        .exists()
+    )
+    conditions.append(
+        ~select(Block.id)
+        .where(
+            or_(
+                and_(
+                    Block.blocker_id == user.id,
+                    Block.blocked_id == Profile.user_id,
+                ),
+                and_(
+                    Block.blocker_id == Profile.user_id,
+                    Block.blocked_id == user.id,
+                ),
             )
         )
-    return cards
+        .exists()
+    )
+    conditions.append(
+        ~select(UserSettings.id)
+        .where(
+            UserSettings.user_id == Profile.user_id,
+            UserSettings.profile_hidden.is_(True),
+        )
+        .exists()
+    )
+
+    # Conturi abandonate: inactive de peste N zile (0 = filtru oprit).
+    # `last_active_at IS NULL` = rând vechi, dinainte de coloană → tratat ca activ.
+    if settings.feed_max_inactive_days > 0:
+        inactive_cutoff = datetime.now(timezone.utc) - timedelta(
+            days=settings.feed_max_inactive_days
+        )
+        conditions.append(
+            or_(
+                User.last_active_at.is_(None),
+                User.last_active_at >= inactive_cutoff,
+            )
+        )
+
+    # Limbă comună — pre-filtru SQL (gate-ul exact vine mai jos, în Python).
+    lang_clause = _language_prefilter(
+        [str(x) for x in (my_profile.languages or []) if x]
+    )
+    if lang_clause is not None:
+        conditions.append(lang_clause)
+
+    # Raza de căutare: bounding-box pe coordonatele persistate (index lat/lng).
+    # Candidații FĂRĂ coordonate (oraș negeocodabil) NU sunt eliminați aici —
+    # distanța lor e necunoscută, iar un filtru pe rază nu poate decide: ar fi
+    # o excludere arbitrară. Ei rămân, cu scor de distanță neutru.
+    apply_radius = (
+        settings.feed_radius_filter_enabled
+        and prefs.radius_km > 0
+        and my_profile.lat is not None
+        and my_profile.lng is not None
+    )
+    if apply_radius:
+        min_lat, max_lat, min_lng, max_lng = geo.bounding_box(
+            float(my_profile.lat), float(my_profile.lng), prefs.radius_km
+        )
+        box = [Profile.lat.between(min_lat, max_lat)]
+        if min_lng is not None and max_lng is not None:
+            box.append(Profile.lng.between(min_lng, max_lng))
+        conditions.append(or_(Profile.lat.is_(None), and_(*box)))
+
+    # ORDER BY DETERMINIST + plafon de scanare (anti-DoS, `feed_scan_limit`).
+    # Fereastra nu mai e un eșantion arbitrar din heap: e „cei mai recent activi"
+    # candidați ELIGIBILI (candidate generation), peste care se aplică ranking-ul.
+    stmt = (
+        select(Profile)
+        .join(User, User.id == Profile.user_id)
+        .where(*conditions)
+        .order_by(nullslast(User.last_active_at.desc()), Profile.user_id)
+        .limit(max(0, settings.feed_scan_limit))
+    )
+    candidates = list((await db.execute(stmt)).scalars().all())
+
+    # Gate EXACT pe limbă (I3): pre-filtrul SQL e o aproximare, aici e adevărul.
+    candidates = [p for p in candidates if _has_common_language(my_profile, p)]
+
+    # --- 2. RANKING: scor pur, cu distanța reală injectată --------------------
+    if not candidates:
+        return FeedPage(items=[], next_cursor=None)
+
+    interests_map = await _interests_by_profile(
+        db, [my_profile.id] + [p.id for p in candidates]
+    )
+    my_interests = interests_map.get(my_profile.id, set())
+
+    scored: list[tuple[int, Profile, set[str], float | None]] = []
+    for p in candidates:
+        distance_km = _distance_between(my_profile, p)
+        # Filtru EXACT pe rază (bounding-box-ul e doar un superset al cercului).
+        if apply_radius and distance_km is not None and distance_km > prefs.radius_km:
+            continue
+        p_interests = interests_map.get(p.id, set())
+        score = compute_compatibility(
+            my_profile, p, my_interests, p_interests, distance_km
+        )
+        scored.append((score, p, p_interests, distance_km))
+
+    # Ordonare TOTALĂ, deterministă: scor desc, apoi user_id (tie-break).
+    scored.sort(key=lambda item: _sort_key(item[0], item[1].user_id))
+
+    # --- 3. PAGINARE pe cursor -----------------------------------------------
+    if cursor:
+        after = _decode_cursor(cursor)
+        scored = [
+            item
+            for item in scored
+            if _sort_key(item[0], item[1].user_id) > _sort_key(after[0], after[1])
+        ]
+
+    page = scored[:limit]
+    next_cursor = (
+        _encode_cursor(page[-1][0], page[-1][1].user_id)
+        if page and len(scored) > len(page)
+        else None
+    )
+
+    cards = [
+        FeedCard(
+            user_id=p.user_id,
+            name=p.name,
+            age=_calc_age(p.birth_date),
+            gender=p.gender,
+            city=p.city,
+            # Distanța reală (TZ 7), din coordonatele persistate. Fără rețea.
+            distance_km=None if distance_km is None else round(distance_km),
+            about=p.about,
+            top_interests=sorted(p_interests)[:MAX_TOP_INTERESTS],
+            languages=list(p.languages or []),
+            compatibility=score,
+            photos=list(p.photos or []),
+        )
+        for score, p, p_interests, distance_km in page
+    ]
+    return FeedPage(items=cards, next_cursor=next_cursor)
 
 
 async def _authorize_swipe(
@@ -196,7 +404,7 @@ async def _authorize_swipe(
             detail="Nu poți face swipe pe propriul profil.",
         )
 
-    # Profilul propriu — necesar pentru grupa de vârstă; incomplet ⇒ interzis.
+    # Profilul propriu — incomplet ⇒ interzis.
     my_result = await db.execute(select(Profile).where(Profile.user_id == user.id))
     my_profile = my_result.scalar_one_or_none()
     if my_profile is None or not my_profile.completed:
@@ -215,13 +423,18 @@ async def _authorize_swipe(
             status_code=status.HTTP_404_NOT_FOUND, detail="Utilizator indisponibil."
         )
 
-    # Age-gate (TZ 2.3): swipe DOAR în aceeași grupă (siguranța minorilor).
-    my_group = _age_group(_calc_age(my_profile.birth_date))
-    target_group = _age_group(_calc_age(target_profile.birth_date))
-    if my_group != target_group:
+    # 18+ ONLY (defense-in-depth). Separarea pe grupe de vârstă a dispărut odată
+    # cu segmentul 16–17, dar gate-ul DUR rămâne: dacă un cont vechi are sub
+    # `adult_age`, NU poate da swipe și NU poate fi swipe-uit — nici prin API
+    # direct, ocolind feed-ul.
+    if _calc_age(my_profile.birth_date) < settings.adult_age:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Swipe interzis între grupe de vârstă diferite.",
+            detail=f"Aplicația este disponibilă doar de la {settings.adult_age} ani.",
+        )
+    if _calc_age(target_profile.birth_date) < settings.adult_age:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Utilizator indisponibil."
         )
 
     # I1 — block în ORICE direcție (eu → el sau el → eu).
@@ -298,12 +511,15 @@ async def swipe(
     vizibil ca mesaj de chat abia când swipe-ul produce un match reciproc (TZ 4.7).
 
     Securitate (breșă critică): `swipe` aplică ACELEAȘI controale ca feed-ul —
-    age-gate (separarea minor/adult), block în orice direcție, profil ascuns,
-    profil incomplet/inexistent și interdicția de self-match — ca ținta să nu
-    poată fi swipe-uită direct, ocolind filtrele din `get_feed`.
+    gate dur 18+, block în orice direcție, profil ascuns, profil
+    incomplet/inexistent și interdicția de self-match — ca ținta să nu poată fi
+    swipe-uită direct, ocolind filtrele din `get_feed`.
     """
     # --- Age-gate + authz pe țintă (înainte de ORICE scriere) -----------------
     await _authorize_swipe(db, user, target_user_id)
+
+    # Swipe = activitate reală (scriere rară, cu prag din config).
+    await account_service.touch_last_active(db, user)
 
     is_like = action == "like"
     # Mesajul deferred are sens doar pentru like (nu pentru dislike).
@@ -493,8 +709,14 @@ async def get_matches(db: AsyncSession, user: User) -> list[MatchOut]:
         if p is None:
             continue  # profil șters/incomplet — sărim
         if my_profile is not None:
+            # Distanța reală, din coordonatele persistate (fără I/O de rețea):
+            # scorul afișat la match e acum consistent cu cel din feed.
             score = compute_compatibility(
-                my_profile, p, my_interests, interests_map.get(p.id, set())
+                my_profile,
+                p,
+                my_interests,
+                interests_map.get(p.id, set()),
+                _distance_between(my_profile, p),
             )
         else:
             score = 0

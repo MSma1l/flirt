@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
+import { Alert, AlertButton } from 'react-native';
 
 import ChatScreen from '../[id]';
 import { ThemeProvider } from '@theme/index';
@@ -32,6 +33,19 @@ jest.mock('@/features/chat/chatApi', () => ({
   markRead: (id: string) => mockMarkRead(id),
 }));
 
+// Blocarea din conversație lovește backendul → mock la API-ul de setări.
+const mockBlockUser = jest.fn((_userId: string) => Promise.resolve());
+jest.mock('@/features/settings/settingsApi', () => ({
+  blockUser: (userId: string) => mockBlockUser(userId),
+}));
+
+/** Apasă butonul distructiv din Alert-ul de confirmare. */
+function pressConfirm(spy: jest.SpyInstance): void {
+  const buttons = spy.mock.calls[0][2] as AlertButton[] | undefined;
+  const destructive = buttons?.find((b) => b.style === 'destructive');
+  destructive?.onPress?.();
+}
+
 const receivedMessage: ChatMessage = {
   id: 'm1',
   senderId: 'u1',
@@ -62,6 +76,7 @@ describe('ChatScreen', () => {
     mockReact.mockClear();
     mockMarkRead.mockClear();
     mockBack.mockClear();
+    mockBlockUser.mockClear();
   });
 
   it('marchează dialogul ca citit la deschidere', async () => {
@@ -102,6 +117,39 @@ describe('ChatScreen', () => {
     fireEvent.press(getByTestId('reaction-option-❤️'));
 
     await waitFor(() => expect(mockReact).toHaveBeenCalledWith('c1', 'm1', '❤️'));
+  });
+
+  /* --- Blocare din conversație (App Store Guideline 1.2) --- */
+
+  it('„Blochează" cere confirmare și NU blochează înainte de accept', async () => {
+    mockFetchMessages.mockResolvedValue([receivedMessage]);
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const { getByTestId, getByText } = renderScreen();
+
+    await waitFor(() => getByText('Salut!'));
+    fireEvent.press(getByTestId('chat-block'));
+
+    expect(alertSpy).toHaveBeenCalledTimes(1);
+    expect(alertSpy.mock.calls[0][0]).toBe('Blochează utilizatorul');
+    expect(mockBlockUser).not.toHaveBeenCalled();
+
+    alertSpy.mockRestore();
+  });
+
+  it('după confirmare blochează celălalt participant și iese din conversație', async () => {
+    mockFetchMessages.mockResolvedValue([receivedMessage]);
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const { getByTestId, getByText } = renderScreen();
+
+    await waitFor(() => getByText('Salut!'));
+    fireEvent.press(getByTestId('chat-block'));
+    pressConfirm(alertSpy);
+
+    // Id-ul celuilalt participant vine din mesajele primite.
+    await waitFor(() => expect(mockBlockUser).toHaveBeenCalledWith('u1'));
+    await waitFor(() => expect(mockBack).toHaveBeenCalled());
+
+    alertSpy.mockRestore();
   });
 
   it('afișează starea de eroare cu retry', async () => {

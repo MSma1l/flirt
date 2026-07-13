@@ -45,6 +45,12 @@ describe('NewStoryScreen', () => {
     mockBack.mockClear();
   });
 
+  it('NU afișează texte de tip „vine curând" (App Store Guideline 2.1)', () => {
+    const { queryByText } = renderScreen();
+    expect(queryByText(/curând/i)).toBeNull();
+    expect(queryByText(/stub/i)).toBeNull();
+  });
+
   it('URL gol blochează publicarea și arată eroarea', () => {
     const { getByTestId, getByText } = renderScreen();
 

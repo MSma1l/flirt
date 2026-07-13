@@ -23,7 +23,18 @@ from app.db.base import Base
 
 
 class UserSettings(Base):
-    """Setările unui user (relație 1:1 cu `users`). O linie per user."""
+    """Setările unui user (relație 1:1 cu `users`). O linie per user.
+
+    Ține și PREFERINȚELE DE CĂUTARE (`interested_in`, `age_min`, `age_max`,
+    `search_radius_km`) — filtrele DURE aplicate de feed.
+
+    De ce aici și nu într-un model nou `SearchPreference`: relația e tot 1:1 cu
+    userul, `search_radius_km` (tot preferință de căutare) trăia deja aici, iar
+    tabela e deja expusă prin API-ul existent `GET/PUT /settings`. Un tabel
+    separat ar fi adus un JOIN în plus pe calea critică a feed-ului și un al
+    doilea ciclu de viață (creare/ștergere/GDPR) fără niciun câștig — preferințele
+    nu au cardinalitate proprie și nu se versionează.
+    """
 
     __tablename__ = "user_settings"
 
@@ -36,7 +47,8 @@ class UserSettings(Base):
     )
     # Tema aplicației: 'system' / 'light' / 'dark'.
     theme: Mapped[str] = mapped_column(String(16), default="system", nullable=False)
-    # Raza de căutare (km) — implicit din config la creare.
+    # Raza de căutare (km) — implicit din config la creare. APLICATĂ efectiv în
+    # feed (bounding-box SQL pe lat/lng + haversine exact), nu doar stocată.
     search_radius_km: Mapped[int] = mapped_column(Integer, nullable=False)
     # Dict de flag-uri notificări (match/messages/ai_hints/events/promos).
     notifications: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
@@ -46,6 +58,16 @@ class UserSettings(Base):
     )
     # Regiunea preferată (opțională).
     region: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+    # --- Preferințe de căutare (filtre DURE în feed) --------------------------
+    # Genurile căutate (subset din catalogul de genuri: male/female/other).
+    # Listă GOALĂ = fără restricție de gen (toate genurile).
+    interested_in: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Intervalul de vârstă căutat. NULL = valoarea implicită din config
+    # (`search_age_min_default` / `search_age_max_default`). `age_min` nu poate
+    # coborî niciodată sub `adult_age` (aplicație 18+ only).
+    age_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    age_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class Favorite(Base):

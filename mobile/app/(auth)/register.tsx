@@ -1,9 +1,14 @@
-/** Ecran de înregistrare: email + parolă + confirmare → authStore.register(). */
+/**
+ * Ecran de înregistrare: email + parolă + confirmare + acceptarea Termenilor
+ * și a Politicii de confidențialitate (obligatorie — App Store Guideline 1.2:
+ * acordul explicit cu politica de toleranță zero față de conținutul abuziv).
+ */
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Button, Input, ScreenContainer } from '@/components/ui';
+import { config } from '@/config';
 import { useAuthStore } from '@/store/authStore';
 import {
   validateEmail,
@@ -15,18 +20,29 @@ import { useTheme } from '@theme/index';
 export default function Register() {
   const router = useRouter();
   const register = useAuthStore((s) => s.register);
-  const { colors, typography, spacing } = useTheme();
+  const { colors, typography, radius, spacing } = useTheme();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [accepted, setAccepted] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  /** Deschide un document legal în browser (URL-uri din config, nu hardcodate). */
+  const openLink = (url: string) => {
+    Linking.openURL(url).catch(() => {
+      setFormError('Nu am putut deschide documentul. Încearcă din nou.');
+    });
+  };
+
   const onSubmit = async () => {
+    // Fără acceptarea termenilor nu se creează cont (butonul e oricum blocat).
+    if (!accepted) return;
+
     const eErr = validateEmail(email);
     const pErr = validatePassword(password);
     const cErr = validatePasswordMatch(password, confirm);
@@ -95,6 +111,53 @@ export default function Register() {
           testID="register-confirm"
         />
 
+        {/* Acord obligatoriu: termeni + confidențialitate + toleranță zero. */}
+        <Pressable
+          testID="register-terms"
+          accessibilityRole="checkbox"
+          accessibilityLabel="Accept Termenii și Politica de confidențialitate"
+          accessibilityState={{ checked: accepted }}
+          onPress={() => setAccepted((v) => !v)}
+          style={[styles.termsRow, { gap: spacing.md }]}
+        >
+          <View
+            style={[
+              styles.checkbox,
+              {
+                borderRadius: radius.sm,
+                borderColor: accepted ? colors.accent : colors.border,
+                backgroundColor: accepted ? colors.accent : 'transparent',
+              },
+            ]}
+          >
+            {accepted ? (
+              <Text style={[typography.badge, { color: colors.onAccent }]}>✓</Text>
+            ) : null}
+          </View>
+
+          <Text style={[typography.caption, styles.flex1, { color: colors.textSecondary }]}>
+            Am citit și accept{' '}
+            <Text
+              testID="register-terms-link"
+              style={{ color: colors.link }}
+              onPress={() => openLink(config.legal.termsUrl)}
+            >
+              Termenii și condițiile
+            </Text>{' '}
+            și{' '}
+            <Text
+              testID="register-privacy-link"
+              style={{ color: colors.link }}
+              onPress={() => openLink(config.legal.privacyUrl)}
+            >
+              Politica de confidențialitate
+            </Text>
+            . Înțeleg că FLIRT are toleranță zero față de conținutul abuziv și de
+            comportamentul ofensator: astfel de conținut este eliminat, iar conturile
+            responsabile sunt suspendate în cel mult 24 de ore de la raportare.
+          </Text>
+        </Pressable>
+
         {formError ? (
           <Text style={[typography.caption, { color: colors.danger }]}>{formError}</Text>
         ) : null}
@@ -103,6 +166,7 @@ export default function Register() {
           label="Creează cont"
           onPress={onSubmit}
           loading={loading}
+          disabled={!accepted}
           testID="register-submit"
         />
         <Button
@@ -114,3 +178,16 @@ export default function Register() {
     </ScreenContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  termsRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  flex1: { flex: 1 },
+});

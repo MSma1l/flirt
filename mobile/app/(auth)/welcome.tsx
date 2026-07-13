@@ -1,9 +1,10 @@
 /** Ecran de întâmpinare: logo FLIRT + slogan + acțiuni cont nou / autentificare / social / telefon. */
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Linking, StyleSheet, Text, View } from 'react-native';
 
 import { Button, ScreenContainer } from '@/components/ui';
+import { config } from '@/config';
 import { getAppleIdToken, getGoogleIdToken } from '@/features/auth/socialAuth';
 import { useAuthStore } from '@/store/authStore';
 import { useTheme } from '@theme/index';
@@ -15,6 +16,13 @@ export default function Welcome() {
 
   const [loadingProvider, setLoadingProvider] = useState<'google' | 'apple' | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  /** Deschide un document legal în browser (URL-uri din config, nu hardcodate). */
+  const openLink = (url: string) => {
+    Linking.openURL(url).catch(() => {
+      setError('Nu am putut deschide documentul. Încearcă din nou.');
+    });
+  };
 
   const onSocial = async (provider: 'google' | 'apple') => {
     setError(null);
@@ -82,6 +90,35 @@ export default function Welcome() {
         {error ? (
           <Text style={[typography.caption, { color: colors.danger }]}>{error}</Text>
         ) : null}
+
+        {/* Autentificarea socială / prin telefon creează cont fără a trece prin
+            ecranul de înregistrare — acordul trebuie prezentat și aici. */}
+        <Text
+          testID="welcome-legal"
+          style={[
+            typography.caption,
+            styles.legal,
+            { color: colors.textSecondary, marginTop: spacing.sm },
+          ]}
+        >
+          Continuând, accepți{' '}
+          <Text
+            testID="welcome-terms-link"
+            style={{ color: colors.link }}
+            onPress={() => openLink(config.legal.termsUrl)}
+          >
+            Termenii și condițiile
+          </Text>{' '}
+          și{' '}
+          <Text
+            testID="welcome-privacy-link"
+            style={{ color: colors.link }}
+            onPress={() => openLink(config.legal.privacyUrl)}
+          >
+            Politica de confidențialitate
+          </Text>
+          . FLIRT are toleranță zero față de conținutul abuziv.
+        </Text>
       </View>
     </ScreenContainer>
   );
@@ -89,4 +126,5 @@ export default function Welcome() {
 
 const styles = StyleSheet.create({
   hero: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  legal: { textAlign: 'center' },
 });

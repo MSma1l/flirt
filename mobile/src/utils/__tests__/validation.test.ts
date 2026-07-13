@@ -1,5 +1,5 @@
 import {
-  age16plus,
+  isAdultAge,
   computeAge,
   firstError,
   heightCm,
@@ -119,25 +119,25 @@ describe('computeAge', () => {
   });
 });
 
-describe('age16plus', () => {
+describe('isAdultAge (prag 18+)', () => {
   it('respinge gol / dată invalidă', () => {
-    expect(age16plus('')).not.toBeNull();
-    expect(age16plus('nu-e-data')).not.toBeNull();
+    expect(isAdultAge('')).not.toBeNull();
+    expect(isAdultAge('nu-e-data')).not.toBeNull();
   });
   it('respinge vârsta sub 16 ani', () => {
     const now = new Date();
     const under = new Date(now.getFullYear() - 15, now.getMonth(), now.getDate());
-    expect(age16plus(under.toISOString().slice(0, 10))).not.toBeNull();
+    expect(isAdultAge(under.toISOString().slice(0, 10))).not.toBeNull();
   });
   it('respinge o dată din viitor', () => {
     const now = new Date();
     const future = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
-    expect(age16plus(future.toISOString().slice(0, 10))).not.toBeNull();
+    expect(isAdultAge(future.toISOString().slice(0, 10))).not.toBeNull();
   });
   it('acceptă vârsta ≥ 16', () => {
     const now = new Date();
     const over = new Date(now.getFullYear() - 20, now.getMonth(), now.getDate());
-    expect(age16plus(over.toISOString().slice(0, 10))).toBeNull();
+    expect(isAdultAge(over.toISOString().slice(0, 10))).toBeNull();
   });
 });
 

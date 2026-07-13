@@ -8,6 +8,9 @@ const extra = (Constants.expoConfig?.extra ?? {}) as {
   mapZoom?: number;
   mapLeafletCssUrl?: string;
   mapLeafletJsUrl?: string;
+  termsUrl?: string;
+  privacyUrl?: string;
+  supportUrl?: string;
 };
 
 export const config = {
@@ -27,5 +30,25 @@ export const config = {
     /** Leaflet servit din CDN, încărcat doar în interiorul WebView-ului. */
     leafletCssUrl: extra.mapLeafletCssUrl ?? 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
     leafletJsUrl: extra.mapLeafletJsUrl ?? 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+  },
+
+  /**
+   * Documente legale + suport. Sunt OBLIGATORII pentru App Store / Google Play:
+   * Guideline 1.2 (safety: termeni cu toleranță zero + contact de suport),
+   * 3.1.2 (linkuri ToS/EULA + Privacy pe ecranul de abonament) și
+   * 5.1.1 (politică de confidențialitate accesibilă din aplicație).
+   *
+   * ATENȚIE ÎNAINTE DE SUBMIT: valorile de mai jos sunt doar fallback-uri de
+   * dezvoltare. Pune URL-urile publice REALE (pagini live, accesibile fără
+   * login) în `app.json` → `expo.extra.termsUrl` / `privacyUrl` / `supportUrl`.
+   * Aceleași URL-uri trebuie declarate și în App Store Connect.
+   */
+  legal: {
+    /** Termeni și condiții / EULA (include clauza de toleranță zero). */
+    termsUrl: extra.termsUrl ?? 'https://flirt.app/legal/terms',
+    /** Politica de confidențialitate. */
+    privacyUrl: extra.privacyUrl ?? 'https://flirt.app/legal/privacy',
+    /** Pagina de suport / contact pentru utilizatori. */
+    supportUrl: extra.supportUrl ?? 'https://flirt.app/support',
   },
 };

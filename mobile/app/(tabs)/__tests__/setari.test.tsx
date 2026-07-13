@@ -1,11 +1,17 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
-import { Alert } from 'react-native';
+import { Alert, Linking } from 'react-native';
 
 import SetariScreen from '../setari';
+import { config } from '@/config';
 import { ThemeProvider } from '@theme/index';
 import type { Settings } from '@/features/settings/settingsApi';
+
+// Linkurile legale se deschid în browser — spionăm, nu deschidem nimic.
+const mockOpenURL = jest
+  .spyOn(Linking, 'openURL')
+  .mockImplementation(() => Promise.resolve(true));
 
 // Mock router (evită navigarea reală expo-router în teste).
 jest.mock('expo-router', () => ({
@@ -106,5 +112,32 @@ describe('SetariScreen', () => {
     expect(mockRequestDeletion).not.toHaveBeenCalled();
 
     alertSpy.mockRestore();
+  });
+
+  /* --- Legal & suport (App Store Guideline 1.2 / 5.1.1) --- */
+
+  it('expune Termenii, Politica de confidențialitate și Suportul', async () => {
+    const { getByTestId, getByText } = renderScreen();
+
+    await waitFor(() => getByTestId('link-terms'));
+    expect(getByText('Termeni și condiții')).toBeTruthy();
+    expect(getByText('Politica de confidențialitate')).toBeTruthy();
+    expect(getByText('Suport')).toBeTruthy();
+  });
+
+  it('linkurile legale deschid URL-urile din config (nu hardcodate în ecran)', async () => {
+    mockOpenURL.mockClear();
+    const { getByTestId } = renderScreen();
+
+    await waitFor(() => getByTestId('link-terms'));
+
+    fireEvent.press(getByTestId('link-terms'));
+    expect(mockOpenURL).toHaveBeenCalledWith(config.legal.termsUrl);
+
+    fireEvent.press(getByTestId('link-privacy'));
+    expect(mockOpenURL).toHaveBeenCalledWith(config.legal.privacyUrl);
+
+    fireEvent.press(getByTestId('link-support'));
+    expect(mockOpenURL).toHaveBeenCalledWith(config.legal.supportUrl);
   });
 });

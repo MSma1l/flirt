@@ -1,9 +1,10 @@
 /** Funcții pure de validare pentru wizardul de anketă. Mesaje în română.
  * Reutilizează modulul central `@/utils/validation` (simetric cu backend-ul:
- * name/city ≤120, about ≤500, fără marcaje HTML, înălțime 100–250, vârstă ≥16).
+ * name/city ≤120, about ≤500, fără marcaje HTML, înălțime 100–250, vârstă ≥18 —
+ * aplicația este 18+ ONLY).
  */
 import {
-  age16plus,
+  isAdultAge,
   computeAge as computeAgeUtil,
   heightCm as heightCmUtil,
   LIMITS,
@@ -33,9 +34,9 @@ export function validateName(value?: string): string | null {
   return noHtml(value) ?? maxLen(value, MAX_NAME_LENGTH);
 }
 
-/** Data nașterii trebuie să fie validă, în trecut, iar vârsta ≥ 16 ani. */
+/** Data nașterii trebuie să fie validă, în trecut, iar vârsta ≥ `MIN_AGE` (18+). */
 export function validateBirthDate(value?: string): string | null {
-  return age16plus(value);
+  return isAdultAge(value);
 }
 
 /** Genul trebuie ales. */

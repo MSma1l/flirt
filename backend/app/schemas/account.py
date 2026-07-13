@@ -12,6 +12,8 @@ from app.core.validators import optional_safe_str
 # UserSettings.region = 120).
 THEME_MAX_LENGTH = 16
 REGION_MAX_LENGTH = 120
+# Plafon anti-DoS pe lista de genuri căutate (catalogul are 3 valori).
+MAX_GENDERS = 8
 
 
 class SettingsOut(BaseModel):
@@ -23,12 +25,24 @@ class SettingsOut(BaseModel):
     profile_hidden: bool
     region: str | None = None
 
+    # --- Preferințe de căutare (filtre DURE în feed) --------------------------
+    # Genurile căutate; listă goală = fără restricție de gen.
+    interested_in: list[str] = Field(default_factory=list)
+    # Intervalul de vârstă căutat — mereu valorile EFECTIVE (cu default-urile din
+    # config aplicate), ca mobilul să nu reimplementeze regulile.
+    age_min: int
+    age_max: int
+
 
 class SettingsIn(BaseModel):
     """Payload pentru actualizarea setărilor (toate câmpurile opționale).
 
     Câmpurile text (`theme`, `region`) sunt validate defensiv când sunt trimise:
     trim, non-gol, plafon lungime, fără HTML/caractere de control.
+
+    Preferințele de căutare (`interested_in`, `age_min`, `age_max`,
+    `search_radius_km`) sunt validate suplimentar în `account_service`
+    (catalog de genuri, prag 18+, interval coerent, plafoane din config).
     """
 
     theme: optional_safe_str(THEME_MAX_LENGTH) | None = None
@@ -36,6 +50,12 @@ class SettingsIn(BaseModel):
     notifications: dict | None = None
     profile_hidden: bool | None = None
     region: optional_safe_str(REGION_MAX_LENGTH) | None = None
+
+    # Preferințe de căutare. `max_length` = anti-DoS pe listă (catalogul de
+    # genuri e mic); valorile efective sunt validate în serviciu.
+    interested_in: list[str] | None = Field(default=None, max_length=MAX_GENDERS)
+    age_min: int | None = Field(default=None, ge=0)
+    age_max: int | None = Field(default=None, ge=0)
 
 
 class FavoriteOut(BaseModel):

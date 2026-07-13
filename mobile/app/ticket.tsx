@@ -1,4 +1,4 @@
-/** Biletul Flirt Party (TZ secț. 6.3): cod one-time + status + „QR" placeholder. */
+/** Biletul Flirt Party (TZ secț. 6.3): cod one-time de acces + status. */
 import { useQuery } from '@tanstack/react-query';
 import { Stack, useRouter } from 'expo-router';
 import React from 'react';
@@ -82,7 +82,7 @@ export default function TicketScreen() {
           },
         ]}
       >
-        {/* „QR" placeholder — pătrat stilizat cu codul, fără librărie QR. */}
+        {/* Codul de acces, afișat mare, într-un cadru — se prezintă la intrare. */}
         <View
           testID="ticket-qr"
           style={[
@@ -94,7 +94,9 @@ export default function TicketScreen() {
             },
           ]}
         >
-          <Text style={[typography.badge, { color: colors.textSecondary }]}>QR</Text>
+          <Text style={[typography.badge, { color: colors.textSecondary }]}>
+            Cod de acces
+          </Text>
           <Text
             style={[
               typography.badge,
