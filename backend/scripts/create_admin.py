@@ -23,13 +23,13 @@ ecoul oprit (`getpass`), sau dintr-o variabilă de mediu pentru rulările automa
 UTILIZARE
 ---------
     # Interactiv (recomandat) — parola se cere la terminal, nu se vede:
-    python scripts/create_admin.py admin@flirt.md
+    python scripts/create_admin.py admin@flrt.md
 
     # Neinteractiv (CI / provisioning), parola dintr-o variabilă de mediu:
-    ADMIN_PASSWORD='...' python scripts/create_admin.py admin@flirt.md --from-env
+    ADMIN_PASSWORD='...' python scripts/create_admin.py admin@flrt.md --from-env
 
     # În Docker:
-    docker compose exec api python scripts/create_admin.py admin@flirt.md
+    docker compose exec api python scripts/create_admin.py admin@flrt.md
 
 IDEMPOTENT: dacă emailul există deja, contul e PROMOVAT la rolul `admin` (parola
 nu se schimbă decât dacă ceri explicit `--reset-password`). Deci re-rularea nu

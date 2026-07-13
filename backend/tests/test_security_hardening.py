@@ -67,7 +67,7 @@ def _prod_kwargs(**overrides):
         aws_secret_access_key="secret_test",
         push_provider="expo",
         geo_provider="nominatim",
-        geo_user_agent="FLIRT/1.0 (contact@flirt.md)",
+        geo_user_agent="FLIRT/1.0 (contact@flrt.md)",
         debug=False,
         cors_origins="https://app.flirt.example",
     )

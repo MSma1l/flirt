@@ -182,7 +182,7 @@ async def test_demoted_admin_loses_access_immediately(client, db_session):
     Rolul e citit din DB la fiecare cerere, nu dintr-un claim din JWT. Dacă ar fi
     fost în token, un admin demis ar fi rămas admin până la expirarea lui (15 min).
     """
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
 
     assert (await client.get(f"{ADMIN}/stats", headers=headers)).status_code == 200
 
@@ -196,7 +196,7 @@ async def test_demoted_admin_loses_access_immediately(client, db_session):
 @pytest.mark.asyncio
 async def test_banned_admin_loses_access_immediately(client, db_session):
     """Admin banat → 403, chiar cu un token emis înainte de ban."""
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
 
     assert (await client.get(f"{ADMIN}/stats", headers=headers)).status_code == 200
 
@@ -219,7 +219,7 @@ async def test_ban_revokes_refresh_sessions(client, db_session):
     refresh token-ul e o creanță de 30 de zile. Un cont banat care poate roti
     refresh-ul continuă să folosească aplicația o lună.
     """
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
     tokens = await _register(client, "spammer@example.com")
     target = await _get_user(db_session, "spammer@example.com")
 
@@ -291,7 +291,7 @@ async def test_no_admin_response_leaks_secrets(client, db_session):
       * VALOAREA reală a hash-ului de parolă din DB — o scurgere sub un alt nume
         de câmp, pe care o listă de chei interzise nu ar prinde-o.
     """
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "victim@example.com")
     victim = await _get_user(db_session, "victim@example.com")
     db_session.add(
@@ -357,7 +357,7 @@ async def test_no_admin_response_leaks_secrets(client, db_session):
 @pytest.mark.asyncio
 async def test_ban_and_grant_responses_do_not_leak_secrets(client, db_session):
     """Nici răspunsurile rutelor de SCRIERE nu scurg secrete."""
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "victim@example.com")
     victim = await _get_user(db_session, "victim@example.com")
     real_hash = victim.password_hash
@@ -403,7 +403,7 @@ async def test_absurd_limit_is_rejected(client, db_session, url):
     Un admin — sau un cont de admin compromis — nu are voie să ceară „toate cele
     2 milioane de rânduri" dintr-o singură cerere.
     """
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
 
     resp = await client.get(url, params={"limit": 999999}, headers=headers)
     assert resp.status_code == 422, (
@@ -420,7 +420,7 @@ async def test_limit_is_capped_at_admin_max(client, db_session):
     """Chiar la limita maximă permisă, pagina nu depășește `admin_max_limit`."""
     from app.core.config import settings
 
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
 
     # Mai mulți useri decât încape într-o pagină maximă.
     for i in range(settings.admin_max_limit + 5):
@@ -439,7 +439,7 @@ async def test_limit_is_capped_at_admin_max(client, db_session):
 @pytest.mark.asyncio
 async def test_forged_cursor_is_rejected(client, db_session):
     """Un cursor fabricat nu poate injecta nimic — 422, nu 500."""
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
 
     resp = await client.get(
         f"{ADMIN}/users", params={"cursor": "'; DROP TABLE users;--"}, headers=headers
@@ -455,7 +455,7 @@ async def test_forged_cursor_is_rejected(client, db_session):
 @pytest.mark.asyncio
 async def test_timeseries_days_is_capped(client, db_session):
     """`?days=1000000` e respins: fiecare zi e un bucket agregat (DoS)."""
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
 
     resp = await client.get(
         f"{ADMIN}/stats/timeseries", params={"days": 1_000_000}, headers=headers
@@ -479,7 +479,7 @@ async def test_every_destructive_action_is_audited(client, db_session):
     final că fiecare și-a lăsat urma. Dacă cineva adaugă mâine o acțiune fără
     audit, ea nu apare în lista de mai jos și testul cade.
     """
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "target@example.com")
     await _register(client, "doomed@example.com")
     target = await _get_user(db_session, "target@example.com")
@@ -560,7 +560,7 @@ async def test_every_destructive_action_is_audited(client, db_session):
 @pytest.mark.asyncio
 async def test_audit_entry_records_who_what_and_why(client, db_session):
     """Intrarea de audit are autorul, ținta, motivul și IP-ul — nu doar `action`."""
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "target@example.com")
     target = await _get_user(db_session, "target@example.com")
 
@@ -576,7 +576,7 @@ async def test_audit_entry_records_who_what_and_why(client, db_session):
     )
     assert entry is not None
     assert entry.actor_id == admin.id
-    assert entry.actor_email == "admin@flirt.md"      # denormalizat, supraviețuiește
+    assert entry.actor_email == "admin@flrt.md"      # denormalizat, supraviețuiește
     assert entry.target_type == "user"
     assert entry.target_id == target.id
     assert entry.meta["reason"] == "Comportament abuziv repetat"
@@ -596,7 +596,7 @@ async def test_audit_survives_deletion_of_its_target(client, db_session):
     fi ȘTERS chiar intrarea care o consemnează — adică singura acțiune pe care e
     esențial să o poți audita ar fi fost și singura care nu lasă urmă.
     """
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "doomed@example.com")
     doomed = await _get_user(db_session, "doomed@example.com")
     doomed_id = doomed.id
@@ -620,7 +620,7 @@ async def test_audit_log_has_no_write_endpoint(client, db_session):
 
     Un jurnal pe care adminul suspect îl poate curăța nu e un jurnal.
     """
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
 
     for method in ("DELETE", "PUT", "PATCH", "POST"):
         resp = await client.request(
@@ -638,7 +638,7 @@ async def test_audit_log_has_no_write_endpoint(client, db_session):
 @pytest.mark.asyncio
 async def test_sql_injection_in_search_is_inert(client, db_session):
     """Textul de căutare e un PARAMETRU LEGAT, nu SQL concatenat."""
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "victim@example.com")
 
     for payload in (
@@ -670,7 +670,7 @@ async def test_stored_xss_is_rejected_on_admin_writes(client, db_session):
     validarea pe backend e a doua barieră — singura care rezistă când conținutul e
     consumat de altceva decât React (export CSV, email, log).
     """
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "target@example.com")
     target = await _get_user(db_session, "target@example.com")
 
@@ -698,7 +698,7 @@ async def test_stored_xss_is_rejected_on_admin_writes(client, db_session):
 @pytest.mark.asyncio
 async def test_admin_cannot_escalate_via_moderation_on_self(client, db_session):
     """Un admin nu se poate bana/ascunde pe sine printr-un raport (auto-lockout)."""
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "hater@example.com")
     hater = await _get_user(db_session, "hater@example.com")
 

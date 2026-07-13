@@ -18,6 +18,13 @@
 
 # Rotația log-urilor: fără ea, log-urile JSON umplu discul în tăcere, iar când
 # discul e plin cade Postgres (adică tot produsul). 10 MB × 5 fișiere / serviciu.
+# Numele proiectului, EXPLICIT. Implicit, docker compose îl deduce din numele
+# folderului — adică „backend", care e cel mai banal nume posibil. Pe un server cu
+# mai multe aplicații, două proiecte cu un folder `backend/` s-ar amesteca: `docker
+# compose ps` ar arăta containerele altcuiva, iar un `down` ar putea opri altă
+# aplicație. Cu numele fixat, izolarea e garantată.
+name: flirt
+
 x-logging: &default-logging
   driver: json-file
   options:

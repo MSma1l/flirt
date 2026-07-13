@@ -50,16 +50,16 @@ Calea e un script rulat manual, din interiorul mașinii/containerului:
 
 ```bash
 # Interactiv (recomandat) — parola se cere la terminal, cu ecoul oprit:
-python scripts/create_admin.py admin@flirt.md
+python scripts/create_admin.py admin@flrt.md
 
 # Neinteractiv (CI / provisioning) — parola dintr-o variabilă de mediu:
-ADMIN_PASSWORD='...' python scripts/create_admin.py admin@flirt.md --from-env
+ADMIN_PASSWORD='...' python scripts/create_admin.py admin@flrt.md --from-env
 
 # În Docker:
-docker compose exec api python scripts/create_admin.py admin@flirt.md
+docker compose exec api python scripts/create_admin.py admin@flrt.md
 
 # Am pierdut parola de admin:
-python scripts/create_admin.py admin@flirt.md --reset-password
+python scripts/create_admin.py admin@flrt.md --reset-password
 ```
 
 **De ce un script și nu un endpoint „primul user devine admin":** e o cursă clasică. Dacă cineva nimerește instanța înaintea ta — sau baza e resetată din greșeală — primul care se înregistrează devine administratorul **producției**. Un script cere acces la infrastructură, adică exact garanția pe care o vrem.

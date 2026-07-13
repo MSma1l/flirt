@@ -284,7 +284,7 @@ Refolosește `account_service.purge_user_data` — exact logica pe care o ruleaz
 **Citire și atât.** Nu există `DELETE`, `PUT` sau „curăță jurnalul" — orice altă metodă întoarce `405`. Un jurnal pe care adminul suspect îl poate șterge nu e un jurnal.
 
 ```jsonc
-{ "id": "…", "actor_id": "…", "actor_email": "admin@flirt.md",
+{ "id": "…", "actor_id": "…", "actor_email": "admin@flrt.md",
   "action": "user.ban", "target_type": "user", "target_id": "…",
   "meta": { "reason": "Spam repetat", "email": "spammer@example.com" },
   "ip": "203.0.113.7", "created_at": "2026-07-13T10:00:00Z" }

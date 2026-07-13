@@ -5,6 +5,13 @@ import os
 os.environ.setdefault("ENVIRONMENT", "development")
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
+# TESTELE TREBUIE SĂ FIE ERMETICE. `Settings` citește `.env` (env_file), deci pe o
+# mașină cu un `.env` local (ex. cel folosit ca să ridici stack-ul în Docker) testele
+# preluau valori de acolo: `REDIS_URL=redis://redis:6379/0` arăta spre un host care
+# există DOAR în rețeaua Docker, iar readiness-ul pica cu 503 — teste roșii fără nicio
+# legătură cu codul. Un `.env` prezent nu are voie să schimbe rezultatul testelor.
+os.environ["REDIS_URL"] = ""  # rate-limit in-memory + readiness fără Redis, în teste
+
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine

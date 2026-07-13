@@ -13,8 +13,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml ./
-# Imagine de producție: include dependențele integrărilor LIVE.
-RUN pip install --upgrade pip && pip install ".[live]"
+# Instalăm DOAR dependențele (inclusiv extras-ul `live`), nu pachetul în sine.
+#
+# De ce nu `pip install ".[live]"`: aplicația rulează din /app ca `app.main:app`, deci
+# nu trebuie instalată ca pachet — dar `pip install .` construiește oricum un wheel,
+# iar pentru asta are nevoie de directorul `app/`, care e copiat abia mai jos. Rezultat:
+# build-ul eșua cu „package directory 'app' does not exist". Imaginea NU s-a construit
+# niciodată cu succes.
+#
+# De ce nu mutăm pur și simplu `COPY . .` mai sus: atunci orice modificare de cod ar
+# invalida layer-ul de pip și ar reinstala toate dependențele la fiecare deploy.
+# Așa, layer-ul se invalidează doar când se schimbă `pyproject.toml`.
+RUN pip install --upgrade pip && \
+    python -c "\
+import tomllib; \
+d = tomllib.load(open('pyproject.toml', 'rb'))['project']; \
+deps = d['dependencies'] + d.get('optional-dependencies', {}).get('live', []); \
+open('/tmp/requirements.txt', 'w').write('\n'.join(deps))" && \
+    pip install -r /tmp/requirements.txt
 
 COPY . .
 

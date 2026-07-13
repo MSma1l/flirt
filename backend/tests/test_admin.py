@@ -88,7 +88,7 @@ async def _make_profile(db, user: User, name: str, **kwargs) -> Profile:
 @pytest.mark.asyncio
 async def test_stats_aggregates_every_domain(client, db_session):
     """`GET /admin/stats` întoarce contoare corecte pentru toate domeniile."""
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "u1@example.com")
     await _register(client, "u2@example.com")
     u1 = await _get_user(db_session, "u1@example.com")
@@ -180,7 +180,7 @@ async def test_stats_on_empty_db_returns_zeros_not_nulls(client, db_session):
 
     Fără `COALESCE`, dashboard-ul ar primi `null` și ar sparge graficele din UI.
     """
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
 
     resp = await client.get(f"{ADMIN}/stats", headers=headers)
     assert resp.status_code == 200, resp.text
@@ -211,7 +211,7 @@ async def test_stats_uses_constant_number_of_queries(client, db_session, engine)
     `GET /chats` (604 query-uri → 6). Un dashboard care numără în Python ar fi
     executat un query per rând.
     """
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
 
     statements: list[str] = []
 
@@ -250,7 +250,7 @@ async def test_stats_uses_constant_number_of_queries(client, db_session, engine)
 @pytest.mark.asyncio
 async def test_stats_exposes_flat_dashboard_fields(client, db_session):
     """Cifrele PLATE de pe cardurile panoului (contractul `AdminStats` din types.ts)."""
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
 
     resp = await client.get(f"{ADMIN}/stats", headers=headers)
     assert resp.status_code == 200, resp.text
@@ -278,7 +278,7 @@ async def test_stats_exposes_flat_dashboard_fields(client, db_session):
 @pytest.mark.asyncio
 async def test_timeseries_fills_missing_days_with_zero(client, db_session):
     """Seria are exact `days` puncte, cu TOATE seriile; zilele goale sunt 0."""
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
 
     resp = await client.get(
         f"{ADMIN}/stats/timeseries", params={"days": 7}, headers=headers
@@ -298,7 +298,7 @@ async def test_timeseries_fills_missing_days_with_zero(client, db_session):
 @pytest.mark.asyncio
 async def test_metric_series_and_unknown_metric_rejected(client, db_session):
     """Seria pe O metrică + allowlist: o metrică necunoscută nu ajunge în SQL."""
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
 
     resp = await client.get(
         f"{ADMIN}/stats/timeseries/users", params={"days": 5}, headers=headers
@@ -322,7 +322,7 @@ async def test_metric_series_and_unknown_metric_rejected(client, db_session):
 @pytest.mark.asyncio
 async def test_list_users_search_and_filters(client, db_session):
     """Căutarea lovește emailul ȘI numele; filtrele se combină."""
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "ana.pop@example.com")
     await _register(client, "bogdan@example.com")
     ana = await _get_user(db_session, "ana.pop@example.com")
@@ -345,13 +345,13 @@ async def test_list_users_search_and_filters(client, db_session):
 
     # Filtru: doar admini.
     resp = await client.get(f"{ADMIN}/users", params={"role": "admin"}, headers=headers)
-    assert [u["email"] for u in resp.json()] == ["admin@flirt.md"]
+    assert [u["email"] for u in resp.json()] == ["admin@flrt.md"]
 
 
 @pytest.mark.asyncio
 async def test_list_users_search_wildcards_are_escaped(client, db_session):
     """Un `%` din căutare NU are voie să întoarcă toată tabela (DoS din UI)."""
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "victim@example.com")
 
     resp = await client.get(f"{ADMIN}/users", params={"q": "%"}, headers=headers)
@@ -362,7 +362,7 @@ async def test_list_users_search_wildcards_are_escaped(client, db_session):
 @pytest.mark.asyncio
 async def test_user_detail_includes_activity_and_reports(client, db_session):
     """Fișa userului agregă rapoartele (total + raportori DISTINCȚI) și activitatea."""
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "target@example.com")
     await _register(client, "r1@example.com")
     target = await _get_user(db_session, "target@example.com")
@@ -395,7 +395,7 @@ async def test_user_detail_includes_activity_and_reports(client, db_session):
 
 @pytest.mark.asyncio
 async def test_user_detail_404(client, db_session):
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
     resp = await client.get(f"{ADMIN}/users/{uuid.uuid4()}", headers=headers)
     assert resp.status_code == 404, resp.text
 
@@ -403,7 +403,7 @@ async def test_user_detail_404(client, db_session):
 @pytest.mark.asyncio
 async def test_ban_hides_profile_and_unban_restores(client, db_session):
     """Banul ascunde profilul din feed; unban-ul îl readuce."""
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "spammer@example.com")
     target = await _get_user(db_session, "spammer@example.com")
     await _make_profile(db_session, target, "Spammer")
@@ -442,7 +442,7 @@ async def test_ban_hides_profile_and_unban_restores(client, db_session):
 @pytest.mark.asyncio
 async def test_admin_cannot_ban_or_delete_self(client, db_session):
     """Auto-ban / auto-ștergere → 400: adminul nu se poate încuia singur afară."""
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
 
     resp = await client.post(
         f"{ADMIN}/users/{admin.id}/ban", json={"reason": "test"}, headers=headers
@@ -456,7 +456,7 @@ async def test_admin_cannot_ban_or_delete_self(client, db_session):
 @pytest.mark.asyncio
 async def test_delete_user_purges_personal_data(client, db_session):
     """Ștergerea GDPR refolosește `account_service`: datele personale dispar."""
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "gone@example.com")
     target = await _get_user(db_session, "gone@example.com")
     await _make_profile(db_session, target, "Gone")
@@ -490,7 +490,7 @@ async def test_delete_user_purges_personal_data(client, db_session):
 @pytest.mark.asyncio
 async def test_reports_queue_puts_pending_first(client, db_session):
     """Coada: rapoartele ÎN AȘTEPTARE primele (SLA-ul Apple de 24h)."""
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "bad@example.com")
     await _register(client, "reporter@example.com")
     bad = await _get_user(db_session, "bad@example.com")
@@ -537,7 +537,7 @@ async def test_auto_banned_report_stays_in_queue(client, db_session):
     Apple (Guideline 1.2) cere un răspuns UMAN — deci exact cazurile cele mai grave
     nu au voie să dispară din coada moderatorului.
     """
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "bad@example.com")
     bad = await _get_user(db_session, "bad@example.com")
     await _make_profile(db_session, bad, "Bad")
@@ -563,7 +563,7 @@ async def test_auto_banned_report_stays_in_queue(client, db_session):
 @pytest.mark.asyncio
 async def test_resolve_report_ban_closes_all_pending_reports(client, db_session):
     """`ban_user` banează ȘI închide toate rapoartele în așteptare pe acel user."""
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "bad@example.com")
     await _register(client, "reporter@example.com")
     bad = await _get_user(db_session, "bad@example.com")
@@ -598,7 +598,7 @@ async def test_resolve_report_ban_closes_all_pending_reports(client, db_session)
 @pytest.mark.asyncio
 async def test_resolve_report_dismiss_leaves_user_untouched(client, db_session):
     """`dismiss` închide raportul fără să atingă contul raportat."""
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "innocent@example.com")
     innocent = await _get_user(db_session, "innocent@example.com")
     await _make_profile(db_session, innocent, "Innocent")
@@ -621,7 +621,7 @@ async def test_resolve_report_dismiss_leaves_user_untouched(client, db_session):
 @pytest.mark.asyncio
 async def test_resolve_report_hide_profile(client, db_session):
     """`hide_profile` ascunde din feed fără a tăia accesul (măsură blândă)."""
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "borderline@example.com")
     target = await _get_user(db_session, "borderline@example.com")
     await _make_profile(db_session, target, "Borderline")
@@ -647,7 +647,7 @@ async def test_resolve_report_hide_profile(client, db_session):
 @pytest.mark.asyncio
 async def test_user_reports_history(client, db_session):
     """`GET /admin/users/{id}/reports` — istoricul reclamațiilor contra userului."""
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "bad@example.com")
     bad = await _get_user(db_session, "bad@example.com")
     await _make_profile(db_session, bad, "Bad")
@@ -669,7 +669,7 @@ async def test_user_reports_history(client, db_session):
 @pytest.mark.asyncio
 async def test_event_crud_full_cycle(client, db_session):
     """Creare → apare în `/events` public → editare parțială → ștergere."""
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
     user_headers = await _register(client, "u@example.com")
 
     starts_at = (datetime.now(timezone.utc) + timedelta(days=5)).isoformat()
@@ -715,7 +715,7 @@ async def test_event_crud_full_cycle(client, db_session):
 @pytest.mark.asyncio
 async def test_delete_event_removes_attendances(client, db_session):
     """Ștergerea unui eveniment nu lasă participări orfane (SQLite nu cascadează)."""
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
 
     ev = Event(
         title="Ephemeral",
@@ -743,7 +743,7 @@ async def test_delete_event_removes_attendances(client, db_session):
 @pytest.mark.asyncio
 async def test_event_validation_rejects_bad_input(client, db_session):
     """Coordonate imposibile / tip necunoscut → 422, nu date corupte în DB."""
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
     starts_at = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
 
     resp = await client.post(
@@ -775,7 +775,7 @@ async def test_event_validation_rejects_bad_input(client, db_session):
 
 @pytest.mark.asyncio
 async def test_update_event_404_and_empty_payload(client, db_session):
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
 
     resp = await client.put(
         f"{ADMIN}/events/{uuid.uuid4()}", json={"city": "X"}, headers=headers
@@ -789,7 +789,7 @@ async def test_update_event_404_and_empty_payload(client, db_session):
 @pytest.mark.asyncio
 async def test_grant_subscription_activates_entitlements(client, db_session):
     """Abonamentul acordat manual produce DREPTURI reale pentru user."""
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
     user_headers = await _register(client, "vip@example.com")
     vip = await _get_user(db_session, "vip@example.com")
 
@@ -822,7 +822,7 @@ async def test_grant_subscription_rejects_unknown_plan_and_caps_days(client, db_
     """Plan inventat → 400. Durată absurdă → plafonată la `admin_grant_max_days`."""
     from app.core.config import settings
 
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
     user_headers = await _register(client, "vip@example.com")
     vip = await _get_user(db_session, "vip@example.com")
 
@@ -855,10 +855,10 @@ async def test_grant_subscription_rejects_unknown_plan_and_caps_days(client, db_
 @pytest.mark.asyncio
 async def test_admin_login_works_and_is_audited(client, db_session):
     """`POST /admin/login` emite token-uri și scrie `admin.login` în jurnal."""
-    await _make_admin(client, db_session, "admin@flirt.md")
+    await _make_admin(client, db_session, "admin@flrt.md")
 
     resp = await client.post(
-        f"{ADMIN}/login", json={"email": "admin@flirt.md", "password": PASSWORD}
+        f"{ADMIN}/login", json={"email": "admin@flrt.md", "password": PASSWORD}
     )
     assert resp.status_code == 200, resp.text
     assert "access_token" in resp.json()
@@ -867,7 +867,7 @@ async def test_admin_login_works_and_is_audited(client, db_session):
         select(AdminAuditLog).where(AdminAuditLog.action == "admin.login")
     )
     assert entry is not None, "Autentificarea de admin nu a fost auditată."
-    assert entry.actor_email == "admin@flirt.md"
+    assert entry.actor_email == "admin@flrt.md"
 
 
 @pytest.mark.asyncio
@@ -885,16 +885,16 @@ async def test_admin_login_rejects_normal_user_with_403(client, db_session):
 @pytest.mark.asyncio
 async def test_admin_login_wrong_password_is_401(client, db_session):
     """Credențiale greșite → 401 generic (fără oracol de enumerare)."""
-    await _make_admin(client, db_session, "admin@flirt.md")
+    await _make_admin(client, db_session, "admin@flrt.md")
 
     resp = await client.post(
-        f"{ADMIN}/login", json={"email": "admin@flirt.md", "password": "Wrong-Pass1!"}
+        f"{ADMIN}/login", json={"email": "admin@flrt.md", "password": "Wrong-Pass1!"}
     )
     assert resp.status_code == 401, resp.text
 
     # Un email inexistent primește EXACT același răspuns.
     resp2 = await client.post(
-        f"{ADMIN}/login", json={"email": "nobody@flirt.md", "password": "Wrong-Pass1!"}
+        f"{ADMIN}/login", json={"email": "nobody@flrt.md", "password": "Wrong-Pass1!"}
     )
     assert resp2.status_code == 401
     assert resp.json() == resp2.json()
@@ -903,18 +903,18 @@ async def test_admin_login_wrong_password_is_401(client, db_session):
 @pytest.mark.asyncio
 async def test_admin_me_returns_role(client, db_session):
     """`GET /admin/me` — panoul află rolul (│`/auth/me` NU expune `role`)."""
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
 
     resp = await client.get(f"{ADMIN}/me", headers=headers)
     assert resp.status_code == 200, resp.text
     data = resp.json()
-    assert data == {"id": str(admin.id), "email": "admin@flirt.md", "role": "admin"}
+    assert data == {"id": str(admin.id), "email": "admin@flrt.md", "role": "admin"}
 
 
 @pytest.mark.asyncio
 async def test_grant_subscription_by_email(client, db_session):
     """`POST /admin/subscriptions` — acordare după EMAIL (forma folosită de panou)."""
-    headers, _ = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "vip@example.com")
 
     resp = await client.post(
@@ -939,7 +939,7 @@ async def test_grant_subscription_by_email(client, db_session):
 @pytest.mark.parametrize("action", ["ban", "ban_user"])
 async def test_resolve_accepts_short_and_long_action_names(client, db_session, action):
     """`ban` (panou) și `ban_user` (spec backend) descriu ACEEAȘI decizie."""
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "bad@example.com")
     bad = await _get_user(db_session, "bad@example.com")
     await _make_profile(db_session, bad, "Bad")
@@ -963,7 +963,7 @@ async def test_resolve_accepts_short_and_long_action_names(client, db_session, a
 @pytest.mark.asyncio
 async def test_audit_log_is_readable_and_filterable(client, db_session):
     """Jurnalul se citește, cu filtre pe acțiune și pe țintă."""
-    headers, admin = await _make_admin(client, db_session, "admin@flirt.md")
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
     await _register(client, "target@example.com")
     target = await _get_user(db_session, "target@example.com")
 
@@ -982,4 +982,4 @@ async def test_audit_log_is_readable_and_filterable(client, db_session):
     )
     assert resp.status_code == 200, resp.text
     assert all(e["target_id"] == str(target.id) for e in resp.json())
-    assert resp.json()[0]["actor_email"] == "admin@flirt.md"
+    assert resp.json()[0]["actor_email"] == "admin@flrt.md"

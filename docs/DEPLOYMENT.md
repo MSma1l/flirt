@@ -1,4 +1,4 @@
-# Deployment — de la server gol la `api.flirt.md` live
+# Deployment — de la server gol la `api.flrt.md` live
 
 Backend-ul FLIRT (FastAPI + Postgres + Redis + nginx/TLS) și panoul de admin.
 Aplicația mobilă e separată și nu face parte din acest stack.
@@ -38,8 +38,8 @@ Singura ușă către exterior e nginx.
 
 | Nume             | Ce servește                                  |
 |------------------|----------------------------------------------|
-| `api.flirt.md`   | API-ul (aplicația mobilă vorbește doar aici) |
-| `admin.flirt.md` | panoul de admin (SPA static, build Vite)     |
+| `api.flrt.md`   | API-ul (aplicația mobilă vorbește doar aici) |
+| `admin-flirt-paty.flrt.md` | panoul de admin (SPA static, build Vite)     |
 
 Ambele stau pe **același server, același nginx, același certificat** (un singur
 certificat Let's Encrypt cu ambele nume în SAN).
@@ -77,18 +77,18 @@ Creează **două** înregistrări `A` către IP-ul serverului:
 | A   | `api`   | `<IP-ul serverului>` | 300 |
 | A   | `admin` | `<IP-ul serverului>` | 300 |
 
-(La registrarul lui `flirt.md`. Dacă serverul are IPv6, adaugă și `AAAA`.)
+(La registrarul lui `flrt.md`. Dacă serverul are IPv6, adaugă și `AAAA`.)
 
 ```bash
 # check — ambele TREBUIE să întoarcă IP-ul serverului
-dig +short api.flirt.md
-dig +short admin.flirt.md
+dig +short api.flrt.md
+dig +short admin-flirt-paty.flrt.md
 ```
 
 > Fără DNS corect, Let's Encrypt **nu poate** emite certificatul, iar aplicația
 > mobilă nu se poate conecta (iOS refuză certificatele self-signed). Dacă DNS-ul
 > pentru `admin` întârzie, nu-i nimic: certbot emite certificatul doar pentru
-> `api.flirt.md` și adaugă `admin` automat la un ciclu următor.
+> `api.flrt.md` și adaugă `admin` automat la un ciclu următor.
 
 ---
 
@@ -116,8 +116,8 @@ cheia. Rezumat al valorilor pe care **trebuie** să le pui tu:
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` | consola Twilio (SMS-urile OTP costă bani per mesaj)           |
 | `APP_STORE_SHARED_SECRET`                      | App Store Connect → App Information → App-Specific Shared Secret       |
 
-Deja completate corect în șablon (nu le schimba fără motiv): `DOMAIN=api.flirt.md`,
-`ADMIN_DOMAIN=admin.flirt.md`, `CORS_ORIGINS=https://admin.flirt.md`,
+Deja completate corect în șablon (nu le schimba fără motiv): `DOMAIN=api.flrt.md`,
+`ADMIN_DOMAIN=admin-flirt-paty.flrt.md`, `CORS_ORIGINS=https://admin-flirt-paty.flrt.md`,
 `REDIS_URL=redis://redis:6379/0`, `ENVIRONMENT=production`, `DEBUG=false`,
 `GEO_PROVIDER=nominatim` (gratuit, fără cheie), `PUSH_PROVIDER=expo` (fără cheie).
 
@@ -163,12 +163,12 @@ Ce se întâmplă, în ordine, **fără intervenția ta**:
 3. `nginx` randează configul cu `DOMAIN`/`ADMIN_DOMAIN` din `.env`, își generează un
    certificat **self-signed** temporar (ca să poată porni deloc) și începe să servească
    provocarea ACME pe portul 80.
-4. `certbot` cere certificatul **real** pentru `api.flirt.md` + `admin.flirt.md`.
+4. `certbot` cere certificatul **real** pentru `api.flrt.md` + `admin-flirt-paty.flrt.md`.
 5. `nginx` observă certificatul nou (verifică din minut în minut) și dă `reload`.
    **Fără downtime.** De aici încolo, TLS-ul e real.
 6. `admin-build` construiește panoul de admin din `admin/` și îl publică. Dacă
    folderul nu există sau build-ul pică, **backend-ul nu e afectat** — se servește
-   o pagină explicativă pe `admin.flirt.md`, iar API-ul merge normal.
+   o pagină explicativă pe `admin-flirt-paty.flrt.md`, iar API-ul merge normal.
 
 Prima pornire durează câteva minute (build-uri + emiterea certificatului).
 
@@ -183,8 +183,8 @@ Aproape întotdeauna e DNS-ul sau firewall-ul:
 
 ```bash
 docker compose logs certbot | tail -30
-dig +short api.flirt.md          # arată IP-ul ACESTUI server?
-curl -I http://api.flirt.md/.well-known/acme-challenge/test   # portul 80 e accesibil din afară?
+dig +short api.flrt.md          # arată IP-ul ACESTUI server?
+curl -I http://api.flrt.md/.well-known/acme-challenge/test   # portul 80 e accesibil din afară?
 ```
 
 Certbot reîncearcă singur la fiecare oră. Dacă vrei să forțezi acum, după ce ai
@@ -200,35 +200,35 @@ docker compose restart certbot
 
 ```bash
 # 1. liveness + certificat REAL (fără -k! dacă merge fără -k, TLS-ul e valid)
-curl -I https://api.flirt.md/health
+curl -I https://api.flrt.md/health
 
 # 2. readiness REAL (SELECT 1 pe Postgres + PING pe Redis)
-curl -s https://api.flirt.md/health/ready
+curl -s https://api.flrt.md/health/ready
 # → {"status":"ready","checks":{"database":"ok","redis":"ok"}}
 
 # 3. redirect + HSTS
-curl -I http://api.flirt.md/health | grep -i location          # → https://...
-curl -sI https://api.flirt.md/health | grep -i strict-transport-security
+curl -I http://api.flrt.md/health | grep -i location          # → https://...
+curl -sI https://api.flrt.md/health | grep -i strict-transport-security
 
 # 4. emitentul certificatului (trebuie Let's Encrypt, NU self-signed)
-echo | openssl s_client -connect api.flirt.md:443 -servername api.flirt.md 2>/dev/null \
+echo | openssl s_client -connect api.flrt.md:443 -servername api.flrt.md 2>/dev/null \
   | openssl x509 -noout -issuer -dates
 
 # 5. cu DB oprit, readiness TREBUIE să dea 503 (nu 200)
 docker compose stop db
-curl -s -o /dev/null -w '%{http_code}\n' https://api.flirt.md/health/ready   # → 503
+curl -s -o /dev/null -w '%{http_code}\n' https://api.flrt.md/health/ready   # → 503
 docker compose start db
 
 # 6. rate limiting partajat: al 6-lea login greșit într-un minut → 429
 for i in $(seq 1 6); do
-  curl -s -o /dev/null -w '%{http_code} ' -X POST https://api.flirt.md/api/v1/auth/login \
+  curl -s -o /dev/null -w '%{http_code} ' -X POST https://api.flrt.md/api/v1/auth/login \
     -H 'Content-Type: application/json' \
     -d '{"email":"nobody@example.com","password":"wrong-password"}'
 done; echo
 
 # 7. panoul de admin
-curl -I https://admin.flirt.md/                 # → 200
-curl -I https://admin.flirt.md/users            # → 200 (fallback SPA, nu 404)
+curl -I https://admin-flirt-paty.flrt.md/                 # → 200
+curl -I https://admin-flirt-paty.flrt.md/users            # → 200 (fallback SPA, nu 404)
 
 # 8. serverul NU răspunde pe Host necunoscut (scanere pe IP brut)
 curl -sk -o /dev/null -w '%{http_code}\n' https://<IP-ul-serverului>/    # → conexiune închisă (444)
@@ -381,17 +381,17 @@ E idempotent: nu suprascrie `.env`, nu regenerează cheile JWT, nu reinstalează
 - [ ] Niciun provider de integrare pe `stub`
 
 **Rețea și TLS**
-- [ ] `dig +short api.flirt.md` și `admin.flirt.md` → IP-ul serverului
-- [ ] `curl -I https://api.flirt.md/health` → 200 **fără `-k`** (certificat real)
+- [ ] `dig +short api.flrt.md` și `admin-flirt-paty.flrt.md` → IP-ul serverului
+- [ ] `curl -I https://api.flrt.md/health` → 200 **fără `-k`** (certificat real)
 - [ ] Emitentul certificatului e Let's Encrypt (nu self-signed)
-- [ ] `http://api.flirt.md` → 301 spre HTTPS; HSTS prezent
+- [ ] `http://api.flrt.md` → 301 spre HTTPS; HSTS prezent
 - [ ] `https://<IP>/` → conexiune închisă (444), nu API-ul
 
 **Funcționare**
 - [ ] `/health/ready` → 200 cu `database: ok`, `redis: ok`
 - [ ] `/health/ready` → **503** cu DB oprit (l-ai testat, nu îl presupui)
 - [ ] Al 6-lea login greșit într-un minut → 429 (rate limiting partajat, prin Redis)
-- [ ] `https://admin.flirt.md/<rută-internă>` → 200 (fallback SPA), nu 404
+- [ ] `https://admin-flirt-paty.flrt.md/<rută-internă>` → 200 (fallback SPA), nu 404
 
 **Securitate operațională**
 - [ ] `docker compose ps` — **doar** `nginx` are porturi publicate (80, 443)
@@ -404,4 +404,4 @@ E idempotent: nu suprascrie `.env`, nu regenerează cheile JWT, nu reinstalează
 - [ ] Serviciul `purge` rulează (`docker compose logs purge`)
 
 **Mobil**
-- [ ] `mobile/eas.json`, profilul `production`: `EXPO_PUBLIC_API_URL=https://api.flirt.md/api/v1`
+- [ ] `mobile/eas.json`, profilul `production`: `EXPO_PUBLIC_API_URL=https://api.flrt.md/api/v1`

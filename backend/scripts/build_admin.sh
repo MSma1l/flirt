@@ -25,7 +25,7 @@ HASH_FILE="$OUT/.build-hash"
 log() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [admin-build] $*"; }
 
 placeholder() {
-    # Un 200 explicativ e mai bun decât un 404 misterios pe admin.flirt.md.
+    # Un 200 explicativ e mai bun decât un 404 misterios pe admin-flirt-paty.flrt.md.
     mkdir -p "$OUT"
     rm -f "$HASH_FILE"
     cat > "$OUT/index.html" <<'HTML'
