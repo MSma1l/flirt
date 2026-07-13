@@ -21,7 +21,10 @@ from app.models.account import (
     Ticket,
     UserSettings,
 )
+from app.models.billing import Subscription
 from app.models.chat import Chat, Message
+from app.models.device import PushDevice
+from app.models.event import EventAttendance, FlirtPassportStamp
 from app.models.profile import Profile
 from app.models.session import RefreshSession
 from app.models.story import Story
@@ -606,10 +609,19 @@ def _anonymized_email(user_id: uuid.UUID) -> str:
     return f"deleted+{user_id.hex}@deleted.invalid"
 
 
-async def _purge_user_data(db: AsyncSession, user_id: uuid.UUID) -> None:
+async def purge_user_data(db: AsyncSession, user_id: uuid.UUID) -> None:
     """Șterge/anonimizează TOATE datele personale ale unui user (GDPR).
 
-    Idempotent: apelabil de mai multe ori fără efecte secundare (ștergerile pe
+    PUBLICĂ (nu `_purge_user_data`) pentru că are DOI apelanți legitimi, care
+    trebuie să șteargă IDENTIC: cron-ul de purjare la expirarea perioadei de
+    grație (`purge_expired_accounts` → `scripts/gdpr_purge.py`) și ștergerea
+    imediată executată de un admin (`admin_service.delete_user`). Două
+    implementări ale ștergerii GDPR ar diverge, iar cea uitată ar lăsa date
+    personale în urmă — exact eșecul pe care art. 17 îl sancționează.
+
+    NU face commit — apelantul decide granulele tranzacției.
+
+    Idempotentă: apelabilă de mai multe ori fără efecte secundare (ștergerile pe
     seturi goale sunt no-op, iar anonimizarea e deterministă).
     """
     # Chat-urile la care userul participă (împreună cu mesajele lor).
@@ -666,6 +678,30 @@ async def _purge_user_data(db: AsyncSession, user_id: uuid.UUID) -> None:
         delete(RefreshSession).where(RefreshSession.user_id == user_id)
     )
 
+    # Dispozitivele de push. Fără asta, un cont „șters" continua să PRIMEASCĂ
+    # notificări pe telefon (token-ul rămânea în `push_devices`) — adică ștergerea
+    # era vizibil incompletă chiar pentru utilizatorul care o ceruse.
+    await db.execute(delete(PushDevice).where(PushDevice.user_id == user_id))
+
+    # Bilet, participări la evenimente, ștampile de pașaport, abonament: toate
+    # sunt date personale legate de contul șters (unde a fost, ce a cumpărat).
+    await db.execute(delete(Ticket).where(Ticket.user_id == user_id))
+    await db.execute(
+        delete(EventAttendance).where(EventAttendance.user_id == user_id)
+    )
+    await db.execute(
+        delete(FlirtPassportStamp).where(FlirtPassportStamp.user_id == user_id)
+    )
+    await db.execute(delete(Subscription).where(Subscription.user_id == user_id))
+
+    # RAPOARTELE DE MODERARE NU SE ȘTERG — INTENȚIONAT.
+    # GDPR art. 17(3) permite păstrarea datelor necesare pentru constatarea sau
+    # apărarea unui drept în justiție și pentru prevenirea abuzului. Dacă am fi
+    # șters rapoartele odată cu contul, un abuzator ar fi putut curăța dovezile
+    # împotriva lui pur și simplu cerându-și ștergerea contului — și ar fi revenit
+    # cu un cont nou, cu istoricul de moderare gol. Rândul `users` e păstrat
+    # anonimizat (mai jos), deci cheile externe ale rapoartelor rămân valide.
+
     # Anonimizează contul în sine: email unic anonim + hash de parolă invalid.
     # Nu ștergem rândul `users` ca să nu rupem FK-urile păstrate (ex. rapoarte),
     # dar userul devine ne-autentificabil și ne-identificabil.
@@ -682,7 +718,7 @@ async def purge_expired_accounts(
     """Purjează conturile cu cererea de ștergere expirată (`purge_after < now`).
 
     Pentru fiecare `AccountDeletionRequest` cu grația expirată, șterge/anonimizează
-    datele userului (vezi `_purge_user_data`) și consumă cererea. Întoarce numărul
+    datele userului (vezi `purge_user_data`) și consumă cererea. Întoarce numărul
     de conturi purjate.
 
     Apelabilă dintr-un cron/script (nu are nevoie de worker real), ex.:
@@ -708,7 +744,7 @@ async def purge_expired_accounts(
     )
     requests = list(result.scalars().all())
     for request in requests:
-        await _purge_user_data(db, request.user_id)
+        await purge_user_data(db, request.user_id)
         await db.delete(request)
 
     if requests:

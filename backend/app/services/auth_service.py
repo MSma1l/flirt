@@ -32,6 +32,14 @@ from app.schemas.auth import TokenPair
 # EN: constant dummy hash so login timing is uniform whether the user exists or not.
 _DUMMY_PASSWORD_HASH = hash_password("timing-uniform-dummy-password")
 
+# RO: Cont banat de moderare — refuzat la login și la rotația refresh-ului.
+# Verificarea se face DUPĂ validarea parolei, ca să nu devină un oracol de
+# enumerare („acest email există și e banat" spus unui atacator fără parolă).
+_BANNED_EXC = HTTPException(
+    status_code=status.HTTP_403_FORBIDDEN,
+    detail="Account is banned",
+)
+
 
 async def _issue_token_pair(
     db: AsyncSession, user: User, family_id: str
@@ -82,8 +90,25 @@ async def register(db: AsyncSession, email: str, password: str) -> TokenPair:
     return pair
 
 
-async def authenticate(db: AsyncSession, email: str, password: str) -> TokenPair:
-    """Autentifică userul (login) și emite o pereche de token-uri."""
+async def authenticate(
+    db: AsyncSession,
+    email: str,
+    password: str,
+    *,
+    require_role: str | None = None,
+) -> TokenPair:
+    """Autentifică userul (login) și emite o pereche de token-uri.
+
+    `require_role` (opțional) cere ca userul să aibă EXACT rolul dat, altfel 403.
+    Îl folosește login-ul panoului de admin (`POST /admin/login`), care are un
+    rate limit mai strict decât login-ul obișnuit.
+
+    Verificarea rolului se face DUPĂ parolă (ca banul): un 403 înaintea validării
+    parolei ar fi un oracol — un atacator ar putea inventaria conturile de admin
+    fără să știe nicio parolă. Și se face ÎNAINTE de emiterea token-urilor: un
+    login de admin respins nu are voie să lase în urmă o sesiune de refresh
+    valabilă 30 de zile.
+    """
     normalized = email.strip().lower()
 
     user = await db.scalar(select(User).where(User.email == normalized))
@@ -96,6 +121,13 @@ async def authenticate(db: AsyncSession, email: str, password: str) -> TokenPair
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
+        )
+    if user.is_banned:
+        raise _BANNED_EXC
+    if require_role is not None and user.role != require_role:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator privileges required",
         )
 
     pair = await _issue_token_pair(db, user, family_id=uuid.uuid4().hex)
@@ -122,6 +154,10 @@ async def login_with_identity(db: AsyncSession, email: str) -> TokenPair:
         )
         db.add(user)
         await db.flush()  # obținem user.id înainte de a crea sesiunea
+    elif user.is_banned:
+        # Login social/OTP nu are voie să ocolească banul (altfel „ștergi appul,
+        # intri cu Google" și contul banat revine la viață).
+        raise _BANNED_EXC
 
     pair = await _issue_token_pair(db, user, family_id=uuid.uuid4().hex)
     await db.commit()
@@ -194,6 +230,13 @@ async def rotate_refresh(db: AsyncSession, refresh_token: str) -> TokenPair:
     user = await db.get(User, session.user_id)
     if user is None:
         raise invalid
+    if user.is_banned:
+        # Fără asta, un cont banat își putea prelungi la nesfârșit accesul
+        # rotind refresh token-ul emis înainte de ban.
+        session.revoked = True
+        await _revoke_family(db, session.family_id)
+        await db.commit()
+        raise _BANNED_EXC
 
     # Rotație: revocăm sesiunea curentă și emitem una nouă în aceeași familie.
     session.revoked = True

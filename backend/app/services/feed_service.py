@@ -272,6 +272,10 @@ async def get_feed(
         )
         .exists()
     )
+    # Conturi BANATE de moderare: nu apar în feed-ul nimănui. Filtrul stă pe
+    # coloana indexată `users.banned_at` (join-ul cu User există deja mai jos),
+    # deci nu adaugă niciun cost de scanare.
+    conditions.append(User.banned_at.is_(None))
 
     # Conturi abandonate: inactive de peste N zile (0 = filtru oprit).
     # `last_active_at IS NULL` = rând vechi, dinainte de coloană → tratat ca activ.
@@ -465,6 +469,17 @@ async def _authorize_swipe(
         )
     )
     if hidden_result.first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Utilizator indisponibil."
+        )
+
+    # I4 — țintă BANATĂ de moderare ⇒ indisponibilă pentru swipe (404 neutru).
+    # Fără asta, un cont banat rămânea „swipe-abil" direct prin `POST /feed/swipe`
+    # de către oricine îi cunoștea id-ul, chiar dacă dispăruse din feed.
+    banned_result = await db.execute(
+        select(User.id).where(User.id == target_user_id, User.banned_at.is_not(None))
+    )
+    if banned_result.first() is not None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Utilizator indisponibil."
         )

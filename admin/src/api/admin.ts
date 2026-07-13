@@ -26,8 +26,18 @@ import type {
 
 /* ------------------------------- Auth ------------------------------- */
 
+/**
+ * Login de admin pe `/admin/login`, NU pe `/auth/login`.
+ *
+ * Diferența contează: `/admin/login` are rate limit STRICT (3 încercări/minut,
+ * față de 5 la login-ul normal) și scrie fiecare încercare în audit log. Un cont
+ * de admin spart înseamnă tot produsul spart, iar numărul de admini e mic — deci
+ * un prag mic nu deranjează pe nimeni legitim, dar strânge șurubul pe brute-force.
+ * Rolul e verificat DUPĂ parolă (fără oracol de enumerare) și ÎNAINTE de emiterea
+ * token-urilor (fără sesiune orfană de 30 de zile pentru un non-admin).
+ */
 export function login(email: string, password: string): Promise<TokenPair> {
-  return apiFetch<TokenPair>('/auth/login', {
+  return apiFetch<TokenPair>('/admin/login', {
     method: 'POST',
     body: { email, password },
     anonymous: true,

@@ -45,6 +45,11 @@ EVENTS_PAGE_LIMIT = settings.events_page_limit
 EVENTS_MAX_LIMIT = settings.events_max_limit
 SOCIAL_PAGE_LIMIT = settings.social_page_limit
 SOCIAL_MAX_LIMIT = settings.social_max_limit
+# Panoul de admin: aceleași plafoane. Un admin NU are voie să ceară „toate cele
+# 2 milioane de rânduri" — ar fi un DoS declanșat din interior (cont compromis
+# sau pur și simplu un `?limit=999999` scris din greșeală în bara de adrese).
+ADMIN_PAGE_LIMIT = settings.admin_page_limit
+ADMIN_MAX_LIMIT = settings.admin_max_limit
 
 # Lungimea maximă a unui cursor acceptat pe query string (anti-DoS), ca la /feed.
 MAX_CURSOR_LENGTH = 128

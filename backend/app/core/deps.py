@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.security import decode_token
 from app.db.session import get_db
-from app.models.user import User
+from app.models.user import ROLE_ADMIN, User
 
 # tokenUrl e doar informativ pentru OpenAPI; login-ul real e la /api/v1/auth/login.
 oauth2_scheme = OAuth2PasswordBearer(
@@ -24,6 +24,13 @@ _credentials_exc = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
     detail="Could not validate credentials",
     headers={"WWW-Authenticate": "Bearer"},
+)
+
+# Cont banat: 403, nu 401 — token-ul E valid, dar contul nu mai are voie. Un 401
+# ar face clientul să încerce la nesfârșit un refresh care nu rezolvă nimic.
+_banned_exc = HTTPException(
+    status_code=status.HTTP_403_FORBIDDEN,
+    detail="Account is banned",
 )
 
 
@@ -53,8 +60,40 @@ async def get_current_user(
     user = await db.get(User, user_id)
     if user is None:
         raise _credentials_exc
+
+    # BAN: token-ul rămâne criptografic valid până la expirare (15 min), deci
+    # fără verificarea asta un cont banat ar continua să lovească API-ul cu
+    # tokenul emis înainte de ban. Verificăm starea în DB la fiecare cerere.
+    if user.is_banned:
+        raise _banned_exc
     return user
+
+
+async def require_admin(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    """Poartă de acces pentru TOATE rutele `/api/v1/admin/*`.
+
+    Contract:
+      * fără token / token invalid / expirat → 401 (din `get_current_user`);
+      * token valid dar cont banat            → 403 (din `get_current_user`);
+      * token valid de user NORMAL            → 403 aici;
+      * doar `role == 'admin'`                → trece.
+
+    Rolul e citit din DB la fiecare cerere, NU dintr-un claim din JWT: dacă
+    citeam rolul din token, retragerea drepturilor unui admin ar fi intrat în
+    vigoare abia la expirarea tokenului (o fereastră de 15 minute în care un
+    admin demis rămâne admin). Așa, revocarea e instantanee.
+    """
+    if current_user.role != ROLE_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator privileges required",
+        )
+    return current_user
 
 
 # Alias pentru injectare rapidă în rute.
 CurrentUser = Annotated[User, Depends(get_current_user)]
+# Alias pentru rutele de admin — folosește-l în TOATE rutele din api/v1/admin.
+CurrentAdmin = Annotated[User, Depends(require_admin)]

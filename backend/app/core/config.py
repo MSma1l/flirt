@@ -164,6 +164,27 @@ class Settings(BaseSettings):
     events_max_limit: int = 100
     social_page_limit: int = 50
     social_max_limit: int = 200
+    # Panoul de admin: aceleași plafoane (un admin nu are voie să ceară „toate
+    # cele 2 milioane de rânduri" — ar fi un DoS declanșat din interior).
+    admin_page_limit: int = 25
+    admin_max_limit: int = 100
+
+    # === Panou de administrare (/api/v1/admin/*) ===
+    # Rate limit pe login-ul de admin, per IP. Mai STRICT decât login-ul normal:
+    # un cont de admin spart = tot produsul spart, iar numărul de admini e mic,
+    # deci un prag mic nu deranjează pe nimeni legitim.
+    rate_limit_admin_login_per_min: int = 3
+    # Durata implicită (zile) a unui abonament acordat manual de suport.
+    admin_grant_default_days: int = 30
+    # Plafon absolut pentru o acordare manuală: un typo („36500 zile") nu are voie
+    # să devină un abonament pe viață, acordat dintr-un singur click de suport.
+    admin_grant_max_days: int = 365
+    # Câte zile în urmă poate cere un grafic de evoluție (plafon anti-DoS: fiecare
+    # zi e un bucket agregat în SQL).
+    admin_timeseries_max_days: int = 365
+    admin_timeseries_default_days: int = 30
+    # Fereastra „user activ" din dashboard (zile de la `last_active_at`).
+    admin_active_window_days: int = 7
 
     @property
     def allowed_image_types_set(self) -> set[str]:
@@ -226,6 +247,24 @@ class Settings(BaseSettings):
             return self
 
         problems: list[str] = []
+
+        # `.env` NECOMPLETAT. `.env.production.example` marchează fiecare valoare de
+        # completat cu `<<< COMPLETEAZĂ >>>`. Acela e un șir NEVID, deci trecea de
+        # toate verificările „e gol?" de mai jos: stack-ul pornea aparent sănătos și
+        # crăpa abia la primul login (cheie PEM invalidă) sau la primul upload.
+        # Un `.env` copiat și necompletat trebuie să fie o eroare la PORNIRE, nu o
+        # surpriză în producție, pe utilizatori reali.
+        placeholders = [
+            name
+            for name, value in self.model_dump().items()
+            if isinstance(value, str) and "COMPLETEAZ" in value.upper()
+        ]
+        if placeholders:
+            problems.append(
+                "valori de tip `<<< COMPLETEAZĂ >>>` rămase necompletate în .env: "
+                + ", ".join(sorted(name.upper() for name in placeholders))
+            )
+
         # Parolă DB implicită doar dacă ne bazăm pe credențialele Postgres
         # (fără un DATABASE_URL explicit care ar aduce propria parolă).
         if not self.database_url and self.postgres_password == "change_me":

@@ -232,11 +232,17 @@ def _active() -> bool:
     return True
 
 
-def _client_ip(request: Request) -> str:
+def client_ip(request: Request) -> str:
     """Determină IP-ul clientului, respectând `X-Forwarded-For` (reverse proxy).
 
     RO: Nginx (vezi nginx.conf) setează `X-Forwarded-For`; luăm primul IP din
     listă. Cădem pe `request.client.host` dacă antetul lipsește.
+
+    PUBLIC (nu `_client_ip`) pentru că îl folosește și jurnalul de audit al
+    panoului de admin (`admin_service`): „de la ce IP s-a executat banul" trebuie
+    determinat EXACT la fel ca „de la ce IP vine cererea" pentru rate-limiting —
+    o a doua implementare ar fi divergent în exact scenariul care contează
+    (în spatele reverse proxy-ului, unde `request.client.host` e IP-ul lui nginx).
     """
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
@@ -268,7 +274,7 @@ def rate_limit(bucket: str, limit_attr: str, window_seconds: float):
         if not _active():
             return
         limit = int(getattr(settings, limit_attr))
-        key = f"{bucket}:{_client_ip(request)}"
+        key = f"{bucket}:{client_ip(request)}"
         if not await check(key, limit, window_seconds):
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,

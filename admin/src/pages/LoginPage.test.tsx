@@ -27,7 +27,7 @@ async function fillLogin(email: string, password: string): Promise<void> {
 describe('LoginPage', () => {
   it('autentifică un admin și intră în panou', async () => {
     mockFetch({
-      'POST /auth/login': { body: TOKENS },
+      'POST /admin/login': { body: TOKENS },
       'GET /admin/me': { body: ADMIN_ME_FIXTURE },
       'GET /admin/stats': { body: STATS_FIXTURE },
       'GET /admin/stats/timeseries': { body: [] },
@@ -48,7 +48,7 @@ describe('LoginPage', () => {
 
   it('la 403 (cont fără rol de admin) arată un mesaj explicit, nu „eroare necunoscută"', async () => {
     mockFetch({
-      'POST /auth/login': { body: TOKENS },
+      'POST /admin/login': { body: TOKENS },
       'GET /admin/me': { status: 403, body: { detail: 'Admin role required' } },
     });
 
@@ -64,7 +64,7 @@ describe('LoginPage', () => {
 
   it('la 401 arată „email sau parolă greșite"', async () => {
     mockFetch({
-      'POST /auth/login': { status: 401, body: { detail: 'Invalid credentials' } },
+      'POST /admin/login': { status: 401, body: { detail: 'Invalid credentials' } },
     });
 
     renderWithProviders(<App />, { route: '/login' });

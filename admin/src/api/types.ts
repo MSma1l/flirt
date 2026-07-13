@@ -179,7 +179,20 @@ export interface AdminSubscription {
   expires_at: IsoDateTime | null;
 }
 
-export const SUBSCRIPTION_PLANS = ['plus', 'premium', 'vip'] as const;
+/**
+ * Planurile REALE din catalog (`backend/app/services/billing.py` → `PLANS`, TZ 9).
+ * Prețurile vin din config (`price_*`), nu de aici.
+ *
+ * ATENȚIE: aici erau `plus` și `vip` — planuri care NU EXISTĂ în backend. Orice
+ * încercare de a acorda unul dintre ele primea 400. Dacă adaugi un plan nou, el
+ * se adaugă ÎNTÂI în catalogul backend-ului, apoi aici.
+ */
+export const SUBSCRIPTION_PLANS = [
+  'premium',
+  'no_ads',
+  'ai_bot',
+  'all_inclusive',
+] as const;
 export type SubscriptionPlan = (typeof SUBSCRIPTION_PLANS)[number];
 
 /** Acordare manuală de abonament (provider = `manual` pe backend). */
