@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui';
 import { formatEventDate, kindColor, kindLabel } from '@/features/events/EventCard';
+import { EventMap } from '@/features/events/EventMap';
 import { checkin, fetchEvent, setGoing } from '@/features/events/eventsApi';
 import { EventItem } from '@/features/events/types';
 import { useTheme } from '@theme/index';
@@ -123,21 +124,9 @@ export default function EventDetailScreen() {
           </Text>
         ) : null}
 
-        {/* Hartă placeholder — dreptunghi cu orașul (fără librărie de hărți) */}
-        <View
-          style={[
-            styles.map,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderRadius: radius.card,
-              marginTop: spacing.sm,
-            },
-          ]}
-        >
-          <Text style={[typography.bodyStrong, { color: colors.textSecondary }]}>
-            📍 {data.city}
-          </Text>
+        {/* Hartă reală (OpenStreetMap prin Leaflet într-un WebView); fără coordonate → caseta cu orașul */}
+        <View style={{ marginTop: spacing.sm }}>
+          <EventMap lat={data.lat} lng={data.lng} title={data.title} city={data.city} />
         </View>
 
         <Text style={[typography.body, { color: colors.link, marginTop: spacing.sm }]}>
@@ -190,10 +179,4 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   textCenter: { textAlign: 'center' },
   pill: { alignSelf: 'flex-start' },
-  map: {
-    height: 120,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 });

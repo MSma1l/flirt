@@ -1,12 +1,18 @@
-"""Geolocație / geocoding (TZ 7) — schelet cu implementare STUB.
+"""Geolocație / geocoding (TZ 7) — STUB + provideri LIVE.
 
-Gata de „chei reale": comută `settings.geo_provider` pe 'google'/'mapbox' și
-setează `settings.geo_api_key`. Deocamdată doar STUB (fără rețea), plus funcția
-pură `haversine_km` folosită pentru distanțe.
+Providerul se alege din `settings.geo_provider`:
+  - 'nominatim' → OpenStreetMap, GRATUIT, FĂRĂ cheie API și fără card (default
+    recomandat în producție). Cere doar un `User-Agent` identificabil
+    (`settings.geo_user_agent`), conform policy-ului Nominatim.
+  - 'google' / 'mapbox' → provideri comerciali, cer `settings.geo_api_key`.
+  - 'stub' → dicționar local de orașe, fără rețea (doar dev/teste).
+
+Plus funcția pură `haversine_km` folosită pentru distanțe.
 """
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from typing import Protocol
 
 import httpx
@@ -17,6 +23,9 @@ from app.core.config import settings
 # Endpoint-urile publice de geocoding + timeout implicit (secunde).
 GOOGLE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 MAPBOX_GEOCODE_URL = "https://api.mapbox.com/geocoding/v5/mapbox.places"
+# Nominatim: path-ul de căutare se lipește peste `settings.geo_base_url`
+# (implicit https://nominatim.openstreetmap.org) — self-hosting-ul rămâne posibil.
+NOMINATIM_SEARCH_PATH = "/search"
 HTTP_TIMEOUT_S = 10.0
 
 # --- Constante geo -----------------------------------------------------------
@@ -79,9 +88,13 @@ _STUB_CITIES: dict[str, tuple[float, float]] = {
 }
 
 
-def _normalize_city(city: str | None) -> str:
-    """Normalizează numele orașului pentru lookup (trim + casefold)."""
+def normalize_city(city: str | None) -> str:
+    """Normalizează numele orașului pentru lookup/cache (trim + casefold)."""
     return (city or "").strip().casefold()
+
+
+# Alias intern păstrat pentru compatibilitate cu apelurile existente din modul.
+_normalize_city = normalize_city
 
 
 class StubGeocoder:
@@ -184,22 +197,82 @@ class MapboxGeocoder:
         return (float(lat), float(lng))
 
 
+class NominatimGeocoder:
+    """Geocoder LIVE peste Nominatim (OpenStreetMap) — GRATUIT, FĂRĂ cheie API.
+
+    De ce el e default-ul de producție: nu cere cont, cheie sau card bancar, iar
+    datele (OSM) acoperă bine orașele din TZ. Singura obligație e de policy, nu
+    tehnică: un `User-Agent` identificabil (aplicație + contact) — îl luăm din
+    `settings.geo_user_agent`. Un UA gol/anonim poate duce la blocare de către
+    operatorul serviciului.
+
+    Rate limit: max ~1 req/s pe instanța publică. NU facem throttling explicit:
+    apelurile trec prin `geocode_cached`, care memoizează pe (oraș, stradă) —
+    numărul de orașe distincte e mic, deci traficul real rămâne sub limită.
+
+    Robust la erori: orice problemă de rețea/HTTP/parse întoarce None (nu propagă
+    excepția, ca feed-ul să nu cadă din cauza geocodării).
+    """
+
+    def __init__(self, base_url: str, user_agent: str) -> None:
+        # `rstrip('/')` ca să nu producem `//search` la lipirea path-ului.
+        self._base_url = (base_url or "").rstrip("/")
+        self._user_agent = user_agent
+
+    async def geocode(
+        self, city: str, street: str | None = None
+    ) -> tuple[float, float] | None:
+        query = _build_query(city, street)
+        if not query or not self._base_url:
+            return None
+        url = f"{self._base_url}{NOMINATIM_SEARCH_PATH}"
+        params = {"q": query, "format": "jsonv2", "limit": 1}
+        # RO: User-Agent OBLIGATORIU (cerință de policy Nominatim).
+        headers = {"User-Agent": self._user_agent}
+        try:
+            async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_S) as http:
+                resp = await http.get(url, params=params, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+        except Exception:
+            return None
+        # Răspunsul e o LISTĂ de rezultate; `limit=1` ⇒ ne interesează primul.
+        if not isinstance(data, list) or not data:
+            return None
+        first = data[0] or {}
+        lat = first.get("lat")
+        lon = first.get("lon")
+        if lat is None or lon is None:
+            return None
+        try:
+            # Nominatim întoarce lat/lon ca STRING-uri ("47.0105") → float.
+            return (float(lat), float(lon))
+        except (TypeError, ValueError):
+            return None
+
+
 def get_geocoder() -> Geocoder:
     """Alege implementarea de geocoder după `settings.geo_provider`.
 
-    'stub' (implicit) => StubGeocoder (fără rețea). 'google'/'mapbox' => clientul
-    LIVE corespunzător, care citește cheia din `settings.geo_api_key`.
+    'stub' (implicit în dev) => StubGeocoder (fără rețea).
+    'nominatim' => OpenStreetMap, gratuit, fără cheie (recomandat în producție).
+    'google'/'mapbox' => clientul LIVE corespunzător, cu `settings.geo_api_key`.
     """
     provider = (settings.geo_provider or "stub").strip().lower()
     if provider == "stub":
         return StubGeocoder()
+    if provider == "nominatim":
+        return NominatimGeocoder(
+            base_url=settings.geo_base_url,
+            user_agent=settings.geo_user_agent,
+        )
     if provider == "google":
         return GoogleGeocoder(api_key=settings.geo_api_key)
     if provider == "mapbox":
         return MapboxGeocoder(api_key=settings.geo_api_key)
     raise NotImplementedError(
         f"Provider de geocoding necunoscut: '{provider}' "
-        f"(valori valide: 'stub' | 'google' | 'mapbox')."
+        f"(valori valide: 'stub' | 'nominatim' | 'google' | 'mapbox')."
     )
 
 
@@ -231,6 +304,42 @@ async def geocode_cached(
     coord = await geocoder.geocode(city, street)
     _GEOCODE_CACHE[key] = coord
     return coord
+
+
+async def geocode_cities_cached(
+    cities: Iterable[str | None], max_lookups: int | None = None
+) -> dict[str, tuple[float, float] | None]:
+    """Geocodează un set de orașe DISTINCTE, cu cache + PLAFON de apeluri noi.
+
+    Întoarce `{oraș_normalizat: (lat, lng) | None}`. Folosit de feed pentru a
+    scora distanța TUTUROR candidaților fără a face un apel de rețea per candidat:
+
+    - deduplicăm pe oraș (numărul de orașe distincte e mic, chiar și la 500 de
+      candidați scanați);
+    - orașele deja în cache sunt GRATIS (nu consumă din plafon);
+    - doar orașele NEcache-uite consumă din `max_lookups`
+      (implicit `settings.geo_max_lookups_per_request`). Peste plafon nu mai
+      lovim providerul: orașele rămase primesc `None` (⇒ scor de distanță neutru,
+      nu o eroare). Asta închide vectorul de DoS/cost pe providerul LIVE.
+    """
+    budget = (
+        settings.geo_max_lookups_per_request if max_lookups is None else max_lookups
+    )
+    out: dict[str, tuple[float, float] | None] = {}
+    for city in cities:
+        key = normalize_city(city)
+        if not key or key in out:
+            continue
+        cache_key = f"{key}|"  # aceeași cheie ca `geocode_cached(city, None)`
+        if cache_key in _GEOCODE_CACHE:
+            out[key] = _GEOCODE_CACHE[cache_key]  # cache hit: gratis
+            continue
+        if budget <= 0:
+            out[key] = None  # plafon atins: NU mai facem rețea în cererea asta
+            continue
+        budget -= 1
+        out[key] = await geocode_cached(city or "", None)
+    return out
 
 
 async def distance_km_between(

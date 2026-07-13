@@ -21,10 +21,6 @@ from app.models.profile import Profile
 NEUTRAL_HUMOR = 0.5      # când lipsește vectorul de umor la cel puțin unul
 BEHAVIOR_NEUTRAL = 0.5   # istoricul comportamental nu e încă disponibil
 
-# --- Placeholder distanță (fără geocoding încă) ------------------------------
-DISTANCE_SAME_CITY = 1.0   # același oraș
-DISTANCE_OTHER_CITY = 0.4  # orașe diferite (aproximare până la geocoding real)
-
 # --- Placeholder limbi -------------------------------------------------------
 # GATE dur: fără nicio limbă comună, factorul limbă e puternic penalizat.
 LANGUAGES_NO_COMMON = 0.0
@@ -83,16 +79,38 @@ def _humor_similarity(a: Profile, b: Profile) -> float:
     return max(0.0, min(1.0, cos))
 
 
-def _distance_score(a: Profile, b: Profile) -> float:
-    """Proximitate — placeholder: același oraș = 1.0, altfel 0.4.
+def _distance_score(distance_km: float | None) -> float:
+    """Proximitate pe DISTANȚA REALĂ (km), descrescătoare liniar (TZ 4.6/7).
 
-    TODO: înlocuit cu funcție descrescătoare pe distanța reală după geocoding.
+    Formula: `max(0.0, 1.0 - d / decay_km)`, cu `decay_km` din config
+    (`COMPAT_DISTANCE_DECAY_KM`, fără hardcodare):
+
+        d = 0 km        → 1.0  (același loc: scorul MAXIM e acum atins-abil corect)
+        d = decay_km/2  → 0.5
+        d ≥ decay_km    → 0.0  (prea departe: factorul nu mai aduce nimic)
+
+    Înlocuiește vechiul placeholder binar (același oraș = 1.0, alt oraș = 0.4),
+    care dădea IDENTIC 0.4 pentru Chișinău↔Bălți (~127 km) și Chișinău↔Moscova
+    (~1100 km). Acum funcția e strict descrescătoare în d până la `decay_km`:
+    mai aproape ⇒ scor mai mare.
+
+    `distance_km is None` (oraș negeocodabil, provider indisponibil, plafon de
+    lookup atins) ⇒ valoare NEUTRĂ din config (`COMPAT_DISTANCE_NEUTRAL`): nu
+    penalizăm și nu premiem un candidat pentru care pur și simplu nu știm.
     """
-    city_a = (a.city or "").strip().casefold()
-    city_b = (b.city or "").strip().casefold()
-    if city_a and city_b and city_a == city_b:
-        return DISTANCE_SAME_CITY
-    return DISTANCE_OTHER_CITY
+    if distance_km is None:
+        return _clamp01(settings.compat_distance_neutral)
+
+    decay_km = settings.compat_distance_decay_km
+    if decay_km <= 0:
+        # Config degenerată: fără rază de decădere, doar distanța 0 mai punctează.
+        return 1.0 if distance_km <= 0 else 0.0
+    return _clamp01(1.0 - (max(0.0, float(distance_km)) / decay_km))
+
+
+def _clamp01(value: float) -> float:
+    """Limitează o valoare în intervalul [0, 1] (siguranță la config aiurea)."""
+    return max(0.0, min(1.0, float(value)))
 
 
 def _languages_score(a: Profile, b: Profile) -> float:
@@ -115,8 +133,14 @@ def compute_compatibility(
     b: Profile,
     a_interests: set[str],
     b_interests: set[str],
+    distance_km: float | None = None,
 ) -> int:
     """Scorul de compatibilitate 0–100 între profilurile `a` și `b` (TZ 4.6).
+
+    Rămâne o funcție PURĂ (fără I/O): distanța reală se calculează în afară
+    (`feed_service`, prin geocoding cache-uit) și se injectează aici ca
+    `distance_km`. `None` ⇒ factorul de distanță ia valoarea neutră din config,
+    deci apelanții care nu au geocoding (ex. lista de chat-uri) rămân valizi.
 
     Robust la câmpuri lipsă/None: fiecare factor se degradează la o valoare
     neutră sau placeholder documentat.
@@ -124,7 +148,7 @@ def compute_compatibility(
     interests = _jaccard(_as_set(a_interests), _as_set(b_interests))
     status = _status_overlap(a, b)
     humor = _humor_similarity(a, b)
-    distance = _distance_score(a, b)
+    distance = _distance_score(distance_km)
     languages = _languages_score(a, b)
     behavior = BEHAVIOR_NEUTRAL
 

@@ -1,6 +1,9 @@
 """Unit teste pentru algoritmul de compatibilitate (funcție pură, fără DB)."""
 from datetime import date
 
+import pytest
+
+from app.core.config import settings
 from app.models.profile import Profile
 from app.services import compatibility as C
 from app.services.compatibility import compute_compatibility
@@ -100,22 +103,27 @@ def test_humor_zero_vector_is_neutral():
 
 
 # --- Distanță ----------------------------------------------------------------
-def test_distance_same_city_is_max():
-    a = _profile(city="Chișinău")
-    b = _profile(city="chișinău")  # casefold → egal
-    assert C._distance_score(a, b) == C.DISTANCE_SAME_CITY
+def test_distance_zero_km_is_max():
+    assert C._distance_score(0.0) == 1.0
 
 
-def test_distance_other_city():
-    a = _profile(city="Chișinău")
-    b = _profile(city="Bălți")
-    assert C._distance_score(a, b) == C.DISTANCE_OTHER_CITY
+def test_distance_is_strictly_decreasing():
+    """Regresie: vechiul scor binar dădea IDENTIC 0.4 la 127 km și la 1100 km."""
+    decay = settings.compat_distance_decay_km
+    near = C._distance_score(decay * 0.1)
+    mid = C._distance_score(decay * 0.5)
+    far = C._distance_score(decay * 0.9)
+    assert near > mid > far
+    assert mid == pytest.approx(0.5)
 
 
-def test_distance_missing_city_is_other():
-    a = _profile(city=None)
-    b = _profile(city=None)
-    assert C._distance_score(a, b) == C.DISTANCE_OTHER_CITY
+def test_distance_beyond_decay_is_zero():
+    assert C._distance_score(settings.compat_distance_decay_km * 2) == 0.0
+
+
+def test_distance_unknown_is_neutral():
+    """Oraș negeocodabil: nu penalizăm și nu premiem — valoare neutră din config."""
+    assert C._distance_score(None) == settings.compat_distance_neutral
 
 
 # --- Status overlap ----------------------------------------------------------

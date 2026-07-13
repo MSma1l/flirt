@@ -62,9 +62,16 @@ class Settings(BaseSettings):
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
 
-    # Geolocație / geocoding (TZ 7). Provider: 'stub' | 'google' | 'mapbox'
+    # Geolocație / geocoding (TZ 7).
+    # Provider: 'stub' | 'nominatim' | 'google' | 'mapbox'
+    # 'nominatim' (OpenStreetMap) e GRATUIT și NU cere cheie API — providerul
+    # recomandat în producție. Cere doar un User-Agent identificabil (policy OSM).
     geo_provider: str = "stub"
-    geo_api_key: str = ""
+    geo_api_key: str = ""                                  # doar google | mapbox
+    geo_base_url: str = "https://nominatim.openstreetmap.org"  # self-host posibil
+    geo_user_agent: str = "FLIRT/0.1 (contact@example.com)"    # obligatoriu Nominatim
+    # Plafon de geocodări NOI (necache-uite) per cerere de feed — anti-DoS/cost.
+    geo_max_lookups_per_request: int = 25
 
     # Auth providers (TZ 2.1). În 'stub', verificarea acceptă tokenuri/coduri de test.
     social_auth_mode: str = "stub"      # 'stub' | 'live'
@@ -130,6 +137,12 @@ class Settings(BaseSettings):
     compat_w_distance: float = 0.15
     compat_w_languages: float = 0.10
     compat_w_behavior: float = 0.10
+
+    # Factorul distanță din Compatibility Score (pe km REALI, prin geocoding).
+    # scor = max(0, 1 - d / COMPAT_DISTANCE_DECAY_KM); la d ≥ decay → 0.
+    compat_distance_decay_km: float = 300.0
+    # Distanță necunoscută (oraș negeocodabil) → valoare neutră (nici bonus, nici penalizare).
+    compat_distance_neutral: float = 0.5
 
     @property
     def cors_origins_list(self) -> list[str]:
