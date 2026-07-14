@@ -60,6 +60,27 @@ while :; do
     i=$((i + 1))
 done
 
+# NUMĂRUL DE WORKERI — AUTO-SCALARE DUPĂ RAM.
+# Dacă `WEB_CONCURRENCY` nu e setat explicit, îl calculăm din RAM-ul REAL al
+# containerului, ca ACEEAȘI imagine să folosească tot ce are la dispoziție:
+# 2 workeri pe un VPS de 1 GB, mulți pe unul de 8 GB, fără nicio schimbare
+# manuală după un upgrade de plan. Așa cererea „folosește tot RAM-ul" se
+# îndeplinește singură — pe orice hardware.
+#
+# Formula: reservăm ~450 MB pentru OS + kernel, socotim ~180 MB per worker
+# uvicorn (FastAPI + SQLAlchemy + pool), și plafonăm la 2·nproc+1 (peste atât,
+# workerii se bat pe CPU degeaba). Minim 2.
+if [ -z "${WEB_CONCURRENCY}" ]; then
+    RAM_MB=$(awk '/MemTotal/ {printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo 1024)
+    CPUS=$(nproc 2>/dev/null || echo 2)
+    BY_RAM=$(( (RAM_MB - 450) / 180 ))
+    BY_CPU=$(( 2 * CPUS + 1 ))
+    WEB_CONCURRENCY=$BY_RAM
+    [ "$WEB_CONCURRENCY" -gt "$BY_CPU" ] && WEB_CONCURRENCY=$BY_CPU
+    [ "$WEB_CONCURRENCY" -lt 2 ] && WEB_CONCURRENCY=2
+    echo "→ WEB_CONCURRENCY auto: ${WEB_CONCURRENCY} workeri (RAM ${RAM_MB}MB, ${CPUS} CPU)"
+fi
+
 echo "→ Pornesc gunicorn (uvicorn workers)..."
 # --forwarded-allow-ips: acceptăm X-Forwarded-* DOAR de la reverse proxy (nginx,
 #   în rețeaua Docker). Fără el uvicorn ignoră X-Forwarded-Proto și consideră
@@ -68,7 +89,7 @@ echo "→ Pornesc gunicorn (uvicorn workers)..."
 #   format JSON structurat, cu request-id (vezi app/core/logging.py). Două
 #   log-uri de acces în formate diferite = zgomot și dublă stocare.
 exec gunicorn app.main:app \
-  --workers "${WEB_CONCURRENCY:-4}" \
+  --workers "${WEB_CONCURRENCY}" \
   --worker-class uvicorn.workers.UvicornWorker \
   --bind 0.0.0.0:8000 \
   --forwarded-allow-ips "${FORWARDED_ALLOW_IPS:-*}" \
