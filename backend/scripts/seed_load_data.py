@@ -310,12 +310,19 @@ class Bulk:
     și un singur INSERT compilat, în loc de 500 de round-trip-uri ORM.
     """
 
-    def __init__(self, session: AsyncSession, model, batch: int = BATCH) -> None:
+    def __init__(
+        self, session: AsyncSession, model, batch: int = BATCH, depends_on=None
+    ) -> None:
         self._session = session
         self._model = model
         self._batch = batch
         self._rows: list[dict] = []
         self.count = 0
+        # Buffere PĂRINTE care trebuie golite ÎNAINTEA acestuia (integritate FK).
+        # Fără asta, `profile_interests` se putea auto-goli la 500 de rânduri în timp
+        # ce profilurile corespunzătoare erau încă în buffer → ForeignKeyViolation.
+        # (Pe SQLite trecea, FK-urile fiind oprite implicit; pe Postgres real, nu.)
+        self._depends_on = depends_on or []
 
     async def add(self, row: dict) -> None:
         self._rows.append(row)
@@ -329,6 +336,8 @@ class Bulk:
     async def flush(self) -> None:
         if not self._rows:
             return
+        for parent in self._depends_on:  # întâi părinții, apoi copilul
+            await parent.flush()
         await self._session.execute(insert(self._model).values(self._rows))
         self.count += len(self._rows)
         self._rows.clear()
@@ -482,7 +491,8 @@ async def seed(args: argparse.Namespace) -> dict[str, int]:
         u_bulk = Bulk(session, User)
         p_bulk = Bulk(session, Profile)
         s_bulk = Bulk(session, UserSettings)
-        pi_bulk = Bulk(session, ProfileInterest)
+        # profile_interests depinde de profiles: golirea lui o forteaza intai pe a lor.
+        pi_bulk = Bulk(session, ProfileInterest, depends_on=[p_bulk])
 
         for i in range(n):
             uid = uuid.uuid4()
