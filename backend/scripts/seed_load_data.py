@@ -13,15 +13,15 @@ suprapun parțial, conturi abandonate lângă conturi active.
 
 UTILIZARE
 ---------
-    # Postgres (docker) — ia DATABASE_URL din mediu / .env:
+    # Postgres (ca producția) — ia DATABASE_URL din mediu / .env:
     python scripts/seed_load_data.py --users 2000 --reset
 
-    # SQLite (fără docker):
-    DATABASE_URL=sqlite+aiosqlite:///./loadtest.db \
-        python scripts/seed_load_data.py --users 2000 --reset
+    # Pe server (în container):
+    docker compose exec api python scripts/seed_load_data.py --users 2000 --reset
 
 Toți userii de test au ACEEAȘI parolă (`loadtest123`) și emailuri de forma
-`lt000123@loadtest.flirt.local`, ca scenariul de load test să se poată autentifica.
+`lt000123@loadtest.flrt.md`, ca scenariul de load test să se poată autentifica
+(TLD real; `.local` era respins de validatorul de email al API-ului).
 
 DECIZII IMPORTANTE
 ------------------

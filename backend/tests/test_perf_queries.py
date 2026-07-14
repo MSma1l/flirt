@@ -498,8 +498,11 @@ async def test_events_pagination_no_duplicates(db_session):
 @pytest.mark.asyncio
 async def test_favorites_pagination_no_duplicates(db_session):
     user = await _make_user(db_session, "fav@example.com")
+    # Ținte REALE: pe Postgres (ca producția) un favorite către un user inexistent e
+    # refuzat de foreign key — SQLite ascundea asta. Creăm 12 useri-țintă reali.
     for i in range(12):
-        db_session.add(Favorite(user_id=user.id, target_user_id=uuid.uuid4()))
+        target = await _make_user(db_session, f"favtarget{i}@example.com")
+        db_session.add(Favorite(user_id=user.id, target_user_id=target.id))
     await db_session.commit()
 
     seen: list[uuid.UUID] = []

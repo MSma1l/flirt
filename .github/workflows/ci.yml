@@ -20,6 +20,24 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    # Postgres REAL în CI — testele rulează pe același motor ca producția (nu SQLite).
+    # Motiv: bug-uri de foreign-key și de tip specifice Postgres treceau pe SQLite și
+    # cădeau în producție. `TEST_DATABASE_URL` spune conftest-ului să folosească acest
+    # serviciu (nu pornește un container testcontainers, mai lent).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: flirt
+          POSTGRES_PASSWORD: flirt
+          POSTGRES_DB: flirt_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flirt"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -35,11 +53,11 @@ jobs:
           pip install ".[test]"
 
       - name: Rulez testele
-        # Testele merg pe SQLite in-memory (vezi tests/conftest.py) — fără
-        # Postgres/Redis în CI. ENVIRONMENT=development ca guardrail-urile de
-        # producție din config.py să nu ceară chei reale.
+        # ENVIRONMENT=development ca guardrail-urile de producție din config.py să nu
+        # ceară chei reale. TEST_DATABASE_URL → Postgres real (serviciul de mai sus).
         env:
           ENVIRONMENT: development
+          TEST_DATABASE_URL: postgresql+asyncpg://flirt:flirt@localhost:5432/flirt_test
         run: python -m pytest -q
 
       - name: Verific sintaxa nginx (config-ul de TLS chiar trebuie să pornească)

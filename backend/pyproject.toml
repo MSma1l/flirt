@@ -23,7 +23,11 @@ test = [
     "pytest>=8.2",
     "pytest-asyncio>=0.23",
     "httpx>=0.27",
-    "aiosqlite>=0.20",
+    # Testele rulează pe POSTGRESQL real (ca producția), NU pe SQLite. asyncpg e deja
+    # în dependențele principale. `testcontainers` pornește automat un Postgres efemer
+    # când `TEST_DATABASE_URL` nu e furnizat (dev local); în CI se folosește un serviciu
+    # Postgres, mai rapid. aiosqlite a fost SCOS: nu mai testăm pe alt motor decât prod.
+    "testcontainers[postgres]>=4.0",
     "boto3>=1.34",
     "redis>=5.0",
 ]
@@ -36,6 +40,13 @@ live = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# Un SINGUR event-loop pentru toată sesiunea de test. Necesar acum că testele rulează
+# pe Postgres real: engine-ul aplicației (creat o dată, la import) și pool-ul lui asyncpg
+# sunt legate de loop-ul care i-a creat. Cu loop function-scoped, fiecare test avea alt
+# loop → „Task attached to a different loop". Cu loop de sesiune, engine-ul aplicației
+# funcționează în toate testele.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 
 [tool.setuptools]
