@@ -84,7 +84,7 @@ from app.services.profile_service import (  # noqa: E402
 )
 
 # --- Marcaje ale datelor de test (folosite și la `--reset`) -------------------
-EMAIL_DOMAIN = "loadtest.flirt.local"
+EMAIL_DOMAIN = "loadtest.flrt.md"  # TLD real (.md): .local era respins de validatorul de email al API-ului
 COMMON_PASSWORD = "loadtest123"
 EVENT_TITLE_PREFIX = "[LOADTEST]"
 PHOTO_HOST = "https://cdn.loadtest.flirt.local"
