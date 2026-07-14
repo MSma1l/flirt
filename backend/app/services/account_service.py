@@ -302,7 +302,19 @@ async def set_search_preferences(
 
 
 async def _get_or_create_settings(db: AsyncSession, user: User) -> UserSettings:
-    """Găsește setările sau le creează cu valorile implicite din config."""
+    """Găsește setările sau le creează cu valorile implicite din config.
+
+    Barieră GDPR: un cont purjat (`deleted_at` setat) NU are voie să-și RE-creeze
+    un rând de setări — ar fi o resurecție de date personale după o ștergere
+    „ireversibilă". În practică `get_current_user` respinge deja cererile unui cont
+    șters, dar apărăm și aici (defense-in-depth), ca niciun apelant intern să nu
+    poată reînvia date pentru un user purjat.
+    """
+    if user.is_deleted:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account has been deleted",
+        )
     result = await db.execute(
         select(UserSettings).where(UserSettings.user_id == user.id)
     )
@@ -710,6 +722,13 @@ async def purge_user_data(db: AsyncSession, user_id: uuid.UUID) -> None:
         user.email = _anonymized_email(user_id)
         user.password_hash = ""  # hash invalid → nicio parolă nu se potrivește
         user.profile_completed = False
+        # Marcaj de purjare verificat de `get_current_user` la FIECARE cerere.
+        # Fără el, access token-ul stateless emis înainte de ștergere rămânea
+        # valabil ~15 min: contul „șters" continua să facă cereri autentificate
+        # și își putea RE-CREA date (ex. `_get_or_create_settings`). Setarea e
+        # idempotentă: la re-rulare păstrăm momentul primei purjări.
+        if user.deleted_at is None:
+            user.deleted_at = datetime.now(timezone.utc)
 
 
 async def purge_expired_accounts(

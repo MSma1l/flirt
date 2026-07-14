@@ -61,6 +61,15 @@ async def get_current_user(
     if user is None:
         raise _credentials_exc
 
+    # ȘTERGERE GDPR: un cont purjat (`purge_user_data`) rămâne în tabelă doar
+    # anonimizat, deci `db.get` îl găsește. Dar access token-ul stateless emis
+    # înainte de purjare e încă valid criptografic (~15 min). Fără verificarea
+    # asta, un cont „șters ireversibil" ar continua să facă cereri autentificate
+    # și chiar și-ar RE-CREA date (ex. rândul `user_settings`). Îl tratăm ca pe un
+    # subiect care nu mai există: 401, ca la un user negăsit.
+    if user.is_deleted:
+        raise _credentials_exc
+
     # BAN: token-ul rămâne criptografic valid până la expirare (15 min), deci
     # fără verificarea asta un cont banat ar continua să lovească API-ul cu
     # tokenul emis înainte de ban. Verificăm starea în DB la fiecare cerere.

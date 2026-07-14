@@ -55,6 +55,18 @@ class User(Base):
     # Motivul banului (text liber al moderatorului, validat/curățat de schemă).
     ban_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
+    # Ștergere GDPR (purjare). NULL = cont activ. Când e setat, contul a fost
+    # purjat (`account_service.purge_user_data`): datele personale sunt șterse,
+    # rândul `users` rămâne DOAR anonimizat ca să nu rupă FK-urile păstrate
+    # (rapoarte, audit). E un marcaj DISTINCT de `banned_at` — o ștergere nu e un
+    # ban — dar tratat la fel: `get_current_user` îl verifică în DB la fiecare
+    # cerere, deci access token-ul stateless emis înainte de purjare e respins
+    # IMEDIAT, nu abia la expirarea lui (~15 min). Indexat: cron-ul de purjare și
+    # listările pot filtra pe el.
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
     @property
     def is_admin(self) -> bool:
         """Helper de citire — sursa de adevăr rămâne coloana `role`."""
@@ -63,6 +75,11 @@ class User(Base):
     @property
     def is_banned(self) -> bool:
         return self.banned_at is not None
+
+    @property
+    def is_deleted(self) -> bool:
+        """Contul a fost purjat GDPR (anonimizat) — ne-autentificabil."""
+        return self.deleted_at is not None
 
     # Ultima activitate reală a contului (cerere autentificată). Feed-ul o
     # folosește ca semnal de calitate: conturile abandonate NU mai sunt promovate

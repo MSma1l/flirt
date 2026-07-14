@@ -223,7 +223,7 @@ async def _auth_headers(client) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _valid_anketa() -> dict:
+def _valid_anketa(photos: list[str] | None = None) -> dict:
     return {
         "name": "Ivan",
         "birth_date": "2000-01-01",
@@ -233,7 +233,7 @@ def _valid_anketa() -> dict:
         "languages": ["ru"],
         "dating_statuses": ["serious"],
         "interests": ["sport"],
-        "photos": ["https://cdn.flirt.local/photos/x/a.jpg"],
+        "photos": photos if photos is not None else [],
     }
 
 
@@ -244,12 +244,26 @@ async def test_verify_face_endpoint_stub_sets_verified(client, db_session):
 
     from sqlalchemy import select
 
+    from app.core.config import settings
     from app.models.profile import Profile
     from app.models.user import User
 
     headers = await _auth_headers(client)
-    # Creează anketa (cu cel puțin o poză de referință).
+    # Creează întâi anketa (fără poze) ca să existe profilul + `profile_id`-ul propriu.
     resp = await client.put(f"{API}/profiles/me", json=_valid_anketa(), headers=headers)
+    assert resp.status_code == 200, resp.text
+
+    me = await client.get(f"{API}/auth/me", headers=headers)
+    user_id = uuid.UUID(me.json()["id"])
+    result = await db_session.execute(
+        select(Profile).where(Profile.user_id == user_id)
+    )
+    own_profile_id = result.scalar_one().id
+    # Poza de referință TREBUIE să fie sub namespace-ul PROPRIU `photos/{profile_id}/`.
+    own_photo = f"{settings.storage_base_url}/photos/{own_profile_id}/a.jpg"
+    resp = await client.put(
+        f"{API}/profiles/me", json=_valid_anketa(photos=[own_photo]), headers=headers
+    )
     assert resp.status_code == 200, resp.text
     assert resp.json()["verified"] is False
 

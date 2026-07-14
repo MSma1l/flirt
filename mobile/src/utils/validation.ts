@@ -87,11 +87,22 @@ export function heightCm(value?: number | null): string | null {
   return null;
 }
 
-/** Calculează vârsta în ani împliniți la data `now`, pe baza datei de naștere. */
+/**
+ * Calculează vârsta în ani împliniți la data `now`, pe baza datei de naștere.
+ *
+ * Citim AMBELE date în UTC (`getUTC*`) — consecvent, independent de fusul orar al
+ * mașinii. `isAdultAge` parsează data nașterii cu `new Date("YYYY-MM-DD")` =
+ * miezul nopții UTC; dacă am amesteca getterele LOCALE, în fusurile negative
+ * (toată America) ziua calendaristică s-ar muta înapoi și vârsta ar ieși cu o zi
+ * mai mare → un minor ar trece de poarta 18+. UTC pe ambele elimină acest risc.
+ */
 export function computeAge(birthDate: Date, now: Date = new Date()): number {
-  let age = now.getFullYear() - birthDate.getFullYear();
-  const monthDiff = now.getMonth() - birthDate.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < birthDate.getDate())) {
+  let age = now.getUTCFullYear() - birthDate.getUTCFullYear();
+  const monthDiff = now.getUTCMonth() - birthDate.getUTCMonth();
+  if (
+    monthDiff < 0 ||
+    (monthDiff === 0 && now.getUTCDate() < birthDate.getUTCDate())
+  ) {
     age -= 1;
   }
   return age;

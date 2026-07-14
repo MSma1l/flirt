@@ -4,9 +4,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.core.validators import safe_str
+from app.core.validators import no_control_chars, no_html, safe_str
 
 # Lungimea maximă a unui mesaj de chat (TZ 5) — anti-DoS payload.
 MESSAGE_MAX_LENGTH = 2000
@@ -65,6 +65,19 @@ class MessageIn(BaseModel):
 
 
 class ReactionIn(BaseModel):
-    """Payload pentru reacția la un mesaj; None scoate reacția (TZ 5.2)."""
+    """Payload pentru reacția la un mesaj; None scoate reacția (TZ 5.2).
+
+    `reaction` e sanitizat ca `body`-ul mesajului: fără caractere de control și
+    fără marcaje HTML — altfel un `<img src=x onerror=...>` (≤16 car.) s-ar
+    persista și s-ar servi celuilalt client (XSS stocat). Un emoji/text simplu
+    trece; marcajul HTML → 422.
+    """
 
     reaction: str | None = Field(default=None, max_length=16)
+
+    @field_validator("reaction")
+    @classmethod
+    def _sanitize(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return no_html(no_control_chars(v))

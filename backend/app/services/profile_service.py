@@ -19,7 +19,6 @@ from app.schemas.profile import (
 from app.services import account_service, geo
 from app.services.face_verify import get_face_verifier
 from app.services.storage import (
-    allowed_hosts,
     build_photo_key,
     get_storage,
     key_from_own_url,
@@ -313,16 +312,21 @@ async def upsert_anketa(db: AsyncSession, user, data: AnketaIn) -> ProfileOut:
             detail="Selectează cel puțin o limbă de comunicare.",
         )
 
-    # Poze — limită număr + allowlist (https + domeniu propriu). Dublăm validarea
-    # din schemă pentru siguranță (defense in depth).
+    # Poze — limită număr + allowlist (https + domeniu propriu + PREFIX PROPRIU).
+    # Încărcăm profilul ACUM (dacă există) ca să cunoaștem `profile_id`-ul propriu:
+    # fiecare URL trebuie să fie sub `photos/{profile_id}/`, exact ca rutele
+    # POST/DELETE /photos (`key_from_own_url`). Altfel un user și-ar putea seta ca
+    # poze obiecte din namespace-ul ALTUI profil (IDOR). Un profil nou (fără id
+    # încă) nu are poze proprii, deci orice `photos/...` străin e respins corect.
     photos = list(data.photos or [])
     if len(photos) > settings.max_photos:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Numărul maxim de poze este {settings.max_photos}.",
         )
-    hosts = allowed_hosts()
-    from urllib.parse import urlparse as _urlparse
+    result = await db.execute(select(Profile).where(Profile.user_id == user.id))
+    profile = result.scalar_one_or_none()
+    own_profile_id = profile.id if profile is not None else None
     for photo_url in photos:
         try:
             is_https_url(photo_url)
@@ -331,10 +335,11 @@ async def upsert_anketa(db: AsyncSession, user, data: AnketaIn) -> ProfileOut:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="URL de poză invalid (se acceptă doar https).",
             )
-        if _urlparse(photo_url).netloc not in hosts:
+        # https + host permis + prefix `photos/{own_profile_id}/`. None → respins.
+        if key_from_own_url(photo_url, own_profile_id) is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="URL de poză în afara domeniului permis.",
+                detail="URL de poză în afara namespace-ului propriu.",
             )
 
     # Statusuri de cunoștință — doar valori din catalog
@@ -355,8 +360,7 @@ async def upsert_anketa(db: AsyncSession, user, data: AnketaIn) -> ProfileOut:
         )
 
     # --- Upsert Profile ---
-    result = await db.execute(select(Profile).where(Profile.user_id == user.id))
-    profile = result.scalar_one_or_none()
+    # `profile` a fost deja încărcat mai sus (pentru validarea namespace-ului foto).
     if profile is None:
         profile = Profile(user_id=user.id)
         db.add(profile)

@@ -14,7 +14,6 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models.account import UserSettings
 from app.models.chat import Chat
 from app.models.moderation import Report
 from app.models.user import User
@@ -104,22 +103,34 @@ async def create_report(
 
 
 async def _auto_ban(db: AsyncSession, reported_id: uuid.UUID) -> None:
-    """Ascunde profilul userului raportat și marchează rapoartele ca auto_banned."""
-    # Ascunde profilul (creează UserSettings dacă lipsesc, cu valori din config).
-    settings_result = await db.execute(
-        select(UserSettings).where(UserSettings.user_id == reported_id)
-    )
-    user_settings = settings_result.scalar_one_or_none()
-    if user_settings is None:
-        user_settings = UserSettings(
-            user_id=reported_id,
-            search_radius_km=settings.search_radius_default_km,
-            notifications={},
-            profile_hidden=True,
+    """Auto-ban REAL la atingerea pragului de raportori distincți.
+
+    Înainte, „auto-ban"-ul doar ascundea profilul (`profile_hidden`) — dar userul
+    mass-raportat se loga în continuare și folosea chat-ul. Docstring-ul din
+    `models/user.py` promite că banul = login refuzat + token invalidat + dispariție
+    din feed, deci auto-banul trebuie să aplice ACEEAȘI măsură ca banul de admin,
+    nu doar o ascundere cosmetică.
+
+    Refolosim primitivele de ban din `admin_service` (NU le duplicăm — o a doua
+    implementare ar diverge): `_apply_ban` (banned_at + motiv), `_revoke_sessions`
+    (refresh token-ul devine inutilizabil ACUM) și `_set_profile_hidden` (o singură
+    semantică de „ascuns"). Import lazy ca să evităm orice ciclu la încărcarea
+    modulelor. NU scriem în `AdminAuditLog`: nu există un actor uman, iar rapoartele
+    rămân în coadă (`auto_banned`) pentru decizia umană cerută de Apple (Guideline
+    1.2) — vezi `admin_service.REPORT_STATUS_AUTO_BANNED`.
+    """
+    from datetime import datetime, timezone
+
+    from app.services import admin_service
+
+    target = await db.get(User, reported_id)
+    if target is not None:
+        reason = (
+            f"Auto-ban: {settings.report_autoban_threshold} raportări distincte."
         )
-        db.add(user_settings)
-    else:
-        user_settings.profile_hidden = True
+        admin_service._apply_ban(target, reason, datetime.now(timezone.utc))
+        await admin_service._revoke_sessions(db, reported_id)
+    await admin_service._set_profile_hidden(db, reported_id, True)
 
     # Marchează toate rapoartele acestui user ca auto_banned.
     await db.execute(

@@ -40,7 +40,7 @@ async def my_subscription(db: DbDep, user: UserDep) -> SubscriptionOut | None:
 @router.post("/purchase", response_model=SubscriptionOut)
 async def purchase(data: PurchaseIn, db: DbDep, user: UserDep) -> SubscriptionOut:
     """Cumpără/activează un plan (protejat)."""
-    return await billing.purchase(db, user, data.plan)
+    return await billing.purchase(db, user, data.plan, data.receipt)
 
 
 @router.get("/entitlements", response_model=EntitlementsOut)

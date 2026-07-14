@@ -36,9 +36,16 @@ class PurchaseIn(BaseModel):
 
     `plan` e validat defensiv (trim, non-gol, plafon lungime, fără HTML/control
     chars); apartenența la catalog se verifică în serviciu (plan necunoscut → 400).
+
+    `receipt` e DOVADA de plată de la magazin (App Store `transactionReceipt` /
+    Stripe checkout session). Fără el, cu `BILLING_PROVIDER=app_store|stripe`,
+    serviciul ridică 402 — deci lipsea din schemă = NICIO achiziție reală nu putea
+    reuși, clientul nici nu avea cum să trimită dovada. Opțional: în modul `stub`
+    (dev) e ignorat, activarea e imediată.
     """
 
     plan: safe_str(PLAN_MAX_LENGTH)
+    receipt: str | None = None
 
 
 class EntitlementsOut(BaseModel):
