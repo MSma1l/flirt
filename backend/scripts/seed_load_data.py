@@ -488,9 +488,13 @@ async def seed(args: argparse.Namespace) -> dict[str, int]:
         profile_ids: list[uuid.UUID] = []
         ages: list[int] = []
 
+        # Lanț de dependențe FK (Postgres le impune, SQLite nu): profiles și
+        # settings referă users; profile_interests referă profiles. Fiecare buffer
+        # copil își golește întâi părintele, deci un auto-flush la 500 nu poate
+        # insera un rând al cărui părinte e încă în buffer.
         u_bulk = Bulk(session, User)
-        p_bulk = Bulk(session, Profile)
-        s_bulk = Bulk(session, UserSettings)
+        p_bulk = Bulk(session, Profile, depends_on=[u_bulk])
+        s_bulk = Bulk(session, UserSettings, depends_on=[u_bulk])
         # profile_interests depinde de profiles: golirea lui o forteaza intai pe a lor.
         pi_bulk = Bulk(session, ProfileInterest, depends_on=[p_bulk])
 
