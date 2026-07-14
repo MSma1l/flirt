@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
-import { ApiError, apiFetch, apiPage } from './client';
+import { API_BASE, API_PREFIX, ApiError, apiFetch, apiPage } from './client';
 import { getAccessToken, setAccessToken, setRefreshToken } from '../auth/tokenStore';
 import { mockFetch } from '../test/harness';
+
+describe('baza API (regresie: /api/v1 dublat)', () => {
+  it('nu conține prefixul — altfel URL-ul iese cu /api/v1 de două ori', () => {
+    // BUG REAL în producție: `VITE_API_URL` fusese setat pe
+    // `https://api.flrt.md/api/v1` (convenția aplicației MOBILE, unde baza INCLUDE
+    // prefixul). Clientul ăsta adaugă `API_PREFIX` singur, deci ieșea
+    // `.../api/v1/api/v1/admin/login` → 404 la FIECARE cerere, inclusiv login.
+    // Baza normalizată nu are voie să se termine în prefix, indiferent ce s-a setat.
+    expect(API_BASE.endsWith(API_PREFIX)).toBe(false);
+  });
+});
 
 describe('client HTTP', () => {
   it('citește cursorul din header-ul X-Next-Cursor, nu din corp', async () => {

@@ -24,9 +24,26 @@ const RAW_BASE =
   import.meta.env.VITE_API_BASE_URL ??
   'http://localhost:8000';
 
-/** Baza normalizată, fără `/` final. */
-export const API_BASE = RAW_BASE.replace(/\/+$/, '');
 export const API_PREFIX = '/api/v1';
+
+/**
+ * Baza normalizată: fără `/` final ȘI fără `/api/v1` duplicat.
+ *
+ * BUG REAL, prins în producție: `VITE_API_URL` fusese setat pe
+ * `https://api.flrt.md/api/v1` (forma folosită de aplicația MOBILĂ, unde
+ * `EXPO_PUBLIC_API_URL` E baza completă, cu prefix). Clientul ăsta adaugă însă
+ * `API_PREFIX` singur, deci ieșea `https://api.flrt.md/api/v1/api/v1/admin/login`
+ * — adică `/api/v1` de DOUĂ ori → **404 la fiecare cerere**, inclusiv la login.
+ *
+ * Cele două convenții (mobil = bază CU prefix, admin = bază FĂRĂ prefix) sunt o
+ * capcană garantată. În loc să ne bazăm pe faptul că cine setează variabila își
+ * amintește care e care, o tăiem aici: dacă baza se termină deja în `/api/v1`,
+ * o eliminăm. Ambele forme funcționează acum.
+ */
+export const API_BASE = RAW_BASE.replace(/\/+$/, '').replace(
+  new RegExp(`${API_PREFIX}$`),
+  '',
+);
 
 export const NEXT_CURSOR_HEADER = 'X-Next-Cursor';
 /** Eveniment emis când sesiunea nu mai poate fi reînnoită. */
