@@ -4,6 +4,8 @@
 > Specificația completă a rutelor este în [`api.md`](./api.md).
 
 Documente conexe:
+- [`api.md`](./api.md) — specificația rutelor `/api/v1/admin/*` (21 rute).
+- [`frontend.md`](./frontend.md) — **SPA-ul React + Vite**: pagini, autentificare, build, servire.
 - [`../backend/README.md`](../backend/README.md) — arhitectura generală a backend-ului.
 - [`../backend/security.md`](../backend/security.md) — autentificare, JWT, sesiuni.
 - [`../backend/api-spec.md`](../backend/api-spec.md) — API-ul public (mobil).

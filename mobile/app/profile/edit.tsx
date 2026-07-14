@@ -21,6 +21,14 @@ import {
   MAX_ABOUT_LENGTH,
   validateStep,
 } from '@/features/anketa/validation';
+import { PhotoGrid, usePhotoPicker } from '@/features/photos';
+import { deletePhoto, reorderPhotos, uploadPhoto } from '@/features/photos/photosApi';
+import { moveItem } from '@/features/photos/reorder';
+import { PhotoTile } from '@/features/photos/types';
+import {
+  validateCanAddPhoto,
+  validatePhotoCount,
+} from '@/features/photos/validation';
 import { fetchMyProfile } from '@/features/profile/profileApi';
 import { useTheme } from '@theme/index';
 
@@ -127,6 +135,15 @@ export default function ProfileEditScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // Pozele profilului (URL-uri de pe server), în ordinea afișării.
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [photosError, setPhotosError] = useState<string | null>(null);
+  const [photosBusy, setPhotosBusy] = useState(false);
+  const [pendingPhotoUri, setPendingPhotoUri] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
+  const picker = usePhotoPicker();
+
   const profileQuery = useQuery({ queryKey: ['my-profile'], queryFn: fetchMyProfile });
   const referenceQuery = useQuery({ queryKey: ['anketa-reference'], queryFn: fetchReference });
 
@@ -149,6 +166,7 @@ export default function ProfileEditScreen() {
       datingStatuses: profile.datingStatuses,
       interests: profile.interests,
     });
+    setPhotos(profile.photos);
   }, [profile]);
 
   /** Setează un câmp în draft. */
@@ -168,15 +186,90 @@ export default function ProfileEditScreen() {
     setField(field, value);
   };
 
+  /** Adaugă o poză: galerie → compresie → upload imediat (profilul deja există). */
+  const handleAddPhoto = async () => {
+    const fullError = validateCanAddPhoto(photos.length);
+    if (fullError) {
+      setPhotosError(fullError);
+      return;
+    }
+    setPhotosError(null);
+
+    const photo = await picker.pick();
+    if (!photo) return; // anulat / permisiune refuzată — hook-ul deja are mesajul
+
+    setPendingPhotoUri(photo.uri);
+    setUploadProgress(0);
+    setPhotosBusy(true);
+    try {
+      const urls = await uploadPhoto(photo, { onProgress: setUploadProgress });
+      setPhotos(urls);
+      await queryClient.invalidateQueries({ queryKey: ['my-profile'] });
+    } catch (error) {
+      setPhotosError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Nu am putut încărca poza. Încearcă din nou.',
+      );
+    } finally {
+      setPendingPhotoUri(null);
+      setPhotosBusy(false);
+    }
+  };
+
+  /** Șterge o poză de pe server (confirmarea o cere grila). */
+  const handleRemovePhoto = async (index: number) => {
+    const url = photos[index];
+    if (!url) return;
+
+    setPhotosError(null);
+    setPhotosBusy(true);
+    try {
+      const urls = await deletePhoto(url);
+      setPhotos(urls);
+      await queryClient.invalidateQueries({ queryKey: ['my-profile'] });
+    } catch {
+      setPhotosError('Nu am putut șterge poza. Încearcă din nou.');
+    } finally {
+      setPhotosBusy(false);
+    }
+  };
+
+  /** Reordonează pozele (prima = principală) și salvează ordinea pe server. */
+  const handleMovePhoto = async (from: number, to: number) => {
+    const previous = photos;
+    const next = moveItem(photos, from, to);
+
+    setPhotosError(null);
+    setPhotos(next); // optimist — reordonarea trebuie să pară instantanee
+    setPhotosBusy(true);
+    try {
+      const urls = await reorderPhotos(next);
+      setPhotos(urls);
+      await queryClient.invalidateQueries({ queryKey: ['my-profile'] });
+    } catch {
+      setPhotos(previous); // revenim la ordinea reală de pe server
+      setPhotosError('Nu am putut salva ordinea pozelor. Încearcă din nou.');
+    } finally {
+      setPhotosBusy(false);
+    }
+  };
+
   const handleSave = async () => {
     const allErrors = validateAll(draft);
     setErrors(allErrors);
-    if (!isValid(allErrors)) return;
+
+    const countError = validatePhotoCount(photos.length);
+    setPhotosError(countError);
+
+    if (!isValid(allErrors) || countError) return;
 
     setSubmitError(null);
     setSubmitting(true);
     try {
-      await submitAnketa(draft as AnketaDraft);
+      // `photos` merge OBLIGATORIU în payload: PUT /profiles/me rescrie lista de
+      // poze, deci fără ea backend-ul le-ar șterge pe toate la o simplă editare.
+      await submitAnketa({ ...(draft as AnketaDraft), photos });
       await queryClient.invalidateQueries({ queryKey: ['my-profile'] });
       router.back();
     } catch {
@@ -228,6 +321,21 @@ export default function ProfileEditScreen() {
     );
   }
 
+  /** Celulele grilei: pozele de pe server + (opțional) poza în curs de upload. */
+  const photoTiles: PhotoTile[] = [
+    ...photos.map((url) => ({ key: url, uri: url })),
+    ...(pendingPhotoUri
+      ? [
+          {
+            key: pendingPhotoUri,
+            uri: pendingPhotoUri,
+            uploading: true,
+            progress: uploadProgress,
+          },
+        ]
+      : []),
+  ];
+
   return (
     <ScreenContainer>
       <View style={styles.header}>
@@ -247,6 +355,17 @@ export default function ProfileEditScreen() {
         contentContainerStyle={{ gap: spacing.lg, paddingBottom: spacing.xl }}
         keyboardShouldPersistTaps="handled"
       >
+        <PhotoGrid
+          photos={photoTiles}
+          onAdd={handleAddPhoto}
+          onRemove={handleRemovePhoto}
+          onMove={handleMovePhoto}
+          busy={photosBusy || picker.picking || submitting}
+          error={photosError ?? picker.error}
+          permissionDenied={picker.permissionDenied}
+          onOpenSettings={picker.openSettings}
+        />
+
         <Input
           label="Nume"
           placeholder="Numele tău"

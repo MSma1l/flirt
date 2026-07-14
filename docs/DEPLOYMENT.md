@@ -72,12 +72,17 @@ Software: Ubuntu 22.04/24.04, Docker Engine + plugin `docker compose` (v2).
 
 Creează **două** înregistrări `A` către IP-ul serverului:
 
-| Tip | Nume    | Valoare            | TTL |
-|-----|---------|--------------------|-----|
-| A   | `api`   | `<IP-ul serverului>` | 300 |
-| A   | `admin` | `<IP-ul serverului>` | 300 |
+| Tip | Nume                | Domeniul rezultat            | TTL |
+|-----|---------------------|------------------------------|-----|
+| A   | `api`               | `api.flrt.md`                | 300 |
+| A   | `admin-flirt-paty`  | `admin-flirt-paty.flrt.md`   | 300 |
 
 (La registrarul lui `flrt.md`. Dacă serverul are IPv6, adaugă și `AAAA`.)
+
+> Atenție la al doilea nume: e `admin-flirt-paty`, **nu** `admin`. Trebuie să corespundă exact
+> cu `ADMIN_DOMAIN` din `.env` — nginx randează `server_name` din acea variabilă, iar certbot
+> cere certificatul pentru exact acel nume. Un `A` pe `admin` ar lăsa panoul inaccesibil și
+> certificatul fără al doilea SAN.
 
 ```bash
 # check — ambele TREBUIE să întoarcă IP-ul serverului
@@ -194,6 +199,24 @@ reparat DNS-ul, o singură comandă:
 docker compose restart certbot
 ```
 
+### Primul cont de admin — obligatoriu, altfel panoul e inaccesibil
+
+Toate rutele `/admin/*` cer rolul `admin`, iar rolul `admin` se acordă doar... din panou.
+Într-o bază proaspătă **nu există niciun administrator** ⇒ nimeni nu se poate loga ⇒ nimeni nu
+poate promova pe nimeni. Fără acest pas, panoul rămâne **inaccesibil pentru totdeauna**.
+
+```bash
+docker compose exec api python scripts/create_admin.py admin@flrt.md
+# parola se cere la terminal, cu ecoul oprit (min. 12 caractere, literă mare + cifră)
+```
+
+Idempotent: re-rularea promovează un cont existent. Ai pierdut parola?
+`... create_admin.py admin@flrt.md --reset-password`.
+
+> **De ce un script și nu „primul user care se înregistrează devine admin":** e o cursă clasică.
+> Dacă cineva nimerește instanța înaintea ta, devine administratorul **producției**. Un script
+> cere acces la infrastructură — exact garanția pe care o vrem.
+
 ---
 
 ## 5. Verificarea că merge cu adevărat
@@ -235,6 +258,23 @@ curl -sk -o /dev/null -w '%{http_code}\n' https://<IP-ul-serverului>/    # → c
 ```
 
 Sau, scurt: `make check`.
+
+### ✅ Ce a fost validat efectiv pe stiva reală
+
+Nu pe SQLite și nu „în teorie" — pe **Docker + Postgres 16 + Redis 7 + nginx**, rulând împreună:
+
+| Verificare | Rezultat |
+|---|---|
+| Migrațiile rulează automat la pornire (`alembic upgrade head` în `entrypoint.sh`) | ✔ |
+| `/health/ready` întoarce **503** cu `db` oprit (nu 200) | ✔ |
+| nginx redirecționează **HTTP → HTTPS** (301) | ✔ |
+| End-to-end: `register → JWT → anketă → feed` | ✔ |
+| Rate-limiting pe Redis: **429** după 5 încercări, **partajat între cei 4 workeri** | ✔ |
+| Imaginea Docker se construiește (înainte **nu se construia deloc** — vezi `SECURITY.md` P11) | ✔ |
+
+Ce **nu** a fost validat pe un server public real: emiterea certificatului Let's Encrypt end-to-end
+(necesită DNS public propagat). Mecanismul e implementat și testat local cu certificat self-signed +
+reload automat al nginx la apariția certificatului real.
 
 ---
 
@@ -392,6 +432,11 @@ E idempotent: nu suprascrie `.env`, nu regenerează cheile JWT, nu reinstalează
 - [ ] `/health/ready` → **503** cu DB oprit (l-ai testat, nu îl presupui)
 - [ ] Al 6-lea login greșit într-un minut → 429 (rate limiting partajat, prin Redis)
 - [ ] `https://admin-flirt-paty.flrt.md/<rută-internă>` → 200 (fallback SPA), nu 404
+- [ ] **Primul cont de admin creat** (`create_admin.py`) și te poți loga în panou
+- [ ] Ai creat **cel puțin un eveniment** din panou — altfel secțiunea „Evenimente" din
+      aplicație se lansează goală (`POST /events` nu există în API-ul public)
+- [ ] Dacă lansezi pe Android: **`BILLING_PROVIDER=play` NU e implementat** — trece de guard,
+      dar dă 500 la prima achiziție. Vezi [`INTEGRATIONS.md`](./INTEGRATIONS.md).
 
 **Securitate operațională**
 - [ ] `docker compose ps` — **doar** `nginx` are porturi publicate (80, 443)

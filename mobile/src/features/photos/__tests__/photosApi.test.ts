@@ -1,0 +1,148 @@
+import { deletePhoto, isRetriableError, reorderPhotos, uploadPhoto } from '../photosApi';
+import { LocalPhoto } from '../types';
+
+jest.mock('@/services/api', () => ({
+  api: {
+    post: jest.fn(),
+    put: jest.fn(),
+    delete: jest.fn(),
+  },
+}));
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { api } = require('@/services/api');
+
+/** O poză deja comprimată, validă (2 MB, JPEG). */
+const photo: LocalPhoto = {
+  uri: 'file:///cache/photo-1.jpg',
+  mimeType: 'image/jpeg',
+  fileName: 'photo-1.jpg',
+  sizeBytes: 2 * 1024 * 1024,
+  width: 1920,
+  height: 1440,
+};
+
+/** Construiește o eroare recunoscută de `axios.isAxiosError`. */
+function axiosError(status?: number, detail?: string): Error {
+  return Object.assign(new Error('request failed'), {
+    isAxiosError: true,
+    response:
+      status === undefined ? undefined : { status, data: detail ? { detail } : {} },
+  });
+}
+
+beforeEach(() => jest.clearAllMocks());
+
+describe('uploadPhoto', () => {
+  it('trimite multipart cu câmpul `file` și raportează progresul', async () => {
+    (api.post as jest.Mock).mockImplementation(
+      async (
+        _url: string,
+        _body: FormData,
+        cfg: { onUploadProgress?: (e: { loaded: number; total?: number }) => void },
+      ) => {
+        cfg.onUploadProgress?.({ loaded: 25, total: 100 });
+        cfg.onUploadProgress?.({ loaded: 100, total: 100 });
+        return { data: ['https://cdn.flirt.local/photos/p1/a.jpg'] };
+      },
+    );
+
+    const progress: number[] = [];
+    const urls = await uploadPhoto(photo, { onProgress: (p) => progress.push(p) });
+
+    const [url, body, cfg] = (api.post as jest.Mock).mock.calls[0];
+    expect(url).toBe('/profiles/photos');
+    expect(body).toBeInstanceOf(FormData);
+    expect(cfg.headers).toEqual({ 'Content-Type': 'multipart/form-data' });
+    expect(progress).toEqual([0.25, 1]);
+    expect(urls).toEqual(['https://cdn.flirt.local/photos/p1/a.jpg']);
+  });
+
+  it('respinge LOCAL o poză peste limită — fără să atingă rețeaua', async () => {
+    const huge: LocalPhoto = { ...photo, sizeBytes: 12 * 1024 * 1024 };
+
+    await expect(uploadPhoto(huge)).rejects.toThrow(/peste limita de 8 MB/);
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('respinge LOCAL un tip nepermis — fără să atingă rețeaua', async () => {
+    const gif: LocalPhoto = { ...photo, mimeType: 'image/gif' };
+
+    await expect(uploadPhoto(gif)).rejects.toThrow(/Tip de fișier nepermis/);
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('reîncearcă la eroare de rețea și reușește', async () => {
+    (api.post as jest.Mock)
+      .mockRejectedValueOnce(axiosError())
+      .mockResolvedValueOnce({ data: ['u1'] });
+
+    const urls = await uploadPhoto(photo, { retryDelayMs: 0 });
+
+    expect(api.post).toHaveBeenCalledTimes(2);
+    expect(urls).toEqual(['u1']);
+  });
+
+  it('după epuizarea reîncercărilor aruncă un mesaj de rețea clar', async () => {
+    (api.post as jest.Mock).mockRejectedValue(axiosError());
+
+    await expect(uploadPhoto(photo, { retries: 2, retryDelayMs: 0 })).rejects.toThrow(
+      /Conexiune întreruptă/,
+    );
+    expect(api.post).toHaveBeenCalledTimes(3); // 1 încercare + 2 reîncercări
+  });
+
+  it('NU reîncearcă la 422 (poza e problema) și arată mesajul backend-ului', async () => {
+    (api.post as jest.Mock).mockRejectedValue(
+      axiosError(422, 'Conținutul încărcat nu este o imagine validă.'),
+    );
+
+    await expect(uploadPhoto(photo, { retryDelayMs: 0 })).rejects.toThrow(
+      'Conținutul încărcat nu este o imagine validă.',
+    );
+    expect(api.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('traduce 413 în mesajul de limită depășită', async () => {
+    (api.post as jest.Mock).mockRejectedValue(axiosError(413));
+
+    await expect(uploadPhoto(photo, { retryDelayMs: 0 })).rejects.toThrow(
+      /depășește limita de 8 MB/,
+    );
+  });
+});
+
+describe('isRetriableError', () => {
+  it('reîncearcă doar rețeaua căzută, 5xx și 429', () => {
+    expect(isRetriableError(axiosError())).toBe(true);
+    expect(isRetriableError(axiosError(500))).toBe(true);
+    expect(isRetriableError(axiosError(429))).toBe(true);
+    expect(isRetriableError(axiosError(422))).toBe(false);
+    expect(isRetriableError(axiosError(413))).toBe(false);
+    expect(isRetriableError(new Error('altceva'))).toBe(false);
+  });
+});
+
+describe('deletePhoto', () => {
+  it('trimite URL-ul în body-ul cererii DELETE', async () => {
+    (api.delete as jest.Mock).mockResolvedValue({ data: ['u2'] });
+
+    const urls = await deletePhoto('u1');
+
+    expect(api.delete).toHaveBeenCalledWith('/profiles/photos', { data: { url: 'u1' } });
+    expect(urls).toEqual(['u2']);
+  });
+});
+
+describe('reorderPhotos', () => {
+  it('trimite exact noua ordine a URL-urilor (prima = poza principală)', async () => {
+    (api.put as jest.Mock).mockResolvedValue({ data: ['u3', 'u1', 'u2'] });
+
+    const urls = await reorderPhotos(['u3', 'u1', 'u2']);
+
+    expect(api.put).toHaveBeenCalledWith('/profiles/photos/order', {
+      urls: ['u3', 'u1', 'u2'],
+    });
+    expect(urls).toEqual(['u3', 'u1', 'u2']);
+  });
+});

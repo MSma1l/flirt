@@ -11,6 +11,13 @@ const extra = (Constants.expoConfig?.extra ?? {}) as {
   termsUrl?: string;
   privacyUrl?: string;
   supportUrl?: string;
+  photoMinCount?: number;
+  photoMaxCount?: number;
+  photoMaxUploadBytes?: number;
+  photoAllowedTypes?: string[];
+  photoMaxDimension?: number;
+  photoCompressQuality?: number;
+  photoMinCompressQuality?: number;
 };
 
 /**
@@ -88,5 +95,40 @@ export const config = {
     privacyUrl: extra.privacyUrl ?? 'https://flirt.app/legal/privacy',
     /** Pagina de suport / contact pentru utilizatori. */
     supportUrl: extra.supportUrl ?? 'https://flirt.app/support',
+  },
+
+  /**
+   * Poze de profil (TZ 2.4). Valorile implicite sunt SIMETRICE cu backend-ul
+   * (`app/core/config.py`: min_photos=3, max_photos=9, max_upload_bytes=8 MB,
+   * allowed_image_types) — dacă backend-ul își schimbă limitele, se suprascriu
+   * din `app.json` → `expo.extra.photo*`, fără a atinge codul ecranelor.
+   *
+   * `maxDimension` + `compressQuality` sunt EXCLUSIV client-side: o poză făcută
+   * cu un telefon modern are 5–12 MB și ar fi respinsă de backend (413), deci o
+   * redimensionăm și o recomprimăm ÎNAINTE de upload. `minCompressQuality` e
+   * pragul sub care nu mai coborâm calitatea — dacă nici acolo poza nu intră în
+   * limită, o respingem cu un mesaj clar, nu trimitem degeaba.
+   */
+  photos: {
+    /** Numărul minim de poze cerut de anketă (backend: `min_photos`). */
+    min: extra.photoMinCount ?? 3,
+    /** Numărul maxim de poze pe profil (backend: `max_photos`). */
+    max: extra.photoMaxCount ?? 9,
+    /** Dimensiunea maximă a unui fișier (backend: `max_upload_bytes` = 8 MB). */
+    maxUploadBytes: extra.photoMaxUploadBytes ?? 8_388_608,
+    /** Tipurile MIME acceptate (backend: `allowed_image_types`). */
+    allowedTypes: (extra.photoAllowedTypes ?? [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+    ]) as readonly string[],
+    /** Latura maximă (px) după redimensionare, înainte de upload. */
+    maxDimension: extra.photoMaxDimension ?? 1920,
+    /** Calitatea inițială de compresie JPEG (0–1). */
+    compressQuality: extra.photoCompressQuality ?? 0.8,
+    /** Calitatea minimă acceptată la recompresie (0–1). */
+    minCompressQuality: extra.photoMinCompressQuality ?? 0.4,
+    /** Pasul cu care scădem calitatea dacă poza tot depășește limita. */
+    compressQualityStep: 0.2,
   },
 };

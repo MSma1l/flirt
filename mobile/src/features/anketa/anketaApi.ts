@@ -22,7 +22,12 @@ export async function fetchReference(): Promise<Reference> {
   };
 }
 
-/** Trimite anketa completă către backend, mapând câmpurile în snake_case. */
+/**
+ * Trimite anketa completă către backend, mapând câmpurile în snake_case.
+ *
+ * `photos` se trimite ÎNTOTDEAUNA: `PUT /profiles/me` rescrie lista de poze a
+ * profilului, deci omiterea ei ar șterge toate pozele deja încărcate.
+ */
 export async function submitAnketa(draft: AnketaDraft): Promise<void> {
   await api.put('/profiles/me', {
     name: draft.name,
@@ -36,5 +41,6 @@ export async function submitAnketa(draft: AnketaDraft): Promise<void> {
     about: draft.about,
     dating_statuses: draft.datingStatuses,
     interests: draft.interests,
+    photos: draft.photos ?? [],
   });
 }

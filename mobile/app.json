@@ -13,7 +13,18 @@
       "resizeMode": "contain",
       "backgroundColor": "#0D0D0F"
     },
-    "plugins": ["expo-router", "expo-secure-store", "expo-font"],
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Îți deschidem galeria doar ca să alegi tu pozele pe care vrei să le pui în profil sau într-un Story. Nu citim restul galeriei.",
+          "cameraPermission": "Folosim camera pentru verificarea prin selfie — confirmăm că profilul îți aparține — și ca să faci poze pe care le adaugi la profil sau într-un Story."
+        }
+      ]
+    ],
     "ios": {
       "bundleIdentifier": "eu.flirt.app",
       "buildNumber": "1",
@@ -147,7 +158,14 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "router": { "origin": false }
+      "router": { "origin": false },
+      "photoMinCount": 3,
+      "photoMaxCount": 9,
+      "photoMaxUploadBytes": 8388608,
+      "photoAllowedTypes": ["image/jpeg", "image/png", "image/webp"],
+      "photoMaxDimension": 1920,
+      "photoCompressQuality": 0.8,
+      "photoMinCompressQuality": 0.4
     }
   }
 }

@@ -21,8 +21,9 @@ Legendă state: **[Q]** = React Query (state server) · **[Z]** = Zustand (state
 ## 1. Auth
 
 ### 1.1 Welcome — `app/(auth)/welcome.tsx`
-- **Scop:** ecran de start cu opțiunile **Login** / **Register**. **Feature:** `auth`.
-- **TZ:** 2.1 (parțial — doar email + parolă).
+- **Scop:** ecran de start: **Continuă cu Google** / **Continuă cu Apple** / **telefon** / **Login** / **Register**. **Feature:** `auth`.
+- **TZ:** 2.1.
+- **⚠️ Login social = stub.** `socialAuth.ts` întoarce token-uri hardcodate (`stub:google@example.com`), acceptate doar de backendul în modul stub. Nu există `expo-auth-session` / `expo-apple-authentication`. **Guideline 4.8:** dacă oferi Google, Apple cere obligatoriu și Sign in with Apple — deci ori le implementezi nativ pe ambele, ori scoți butoanele înainte de submit.
 
 ### 1.2 Login — `app/(auth)/login.tsx`
 - **Scop:** formular email + parolă → `POST /auth/login`. **Feature:** `auth`.
@@ -32,16 +33,21 @@ Legendă state: **[Q]** = React Query (state server) · **[Z]** = Zustand (state
 - **Scop:** înregistrare email + parolă (min 8) → `POST /auth/register`. **Feature:** `auth`.
 - **State:** [F] credențiale · [Q] mutație register · [Z] `authStore`.
 
+### 1.4 Telefon / OTP — `app/(auth)/phone.tsx`
+- **Scop:** număr de telefon → `POST /auth/phone/request`, apoi cod OTP → `POST /auth/phone/verify`. **Feature:** `auth`.
+- **State:** [F] telefon + cod · [Z] `authStore` (`requestPhoneOtp`, `verifyPhoneOtp`).
+
 ---
 
 ## 2. Onboarding — wizard anketă
 
-- **Rută:** `app/(onboarding)/index.tsx` · **Feature:** `anketa`
-- **Scop:** wizard multi-pas care completează anketa; opțiunile (genuri, statusuri, limbi, interese) vin din `GET /profiles/reference` (**fără hardcodare**), salvare finală cu `PUT /profiles/me`.
-- **Câmpuri (TZ 2.4–2.6):** nume, dată naștere, gen, înălțime, oraș, stradă/naționalitate (opțional), limbi, „despre mine" (≤500), interese (multiselect), statusuri de cunoștință.
-- **Componente cheie:** `ProgressDots`, `Input`, opțiuni din backend.
-- **State:** [F]/[Z] draft între pași · [Q] `useSaveProfile`.
-- **🔜 Planificat în cadrul wizardului:** upload foto (3–9), testul de umor (5–7 carduri).
+- **Rută:** `app/(onboarding)/index.tsx` · **Feature:** `anketa` (+ `photos`)
+- **Scop:** wizard cu **5 pași într-un singur ecran** (`ANKETA_STEPS = 5`); opțiunile (genuri, statusuri, limbi, interese) vin din `GET /profiles/reference` (**fără hardcodare**), salvare finală cu `PUT /profiles/me`.
+- **Câmpuri (TZ 2.4–2.6):** nume, dată naștere (**≥ 18 ani**), gen, înălțime, oraș, stradă/naționalitate (opțional), limbi, „despre mine" (≤500), interese (multiselect), statusuri de cunoștință.
+- **✅ Pasul 4 (ultimul) = poze** (`PHOTOS_STEP = 4`): alegere din galerie cu **expo-image-picker**, redimensionare + recompresie client-side (**expo-image-manipulator**), reordonare (`PhotoGrid`), upload cu `POST /profiles/photos`. Limitele (min 3 / max 9, ≤8 MB, tipuri MIME) vin din `config.photos` și sunt simetrice cu backendul. Anketa se salvează **înainte** de upload — `/profiles/photos` întoarce 404 pentru un profil inexistent.
+- **Componente cheie:** `ProgressDots`, `Input`, `PhotoGrid`, `usePhotoPicker`.
+- **State:** [Z] `anketaStore` (draft între pași) · [Q] `useSaveProfile`.
+- **🔜 Planificat în cadrul wizardului:** testul de umor (există ca ecran separat, `app/humor.tsx`, deschis din Setări — nu e integrat în wizard).
 
 ---
 
@@ -66,7 +72,7 @@ Legendă state: **[Q]** = React Query (state server) · **[Z]** = Zustand (state
 ## 4. Tab 2 — Mesaje
 
 ### 4.1 Lista de dialoguri — `app/(tabs)/mesaje.tsx`
-- **Scop:** conversațiile din match-uri (`GET /chats`): nume, ultim mesaj, badge necitite; **polling** (React Query). **Feature:** `chat`.
+- **Scop:** conversațiile din match-uri (`GET /chats`): nume, ultim mesaj, badge necitite; **polling la 5 s** (React Query `refetchInterval`). **Feature:** `chat`.
 - **TZ:** 5.1.
 - **State:** [Q] `useChats` (polling).
 
@@ -74,17 +80,18 @@ Legendă state: **[Q]** = React Query (state server) · **[Z]** = Zustand (state
 - **Scop:** conversația 1:1: bule de mesaje, input + trimite (`POST /chats/{id}/messages`), mark-read (`POST /chats/{id}/read`), hint discret când un contact e mascat (`was_masked`), **reacții pe mesaje** (long-press → picker emoji, `POST /chats/{id}/messages/{id}/react`), **Compatibility Score în header**, **raportare** (`ReportModal` → `POST /reports/`). **Feature:** `chat` (+ `moderation`).
 - **Componente cheie:** `MessageBubble` (cu reacție), `MaskedContactHint`, `Composer`, `ReportModal`.
 - **TZ:** 5.2 (elemente de bază + reacții), 5.5 (mascare contacte + raportare).
-- **State:** [Q] `useMessages` (polling) · [Q] `useSendMessage`, `useReact`.
-- **🔜 Planificat:** status online în header, `AiHintBanner` (5.3), `EventSuggestionBanner`, Chemistry Score, realtime WebSocket (momentan polling).
+- **State:** [Q] `useMessages` (**polling la 3 s**) · [Q] `useSendMessage`, `useReact`.
+- **🔜 Planificat:** status online în header, `AiHintBanner` (5.3), `EventSuggestionBanner`, Chemistry Score, **realtime WebSocket** — momentan e polling (nu există socket.io / WebSocket în proiect; vezi [`README.md` §5](./README.md#5-fluxul-de-date-real)).
 
 ---
 
 ## 5. Tab 3 — Setări / Profil
 
 ### 5.1 Hub setări — `app/(tabs)/setari.tsx`
-- **Scop:** hub-ul de setări (`GET/PUT /settings`): temă (light/dark/system), rază de căutare, notificări, ascundere profil (`profile_hidden`), logout + linkuri spre celelalte ecrane. **Feature:** `settings`.
+- **Scop:** hub-ul de setări (`GET/PUT /settings`): temă (light/dark/system), rază de căutare, notificări, ascundere profil (`profile_hidden`), logout + **linkurile spre restul aplicației**. **Feature:** `settings`.
 - **TZ:** 6 (structura tabului) + 6.3.
 - **State:** [Z] `themeStore`, `authStore` · [Q] `useSettings`.
+- **⚠️ Singurul hub de navigare.** Cele 9 linkuri de aici (`profile/edit`, `verify-face`, `paywall`, `humor`, `favorites`, `events`, `passport`, `ticket`, `blocklist`) sunt **singura cale** către acele ecrane. Taburile acoperă doar feed / mesaje / setări. Scoate linkurile → ecranele rămân implementate, dar inaccesibile.
 
 ### 5.2 Editare anketă — `app/profile/edit.tsx`
 - **Scop:** editarea completă a anketei (aceleași câmpuri ca onboarding) → `PUT /profiles/me`. **Feature:** `profile`.
@@ -109,6 +116,18 @@ Legendă state: **[Q]** = React Query (state server) · **[Z]** = Zustand (state
 - **TZ:** 2.7.
 - **State:** [Q] `useHumorQuiz`, `useSubmitHumor`.
 
+### 5.7 Paywall — `app/paywall.tsx` (modal)
+- **Scop:** planurile de abonament (`GET /subscriptions/plans`), abonamentul curent (`GET /subscriptions/me`), „cumpărare" (`POST /subscriptions/purchase`). Link din hub-ul Setări. **Feature:** `subscription`.
+- **TZ:** 9.
+- **State:** [Q] `fetchPlans`, `fetchMySubscription`, `purchase`, `fetchEntitlements`.
+- **🔴 ⚠️ FĂRĂ IAP NATIV — blocant la submit.** Nu există `expo-in-app-purchases` / RevenueCat. `POST /subscriptions/purchase` **activează abonamentul direct pe backend, fără plată reală**. App Store **Guideline 3.1.1** cere ca orice conținut digital deblocat în app să fie vândut prin In-App Purchase. **Aplicația nu poate fi trimisă la review în starea asta.** Idem Google Play Billing.
+
+### 5.8 Verificare prin selfie — `app/verify-face.tsx` (modal)
+- **Scop:** verificarea că profilul aparține unei persoane reale → `POST /profiles/verify-face`. Link din hub-ul Setări. **Feature:** `verification`.
+- **TZ:** 2.2.
+- **State:** [Q] `verifyFace`.
+- **⚠️ Stub, fără cameră.** `expo-camera` nu e instalat; „cadrul de captură" e un dreptunghi stilizat cu emoji. `faceApi.verifyFace()` trimite un body `{ source: 'selfie' }` — **nicio imagine nu e capturată sau trimisă**. Consecință: badge-ul de „verificat" îl primește oricine apasă butonul. Într-o aplicație de dating, o insignă de încredere fără nimic în spate e un risc de siguranță, nu doar o funcție lipsă.
+
 > Ștergerea contului (cu confirmare) → `POST /settings/account/delete` este declanșată din hub-ul Setări.
 
 ---
@@ -121,8 +140,9 @@ Legendă state: **[Q]** = React Query (state server) · **[Z]** = Zustand (state
 - **State:** [Q] `useEvents`.
 
 ### 6.2 Detaliu eveniment — `app/events/[id].tsx`
-- **Scop:** detaliul + hartă **placeholder** + marcaj „merg" (`POST /events/{id}/going`) + check-in QR (`POST /events/{id}/checkin`). **Feature:** `events`.
+- **Scop:** detaliul + **hartă reală** + marcaj „merg" (`POST /events/{id}/going`) + check-in QR (`POST /events/{id}/checkin`). **Feature:** `events`.
 - **TZ:** 8.2, 8.4.
+- **✅ Harta e reală:** `EventMap` = **react-native-webview + Leaflet + tiles OpenStreetMap**. **Gratuit, fără cheie API și fără cont** — merge în Expo Go, identic pe iOS și Android. **Nu** folosim `react-native-maps` (ar cere cheie Google Maps + billing). Fără coordonate valide (`hasValidCoords`), cade elegant pe o casetă cu orașul. Atribuția OSM (licența ODbL) e obligatorie — nu o scoate din cod.
 - **State:** [Q] `useEvent`, `useGoing`, `useCheckin`.
 
 ### 6.3 Flirt Passport — `app/passport.tsx`
@@ -130,7 +150,7 @@ Legendă state: **[Q]** = React Query (state server) · **[Z]** = Zustand (state
 - **TZ:** 8.4.
 - **State:** [Q] `usePassport`.
 
-**🔜 Planificat:** `events/map` — hartă Live Events reală (react-native-maps) cu contor de useri (TZ 8.3); acum harta e placeholder în detaliul evenimentului.
+**🔜 Planificat:** ruta `events/map` — **Live Events Map** cu contor de useri pe marker (TZ 8.3). Infrastructura de hartă există deja (WebView + Leaflet + OSM, vezi 6.2) — lipsește doar ecranul agregat cu toate evenimentele.
 
 ---
 
@@ -148,16 +168,17 @@ Legendă state: **[Q]** = React Query (state server) · **[Z]** = Zustand (state
 
 ---
 
-# 🔜 Planificat (ecrane din blueprint, neimplementate)
+# 🔜 Planificat (ecrane neimplementate)
 
-| Ecran | Rută blueprint | Secțiune TZ |
+| Ecran | Rută | Secțiune TZ |
 |---|---|---|
-| Face verify (liveness) | `(auth)/face-verify` | 2.2 |
 | Event popup card (din deck) | overlay | 4.3, 8.2 |
 | Live Events Map | `events/map` | 8.3 |
-| Paywall | `paywall` (modal) | 9 |
+| Reclamă interstițială (15 s) | overlay în deck | 6.3 |
 
-> **Notă:** UI-ul de auth social/OTP nu are ecrane dedicate în mobile încă (backend-ul are rutele stub). `SendFirstMessageSheet`, gesturile de swipe + undo și ecranul de umor sunt **✅ implementate** (vezi mai sus).
+> **Toate celelalte ecrane sunt implementate.** `(auth)/phone` (OTP), butoanele sociale din `welcome`, `paywall`, `verify-face`, `humor`, upload-ul de poze, `SendFirstMessageSheet`, gesturile de swipe + undo — toate **✅ există** (vezi mai sus).
+>
+> **⚠️ „Ecran implementat" ≠ „funcție gata."** Trei ecrane sunt shell-uri peste funcționalitate care lipsește: **`paywall`** (fără IAP nativ — 🔴 blocant la submit, Guideline 3.1.1), **`verify-face`** (fără cameră) și butoanele sociale din **`welcome`** (token-uri stub — 🔴 Guideline 4.8). Detalii și ordinea de atac: [`README.md` §6](./README.md#6--ce-nu-există-încă-amânat-conștient).
 
 ---
 
@@ -166,12 +187,14 @@ Legendă state: **[Q]** = React Query (state server) · **[Z]** = Zustand (state
 | Ecran (rută reală) | Secțiune TZ |
 |---|---|
 | `index` (splash) | 1.1 |
-| `(auth)/welcome·login·register` | 2.1 (email+parolă) |
-| `(onboarding)/index` | 2.4–2.6 |
+| `(auth)/welcome·login·register·phone` | 2.1 (email+parolă, OTP, social ⚠ stub) |
+| `(onboarding)/index` | 2.4–2.6 (+ poze) |
 | `(tabs)/ankete` | 4.1, 4.2, 4.4 |
 | `(tabs)/mesaje` + `chat/[id]` | 5.1, 5.2, 5.5 |
 | `(tabs)/setari` | 6, 6.3 |
 | `humor` | 2.7 |
+| `verify-face` | 2.2 (⚠ stub, fără cameră) |
+| `paywall` | 9 (🔴 fără IAP nativ) |
 | `profile/edit` | 6.1 |
 | `favorites` | 6.1 |
 | `ticket` | 6.2 |

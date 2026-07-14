@@ -14,7 +14,7 @@ export interface Reference {
   interests: InterestOption[];
 }
 
-/** Draftul complet al anketei (câmpurile din TZ 2.4–2.6, fără poze/telefon). */
+/** Draftul complet al anketei (câmpurile din TZ 2.4–2.6). */
 export interface AnketaDraft {
   name: string;
   /** Data nașterii în format ISO (YYYY-MM-DD). */
@@ -28,4 +28,16 @@ export interface AnketaDraft {
   about?: string;
   datingStatuses: string[];
   interests: string[];
+  /**
+   * URL-urile pozelor DEJA încărcate pe server, în ordinea afișării.
+   *
+   * ATENȚIE: `PUT /profiles/me` REESCRIE lista de poze a profilului
+   * (`profile.photos = data.photos`). Dacă trimitem lista goală la o simplă
+   * editare de profil, backend-ul ȘTERGE toate pozele. De aceea ecranul de
+   * editare trimite mereu URL-urile curente aici.
+   *
+   * În wizard câmpul rămâne gol: profilul încă nu există, deci pozele nu au cum
+   * să fie încărcate înainte de salvare — se urcă imediat după.
+   */
+  photos?: string[];
 }

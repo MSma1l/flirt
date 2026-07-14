@@ -1,312 +1,295 @@
 # FLIRT — Arhitectură Frontend (React Native + Expo)
 
-> Documentația arhitecturii aplicației mobile FLIRT — "No Regrets".
+> Documentația arhitecturii aplicației mobile FLIRT — „No Regrets".
 > Text explicativ în română, cod și denumiri în engleză.
+>
+> **Acest document descrie codul REAL din `mobile/`, nu un blueprint.** Fiecare rând din tabelul de stack există în `mobile/package.json`. Ce nu e implementat stă separat, în [secțiunea 6](#6--ce-nu-există-încă-amânat-conștient), cu consecințele pentru App Store — ca nimeni să nu descopere la submit că lipsește ceva.
 
 Fișiere înrudite:
 - [`navigation.md`](./navigation.md) — structura de navigație (tab bar + stack-uri).
 - [`screens.md`](./screens.md) — toate ecranele mapate pe TZ.
-- [`styling.md`](./styling.md) — principiul "stiluri separate de cod" + theming.
+- [`styling.md`](./styling.md) — principiul „stiluri separate de cod" + theming.
 
 ---
 
-## 1. Stack tehnologic
+## 1. Stack tehnologic (real)
 
-| Domeniu | Alegere | Justificare |
+Sursa de adevăr: `mobile/package.json`. Dacă o bibliotecă nu e în tabelul de mai jos, **nu e în proiect**.
+
+| Domeniu | Alegere reală | De ce |
 |---|---|---|
-| Runtime / build | **Expo SDK 51+** (managed workflow) | Build OTA, EAS Build/Submit pentru iOS și Android dintr-un singur codebase, config prin `app.config.ts`. TZ cere iOS 15+ și Android 9 (API 28)+ — acoperit nativ de Expo. Modul _prebuild_ rămâne disponibil dacă un modul nativ (ex. face-matching, camera liveness) cere cod custom. |
-| Limbaj | **TypeScript** (strict mode) | Contractele de date (anketă, match, chat, events) sunt complexe; tipurile previn erori la nivel de UI și la integrarea cu API. |
-| Navigație | **expo-router v3** (file-based, peste React Navigation) | Rutare declarativă bazată pe fișiere, deep linking gratuit (necesar pentru push-uri "revino în chat", invitații la evenimente), suport nativ pentru tab-uri + stack-uri imbricate. React Navigation rămâne motorul dedesubt, deci avem acces la API-urile lui când e nevoie. |
-| State global (client) | **Zustand** | Store-uri mici, feature-based, fără boilerplate. Ideal pentru state efemer de UI (deck-ul de swipe, sesiunea, tema, filtrele). Preferat față de Redux Toolkit pentru că aplicația nu are un graf de state monolitic — fiecare feature își ține slice-ul lui. |
-| State server (API) | **TanStack Query (React Query) v5** | Cache, revalidare, paginare (porția de 10 ankete), retry, optimistic updates la like/dislike. Separă clar datele de server de state-ul de client. |
-| Gesturi + animații | **react-native-gesture-handler** + **react-native-reanimated v3** | Swipe deck-ul (stânga/dreapta/sus), long-press pentru favorite, animații pe UI thread (60fps) fără a bloca JS thread-ul. Standardul de facto pentru mecanica de tip Tinder. |
-| Formulare | **react-hook-form** + **zod** | Onboarding-ul are multe câmpuri obligatorii (2.4–2.7). `zod` validează și e reutilizat pentru tipuri. |
-| Networking | **axios** (client centralizat) + interceptori | Injectare token, refresh, mascarea erorilor. Consumat exclusiv prin React Query. |
-| Storage local | **expo-secure-store** (tokenuri) + **@react-native-async-storage/async-storage** (preferințe) + **MMKV** opțional (cache rapid) | Tokenurile de auth stau criptat; preferințele (tema, notificări) în storage simplu. |
-| Realtime chat | **socket.io-client** (sau WebSocket nativ) | Mesaje live, indicator online/typing, livrarea mesajelor amânate la match. |
-| Hărți | **react-native-maps** (Google/Apple provider) | Ecranul Live Events Map (TZ 8.3). |
-| Media / cameră | **expo-camera**, **expo-image-picker**, **expo-image** | Selfie liveness (2.2), încărcare fotografii anketă (min 3 / max 9), randare performantă a cardurilor full-screen. |
-| Notificări | **expo-notifications** | Push pentru match, mesaje, AI-hints, evenimente, reclame (6.3). |
-| Plăți / abonamente | **expo-in-app-purchases** sau **react-native-purchases (RevenueCat)** | Paywall și tipurile de abonament din TZ secțiunea 9. |
-| i18n | **i18next** + **react-i18next** | RU / RO / EN (TZ 12 — localizare UI). Nu hardcodăm string-uri. |
-| Testare | **Jest** + **@testing-library/react-native**, **Detox** (E2E) | Unit + component + fluxuri critice (onboarding, swipe, match). |
-| Calitate cod | **ESLint** + **Prettier** + **TypeScript** în CI | Consistență și prevenirea regresiilor. |
+| Runtime / build | **Expo SDK 54** (managed), React Native **0.81.5**, React **19.1**, New Architecture activă | Un singur codebase iOS + Android, EAS Build/Submit, module native gata făcute. `newArchEnabled: true` în `app.json`. |
+| Limbaj | **TypeScript strict** (`tsconfig.json` → `"strict": true`) | Contractele de date (anketă, feed, chat, evenimente) sunt complexe; tipurile prind erorile înainte de runtime. Mapările snake_case (backend) ↔ camelCase (UI) sunt explicite în fiecare `*Api.ts`. |
+| Navigație | **expo-router ~6** (file-based, peste React Navigation) | Arborele din `mobile/app/` **este** graful de navigație. Deep linking gratuit, tab-uri + stack-uri imbricate, rute tipizate. |
+| State server | **@tanstack/react-query v5** | Cache, retry, invalidare, mutații. **Tot ce vine de la API trece pe aici** — inclusiv „realtime"-ul din chat, care e polling (vezi §5). |
+| State client | **zustand v4** | Store-uri mici, fără boilerplate: `authStore` (sesiune) și `anketaStore` (draft-ul wizardului între pași). Atât — restul e state server sau state local de componentă. |
+| Networking | **axios** — client unic în `src/services/api.ts` | O singură instanță cu `baseURL`, timeout 15s, interceptor de Bearer token și refresh automat la 401 (vezi §4). Niciun `fetch` răzleț prin ecrane. |
+| Tokenuri | **expo-secure-store** | Refresh token-ul stă în Keychain (iOS) / Keystore (Android), cheia `flirt.refresh_token`. Access token-ul stă **doar în memorie** — vezi §4 pentru motiv. |
+| Gesturi + animații | **PanResponder + Animated** (built-in React Native) | Swipe-ul din feed (`app/(tabs)/ankete.tsx`) e făcut cu API-urile din React Native. **Fără** `react-native-gesture-handler`, **fără** `reanimated` — un deck cu un singur card animat nu justifică încă două dependențe native în plus. Dacă ajungem la un deck stivuit cu fizică reală, reanimated devine justificat. |
+| Formulare + validare | **funcții proprii**: `src/utils/validation.ts`, `src/features/anketa/validation.ts`, `src/features/auth/validation.ts`, `src/features/photos/validation.ts` | Fără `react-hook-form`, fără `zod`. Validatoarele sunt funcții pure care întorc `string | null` (mesajul de eroare în română) — trivial de testat și **simetrice cu regulile din backend** (lungimi, vârstă minimă, tipuri MIME, număr de poze). |
+| Hărți | **react-native-webview** + **Leaflet** + tiles **OpenStreetMap** | `src/features/events/EventMap.tsx` randează o hartă reală într-un WebView. **Gratuit, fără cheie API și fără cont** — merge în Expo Go, identic pe ambele platforme. Alternativa (`react-native-maps`) cere cheie Google Maps și cont de billing pentru un singur ecran; nu merită. Atribuția OSM (ODbL) e obligatorie și e în cod — nu o scoate. |
+| Poze de profil | **expo-image-picker** + **expo-image-manipulator** + **expo-file-system** | Alegerea din galerie, apoi redimensionare (max 1920px) și recompresie JPEG **înainte** de upload (`src/features/photos/photoPicker.ts`). O poză de pe un telefon modern are 5–12 MB și ar fi respinsă de backend cu 413 — o comprimăm client-side, cu recompresie în trepte până intră sub limita de 8 MB. |
+| Fonturi | **@expo-google-fonts/manrope** + **expo-font** | Manrope Regular/Medium/Bold, încărcate în `app/_layout.tsx`. Aplicația nu randează nimic până nu sunt gata (`if (!fontsLoaded) return null`) — evită flash-ul de font de sistem. |
+| Config runtime | **expo-constants** + `EXPO_PUBLIC_API_URL` | `src/config.ts` — vezi §7. Niciun URL hardcodat în ecrane. |
+| Shell UI | **react-native-safe-area-context**, **react-native-screens**, **expo-status-bar**, **expo-linking** | Standardul Expo pentru safe areas, navigare nativă performantă, status bar și deep links. |
+| Testare | **Jest** + **jest-expo** + **@testing-library/react-native** | **340 teste / 57 suite.** Rulare: `npm test`. Typecheck: `npm run typecheck`. Fără Detox (E2E) deocamdată. |
 
-### De ce Expo și nu bare React Native / nativ Swift+Kotlin?
-TZ (1.2) lasă alegerea la latitudinea echipei ("на усмотрение разработки"). Expo oferă:
-- un singur codebase pentru iOS + Android → viteză de livrare;
-- EAS Build/Update pentru release-uri rapide și config remote;
-- ecosistem de module native gata făcute (cameră, hărți, notificări, IAP).
-Pentru pașii care cer cod nativ special (liveness-check, SDK face-matching) folosim **config plugins** / **development build**, fără a pierde beneficiile managed workflow.
+### De ce Expo și nu bare React Native
+Un singur codebase, EAS Build/Submit, și module native gata făcute pentru exact ce ne trebuie (secure store, image picker, fonturi). Pentru pașii care vor cere cod nativ (IAP, liveness-check) folosim **development build** / config plugins — nu pierdem nimic din managed workflow.
 
 ---
 
 ## 2. Principii de arhitectură
 
-1. **Feature-based, nu type-based.** Codul e grupat pe funcționalitate de business (`swipe`, `chat`, `events`), nu pe tip tehnic. Fiecare feature e (aproape) autonom: componente, hooks, store, servicii, tipuri proprii.
-2. **Stiluri separate de cod.** Nicio culoare/spacing hardcodat în componente. Totul vine din `theme/`. Vezi [`styling.md`](./styling.md).
-3. **Rutele sunt subțiri.** Fișierele din `app/` (expo-router) doar compun ecrane din `features/*/screens`. Fără logică de business în rute.
-4. **State server ≠ state client.** Datele de la API trec exclusiv prin React Query; Zustand ține doar state efemer de UI.
-5. **UI reutilizabil izolat.** `components/` conține doar primitive fără logică de domeniu (Button, Card, Avatar, Badge). Componentele cu logică de business stau în feature-ul lor.
-6. **Un singur punct de acces la platformă.** Camera, storage, geo, push — toate în `services/`, ca să fie ușor de mock-uit și înlocuit.
+Sunt puține și sunt respectate peste tot în cod. Dacă scrii cod nou, respectă-le.
+
+1. **Rutele sunt subțiri.** Fișierele din `app/` compun ecrane; logica de business (apeluri API, mapări, validare, tipuri) stă în `src/features/*`. O rută nu conține niciodată o mapare snake_case → camelCase.
+2. **State server ≠ state client.** Tot ce vine de la API trece prin **React Query**. **Zustand** ține doar ce nu are ce căuta pe server: sesiunea și draft-ul anketei între pași. Nu duplica date de server într-un store Zustand.
+3. **Feature-based, nu type-based.** Codul e grupat pe funcționalitate de business (`feed`, `chat`, `events`, `photos`), nu pe tip tehnic. Fiecare feature își ține API-ul, tipurile, validarea și componentele lui de domeniu.
+4. **Stiluri separate de cod.** Nicio culoare/spacing hardcodat în componente — totul din `@theme`. Vezi [`styling.md`](./styling.md).
+5. **Un singur punct de acces la rețea.** Tot traficul trece prin instanța axios din `src/services/api.ts`. Așa avem un singur loc pentru token, refresh și timeout — și un singur loc de mock-uit în teste.
+6. **Zero hardcodare.** Opțiunile de anketă (genuri, limbi, interese, statusuri) vin din `GET /profiles/reference`. Limitele de poze, URL-ul API, config-ul hărții și link-urile legale vin din config (§7). Un ecran nu „știe" niciodată o valoare de business.
+7. **Simetrie cu backend-ul.** Validarea client-side repetă regulile serverului (vârstă ≥18, min 3 / max 9 poze, max 8 MB, tipuri MIME). Clientul dă feedback rapid; **serverul rămâne autoritatea** — validarea din UI e pentru UX, nu pentru securitate.
 
 ---
 
-## 3. Structura de foldere (arbore complet)
+## 3. Structura reală de foldere
 
 ```
-flirt/
-├── app.config.ts               # config Expo (nume, iconițe, plugins, env)
-├── eas.json                    # profile EAS Build/Submit
-├── tsconfig.json               # path aliases (@features, @components, @theme...)
-├── package.json
+mobile/
+├── app.json                    # config Expo: plugins, permisiuni, privacy manifest, extra
+├── eas.json                    # profile EAS (development / preview / production) + EXPO_PUBLIC_API_URL
+├── tsconfig.json               # strict + aliasuri
+├── babel.config.js             # module-resolver (aceleași aliasuri ca tsconfig)
+├── jest.setup.js
 │
-├── assets/                     # asset-uri statice (imagini, fonturi, lottie)
-│   ├── fonts/                  # Manrope (Regular/Medium/SemiBold/Bold)
-│   ├── images/                 # logo splash, placeholdere, iconițe interese
-│   └── animations/             # lottie: match "Connect!", empty states
+├── app/                        # === RUTE (expo-router) — la RĂDĂCINĂ, nu în src/ ===
+│   ├── _layout.tsx             # providers: SafeArea, QueryClient, ThemeProvider + AuthGuard reactiv
+│   ├── index.tsx               # splash / redirect după sesiune
+│   ├── (auth)/
+│   │   ├── _layout.tsx
+│   │   ├── welcome.tsx         # Google / Apple / telefon / email
+│   │   ├── login.tsx
+│   │   ├── register.tsx
+│   │   └── phone.tsx           # OTP prin SMS
+│   ├── (onboarding)/
+│   │   ├── _layout.tsx
+│   │   └── index.tsx           # wizard anketă multi-pas, ÎNTR-UN SINGUR ECRAN
+│   ├── (tabs)/                 # === TAB BAR — 3 taburi ===
+│   │   ├── _layout.tsx
+│   │   ├── ankete.tsx          # feed de swipe (default) + StoriesBar
+│   │   ├── mesaje.tsx          # lista de dialoguri
+│   │   └── setari.tsx          # hub-ul de navigare (vezi mai jos)
+│   ├── chat/[id].tsx
+│   ├── profile/edit.tsx
+│   ├── events/index.tsx · events/[id].tsx
+│   ├── stories/new.tsx · stories/[userId].tsx
+│   ├── favorites.tsx · blocklist.tsx · ticket.tsx · passport.tsx
+│   ├── humor.tsx               # modal
+│   ├── paywall.tsx             # modal
+│   └── verify-face.tsx         # modal
+│
+├── theme/                      # === STILURI (la rădăcină, NU în src/) ===
+│   ├── colors.ts               # tokens dark + light
+│   ├── typography.ts           # Manrope
+│   ├── ThemeProvider.tsx       # context + useTheme()
+│   └── index.ts
 │
 ├── src/
+│   ├── config.ts               # API URL, hartă, legal, limite de poze
 │   │
-│   ├── app/                    # === RUTE (expo-router, file-based) ===
-│   │   ├── _layout.tsx         # root layout: providers (Query, theme, i18n, gesture)
-│   │   ├── index.tsx           # redirect după verificarea sesiunii (splash logic)
-│   │   ├── (auth)/             # stack de onboarding (fără tab bar)
-│   │   │   ├── _layout.tsx
-│   │   │   ├── welcome.tsx         # alegere metodă de login
-│   │   │   ├── sign-in.tsx         # Apple / Google / phone / email
-│   │   │   ├── otp.tsx             # cod SMS/OTP
-│   │   │   ├── face-verify.tsx     # liveness-check (selfie/video)
-│   │   │   └── profile-setup/      # wizard anketă (multi-pas)
-│   │   │       ├── _layout.tsx
-│   │   │       ├── basics.tsx      # nume, dată naștere, gen, înălțime
-│   │   │       ├── location.tsx    # oraș, stradă/cartier
-│   │   │       ├── photos.tsx      # 3–9 fotografii
-│   │   │       ├── about.tsx       # despre, limbi, naționalitate
-│   │   │       ├── interests.tsx   # multiselect interese
-│   │   │       ├── status.tsx      # status de cunoștință
-│   │   │       └── humor.tsx       # test simț al umorului (5–7 carduri)
-│   │   │
-│   │   ├── (tabs)/             # === TAB BAR (3 taburi, TZ secț. 3) ===
-│   │   │   ├── _layout.tsx         # definirea tab bar-ului
-│   │   │   ├── deck/               # Tab 1: "Ankete" (swipe)
-│   │   │   │   ├── _layout.tsx
-│   │   │   │   └── index.tsx       # ecranul de swipe
-│   │   │   ├── messages/           # Tab 2: "Mesaje"
-│   │   │   │   ├── _layout.tsx
-│   │   │   │   ├── index.tsx       # lista de dialoguri
-│   │   │   │   └── [chatId].tsx    # ecranul de chat
-│   │   │   └── settings/           # Tab 3: "Setări"
-│   │   │       ├── _layout.tsx
-│   │   │       ├── index.tsx       # meniu setări + profil
-│   │   │       ├── profile-edit.tsx
-│   │   │       ├── favorites.tsx
-│   │   │       ├── ticket.tsx      # bilet Flirt Party (QR)
-│   │   │       ├── subscription.tsx
-│   │   │       └── preferences.tsx # temă, notificări, radius, blocaje
-│   │   │
-│   │   ├── events/             # stack evenimente (peste tab bar / modal)
-│   │   │   ├── _layout.tsx
-│   │   │   ├── index.tsx           # listă evenimente
-│   │   │   ├── [eventId].tsx       # detaliu eveniment ("Tot iau parte")
-│   │   │   ├── map.tsx             # Live Events Map
-│   │   │   └── passport.tsx        # Flirt Passport (ștampile)
-│   │   │
-│   │   ├── paywall.tsx         # ecran modal Paywall (abonamente)
-│   │   └── +not-found.tsx
+│   ├── services/               # === ACCES LA EXTERIOR ===
+│   │   ├── api.ts              # instanța axios + interceptori (Bearer, refresh la 401)
+│   │   └── tokenStore.ts       # access în memorie, refresh în SecureStore
+│   │
+│   ├── store/
+│   │   └── authStore.ts        # Zustand: sesiune, login/register/OTP/social, hydrate, logout
 │   │
 │   ├── features/               # === LOGICA DE BUSINESS, pe feature ===
-│   │   ├── auth/
-│   │   │   ├── screens/            # componente de ecran (fără rute)
-│   │   │   ├── components/         # SocialButton, OtpInput, LivenessCamera...
-│   │   │   ├── hooks/              # useSignIn, useOtp, useFaceVerify
-│   │   │   ├── api/                # apeluri auth (consumate de React Query)
-│   │   │   ├── store/              # auth store (Zustand): sesiune, tokeni
-│   │   │   ├── styles/             # stiluri specifice feature-ului
-│   │   │   └── types.ts
-│   │   ├── onboarding/            # wizard-ul de anketă (profile-setup)
-│   │   │   ├── screens/
-│   │   │   ├── components/         # StepProgress, InterestChip, HumorCard...
-│   │   │   ├── hooks/              # useProfileDraft (persistat local)
-│   │   │   ├── store/              # draft-ul anketei între pași
-│   │   │   ├── styles/
-│   │   │   └── types.ts
-│   │   ├── swipe/
-│   │   │   ├── screens/            # DeckScreen
-│   │   │   ├── components/         # SwipeCard, PhotoStories, CompatBadge,
-│   │   │   │                       #   EventBadge, ActionBar, AdInterstitial
-│   │   │   ├── hooks/              # useSwipeGestures, useDeckQueue, useSwipeLimit
-│   │   │   ├── api/                # fetch deck, like/dislike, favorite, undo
-│   │   │   ├── store/              # deck store: index curent, limită 10, favorite
-│   │   │   ├── styles/
-│   │   │   └── types.ts
-│   │   ├── match/
-│   │   │   ├── components/         # ConnectPopup, SendFirstMessageSheet
-│   │   │   ├── hooks/              # useMatch
-│   │   │   ├── styles/
-│   │   │   └── types.ts
-│   │   ├── chat/
-│   │   │   ├── screens/            # ChatListScreen, ChatScreen
-│   │   │   ├── components/         # ChatRow, MessageBubble, AiHintBanner,
-│   │   │   │                       #   EventSuggestionBanner, QuickReplies,
-│   │   │   │                       #   MaskedContactHint, ChatHeader
-│   │   │   ├── hooks/              # useChatSocket, useMessages, useAiHints
-│   │   │   ├── api/
-│   │   │   ├── store/              # unread, typing, drafts
-│   │   │   ├── styles/
-│   │   │   └── types.ts
-│   │   ├── profile/
-│   │   │   ├── screens/            # ProfileEdit, PublicProfile, Favorites
-│   │   │   ├── components/         # PhotoGrid, FieldEditor, StatusPicker
-│   │   │   ├── hooks/
-│   │   │   ├── api/
-│   │   │   ├── styles/
-│   │   │   └── types.ts
-│   │   ├── events/
-│   │   │   ├── screens/            # EventsList, EventDetail, EventsMap, Passport
-│   │   │   ├── components/         # EventCard, MapMarker, PassportStamp
-│   │   │   ├── hooks/              # useEvents, useEventsMap, useAttend
-│   │   │   ├── api/
-│   │   │   ├── styles/
-│   │   │   └── types.ts
-│   │   ├── settings/
-│   │   │   ├── screens/            # SettingsMenu, Preferences, Ticket
-│   │   │   ├── components/         # SettingRow, ThemeSelector, TicketQr
-│   │   │   ├── hooks/
-│   │   │   ├── styles/
-│   │   │   └── types.ts
-│   │   └── subscription/
-│   │       ├── screens/            # PaywallScreen
-│   │       ├── components/         # PlanCard, FeatureRow
-│   │       ├── hooks/              # usePurchases, useEntitlements
-│   │       ├── api/
-│   │       ├── styles/
-│   │       └── types.ts
+│   │   ├── anketa/             # anketaApi, anketaStore (draft wizard), validation, types
+│   │   ├── auth/               # socialAuth (⚠ stub), validation
+│   │   ├── chat/               # chatApi, ChatListItem, MessageBubble, types
+│   │   ├── events/             # eventsApi, EventCard, EventMap (WebView + Leaflet), types
+│   │   ├── feed/               # feedApi, ProfileCard, CompatBadge, MatchModal,
+│   │   │                       #   SendFirstMessageSheet, compat.ts
+│   │   ├── humor/              # humorApi, types
+│   │   ├── moderation/         # reportApi, ReportModal
+│   │   ├── photos/             # photoPicker, usePhotoPicker, PhotoGrid, photosApi,
+│   │   │                       #   reorder, validation, types
+│   │   ├── profile/            # profileApi
+│   │   ├── push/               # pushService (⚠ token placeholder)
+│   │   ├── settings/           # settingsApi
+│   │   ├── social/             # socialApi, useBlockUser
+│   │   ├── stories/            # storiesApi, StoriesBar, types
+│   │   ├── subscription/       # subscriptionApi (⚠ fără IAP nativ), types
+│   │   └── verification/       # faceApi (⚠ stub, fără cameră)
 │   │
-│   ├── components/             # === UI REUTILIZABIL (fără logică de domeniu) ===
-│   │   ├── Button/
-│   │   │   ├── Button.tsx
-│   │   │   ├── Button.styles.ts    # stil separat de cod
-│   │   │   └── index.ts
-│   │   ├── Text/                   # wrapper tipografic (folosește theme)
-│   │   ├── Card/
-│   │   ├── Avatar/
-│   │   ├── Badge/                  # inclusiv varianta procent compatibilitate
-│   │   ├── Chip/                   # tag/interes
-│   │   ├── Sheet/                  # bottom sheet
-│   │   ├── Modal/
-│   │   ├── Input/
-│   │   ├── Icon/                   # wrapper peste set de iconițe
-│   │   ├── ProgressDots/           # indicatori foto tip Stories
+│   ├── components/ui/          # === UI PUR, fără logică de domeniu ===
+│   │   ├── Button.tsx · Input.tsx · ProgressDots.tsx · ScreenContainer.tsx
 │   │   └── index.ts
 │   │
-│   ├── theme/                  # === STILURI SEPARATE (single source of truth) ===
-│   │   ├── colors.ts               # tokens dark + light (din DESIGN_TOKENS.md)
-│   │   ├── typography.ts           # Manrope: familii, mărimi, greutăți
-│   │   ├── spacing.ts              # scală de spacing + radius
-│   │   ├── shadows.ts              # umbre (inclusiv glow roz accent)
-│   │   ├── gradients.ts            # gradient CTA roz
-│   │   ├── theme.ts                # asamblare lightTheme / darkTheme
-│   │   ├── ThemeProvider.tsx       # context + hook useTheme()
-│   │   └── index.ts
-│   │
-│   ├── services/              # === ACCES LA PLATFORMĂ / EXTERIOR ===
-│   │   ├── api/
-│   │   │   ├── client.ts           # instanță axios + interceptori
-│   │   │   ├── queryClient.ts      # config React Query
-│   │   │   └── endpoints.ts        # constante rute API
-│   │   ├── auth/                   # login social, token refresh
-│   │   ├── storage/                # secure-store + async-storage wrappers
-│   │   ├── socket/                 # conexiune realtime chat
-│   │   ├── location/               # geolocație, permisiuni, geocoding
-│   │   ├── notifications/          # expo-notifications setup + handlere
-│   │   ├── camera/                 # liveness + image picker helpers
-│   │   ├── purchases/              # IAP / RevenueCat
-│   │   └── ads/                    # SDK reclame (interstitial 15s)
-│   │
-│   ├── store/                 # === STATE GLOBAL (Zustand) transversal ===
-│   │   ├── sessionStore.ts         # user curent, status verificare, entitlements
-│   │   ├── themeStore.ts           # light/dark/system
-│   │   ├── filtersStore.ts         # radius, gen, vârstă, limbi
-│   │   └── index.ts
-│   │
-│   ├── hooks/                 # === HOOKS TRANSVERSALE (nu de feature) ===
-│   │   ├── useAppState.ts
-│   │   ├── useDebounce.ts
-│   │   ├── useKeyboard.ts
-│   │   └── usePermissions.ts
-│   │
-│   ├── utils/                 # === FUNCȚII PURE, fără efecte ===
-│   │   ├── haversine.ts            # distanță între coordonate (TZ 7)
-│   │   ├── compatibility.ts        # helper afișare % + culoare badge
-│   │   ├── format.ts               # date, distanțe, ore
-│   │   ├── validators.ts           # scheme zod partajate
-│   │   └── maskContacts.ts         # helper UI pentru mascarea contactelor
-│   │
-│   ├── types/                 # === TIPURI GLOBALE partajate ===
-│   │   ├── models.ts               # User, Profile, Match, Chat, Event, Ticket
-│   │   ├── api.ts                  # request/response DTOs
-│   │   └── navigation.ts           # tipuri rute expo-router
-│   │
-│   ├── i18n/                  # === LOCALIZARE (RU / RO / EN) ===
-│   │   ├── index.ts
-│   │   └── locales/
-│   │       ├── ru.json
-│   │       ├── ro.json
-│   │       └── en.json
-│   │
-│   └── config/               # === CONFIG APP ===
-│       ├── env.ts                  # variabile de mediu tipizate
-│       ├── featureFlags.ts         # remote config (ex. ponderi score, limite)
-│       └── constants.ts            # SWIPE_LIMIT=10, AD_TIMER=15s etc.
+│   └── utils/
+│       └── validation.ts       # validatoare transversale (MIN_AGE = 18, email, parolă...)
 │
-├── __tests__/                 # teste unit/component
-└── e2e/                       # teste Detox (onboarding, swipe, match)
+└── assets/                     # icon, splash, adaptive-icon, favicon
 ```
 
-### Reguli de import (path aliases)
-Configurate în `tsconfig.json` + `babel.config.js`:
+> **Notă:** `src/hooks/` și `src/types/` există ca foldere, dar sunt **goale**. Hook-urile trăiesc în feature-ul lor (`usePhotoPicker`, `useBlockUser`), iar tipurile în `features/*/types.ts`. Nu forța conținut în ele doar ca să nu fie goale.
+
+### Aliasuri de import
+
+Configurate identic în `tsconfig.json` (pentru typecheck) **și** `babel.config.js` (pentru runtime). Sunt doar **două** — dacă adaugi al treilea, adaugă-l în ambele fișiere, altfel typecheck-ul trece și aplicația crapă la runtime.
+
 ```
-@app/*        → src/app/*
-@features/*   → src/features/*
-@components/*  → src/components/*
-@theme        → src/theme
-@services/*    → src/services/*
-@store/*       → src/store/*
-@hooks/*       → src/hooks/*
-@utils/*       → src/utils/*
-@types/*       → src/types/*
+@/*        → src/*        # import { api } from '@/services/api'
+@theme/*   → theme/*      # import { useTheme } from '@theme/index'
 ```
-Astfel importurile rămân stabile și lizibile: `import { useTheme } from '@theme'`.
 
 ### Regula de dependențe între straturi
+
 ```
-app/  →  features/  →  components/ + services/ + store/ + theme/ + utils/
+app/  →  features/  →  services/ + store/ + config + utils
+                    →  components/ui/ + theme/
 ```
-- `app/` (rute) importă din `features/`, dar `features/` NU importă din `app/`.
-- `components/` (UI pur) NU importă din `features/` (ar crea dependențe circulare).
-- `theme/`, `utils/`, `types/` sunt frunze: nu depind de nimic de business.
+- `app/` (rute) importă din `features/`; **`features/` nu importă niciodată din `app/`**.
+- `components/ui/` nu știe nimic despre domeniu (nu importă din `features/`).
+- `theme/`, `utils/`, `config` sunt frunze — nu depind de nimic de business.
+
+### Setări = singurul hub de navigare
+
+**Detaliu de arhitectură ușor de ratat:** tab-ul **Setări** (`app/(tabs)/setari.tsx`) e **singura cale** către majoritatea ecranelor. Din el se deschid:
+
+`profile/edit` · `verify-face` · `paywall` · `humor` · `favorites` · `events` · `passport` · `ticket` · `blocklist`
+
+Cele 3 taburi acoperă doar feed, mesaje și setări. **Fără hub-ul din Setări, nouă ecrane implementate sunt inaccesibile din UI.** Dacă ștergi sau reorganizezi lista de linkuri de acolo, verifică întâi cine mai duce la ecranul respectiv — cel mai probabil nimeni.
 
 ---
 
-## 4. Fluxul de date (pe scurt)
+## 4. Autentificare și tokenuri (real)
 
-```
-UI (feature screen)
-   │  citește / mutează
-   ├──► React Query hooks  ──► services/api/client (axios)  ──► Backend REST
-   │        (cache server state, retry, paginare)
-   │
-   ├──► Zustand store       (state efemer de client: deck index, tema, filtre)
-   │
-   └──► services/socket     (mesaje realtime, typing, match live)
-```
-- **Citirea listei de ankete**: React Query cu paginare de 10 (`useDeckQueue`).
-- **Like/Dislike**: mutație optimistă (cardul dispare instant, rollback la eroare).
-- **Match live**: eveniment prin socket → deschide `ConnectPopup` (feature `match`).
-- **Chat**: mesaje via socket, istoric via React Query (infinite query).
+`src/services/tokenStore.ts` + interceptorii din `src/services/api.ts`.
+
+| Token | Unde stă | De ce acolo |
+|---|---|---|
+| **Access** | **doar în memorie** (variabilă de modul) | Are viață scurtă. Nescris pe disc = nu poate fi extras dintr-un backup al telefonului sau de pe un device rootat. Se pierde la kill — și e în regulă: îl reobținem din refresh la pornire. |
+| **Refresh** | **expo-secure-store**, cheia `flirt.refresh_token` | Keychain (iOS) / Keystore (Android) — criptat de sistemul de operare. E singurul lucru persistat. |
+
+**Fluxul de refresh (single-flight):**
+1. Interceptorul de request atașează `Authorization: Bearer <access>` dacă există token.
+2. La un răspuns **401** pe o rută care **nu** e `/auth/*`, interceptorul de response marchează cererea cu `_retry`, apelează **o singură dată** `POST /auth/refresh` și **reîncearcă cererea o dată**.
+3. Promisiunea de refresh e memorată (`refreshing`) — dacă zece cereri primesc 401 simultan, se face **un singur** apel de refresh, nu zece. Fără asta, un ecran cu mai multe query-uri paralele ar bombarda serverul la fiecare expirare de token.
+4. Dacă refresh-ul eșuează → `tokenStore.clear()` → utilizatorul e deconectat.
+
+**La pornire** (`authStore.hydrate()`, apelat din `app/_layout.tsx`): dacă există refresh token în SecureStore, îl schimbăm pe o pereche nouă și aducem `/auth/me`. Dacă nu, `status = 'unauthenticated'`. Guard-ul reactiv din `_layout.tsx` (`AuthGuard`) reacționează la schimbările din store și redirecționează: fără sesiune → `(auth)/welcome`; sesiune dar `profile_completed = false` → `(onboarding)`; totul OK → `(tabs)/ankete`.
 
 ---
 
-## 5. Concluzie
-Arhitectura e **feature-based**, cu **rute subțiri** (expo-router), **state server** izolat (React Query) de **state client** (Zustand), și **stiluri complet separate de cod** în `theme/`. Fiecare capitol din TZ are un feature dedicat, iar accesul la platformă (cameră, geo, push, plăți, reclame) e centralizat în `services/`, ușor de testat și de înlocuit.
+## 5. Fluxul de date (real)
+
+```
+Ecran (app/*)
+   │
+   ├──► React Query  ──► src/services/api.ts (axios)  ──► Backend REST
+   │      • citiri: useQuery (feed, chats, messages, events, plans, settings...)
+   │      • scrieri: useMutation (swipe, send, react, purchase, going, checkin...)
+   │      • polling: refetchInterval (chat)
+   │
+   ├──► Zustand
+   │      • authStore   — sesiune, user, profile_completed
+   │      • anketaStore — draft-ul wizardului între pași
+   │
+   └──► theme/ (useTheme) — culori, tipografie
+```
+
+**Chatul e polling, nu WebSocket.** Nu există `socket.io` și nicio conexiune WebSocket în proiect. React Query reface cererea la interval:
+
+| Ecran | Interval | De ce |
+|---|---|---|
+| `app/chat/[id].tsx` | **3 s** | Conversație deschisă — utilizatorul se uită la ecran, latența trebuie să fie mică. |
+| `app/(tabs)/mesaje.tsx` | **5 s** | Lista de dialoguri — un badge de necitit poate întârzia câteva secunde fără să deranjeze. |
+
+**De ce polling și nu WebSocket:** e o decizie conștientă de MVP. Polling-ul e câteva rânduri de config peste infrastructura pe care o avem deja (React Query + axios + JWT), nu cere nimic nou pe backend, și supraviețuiește reconectărilor mobile fără cod special. Prețul: latență de câteva secunde, fără „typing…", fără status online, și trafic constant care consumă baterie. La volum real, un WebSocket va fi justificat — dar înlocuirea atinge **doar** hook-urile de chat, nu ecranele, pentru că datele intră tot prin cache-ul React Query.
+
+**Mapare snake_case ↔ camelCase:** fiecare `*Api.ts` declară forma brută a răspunsului (`interface XResponse`, snake_case) și o funcție `mapX()` care o convertește în tipul de UI (camelCase). Backend-ul își poate redenumi câmpurile — se schimbă un singur fișier, nu douăzeci de componente.
+
+---
+
+## 6. ❌ Ce NU există încă (amânat conștient)
+
+Toate au ecran/cod, dar **nu fac lucrul real**. Sunt aici ca să nu fie descoperite la submit.
+
+| Ce | Starea reală în cod | Consecința |
+|---|---|---|
+| **IAP nativ** (in-app purchase) | ❌ Nu există `expo-in-app-purchases` / RevenueCat. `app/paywall.tsx` afișează planurile din `GET /subscriptions/plans` și „cumpără" cu `POST /subscriptions/purchase`, care **activează abonamentul direct pe backend, fără plată reală**. | 🔴 **Blocant absolut la submit.** App Store **Guideline 3.1.1**: conținutul digital deblocat în aplicație **trebuie** vândut prin In-App Purchase. Un paywall care ocolește IAP nu e doar respins — e motivul clasic de respingere. **Fără asta nu se poate trimite aplicația.** Același lucru pe Google Play (Play Billing). |
+| **Cameră / verificare prin selfie** | ❌ `app/verify-face.tsx` există și arată un cadru de captură **stilizat cu emoji** — nu deschide camera. `faceApi.verifyFace()` face `POST /profiles/verify-face` cu un body `{ source: 'selfie' }` — **nicio imagine nu e capturată sau trimisă**. `expo-camera` nu e instalat. | 🟡 Nu blochează submit-ul, dar badge-ul de „verificat" e **fals** — îl primește oricine apasă butonul. Într-o aplicație de dating, o insignă de încredere fără nimic în spate e un risc de siguranță (și de reputație), nu doar o funcție lipsă. |
+| **Login social nativ** | ❌ `src/features/auth/socialAuth.ts` întoarce token-uri **stub** hardcodate (`stub:google@example.com`, `stub:apple@example.com`). Butoanele „Continuă cu Google/Apple" din `(auth)/welcome.tsx` există și sunt funcționale **doar** cu backendul în modul stub. Nu există `expo-auth-session` / `expo-apple-authentication`. | 🔴 **Guideline 4.8 (Sign in with Apple):** dacă oferi login cu Google (sau orice login social terț), Apple cere **obligatoriu** și **Sign in with Apple**. Deci ori implementezi ambele nativ, ori **scoți butoanele sociale** înainte de submit. A le lăsa stub = respingere sigură (butonul „nu face nimic" e și Guideline 2.1). |
+| **URL-uri legale** | ⚠️ `src/config.ts` → `legal` are fallback-uri către **`https://flirt.app/...`** — **un domeniu care nu e al nostru**. `app.json` → `extra` **nu** le suprascrie momentan, deci build-ul actual folosește exact aceste placeholder-e. | 🔴 **Obligatorii la submit.** Guideline 3.1.2 (link ToS/EULA + Privacy pe ecranul de abonament), 5.1.1 (politica de confidențialitate accesibilă din app), 1.2 (contact de suport). Pune URL-uri **live, publice, fără login** în `app.json` → `extra.termsUrl` / `privacyUrl` / `supportUrl` și declară-le identic în App Store Connect. |
+| **Push notifications** | ❌ `expo-notifications` **nu e instalat**. `src/features/push/pushService.ts` trimite la backend un token placeholder (`expo-dev-token-ios`). Înregistrarea nu aruncă niciodată eroare — push-ul e opțional și nu blochează pornirea. | 🟢 Nu blochează submit-ul. Dar permisiunea `POST_NOTIFICATIONS` e deja cerută în `app.json` — cerem o permisiune pe care **nu o folosim**, ceea ce e un semnal prost la review. |
+| **Upload media la Stories** | ❌ `app/stories/new.tsx` acceptă doar un **URL** de media (câmp text). Poze de profil se pot încărca real (expo-image-picker), story-uri nu. | 🟢 Funcțional, dar UX slab — niciun utilizator real nu are un URL de imagine la îndemână. |
+| **Reanimated / gesture-handler** | ❌ Neinstalate. Swipe-ul merge pe `PanResponder` + `Animated`. | 🟢 Fără consecințe. Decizie deliberată (vezi §1). |
+| **Localizare (i18n)** | ❌ Nu există `i18next`. Textele sunt **în română, direct în componente**. | 🟢 Fără consecințe pentru MVP. Extragerea în fișiere de traduceri devine necesară doar când adăugăm a doua limbă — cu cât mai târziu, cu atât mai multe string-uri de extras. |
+| **`events/map`** (Live Events Map) | ❌ Ruta nu există. Harta reală (WebView + Leaflet + OSM) e implementată, dar **doar în detaliul unui eveniment** (`events/[id]`). | 🟢 Funcție de produs lipsă, nu blocant tehnic — infrastructura de hartă e deja acolo. |
+| **E2E (Detox)** | ❌ Neinstalat. Doar Jest (unit + component). | 🟢 Fără consecințe imediate. |
+
+### Ordinea de atac înainte de submit
+
+1. **IAP nativ** — fără el nu se poate trimite. Nimic altceva nu contează dacă asta lipsește.
+2. **Login social**: implementează Google **+ Sign in with Apple**, sau scoate ambele butoane. Nu există cale de mijloc.
+3. **URL-uri legale reale** în `app.json` → `extra`.
+4. **Verificarea prin selfie**: implementeaz-o cu cameră reală, sau **scoate badge-ul de „verificat"** — o insignă de încredere falsă e mai rea decât absența ei.
+5. Push real (sau scoate permisiunea `POST_NOTIFICATIONS` din `app.json`).
+
+---
+
+## 7. Config (real) — `src/config.ts`
+
+Niciun URL și nicio limită nu sunt hardcodate în ecrane. Totul trece prin `config`.
+
+**API URL** — ordinea de rezoluție:
+```
+process.env.EXPO_PUBLIC_API_URL   (din eas.json, inline-uit în bundle la build)
+   → app.json → extra.apiUrl      (override local / teste)
+   → http://localhost:8000/api/v1 (DOAR în __DEV__)
+```
+
+Build-ul de producție **crapă intenționat la pornire** dacă `EXPO_PUBLIC_API_URL` lipsește sau **nu e HTTPS**:
+- Un build de release fără URL ar cădea pe `localhost` — care **nu există** pe un telefon fizic. Rezultat: eroare de rețea pe fiecare ecran.
+- HTTP cleartext e blocat de App Transport Security pe iOS.
+
+În ambele cazuri, recenzentul Apple ar vedea o aplicație complet moartă (respingere sigură pe Guideline 2.1). **Mai bine o excepție zgomotoasă în testarea internă decât o respingere tăcută la review.**
+
+Profilele din `eas.json`:
+
+| Profil | `EXPO_PUBLIC_API_URL` |
+|---|---|
+| `development` | `http://192.168.1.10:8000/api/v1` (LAN — schimbă IP-ul cu al tău) |
+| `preview` | `https://staging-api.flrt.md/api/v1` |
+| `production` | `https://api.flrt.md/api/v1` |
+
+**Restul config-ului** (`app.json` → `expo.extra`, cu fallback-uri în cod):
+
+| Grup | Chei | Note |
+|---|---|---|
+| Hartă | `mapTileUrl`, `mapAttribution`, `mapZoom`, `mapLeafletCssUrl`, `mapLeafletJsUrl` | **Fără cheie API.** Tiles OSM + Leaflet din CDN (unpkg), încărcate doar în WebView. Atribuția e obligatorie prin licența ODbL. Momentan **nu sunt suprascrise** în `app.json` — se folosesc valorile implicite din cod. |
+| Poze | `photoMinCount` (3), `photoMaxCount` (9), `photoMaxUploadBytes` (8 MB), `photoAllowedTypes`, `photoMaxDimension` (1920), `photoCompressQuality` (0.8), `photoMinCompressQuality` (0.4) | **Simetrice cu backend-ul** (`app/core/config.py`). Dacă backendul își schimbă limitele, se suprascriu din `app.json` — fără a atinge codul ecranelor. |
+| Legal | `termsUrl`, `privacyUrl`, `supportUrl` | ⚠️ **Placeholder-e** (`https://flirt.app/...`). Vezi §6. |
+
+---
+
+## 8. 18+ ONLY
+
+`src/utils/validation.ts` → **`MIN_AGE = 18`**. Data nașterii e validată la onboarding și la editarea profilului.
+
+Segmentul **16–17 a fost eliminat complet** din produs. Motivul e simplu și nenegociabil: App Store și Google Play **nu acceptă minori într-o aplicație de dating**. Orice guard, filtru sau separare pe vârstă sub 18 e **obsolet** — dacă îl întâlnești în cod sau în documentație, e o rămășiță și trebuie scos.
+
+---
+
+## 9. Comenzi
+
+```bash
+cd mobile
+npm test           # 340 teste, 57 suite (Jest + jest-expo)
+npm run typecheck  # tsc --noEmit (strict)
+npm run lint       # eslint
+npm start          # expo start
+```

@@ -88,10 +88,32 @@ describe('submitAnketa', () => {
       about: 'Salut!',
       dating_statuses: ['serious', 'friendship'],
       interests: ['sport', 'music'],
+      photos: [],
     });
     // câmpurile camelCase NU trebuie trimise
     expect(payload).not.toHaveProperty('birthDate');
     expect(payload).not.toHaveProperty('heightCm');
     expect(payload).not.toHaveProperty('datingStatuses');
+  });
+
+  it('trimite pozele existente — PUT /profiles/me REESCRIE lista, altfel s-ar șterge', async () => {
+    (api.put as jest.Mock).mockResolvedValue({ data: {} });
+
+    const draft: AnketaDraft = {
+      name: 'Ana',
+      birthDate: '2000-05-20',
+      gender: 'female',
+      heightCm: 170,
+      city: 'Chișinău',
+      languages: ['ro'],
+      datingStatuses: [],
+      interests: ['sport'],
+      photos: ['https://cdn.flirt.local/photos/p1/a.jpg'],
+    };
+
+    await submitAnketa(draft);
+
+    const [, payload] = (api.put as jest.Mock).mock.calls[0];
+    expect(payload.photos).toEqual(['https://cdn.flirt.local/photos/p1/a.jpg']);
   });
 });
