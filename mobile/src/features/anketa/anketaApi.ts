@@ -1,24 +1,44 @@
 /** Acces la API pentru anketă: referință (opțiuni) + trimiterea profilului. */
 import { api } from '@/services/api';
 
-import { AnketaDraft, InterestOption, Reference } from './types';
+import { AnketaDraft, OptionItem, Reference } from './types';
 
-/** Forma brută (snake_case) a răspunsului de la backend pentru referință. */
+/**
+ * Forma BRUTĂ a răspunsului backend-ului. Fiecare opțiune vine cu valoarea +
+ * ambele etichete localizate (`{value, label_ru, label_ro}`); NU e un string.
+ * Tratarea lor ca string-uri și randarea directă a obiectului era cauza
+ * crash-ului „Objects are not valid as a React child".
+ */
+interface RawReferenceItem {
+  value: string;
+  label_ru: string;
+  label_ro: string;
+}
+interface RawInterestItem {
+  slug: string;
+  label_ru: string;
+  label_ro: string;
+}
 interface ReferenceResponse {
-  genders?: string[];
-  dating_statuses?: string[];
-  languages?: string[];
-  interests?: InterestOption[];
+  genders?: RawReferenceItem[];
+  dating_statuses?: RawReferenceItem[];
+  languages?: RawReferenceItem[];
+  interests?: RawInterestItem[];
 }
 
-/** Aduce opțiunile de anketă din backend și le mapează în camelCase. */
+/** UI-ul aplicației e în română → afișăm eticheta `label_ro`. */
+function toOption(item: RawReferenceItem): OptionItem {
+  return { value: item.value, label: item.label_ro };
+}
+
+/** Aduce opțiunile de anketă din backend și le normalizează în `{value,label}`. */
 export async function fetchReference(): Promise<Reference> {
   const { data } = await api.get<ReferenceResponse>('/profiles/reference');
   return {
-    genders: data.genders ?? [],
-    datingStatuses: data.dating_statuses ?? [],
-    languages: data.languages ?? [],
-    interests: (data.interests ?? []).map((i) => ({ slug: i.slug, label: i.label })),
+    genders: (data.genders ?? []).map(toOption),
+    datingStatuses: (data.dating_statuses ?? []).map(toOption),
+    languages: (data.languages ?? []).map(toOption),
+    interests: (data.interests ?? []).map((i) => ({ slug: i.slug, label: i.label_ro })),
   };
 }
 

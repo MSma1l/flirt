@@ -6,11 +6,21 @@ export interface InterestOption {
   label: string;
 }
 
+/**
+ * O opțiune de referință: valoarea internă trimisă înapoi la backend + eticheta
+ * localizată deja afișabilă. Backend-ul întoarce `{value, label_ru, label_ro}`;
+ * stratul de API alege eticheta potrivită limbii (vezi `anketaApi.ts`).
+ */
+export interface OptionItem {
+  value: string;
+  label: string;
+}
+
 /** Datele de referință pentru anketă, aduse din backend (fără hardcodare). */
 export interface Reference {
-  genders: string[];
-  datingStatuses: string[];
-  languages: string[];
+  genders: OptionItem[];
+  datingStatuses: OptionItem[];
+  languages: OptionItem[];
   interests: InterestOption[];
 }
 

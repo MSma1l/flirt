@@ -14,7 +14,7 @@ import {
 
 import { Button, Input, ScreenContainer } from '@/components/ui';
 import { fetchReference, submitAnketa } from '@/features/anketa/anketaApi';
-import { AnketaDraft, InterestOption } from '@/features/anketa/types';
+import { AnketaDraft, InterestOption, OptionItem } from '@/features/anketa/types';
 import {
   FieldErrors,
   isValid,
@@ -75,9 +75,9 @@ interface ChipOption {
   label: string;
 }
 
-/** Transformă o listă de string-uri în opțiuni {key,label}. */
-function stringOptions(values: string[]): ChipOption[] {
-  return values.map((v) => ({ key: v, label: v }));
+/** Transformă opțiunile de referință {value,label} în chips {key,label}. */
+function optionChips(options: OptionItem[]): ChipOption[] {
+  return options.map((o) => ({ key: o.value, label: o.label }));
 }
 
 /** Grup de chips pentru selecție simplă sau multiplă. */
@@ -383,7 +383,7 @@ export default function ProfileEditScreen() {
         />
         <ChipGroup
           label="Gen"
-          options={stringOptions(reference.genders)}
+          options={optionChips(reference.genders)}
           values={draft.gender ? [draft.gender] : []}
           onToggle={(key) => setField('gender', key)}
           error={errors.gender}
@@ -420,7 +420,7 @@ export default function ProfileEditScreen() {
         />
         <ChipGroup
           label="Limbi de comunicare"
-          options={stringOptions(reference.languages)}
+          options={optionChips(reference.languages)}
           values={draft.languages ?? []}
           onToggle={(key) => toggleMulti('languages', key)}
           error={errors.languages}
@@ -459,7 +459,7 @@ export default function ProfileEditScreen() {
 
         <ChipGroup
           label="Statusul cunoștinței"
-          options={stringOptions(reference.datingStatuses)}
+          options={optionChips(reference.datingStatuses)}
           values={draft.datingStatuses ?? []}
           onToggle={(key) => toggleMulti('datingStatuses', key)}
         />

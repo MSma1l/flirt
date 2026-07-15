@@ -22,11 +22,23 @@ jest.mock('@/store/authStore', () => ({
 }));
 
 // Mock la anketaApi: controlăm referința și spionăm submit-ul.
+// `fetchReference` întoarce acum opțiuni {value,label} (label deja localizat).
+// Păstrăm value === label aici ca aserțiile de interacțiune să rămână simple;
+// maparea reală label_ro e acoperită în `anketaApi.test.ts`.
 const mockFetchReference = jest.fn(() =>
   Promise.resolve({
-    genders: ['Femeie', 'Bărbat'],
-    datingStatuses: ['Prietenie', 'Relație'],
-    languages: ['Română', 'Engleză'],
+    genders: [
+      { value: 'Femeie', label: 'Femeie' },
+      { value: 'Bărbat', label: 'Bărbat' },
+    ],
+    datingStatuses: [
+      { value: 'Prietenie', label: 'Prietenie' },
+      { value: 'Relație', label: 'Relație' },
+    ],
+    languages: [
+      { value: 'Română', label: 'Română' },
+      { value: 'Engleză', label: 'Engleză' },
+    ],
     interests: [
       { slug: 'sport', label: 'Sport' },
       { slug: 'muzica', label: 'Muzică' },

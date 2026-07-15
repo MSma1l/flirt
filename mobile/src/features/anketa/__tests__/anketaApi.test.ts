@@ -14,15 +14,23 @@ const { api } = require('@/services/api');
 describe('fetchReference', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('mapează snake_case → camelCase', async () => {
+  it('normalizează opțiunile backend {value,label_ru,label_ro} → {value,label} (ro)', async () => {
+    // Forma REALĂ a backend-ului: obiecte cu etichete localizate, NU string-uri.
+    // (Randarea directă a acestor obiecte crăpa cu „Objects are not valid as a
+    // React child" — de aceea testul trebuie să oglindească contractul real.)
     (api.get as jest.Mock).mockResolvedValue({
       data: {
-        genders: ['male', 'female', 'other'],
-        dating_statuses: ['serious', 'friendship'],
-        languages: ['ru', 'ro', 'en'],
+        genders: [
+          { value: 'male', label_ru: 'Мужчина', label_ro: 'Bărbat' },
+          { value: 'female', label_ru: 'Женщина', label_ro: 'Femeie' },
+        ],
+        dating_statuses: [
+          { value: 'serious', label_ru: 'Серьёзные', label_ro: 'Relație serioasă' },
+        ],
+        languages: [{ value: 'ru', label_ru: 'Русский', label_ro: 'Rusă' }],
         interests: [
-          { slug: 'sport', label: 'Sport' },
-          { slug: 'music', label: 'Muzică' },
+          { slug: 'sport', label_ru: 'Спорт', label_ro: 'Sport' },
+          { slug: 'music', label_ru: 'Музыка', label_ro: 'Muzică' },
         ],
       },
     });
@@ -30,9 +38,15 @@ describe('fetchReference', () => {
     const ref = await fetchReference();
 
     expect(api.get).toHaveBeenCalledWith('/profiles/reference');
-    expect(ref.genders).toEqual(['male', 'female', 'other']);
-    expect(ref.datingStatuses).toEqual(['serious', 'friendship']);
-    expect(ref.languages).toEqual(['ru', 'ro', 'en']);
+    // Fiecare opțiune are {value, label} — label-ul e cel românesc, gata de afișat.
+    expect(ref.genders).toEqual([
+      { value: 'male', label: 'Bărbat' },
+      { value: 'female', label: 'Femeie' },
+    ]);
+    expect(ref.datingStatuses).toEqual([
+      { value: 'serious', label: 'Relație serioasă' },
+    ]);
+    expect(ref.languages).toEqual([{ value: 'ru', label: 'Rusă' }]);
     expect(ref.interests).toEqual([
       { slug: 'sport', label: 'Sport' },
       { slug: 'music', label: 'Muzică' },
