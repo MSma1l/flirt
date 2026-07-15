@@ -117,6 +117,40 @@ class Settings(BaseSettings):
     price_ai_bot: float = 4.99
     price_all_inclusive: float = 14.99
 
+    # --- Produse IAP (App Store / Google Play) --------------------------------
+    # Id-urile produselor din App Store Connect / Play Console. Serviciul de billing
+    # NU are voie să le știe hardcodat: dacă marketingul redenumește un SKU, sau dacă
+    # rulăm un build de test cu alte produse, trebuie schimbat DOAR `.env`.
+    # Maparea produs → plan e SINGURA sursă de adevăr pentru „ce a cumpărat userul":
+    # planul cerut de client e o simplă intenție, produsul semnat de Apple e dovada.
+    iap_product_premium: str = "eu.flirt.app.premium.monthly"
+    iap_product_no_ads: str = "eu.flirt.app.noads.monthly"
+    iap_product_ai_bot: str = "eu.flirt.app.aibot.monthly"
+    iap_product_all_inclusive: str = "eu.flirt.app.allinclusive.monthly"
+
+    # --- App Store — StoreKit 2 (verificare LOCALĂ a JWS-ului) -----------------
+    # Bundle-ul aplicației: orice tranzacție semnată pentru ALT bundle e a altei
+    # aplicații din App Store și trebuie refuzată (un receipt cumpărat la 0,99 € în
+    # altă aplicație nu are voie să deschidă premium la noi).
+    app_store_bundle_id: str = "eu.flirt.app"
+    # Id-ul numeric al aplicației în App Store Connect (câmpul „Apple ID" din App
+    # Information). Biblioteca oficială îl CERE pentru mediul Production.
+    app_store_app_apple_id: int | None = None
+    # Directorul cu certificatele root Apple în format DER (.cer), descărcate de la
+    # https://www.apple.com/certificateauthority/ (minim `AppleRootCA-G3.cer`).
+    # Fără ele NU putem verifica lanțul x5c ⇒ orice JWS ar fi de necrezut.
+    app_store_root_certs_dir: str = ""
+    # Verificări OCSP online (revocarea certificatelor de semnare). Implicit OPRITE:
+    # ar adăuga un apel de rețea către Apple în calea critică a fiecărei achiziții,
+    # exact ce elimină StoreKit 2. Se pot aprinde dacă politica de risc o cere.
+    app_store_enable_online_checks: bool = False
+
+    # --- Google Play (purchases.subscriptionsv2.get) ---------------------------
+    google_play_package: str = ""
+    # Calea către fișierul JSON al service-account-ului cu rol pe Play Console
+    # (Google Cloud → IAM → Service Accounts → Keys → JSON).
+    google_play_service_account_file: str = ""
+
     # Verificare facială (TZ 2.2). Provider: 'stub' | 'rekognition'
     face_verify_provider: str = "stub"
     face_match_threshold: float = 90.0   # scor minim de similaritate (0-100)
@@ -130,9 +164,10 @@ class Settings(BaseSettings):
     # Stripe (billing live prin HTTP)
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
-    # App Store / Google Play (verificare receipt)
-    app_store_shared_secret: str = ""
-    google_play_package: str = ""
+    # App Store / Google Play: vezi blocul „Produse IAP" de mai sus.
+    # APP_STORE_SHARED_SECRET a DISPĂRUT: era credențiala API-ului legacy
+    # `verifyReceipt`, pe care nu-l mai folosim. StoreKit 2 verifică semnătura
+    # local, cu certificatele publice Apple — nu există secret partajat.
     # FCM (push live)
     fcm_server_key: str = ""
 
@@ -207,6 +242,21 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def iap_product_to_plan(self) -> dict[str, str]:
+        """produs IAP → cod de plan. Inversul mapării din `.env`.
+
+        Sensul e „ce plan îmi dă produsul ăsta", nu invers: verificarea pornește
+        ÎNTOTDEAUNA de la `productId`-ul semnat de magazin, niciodată de la planul
+        pe care pretinde clientul că l-a cumpărat.
+        """
+        return {
+            self.iap_product_premium: "premium",
+            self.iap_product_no_ads: "no_ads",
+            self.iap_product_ai_bot: "ai_bot",
+            self.iap_product_all_inclusive: "all_inclusive",
+        }
 
     @property
     def sqlalchemy_database_uri(self) -> str:
@@ -301,7 +351,9 @@ class Settings(BaseSettings):
         # primul upload / primul SMS / prima verificare de plată, în producție, pe
         # utilizatori reali. Verificăm cheile cerute de providerul efectiv ales.
         # (nume_variabilă_env → valoare) cerute doar dacă providerul e activ:
-        required_keys: dict[str, list[tuple[str, str]]] = {}
+        # (valorile pot fi și non-string, ex. APP_STORE_APP_APPLE_ID: int|None —
+        # verificarea de mai jos e „falsy?", deci acoperă și None/0.)
+        required_keys: dict[str, list[tuple[str, object]]] = {}
         if self.storage_provider == "s3":
             required_keys["STORAGE_PROVIDER=s3"] = [
                 ("S3_BUCKET", self.s3_bucket),
@@ -343,7 +395,17 @@ class Settings(BaseSettings):
             ]
         if self.billing_provider == "app_store":
             required_keys["BILLING_PROVIDER=app_store"] = [
-                ("APP_STORE_SHARED_SECRET", self.app_store_shared_secret),
+                ("APP_STORE_BUNDLE_ID", self.app_store_bundle_id),
+                # Fără certificatele root Apple pe disc, lanțul x5c nu poate fi
+                # verificat, iar un JWS neverificat e fabricabil de oricine.
+                ("APP_STORE_ROOT_CERTS_DIR", self.app_store_root_certs_dir),
+                # Cerut de biblioteca oficială pentru mediul Production.
+                ("APP_STORE_APP_APPLE_ID", self.app_store_app_apple_id),
+            ]
+        if self.billing_provider == "play":
+            required_keys["BILLING_PROVIDER=play"] = [
+                ("GOOGLE_PLAY_PACKAGE", self.google_play_package),
+                ("GOOGLE_PLAY_SERVICE_ACCOUNT_FILE", self.google_play_service_account_file),
             ]
         if self.push_provider == "fcm":
             required_keys["PUSH_PROVIDER=fcm"] = [

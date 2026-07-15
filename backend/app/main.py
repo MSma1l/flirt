@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api import legal
 from app.api.v1 import health
 from app.api.v1.router import api_router
 from app.core.config import settings
@@ -98,3 +99,7 @@ app.include_router(api_router, prefix=settings.api_v1_prefix)
 # Health checks la RĂDĂCINĂ (nu sub /api/v1): nginx, Docker healthcheck și
 # load balancer-ele le caută acolo, iar ele nu fac parte din API-ul public.
 app.include_router(health.router)
+# Paginile legale (/legal/terms, /legal/privacy, /legal/support) — tot la RĂDĂCINĂ și
+# tot în afara /api/v1: nu sunt API, sunt HTML citit de oameni (și de recenzentul App
+# Store, NELOGAT). Fără dependență de autentificare — vezi app/api/legal.py.
+app.include_router(legal.router)

@@ -202,54 +202,10 @@ async def test_stripe_missing_receipt_rejected(monkeypatch, client, db_session):
 
 
 # --- Billing: App Store -------------------------------------------------------
-@pytest.mark.asyncio
-async def test_app_store_status_zero_creates_subscription(
-    monkeypatch, client, db_session
-):
-    """App Store `status:0` → `purchase` creează abonamentul; verifică payload."""
-    captured = {}
-
-    async def fake_post(self, url, json=None, **kwargs):
-        captured["url"] = url
-        captured["json"] = json
-        return _FakeResponse({"status": 0})
-
-    monkeypatch.setattr(billing.settings, "billing_provider", "app_store")
-    monkeypatch.setattr(billing.settings, "app_store_shared_secret", "shared-xyz")
-
-    headers = await _register(client, "apple-ok@example.com")
-    user = await _get_user(client, db_session, headers)
-
-    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)  # după înregistrare
-    sub = await billing.purchase(db_session, user, "no_ads", receipt="base64receipt")
-    assert sub.plan == "no_ads"
-    assert sub.status == "active"
-
-    assert captured["url"] == billing._APP_STORE_VERIFY_URL
-    assert captured["json"] == {
-        "receipt-data": "base64receipt",
-        "password": "shared-xyz",
-    }
-
-
-@pytest.mark.asyncio
-async def test_app_store_status_nonzero_rejected(monkeypatch, client, db_session):
-    """App Store `status!=0` → 402 și NU creează abonament."""
-    async def fake_post(self, url, json=None, **kwargs):
-        return _FakeResponse({"status": 21002})
-
-    monkeypatch.setattr(billing.settings, "billing_provider", "app_store")
-    monkeypatch.setattr(billing.settings, "app_store_shared_secret", "shared-xyz")
-
-    headers = await _register(client, "apple-bad@example.com")
-    user = await _get_user(client, db_session, headers)
-
-    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)  # după înregistrare
-
-    from fastapi import HTTPException
-
-    with pytest.raises(HTTPException) as exc:
-        await billing.purchase(db_session, user, "no_ads", receipt="bad-receipt")
-    assert exc.value.status_code == 402
-
-    assert await billing.get_subscription(db_session, user) is None
+# Cele două teste de aici („status:0 → abonament", „status!=0 → 402") verificau
+# API-ul LEGACY `verifyReceipt` + secretul partajat — exact calea VULNERABILĂ care a
+# fost eliminată (accepta orice receipt cu status 0, fără să verifice bundle/produs/
+# replay). Acoperirea reală, pe verificarea LOCALĂ a JWS-ului StoreKit 2, trăiește
+# acum în `tests/test_billing_appstore.py` (lanț de certificate real, anti-replay,
+# escaladare de plan, mediu Sandbox/Production). Testele Stripe de mai sus rămân
+# neatinse (Stripe nu s-a schimbat).

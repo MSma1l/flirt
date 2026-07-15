@@ -16,6 +16,16 @@ dependencies = [
     "passlib[argon2]>=1.7.4",
     "python-multipart>=0.0.9",
     "email-validator>=2.1",
+    "httpx>=0.27",
+    # Verificarea achizițiilor App Store (StoreKit 2): biblioteca OFICIALĂ Apple.
+    # Verifică semnătura JWS-ului și lanțul x5c până la Apple Root CA G3, local, fără
+    # apel de rețea. Nu e în extra-ul `live` pentru că fără ea providerul `app_store`
+    # (adică PRODUCȚIA) nu poate valida nicio plată — nu e opțională, e critică.
+    "app-store-server-library>=1.5",
+    # JWT-ul de service account pentru Google Play (schimb OAuth2 jwt-bearer).
+    # Vine oricum ca dependență a bibliotecii Apple; îl declarăm explicit fiindcă îl
+    # importăm direct (dependență implicită = bombă cu ceas la un upgrade).
+    "pyjwt>=2.8",
 ]
 
 [project.optional-dependencies]

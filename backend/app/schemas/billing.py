@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 
 from app.core.validators import safe_str
 
@@ -12,6 +12,11 @@ from app.core.validators import safe_str
 PLAN_MAX_LENGTH = 32
 PUSH_TOKEN_MAX_LENGTH = 255
 PUSH_PLATFORM_MAX_LENGTH = 16
+
+# Plafon pentru dovada de plată. Un JWS StoreKit 2 are ~2-4 KB, un purchaseToken
+# Google ~1 KB. 16 KB lasă marjă confortabilă și, în același timp, împiedică un
+# client să ne trimită 10 MB de „receipt" (DoS pe parsare/memorie).
+RECEIPT_MAX_LENGTH = 16_384
 
 
 class PlanOut(BaseModel):
@@ -36,16 +41,27 @@ class PurchaseIn(BaseModel):
 
     `plan` e validat defensiv (trim, non-gol, plafon lungime, fără HTML/control
     chars); apartenența la catalog se verifică în serviciu (plan necunoscut → 400).
+    ATENȚIE: `plan` e doar INTENȚIA clientului. La providerii reali, planul efectiv
+    acordat se derivă din `productId`-ul semnat de magazin; dacă cele două nu
+    coincid, achiziția e REFUZATĂ (altfel se cumpăra `no_ads` și se cerea
+    `all_inclusive`).
 
-    `receipt` e DOVADA de plată de la magazin (App Store `transactionReceipt` /
-    Stripe checkout session). Fără el, cu `BILLING_PROVIDER=app_store|stripe`,
-    serviciul ridică 402 — deci lipsea din schemă = NICIO achiziție reală nu putea
-    reuși, clientul nici nu avea cum să trimită dovada. Opțional: în modul `stub`
-    (dev) e ignorat, activarea e imediată.
+    `receipt` e DOVADA de plată. Numele câmpului diferă de la client la client, așa
+    că acceptăm toate variantele reale prin `AliasChoices`:
+    - `jwsRepresentationIos` — ce trimite `expo-iap` cu StoreKit 2 (JWS semnat);
+    - `purchaseTokenAndroid` — token-ul Google Play;
+    - `receipt` — numele generic (Stripe checkout session id).
+    Un singur câmp în serviciu ⇒ o singură cale de validare, fără ramuri paralele.
     """
 
     plan: safe_str(PLAN_MAX_LENGTH)
-    receipt: str | None = None
+    receipt: str | None = Field(
+        default=None,
+        max_length=RECEIPT_MAX_LENGTH,
+        validation_alias=AliasChoices(
+            "receipt", "jwsRepresentationIos", "purchaseTokenAndroid"
+        ),
+    )
 
 
 class EntitlementsOut(BaseModel):

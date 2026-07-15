@@ -1,0 +1,292 @@
+<!--
+  RO: Politica de confidențialitate (GDPR + App Store Guideline 5.1.1).
+  Descrie EXACT ce face codul: câmpurile colectate (models/user.py, models/profile.py),
+  perioada de grație de 30 de zile la ștergere (settings.account_deletion_grace_days),
+  purjarea reală (services/account_service.py::purge_user_data, rulată de
+  scripts/gdpr_purge.py) și motivul pentru care rapoartele de moderare NU se șterg
+  (art. 17(3) GDPR). Dacă se schimbă codul, se schimbă și pagina asta.
+-->
+<main>
+
+<!-- ====================== ROMÂNĂ ====================== -->
+<section id="ro">
+  <h1>Politica de confidențialitate</h1>
+  <p class="muted">Ultima actualizare: $updated_ro · Aplicația FLIRT — No Regrets</p>
+
+  <div class="callout">
+    <p><strong>Pe scurt:</strong> colectăm doar datele necesare pentru a vă putea arăta
+    profiluri potrivite și pentru a vă ține în siguranță. Nu vindem datele nimănui. Vă puteți
+    șterge contul direct din aplicație, iar datele sunt eliminate definitiv.</p>
+    <p><strong>Aplicația este 18+.</strong> Nu colectăm cu bună știință date despre persoane
+    sub 18 ani; dacă aflăm de un astfel de cont, îl ștergem.</p>
+    <span class="badge">18+ · FĂRĂ VÂNZAREA DATELOR</span>
+  </div>
+
+  <h2>1. Cine este operatorul de date</h2>
+  <p>Operatorul aplicației FLIRT este o persoană fizică ($operator_ro), Republica Moldova.
+  Pentru orice chestiune legată de datele dumneavoastră, inclusiv exercitarea drepturilor de
+  mai jos, scrieți la <a href="mailto:$contact_email">$contact_email</a>.</p>
+
+  <h2>2. Ce date colectăm</h2>
+  <h3>Date pe care le furnizați dumneavoastră</h3>
+  <ul>
+    <li><strong>Cont:</strong> adresa de e-mail, parola (păstrată exclusiv ca hash criptografic
+    — nu o cunoaștem), iar dacă folosiți autentificarea prin cod SMS, <strong>numărul de
+    telefon</strong>.</li>
+    <li><strong>Profil:</strong> numele/prenumele afișat, <strong>data nașterii</strong>
+    (necesară pentru verificarea vârstei de 18+ și pentru filtrele de vârstă), genul,
+    înălțimea, orașul, eventual strada și naționalitatea, interesele, descrierea, răspunsurile
+    la testul de umor.</li>
+    <li><strong>Fotografii</strong> de profil și, dacă activați verificarea, un
+    <strong>selfie de verificare</strong> (comparat cu fotografia de profil).</li>
+    <li><strong>Conținut generat:</strong> mesajele din conversații, poveștile (stories),
+    participările la evenimente, raportările pe care le trimiteți.</li>
+  </ul>
+
+  <h3>Date colectate automat</h3>
+  <ul>
+    <li><strong>Locație aproximativă</strong> (coordonate), dacă acordați permisiunea — o
+    folosim pentru a calcula distanța până la alți utilizatori și pentru filtrele „în apropiere".
+    Nu afișăm niciodată adresa dumneavoastră exactă altor utilizatori.</li>
+    <li><strong>Date tehnice:</strong> adresa IP, tipul dispozitivului, identificatorul cererii,
+    momentul ultimei activități, jurnale de acces (necesare pentru securitate și depanare).</li>
+    <li><strong>Notificări:</strong> token-ul de push al dispozitivului (dacă activați
+    notificările).</li>
+    <li><strong>Istoricul achizițiilor:</strong> planul de abonament, starea și perioada de
+    valabilitate, confirmarea achiziției primită de la App Store / Google Play. NU primim și NU
+    stocăm numărul cardului dumneavoastră — plata este procesată integral de magazinul de
+    aplicații.</li>
+  </ul>
+
+  <h2>3. De ce le folosim (scopuri și temei legal)</h2>
+  <ul>
+    <li><strong>Executarea contractului</strong> (art. 6(1)(b) GDPR): crearea contului,
+    afișarea profilurilor, potrivirile, mesajele, abonamentele.</li>
+    <li><strong>Obligație legală și interes legitim — siguranța</strong> (art. 6(1)(c) și (f)):
+    verificarea vârstei de 18+, moderarea conținutului, tratarea raportărilor, prevenirea
+    fraudei, a spam-ului și a abuzului, banarea conturilor abuzive.</li>
+    <li><strong>Consimțământ</strong> (art. 6(1)(a)): locația și notificările push — le puteți
+    retrage oricând din setările telefonului.</li>
+  </ul>
+  <p>Nu vindem datele dumneavoastră și nu le folosim pentru publicitate comportamentală
+  terță.</p>
+
+  <h2>4. Cu cine le partajăm</h2>
+  <ul>
+    <li><strong>Ceilalți utilizatori:</strong> profilul dumneavoastră public (nume, vârstă,
+    fotografii, oraș, distanța aproximativă, interese) este vizibil în aplicație. Nu partajăm
+    adresa de e-mail, numărul de telefon sau coordonatele exacte.</li>
+    <li><strong>Furnizori de servicii</strong> care ne procesează datele strict pe baza
+    instrucțiunilor noastre: găzduirea serverelor, stocarea fotografiilor, serviciul de
+    notificări push, serviciul de verificare facială (dacă e activat), serviciul de trimitere a
+    codurilor SMS/e-mail.</li>
+    <li><strong>App Store / Google Play:</strong> pentru procesarea și validarea abonamentelor.</li>
+    <li><strong>Autorități</strong>, dacă legea ne obligă sau dacă este necesar pentru a preveni
+    o infracțiune (de exemplu, conținut care implică minori sau amenințări credibile).</li>
+  </ul>
+
+  <h2>5. Cât timp păstrăm datele</h2>
+  <ul>
+    <li><strong>Contul activ:</strong> cât timp îl folosiți.</li>
+    <li><strong>După cererea de ștergere:</strong> contul intră într-o perioadă de grație de
+    <strong>30 de zile</strong> (răzgândire). În tot acest timp profilul este ascuns, sesiunile
+    sunt deconectate și nu mai apăreți în flux. La expirarea celor 30 de zile, datele sunt
+    <strong>șterse definitiv</strong>, automat.</li>
+    <li><strong>Rapoartele de moderare</strong> împotriva unui utilizator se păstrează și după
+    ștergerea contului (art. 17(3) GDPR), pentru prevenirea abuzului și pentru apărarea unui
+    drept. Altfel, un abuzator și-ar putea șterge dovezile pur și simplu ștergându-și contul.</li>
+    <li><strong>Jurnalele tehnice:</strong> perioadă scurtă, necesară pentru securitate și
+    diagnosticare.</li>
+  </ul>
+
+  <h2>6. Ștergerea contului — exact ce se întâmplă</h2>
+  <p>Ștergerea se cere din aplicație: <strong>Setări → Ștergerea contului</strong>. Imediat:
+  profilul devine ascuns și toate sesiunile sunt revocate (sunteți deconectat de pe toate
+  dispozitivele). După perioada de grație de 30 de zile, un proces automat
+  <strong>șterge definitiv</strong>:</p>
+  <ul>
+    <li>profilul, fotografiile și poveștile;</li>
+    <li>conversațiile și toate mesajele;</li>
+    <li>aprecierile, potrivirile, favoritele și blocările;</li>
+    <li>setările, sesiunile și dispozitivele de notificare;</li>
+    <li>biletul, participările la evenimente, ștampilele de pașaport și abonamentul.</li>
+  </ul>
+  <p>Contul în sine este anonimizat ireversibil (adresa de e-mail este înlocuită cu un
+  identificator anonim, iar parola devine imposibil de folosit), astfel încât cheile către
+  rapoartele de moderare păstrate să rămână valide, dar dumneavoastră să nu mai puteți fi
+  identificat. Puteți anula cererea de ștergere oricând în timpul celor 30 de zile,
+  autentificându-vă din nou.</p>
+
+  <h2>7. Drepturile dumneavoastră (GDPR)</h2>
+  <ul>
+    <li><strong>Acces</strong> — o copie a datelor pe care le avem despre dumneavoastră.</li>
+    <li><strong>Rectificare</strong> — corectarea datelor greșite (majoritatea direct din
+    aplicație).</li>
+    <li><strong>Ștergere („dreptul de a fi uitat")</strong> — direct din aplicație (Setări →
+    Ștergerea contului) sau la cerere, prin e-mail.</li>
+    <li><strong>Restricționare și opoziție</strong> la anumite prelucrări.</li>
+    <li><strong>Portabilitate</strong> — datele furnizate de dumneavoastră, într-un format
+    lizibil.</li>
+    <li><strong>Retragerea consimțământului</strong> (locație, notificări) oricând, fără a
+    afecta legalitatea prelucrării anterioare.</li>
+  </ul>
+  <p><strong>Cum le exercitați:</strong> din aplicație sau scriind la
+  <a href="mailto:$contact_email">$contact_email</a>. Răspundem în cel mult 30 de zile. Aveți
+  de asemenea dreptul de a depune o plângere la autoritatea de supraveghere competentă.</p>
+
+  <h2>8. Securitate</h2>
+  <ul>
+    <li>Tot traficul dintre aplicație și servere este criptat (HTTPS/TLS).</li>
+    <li>Parolele sunt stocate exclusiv ca hash-uri criptografice moderne (Argon2) — nu în
+    clar.</li>
+    <li>Accesul la datele de producție este limitat; acțiunile administrative sunt jurnalizate.</li>
+    <li>Datele de contact din mesaje sunt mascate automat, ca protecție împotriva escrocheriilor.</li>
+  </ul>
+
+  <h2>9. Cookie-uri</h2>
+  <p>Aplicația mobilă nu folosește cookie-uri de urmărire. Aceste pagini legale nu setează
+  cookie-uri și nu conțin scripturi de analiză sau resurse externe.</p>
+
+  <h2>10. Modificări și contact</h2>
+  <p>Vom actualiza această politică atunci când se schimbă modul în care prelucrăm datele.
+  Versiunea în vigoare este cea publicată la această adresă. Contact:
+  <a href="mailto:$contact_email">$contact_email</a>.</p>
+</section>
+
+<!-- ====================== ENGLISH ====================== -->
+<section id="en">
+  <h1>Privacy Policy</h1>
+  <p class="muted">Last updated: $updated_en · FLIRT — No Regrets app</p>
+
+  <div class="callout">
+    <p><strong>In short:</strong> we collect only the data needed to show you relevant profiles
+    and to keep you safe. We do not sell your data to anyone. You can delete your account
+    straight from the app, and the data is permanently erased.</p>
+    <p><strong>The app is 18+.</strong> We do not knowingly collect data about people under 18;
+    if we learn of such an account, we delete it.</p>
+    <span class="badge">18+ · NO DATA SELLING</span>
+  </div>
+
+  <h2>1. Who is the data controller</h2>
+  <p>The FLIRT app is operated by an individual (natural person) ($operator_en), Republic of
+  Moldova. For anything related to your data, including exercising the rights below, write to
+  <a href="mailto:$contact_email">$contact_email</a>.</p>
+
+  <h2>2. What data we collect</h2>
+  <h3>Data you provide</h3>
+  <ul>
+    <li><strong>Account:</strong> e-mail address, password (stored only as a cryptographic hash
+    — we never see it), and, if you sign in with an SMS code, your <strong>phone
+    number</strong>.</li>
+    <li><strong>Profile:</strong> display name, <strong>date of birth</strong> (required to verify
+    you are 18+ and for age filters), gender, height, city, optionally street and nationality,
+    interests, bio, and your answers to the humour test.</li>
+    <li><strong>Photos</strong> for your profile and, if you enable verification, a
+    <strong>verification selfie</strong> (compared with your profile photo).</li>
+    <li><strong>User-generated content:</strong> chat messages, stories, event attendance,
+    reports you submit.</li>
+  </ul>
+
+  <h3>Data collected automatically</h3>
+  <ul>
+    <li><strong>Approximate location</strong> (coordinates), if you grant permission — used to
+    compute the distance to other users and for "nearby" filters. We never show your exact
+    address to other users.</li>
+    <li><strong>Technical data:</strong> IP address, device type, request identifier, last-active
+    timestamp, access logs (needed for security and troubleshooting).</li>
+    <li><strong>Notifications:</strong> your device push token (if you enable notifications).</li>
+    <li><strong>Purchase history:</strong> subscription plan, status and validity period, and the
+    purchase receipt received from the App Store / Google Play. We do NOT receive or store your
+    card number — payment is processed entirely by the app store.</li>
+  </ul>
+
+  <h2>3. Why we use it (purposes and legal basis)</h2>
+  <ul>
+    <li><strong>Performance of the contract</strong> (GDPR art. 6(1)(b)): account creation,
+    showing profiles, matches, messages, subscriptions.</li>
+    <li><strong>Legal obligation and legitimate interest — safety</strong> (art. 6(1)(c) and (f)):
+    18+ age verification, content moderation, handling reports, preventing fraud, spam and abuse,
+    banning abusive accounts.</li>
+    <li><strong>Consent</strong> (art. 6(1)(a)): location and push notifications — you can
+    withdraw consent at any time from your phone settings.</li>
+  </ul>
+  <p>We do not sell your data and we do not use it for third-party behavioural advertising.</p>
+
+  <h2>4. Who we share it with</h2>
+  <ul>
+    <li><strong>Other users:</strong> your public profile (name, age, photos, city, approximate
+    distance, interests) is visible in the app. We never share your e-mail address, phone number
+    or exact coordinates.</li>
+    <li><strong>Service providers</strong> processing data strictly on our instructions: server
+    hosting, photo storage, push notification service, face verification service (when enabled),
+    SMS/e-mail code delivery.</li>
+    <li><strong>App Store / Google Play:</strong> to process and validate subscriptions.</li>
+    <li><strong>Authorities</strong>, where required by law or where necessary to prevent a crime
+    (for example, content involving minors or credible threats).</li>
+  </ul>
+
+  <h2>5. How long we keep data</h2>
+  <ul>
+    <li><strong>Active account:</strong> for as long as you use it.</li>
+    <li><strong>After a deletion request:</strong> the account enters a <strong>30-day</strong>
+    grace period (in case you change your mind). Throughout it, your profile is hidden, your
+    sessions are signed out, and you no longer appear in the feed. When the 30 days expire, the
+    data is <strong>permanently deleted</strong>, automatically.</li>
+    <li><strong>Moderation reports</strong> against a user are retained after account deletion
+    (GDPR art. 17(3)), to prevent abuse and to establish or defend legal claims. Otherwise an
+    abuser could erase the evidence against them simply by deleting their account.</li>
+    <li><strong>Technical logs:</strong> a short period, as needed for security and diagnostics.</li>
+  </ul>
+
+  <h2>6. Account deletion — exactly what happens</h2>
+  <p>You request deletion from the app: <strong>Settings → Delete account</strong>. Immediately:
+  your profile is hidden and all sessions are revoked (you are signed out on every device). After
+  the 30-day grace period an automated process <strong>permanently deletes</strong>:</p>
+  <ul>
+    <li>your profile, photos and stories;</li>
+    <li>your conversations and all messages;</li>
+    <li>likes, matches, favourites and blocks;</li>
+    <li>settings, sessions and notification devices;</li>
+    <li>your ticket, event attendance, passport stamps and subscription.</li>
+  </ul>
+  <p>The account record itself is irreversibly anonymised (the e-mail address is replaced with an
+  anonymous identifier and the password becomes unusable), so that the keys to the retained
+  moderation reports stay valid while you can no longer be identified. You may cancel the deletion
+  request at any time during the 30 days simply by signing in again.</p>
+
+  <h2>7. Your rights (GDPR)</h2>
+  <ul>
+    <li><strong>Access</strong> — a copy of the data we hold about you.</li>
+    <li><strong>Rectification</strong> — correction of inaccurate data (most of it directly in the
+    app).</li>
+    <li><strong>Erasure ("right to be forgotten")</strong> — directly in the app (Settings →
+    Delete account) or on request by e-mail.</li>
+    <li><strong>Restriction and objection</strong> to certain processing.</li>
+    <li><strong>Portability</strong> — the data you provided, in a readable format.</li>
+    <li><strong>Withdrawal of consent</strong> (location, notifications) at any time, without
+    affecting the lawfulness of earlier processing.</li>
+  </ul>
+  <p><strong>How to exercise them:</strong> from the app, or by writing to
+  <a href="mailto:$contact_email">$contact_email</a>. We reply within 30 days at the latest. You
+  also have the right to lodge a complaint with the competent supervisory authority.</p>
+
+  <h2>8. Security</h2>
+  <ul>
+    <li>All traffic between the app and our servers is encrypted (HTTPS/TLS).</li>
+    <li>Passwords are stored only as modern cryptographic hashes (Argon2) — never in plain
+    text.</li>
+    <li>Access to production data is restricted; administrative actions are logged.</li>
+    <li>Contact details inside messages are automatically masked, as protection against scams.</li>
+  </ul>
+
+  <h2>9. Cookies</h2>
+  <p>The mobile app uses no tracking cookies. These legal pages set no cookies and contain no
+  analytics scripts or external resources.</p>
+
+  <h2>10. Changes and contact</h2>
+  <p>We will update this policy whenever the way we process data changes. The version in force is
+  the one published at this address. Contact:
+  <a href="mailto:$contact_email">$contact_email</a>.</p>
+</section>
+
+</main>

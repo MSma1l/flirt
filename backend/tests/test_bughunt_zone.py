@@ -5,7 +5,7 @@ Fiecare test aici este ROȘU pe codul actual: afirmă comportamentul CORECT
 (cel așteptat), pe care implementarea de azi NU îl are. NU reparăm nimic —
 doar demonstrăm.
 """
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -76,10 +76,21 @@ async def test_app_store_purchase_with_valid_receipt_succeeds(client, monkeypatc
     """
     monkeypatch.setattr(settings, "billing_provider", "app_store")
 
-    # Validator fals: acceptă DOAR dacă receipt-ul e prezent (fără rețea reală).
-    async def fake_verify(receipt):
+    # Validator fals: acceptă DOAR dacă receipt-ul e prezent (fără crypto/rețea
+    # reală). Semnătura oglindește noul `_verify_app_store(receipt, plan)`, care
+    # întoarce un `VerifiedPurchase` dovedit — nu mai e vechiul verifyReceipt.
+    async def fake_verify(receipt, plan):
         if not receipt:
             raise billing._payment_required("Lipsește receipt-ul App Store.")
+        return billing.VerifiedPurchase(
+            provider="app_store",
+            transaction_id=f"txn-{receipt}",
+            original_transaction_id=f"orig-{receipt}",
+            product_id=f"eu.flirt.app.{plan}.monthly",
+            plan=plan,
+            environment="Sandbox",
+            expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+        )
 
     monkeypatch.setattr(billing, "_verify_app_store", fake_verify)
 
