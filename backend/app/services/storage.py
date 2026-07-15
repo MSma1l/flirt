@@ -58,18 +58,34 @@ def build_photo_key(profile_id, content_type: str) -> str:
     return f"{photo_prefix(profile_id)}{uuid4().hex}.{ext}"
 
 
-def key_from_own_url(url: str, profile_id) -> str | None:
-    """Întoarce cheia S3 dacă `url` e în storage-ul nostru ȘI sub prefixul
-    `photos/{profile_id}/` al userului curent; altfel None (respins).
+def _relative_key(url: str) -> str | None:
+    """Cheia relativă la storage-ul propriu, sau None dacă URL-ul nu e al nostru.
 
-    Blochează ștergerea/citirea arbitrară de obiecte prin URL controlat de user
-    (inclusiv cheile altui profil din același bucket).
+    `storage_base_url` poate conține un PATH (ex. `https://api.flrt.md/media`
+    pentru providerul 'local'). Îl scoatem înainte de a compara cheia, ca URL-ul
+    `.../media/photos/x.jpg` să dea cheia `photos/x.jpg` — la fel ca pe S3, unde
+    base_url n-are path. Fără asta, verificările de namespace de mai jos ar pica
+    pe providerul local.
     """
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.netloc not in allowed_hosts():
         return None
-    key = parsed.path.lstrip("/")
-    if not key.startswith(photo_prefix(profile_id)):
+    base_path = urlparse(settings.storage_base_url).path.rstrip("/")  # '' sau '/media'
+    path = parsed.path
+    if base_path and (path == base_path or path.startswith(base_path + "/")):
+        path = path[len(base_path):]
+    return path.lstrip("/")
+
+
+def key_from_own_url(url: str, profile_id) -> str | None:
+    """Întoarce cheia dacă `url` e în storage-ul nostru ȘI sub prefixul
+    `photos/{profile_id}/` al userului curent; altfel None (respins).
+
+    Blochează ștergerea/citirea arbitrară de obiecte prin URL controlat de user
+    (inclusiv cheile altui profil din același namespace).
+    """
+    key = _relative_key(url)
+    if key is None or not key.startswith(photo_prefix(profile_id)):
         return None
     return key
 
@@ -80,11 +96,8 @@ def key_within_namespace(url: str) -> str | None:
     Nu leagă de un profil anume — folosit în layerul de storage/verify unde
     `profile_id` nu e disponibil, pentru a refuza chei în afara namespace-ului.
     """
-    parsed = urlparse(url)
-    if parsed.scheme != "https" or parsed.netloc not in allowed_hosts():
-        return None
-    key = parsed.path.lstrip("/")
-    if not key.startswith("photos/"):
+    key = _relative_key(url)
+    if key is None or not key.startswith("photos/"):
         return None
     return key
 
@@ -174,13 +187,62 @@ class S3Storage:
         return None
 
 
+class LocalStorage:
+    """Storage pe disc, servit de pe domeniul propriu — GRATUIT, fără AWS.
+
+    Scrie bytes-ii sub `storage_local_dir/{key}` (director montat ca volum Docker,
+    ca fișierele să persiste) și întoarce `{storage_base_url}/{key}`. Fișierele
+    sunt servite static de aplicație la `/media` (vezi `main.py`).
+
+    Cheia vine ÎNTOTDEAUNA de la apelant (`build_photo_key` / cheia de story) —
+    uuid + extensie validă, niciodată `filename` brut. În plus, rezolvăm calea și
+    verificăm că rămâne SUB rădăcină (anti path traversal), ca plasă de siguranță.
+    """
+
+    def _root(self):
+        from pathlib import Path
+
+        return Path(settings.storage_local_dir).resolve()
+
+    def _path_for_key(self, key: str):
+        """Calea absolută pe disc pentru o cheie, garantat sub rădăcină."""
+        root = self._root()
+        target = (root / key.lstrip("/")).resolve()
+        if target != root and root not in target.parents:
+            raise ValueError(f"Cheie în afara directorului de storage: {key!r}")
+        return target
+
+    async def save(self, key: str, content: bytes, content_type: str) -> str:
+        """Scrie fișierul pe disc și întoarce URL-ul public (servit la /media)."""
+        target = self._path_for_key(key)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+        return f"{settings.storage_base_url.rstrip('/')}/{key.lstrip('/')}"
+
+    async def delete(self, url: str) -> None:
+        """Șterge fișierul dacă URL-ul e al nostru și calea rămâne sub rădăcină."""
+        key = _relative_key(url)
+        if not key:
+            return None
+        try:
+            target = self._path_for_key(key)
+        except ValueError:
+            return None
+        if target.is_file():
+            target.unlink()
+        return None
+
+
 def get_storage() -> Storage:
     """Fabrică de storage în funcție de `settings.storage_provider`."""
     provider = settings.storage_provider
     if provider == "stub":
         return StubStorage()
+    if provider == "local":
+        return LocalStorage()
     if provider == "s3":
         return S3Storage()
     raise NotImplementedError(
-        f"Provider de storage necunoscut: '{provider}'. Valori permise: 'stub', 's3'."
+        f"Provider de storage necunoscut: '{provider}'. "
+        "Valori permise: 'stub', 'local', 's3'."
     )

@@ -92,6 +92,10 @@ services:
     # drum către API din exterior trece prin nginx (TLS + rate limiting).
     expose:
       - "8000"
+    # Media încărcată (poze/story-uri) cu STORAGE_PROVIDER=local. Volum persistent
+    # ca fișierele să supraviețuiască restartului/rebuild-ului containerului.
+    volumes:
+      - mediadata:/data/media
     # Readiness REAL (SELECT 1 pe DB + PING pe Redis) — nu un 200 static.
     # `start_period` acoperă migrațiile Alembic din entrypoint.
     healthcheck:
@@ -223,6 +227,7 @@ services:
 
 volumes:
   pgdata:
+  mediadata:
   redisdata:
   letsencrypt:
   certbot_www:

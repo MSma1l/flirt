@@ -81,9 +81,16 @@ class Settings(BaseSettings):
     report_autoban_threshold: int = 3   # câte rapoarte distincte → auto-ascundere cont
 
     # === Integrări externe (stub implicit; setează providerul + cheile la deploy) ===
-    # Storage foto (TZ 2.4). Provider: 'stub' | 's3'
+    # Storage foto/video (TZ 2.4). Provider: 'stub' | 'local' | 's3'
+    #  - 'local': salvează pe disc pe server (volum Docker persistent) și servește
+    #    fișierele de pe domeniul propriu. GRATUIT, fără AWS. Pune
+    #    STORAGE_BASE_URL=https://<domeniu>/media și STORAGE_LOCAL_DIR=/data/media.
+    #  - 's3': AWS S3 (cere chei).
     storage_provider: str = "stub"
     storage_base_url: str = "https://cdn.flirt.local"   # bază URL pentru stub
+    # Directorul pe disc unde scrie providerul 'local' (montat ca volum Docker,
+    # ca fișierele să supraviețuiască restartului/rebuild-ului containerului).
+    storage_local_dir: str = "/data/media"
     s3_bucket: str = ""
     s3_region: str = ""
     aws_access_key_id: str = ""

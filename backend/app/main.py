@@ -103,3 +103,19 @@ app.include_router(health.router)
 # tot în afara /api/v1: nu sunt API, sunt HTML citit de oameni (și de recenzentul App
 # Store, NELOGAT). Fără dependență de autentificare — vezi app/api/legal.py.
 app.include_router(legal.router)
+
+# Media încărcată (poze de profil, story-uri) servită static când
+# STORAGE_PROVIDER=local — GRATUIT, fără AWS. Fișierele trăiesc într-un volum
+# Docker (STORAGE_LOCAL_DIR), iar URL-urile întoarse de `LocalStorage` pointează
+# aici. Public, fără auth (media publică de profil), în afara /api/v1.
+if settings.storage_provider == "local":
+    import os
+
+    from fastapi.staticfiles import StaticFiles
+
+    os.makedirs(settings.storage_local_dir, exist_ok=True)
+    app.mount(
+        "/media",
+        StaticFiles(directory=settings.storage_local_dir),
+        name="media",
+    )
