@@ -52,6 +52,42 @@ jest.mock('expo-file-system', () => ({
   },
 }));
 
+// Push: modulele native (expo-notifications, expo-device) nu există în jest.
+// Implicit simulăm un SIMULATOR fără permisiune acordată — adică EXACT cazul în
+// care serviciul de push nu atinge nici rețeaua, nici backend-ul. Ecranele care
+// îl importă rămân astfel curate, iar testele de push suprascriu local mock-ul
+// (jest.mock la nivel de fișier are prioritate) pentru scenariile lor.
+jest.mock('expo-device', () => ({ isDevice: false }));
+
+jest.mock('expo-notifications', () => ({
+  AndroidImportance: { MIN: 1, LOW: 2, DEFAULT: 3, HIGH: 4, MAX: 5 },
+  IosAuthorizationStatus: {
+    NOT_DETERMINED: 0,
+    DENIED: 1,
+    AUTHORIZED: 2,
+    PROVISIONAL: 3,
+    EPHEMERAL: 4,
+  },
+  setNotificationHandler: jest.fn(),
+  setNotificationChannelAsync: jest.fn(async () => null),
+  getPermissionsAsync: jest.fn(async () => ({
+    granted: false,
+    canAskAgain: true,
+    status: 'undetermined',
+  })),
+  requestPermissionsAsync: jest.fn(async () => ({
+    granted: false,
+    canAskAgain: true,
+    status: 'denied',
+  })),
+  getExpoPushTokenAsync: jest.fn(async () => ({ data: 'ExponentPushToken[test]', type: 'expo' })),
+  addNotificationReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
+  addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
+  getLastNotificationResponseAsync: jest.fn(async () => null),
+  dismissAllNotificationsAsync: jest.fn(async () => undefined),
+  setBadgeCountAsync: jest.fn(async () => true),
+}));
+
 // react-native-webview ≥13.15 cere un TurboModule nativ chiar la import
 // (TurboModuleRegistry.getEnforcing), care nu există în jest. Îl înlocuim cu o
 // componentă inertă: logica hărții (validarea coordonatelor, HTML-ul Leaflet) e

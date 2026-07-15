@@ -68,9 +68,17 @@ export async function fetchMySubscription(): Promise<Subscription | null> {
   return data ? mapSubscription(data) : null;
 }
 
-/** Cumpără (activează) un plan și întoarce abonamentul rezultat. */
-export async function purchase(plan: string): Promise<Subscription> {
-  const { data } = await api.post<SubscriptionResponse>('/subscriptions/purchase', { plan });
+/**
+ * Confirmă un plan la backend și întoarce abonamentul rezultat.
+ *
+ * `receipt` e DOVADA de plată de la magazin (JWS-ul StoreKit 2 pe iOS,
+ * purchaseToken pe Android). Backend-ul o validează la Apple/Google — fără ea,
+ * cu provider real de billing, răspunde 402. E opțional doar pentru planurile
+ * fără preț (nu trec prin magazin) și pentru modul `stub` de dezvoltare.
+ */
+export async function purchase(plan: string, receipt?: string): Promise<Subscription> {
+  const payload = receipt ? { plan, receipt } : { plan };
+  const { data } = await api.post<SubscriptionResponse>('/subscriptions/purchase', payload);
   return mapSubscription(data);
 }
 

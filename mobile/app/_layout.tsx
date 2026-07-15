@@ -11,6 +11,7 @@ import { StatusBar } from 'expo-status-bar';
 import React, { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { PushBridge } from '@/features/push/PushBridge';
 import { useAuthStore } from '@/store/authStore';
 import { ThemeProvider } from '@theme/index';
 
@@ -81,6 +82,8 @@ export default function RootLayout() {
         <ThemeProvider>
           <StatusBar style="auto" />
           <AuthGuard />
+          {/* Notificări: handler, tap → ecran, sincronizarea tăcută a tokenului. */}
+          <PushBridge />
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="index" />
             <Stack.Screen name="(auth)" />

@@ -18,6 +18,10 @@ const extra = (Constants.expoConfig?.extra ?? {}) as {
   photoMaxDimension?: number;
   photoCompressQuality?: number;
   photoMinCompressQuality?: number;
+  iapProductIds?: Record<string, string>;
+  googleAuthClientIdIos?: string;
+  googleAuthClientIdAndroid?: string;
+  googleAuthClientIdWeb?: string;
 };
 
 /**
@@ -90,11 +94,42 @@ export const config = {
    */
   legal: {
     /** Termeni și condiții / EULA (include clauza de toleranță zero). */
-    termsUrl: extra.termsUrl ?? 'https://flirt.app/legal/terms',
+    termsUrl: extra.termsUrl ?? 'https://api.flrt.md/legal/terms',
     /** Politica de confidențialitate. */
-    privacyUrl: extra.privacyUrl ?? 'https://flirt.app/legal/privacy',
+    privacyUrl: extra.privacyUrl ?? 'https://api.flrt.md/legal/privacy',
     /** Pagina de suport / contact pentru utilizatori. */
-    supportUrl: extra.supportUrl ?? 'https://flirt.app/support',
+    supportUrl: extra.supportUrl ?? 'https://api.flrt.md/legal/support',
+  },
+
+  /**
+   * In-App Purchase (StoreKit 2 / Play Billing). Cheia e codul planului din
+   * catalogul backend-ului (`PLANS`), valoarea e ID-ul produsului din App Store
+   * Connect. Apple NU acceptă alt canal de plată pentru conținut digital
+   * (Guideline 3.1.1) — de aceea nu există niciun Stripe pe ecranul de abonament.
+   *
+   * ID-urile trebuie să fie IDENTICE cu cele definite în App Store Connect. Dacă
+   * nu se potrivesc, magazinul întoarce pur și simplu zero produse și paywall-ul
+   * rămâne gol — de aceea `iap.ts` raportează explicit produsele lipsă în loc să
+   * eșueze mut.
+   */
+  iap: {
+    productIds: extra.iapProductIds ?? {},
+  },
+
+  /**
+   * Login social. Backend-ul verifică deja token-urile prin JWKS-ul real (Google
+   * + Apple); aici stau doar ID-urile de client necesare pe dispozitiv.
+   *
+   * Guideline 4.8: dacă aplicația oferă login prin Google, „Sign in with Apple"
+   * devine OBLIGATORIU. Nu există varianta „doar Google" — de aceea ecranul le
+   * arată pe amândouă sau pe niciuna (vezi `socialAuth.ts`).
+   *
+   * Apple nu are nevoie de un client ID pe iOS (folosește bundle identifier-ul).
+   */
+  googleAuth: {
+    clientIdIos: extra.googleAuthClientIdIos ?? '',
+    clientIdAndroid: extra.googleAuthClientIdAndroid ?? '',
+    clientIdWeb: extra.googleAuthClientIdWeb ?? '',
   },
 
   /**

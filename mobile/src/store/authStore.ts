@@ -1,6 +1,7 @@
 /** Store global de autentificare (Zustand). Fără hardcodare — totul prin api. */
 import { create } from 'zustand';
 
+import { unregisterDevice } from '@/features/push/pushService';
 import { api } from '@/services/api';
 import { tokenStore } from '@/services/tokenStore';
 
@@ -72,6 +73,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
+    // ÎNAINTE de a șterge tokenurile: cererea de dezînregistrare are nevoie de
+    // Bearer-ul userului care pleacă. Altfel dispozitivul rămâne legat de contul
+    // lui, iar următorul user de pe acest telefon i-ar primi notificările.
+    await unregisterDevice();
+
     const refresh = await tokenStore.getRefresh();
     try {
       if (refresh) await api.post('/auth/logout', { refresh_token: refresh });

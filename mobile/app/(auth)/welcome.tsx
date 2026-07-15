@@ -1,21 +1,80 @@
 /** Ecran de întâmpinare: logo FLIRT + slogan + acțiuni cont nou / autentificare / social / telefon. */
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { isAxiosError } from 'axios';
+import React, { useEffect, useState } from 'react';
 import { Linking, StyleSheet, Text, View } from 'react-native';
 
 import { Button, ScreenContainer } from '@/components/ui';
 import { config } from '@/config';
-import { getAppleIdToken, getGoogleIdToken } from '@/features/auth/socialAuth';
+import {
+  getAppleIdToken,
+  getAvailableSocialProviders,
+  getGoogleIdToken,
+  isCanceled,
+  SocialAuthError,
+  SocialProviders,
+} from '@/features/auth/socialAuth';
 import { useAuthStore } from '@/store/authStore';
 import { useTheme } from '@theme/index';
+
+/** Traduce orice eșec al fluxului social într-un mesaj pe care userul îl înțelege. */
+function socialErrorMessage(error: unknown): string {
+  if (error instanceof SocialAuthError) {
+    switch (error.code) {
+      case 'unavailable':
+        return 'Autentificarea Apple nu e disponibilă pe acest dispozitiv.';
+      case 'not_configured':
+        return 'Autentificarea socială nu e disponibilă în această versiune.';
+      case 'no_token':
+        return 'Providerul nu a întors un token valid. Încearcă din nou.';
+      default:
+        return 'Autentificarea nu a reușit. Încearcă din nou.';
+    }
+  }
+
+  // Eșecuri de la backend (`POST /auth/{provider}`): fără răspuns = rețea căzută,
+  // 401 = token respins la verificarea JWKS. Le distingem, ca userul să știe dacă
+  // are rost să reîncerce.
+  if (isAxiosError(error)) {
+    if (!error.response) {
+      return 'Nu am putut contacta serverul. Verifică conexiunea la internet.';
+    }
+    if (error.response.status === 401) {
+      return 'Contul nu a putut fi verificat. Încearcă din nou.';
+    }
+  }
+
+  return 'Autentificarea nu a reușit. Încearcă din nou.';
+}
 
 export default function Welcome() {
   const router = useRouter();
   const loginWithProvider = useAuthStore((s) => s.loginWithProvider);
-  const { colors, typography, spacing } = useTheme();
+  const { colors, typography, spacing, radius } = useTheme();
 
   const [loadingProvider, setLoadingProvider] = useState<'google' | 'apple' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Pornim cu ambele ascunse: disponibilitatea Apple se află abia după un apel
+  // asincron, iar un buton care apare și dispare ar fi mai rău decât unul întârziat.
+  const [providers, setProviders] = useState<SocialProviders>({
+    google: false,
+    apple: false,
+  });
+
+  useEffect(() => {
+    let active = true;
+    getAvailableSocialProviders()
+      .then((available) => {
+        if (active) setProviders(available);
+      })
+      .catch(() => {
+        // Fără providere sociale ecranul rămâne complet funcțional (email + telefon).
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   /** Deschide un document legal în browser (URL-uri din config, nu hardcodate). */
   const openLink = (url: string) => {
@@ -32,8 +91,9 @@ export default function Welcome() {
         provider === 'google' ? await getGoogleIdToken() : await getAppleIdToken();
       await loginWithProvider(provider, idToken);
       // La succes, guard-ul de auth din _layout redirecționează.
-    } catch {
-      setError('Autentificarea nu a reușit. Încearcă din nou.');
+    } catch (err) {
+      // Anularea e o alegere a userului, nu o eroare: nu-i arătăm nimic roșu.
+      if (!isCanceled(err)) setError(socialErrorMessage(err));
     } finally {
       setLoadingProvider(null);
     }
@@ -63,22 +123,34 @@ export default function Welcome() {
           onPress={() => router.push('/(auth)/login')}
         />
 
-        <Button
-          label="Continuă cu Google"
-          variant="outline"
-          onPress={() => onSocial('google')}
-          loading={loadingProvider === 'google'}
-          disabled={loadingProvider !== null}
-          testID="welcome-google"
-        />
-        <Button
-          label="Continuă cu Apple"
-          variant="outline"
-          onPress={() => onSocial('apple')}
-          loading={loadingProvider === 'apple'}
-          disabled={loadingProvider !== null}
-          testID="welcome-apple"
-        />
+        {providers.google ? (
+          <Button
+            label="Continuă cu Google"
+            variant="outline"
+            onPress={() => onSocial('google')}
+            loading={loadingProvider === 'google'}
+            disabled={loadingProvider !== null}
+            testID="welcome-google"
+          />
+        ) : null}
+
+        {/* Butonul OFICIAL Apple: logo, text și paletă impuse de Apple (HIG).
+            Un buton desenat de noi e motiv de respingere la review — de aceea e
+            singurul din ecran care nu folosește componenta noastră `Button`.
+            Păstrăm doar raza „pill" a design system-ului. */}
+        {providers.apple ? (
+          <AppleAuthentication.AppleAuthenticationButton
+            testID="welcome-apple"
+            buttonType={
+              AppleAuthentication.AppleAuthenticationButtonType.CONTINUE
+            }
+            buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+            cornerRadius={radius.pill}
+            style={styles.appleButton}
+            onPress={() => onSocial('apple')}
+          />
+        ) : null}
+
         <Button
           label="Continuă cu telefonul"
           variant="outline"
@@ -88,7 +160,12 @@ export default function Welcome() {
         />
 
         {error ? (
-          <Text style={[typography.caption, { color: colors.danger }]}>{error}</Text>
+          <Text
+            testID="welcome-social-error"
+            style={[typography.caption, { color: colors.danger }]}
+          >
+            {error}
+          </Text>
         ) : null}
 
         {/* Autentificarea socială / prin telefon creează cont fără a trece prin
@@ -127,4 +204,7 @@ export default function Welcome() {
 const styles = StyleSheet.create({
   hero: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   legal: { textAlign: 'center' },
+  // Înălțime egală cu a butoanelor noastre (paddingVertical 15 + text) ca stiva
+  // de acțiuni să rămână aliniată vizual.
+  appleButton: { height: 52, width: '100%' },
 });

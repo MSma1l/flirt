@@ -8,6 +8,7 @@ import { ScreenContainer } from '@/components/ui';
 import { ChatListItem } from '@/features/chat/ChatListItem';
 import { fetchChats } from '@/features/chat/chatApi';
 import { ChatSummary } from '@/features/chat/types';
+import { usePushPermissionPrompt } from '@/features/push/usePushPermissionPrompt';
 import { useTheme } from '@theme/index';
 
 const REFETCH_MS = 5000;
@@ -21,6 +22,11 @@ export default function MesajeScreen() {
     queryFn: fetchChats,
     refetchInterval: REFETCH_MS,
   });
+
+  // Momentul potrivit pentru permisiunea de notificări: userul are deja
+  // conversații, deci așteaptă răspunsuri — notificarea îi este de folos ACUM.
+  // (Hook-ul trebuie apelat înaintea return-urilor timpurii de mai jos.)
+  usePushPermissionPrompt((data ?? []).length > 0);
 
   if (isLoading) {
     return (

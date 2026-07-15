@@ -1,11 +1,15 @@
 /**
- * Abonamente / Paywall (TZ secț. 9): listează planurile disponibile, marchează
- * planul activ cu un badge, iar „Alege" activează abonamentul prin backend.
+ * Abonamente / Paywall (TZ secț. 9): listează planurile din catalogul backend-ului,
+ * cu PREȚURILE REALE aduse din magazin, și le cumpără prin In-App Purchase nativ.
  *
- * Cerințe App Store Guideline 3.1.2, obligatorii pe ecranul de abonament:
- * durata + prețul pe perioadă, „Restaurează achizițiile", linkuri către
- * Termeni (EULA) și Politica de confidențialitate. Niciun nume de provider de
- * plăți nu apare în UI.
+ * Guideline 3.1.1: plata trece exclusiv prin App Store / Play — ecranul nu
+ * cunoaște niciun alt provider. Guideline 3.1.2, obligatoriu aici: durata +
+ * prețul pe perioadă (prețul afișat = cel din magazin, nu unul din cod),
+ * „Restaurează achizițiile", linkuri către Termeni (EULA) și Confidențialitate.
+ *
+ * Toată logica de achiziție (ordinea confirmare-backend → finishTransaction,
+ * anulări, tranzacții rămase) stă în `@/features/billing/iap` — ecranul doar o
+ * comandă și traduce rezultatul în UI.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
@@ -23,18 +27,33 @@ import {
 import { Button, ScreenContainer } from '@/components/ui';
 import { config } from '@/config';
 import {
-  fetchEntitlements,
-  fetchMySubscription,
-  fetchPlans,
-  purchase,
-} from '@/features/subscription/subscriptionApi';
+  IapError,
+  PurchaseOutcome,
+  RestoreResult,
+  StoreCatalog,
+  fetchStoreCatalog,
+  purchasePlan,
+  restore,
+  resumeUnfinishedPurchases,
+} from '@/features/billing/iap';
+import { fetchMySubscription, fetchPlans, purchase } from '@/features/subscription/subscriptionApi';
 import { Plan, Subscription } from '@/features/subscription/types';
 import { useTheme } from '@theme/index';
+
+/** Un plan cu preț > 0 se vinde OBLIGATORIU prin magazin (nu prin API direct). */
+function productIdOf(plan: Plan): string | undefined {
+  return config.iap.productIds[plan.code];
+}
 
 export default function PaywallScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { colors, typography, radius, spacing } = useTheme();
+
+  const refreshSubscription = React.useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['subscription-me'] });
+    queryClient.invalidateQueries({ queryKey: ['subscription-entitlements'] });
+  }, [queryClient]);
 
   const plansQuery = useQuery<Plan[]>({
     queryKey: ['plans'],
@@ -46,21 +65,44 @@ export default function PaywallScreen() {
     queryFn: fetchMySubscription,
   });
 
-  const purchaseMutation = useMutation({
-    mutationFn: (plan: string) => purchase(plan),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['subscription-me'] });
-      queryClient.invalidateQueries({ queryKey: ['subscription-entitlements'] });
-    },
+  // Prețurile vin din magazin, nu din backend: Apple cere ca suma afișată să fie
+  // exact cea din App Store Connect, localizată în moneda userului.
+  const storeQuery = useQuery<StoreCatalog>({
+    queryKey: ['iap-catalog'],
+    queryFn: fetchStoreCatalog,
+    retry: false,
   });
 
-  // „Restaurează achizițiile": recitește drepturile contului și resincronizează
-  // abonamentul afișat (Guideline 3.1.2 — restaurare fără plată nouă).
-  const restoreMutation = useMutation({
-    mutationFn: fetchEntitlements,
+  // Plasa de siguranță: dacă o achiziție anterioară a rămas neconfirmată (backend
+  // picat, aplicație închisă în timpul plății, Ask to Buy aprobat între timp), o
+  // ducem la capăt acum. Fără asta, userul ar fi plătit fără să primească nimic.
+  React.useEffect(() => {
+    resumeUnfinishedPurchases()
+      .then((plans) => {
+        if (plans.length > 0) refreshSubscription();
+      })
+      .catch(() => {
+        /* magazin indisponibil — `storeQuery` afișează deja avertismentul */
+      });
+  }, [refreshSubscription]);
+
+  const purchaseMutation = useMutation<PurchaseOutcome, unknown, Plan>({
+    mutationFn: async (plan: Plan) => {
+      // Planurile fără produs în magazin (ex. cel gratuit) nu implică plată:
+      // se activează direct la backend, fără dovadă de la Apple.
+      if (!productIdOf(plan)) {
+        const subscription = await purchase(plan.code);
+        return { status: 'active', plan: plan.code, subscription };
+      }
+      return purchasePlan(plan.code);
+    },
+    onSuccess: refreshSubscription,
+  });
+
+  const restoreMutation = useMutation<RestoreResult>({
+    mutationFn: restore,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['subscription-me'] });
-      queryClient.invalidateQueries({ queryKey: ['subscription-entitlements'] });
+      refreshSubscription();
       meQuery.refetch();
     },
   });
@@ -87,7 +129,7 @@ export default function PaywallScreen() {
     </View>
   );
 
-  if (plansQuery.isLoading) {
+  if (plansQuery.isLoading || storeQuery.isLoading) {
     return (
       <ScreenContainer center>
         <ActivityIndicator color={colors.accent} />
@@ -114,12 +156,30 @@ export default function PaywallScreen() {
 
   const plans = plansQuery.data;
   const currentPlan = meQuery.data?.plan ?? null;
+  const storeProducts = storeQuery.data?.products ?? [];
+
+  // Magazinul e mut (conexiune eșuată) sau nu cunoaște unele produse: o spunem
+  // pe față. Un card fără preț și cu buton inert e respins pe Guideline 2.1.
+  const storeUnavailable = storeQuery.isError;
+  const missingPlans = storeQuery.data?.missingPlans ?? [];
+
+  const outcome = purchaseMutation.data;
+  const purchaseError = purchaseMutation.error;
+  // Anularea NU e o eroare: userul a închis foaia de plată intenționat.
+  const errorMessage =
+    purchaseError instanceof IapError
+      ? purchaseError.kind === 'cancelled'
+        ? null
+        : purchaseError.message
+      : purchaseError
+        ? 'Nu am putut activa abonamentul. Reîncearcă.'
+        : null;
 
   return (
     <ScreenContainer>
       {header}
 
-      {purchaseMutation.isSuccess ? (
+      {outcome?.status === 'active' ? (
         <View
           style={[
             styles.banner,
@@ -132,11 +192,32 @@ export default function PaywallScreen() {
             },
           ]}
         >
-          <Text style={[typography.bodyStrong, { color: colors.textPrimary }]} testID="paywall-success">
+          <Text
+            style={[typography.bodyStrong, { color: colors.textPrimary }]}
+            testID="paywall-success"
+          >
             Abonament activat 🎉
           </Text>
         </View>
-      ) : purchaseMutation.isError ? (
+      ) : outcome?.status === 'pending' ? (
+        <View
+          style={[
+            styles.banner,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.accent,
+              borderRadius: radius.md,
+              padding: spacing.md,
+              marginBottom: spacing.lg,
+            },
+          ]}
+        >
+          <Text style={[typography.body, { color: colors.textPrimary }]} testID="paywall-pending">
+            Achiziția este în așteptarea aprobării. Abonamentul se activează singur imediat ce
+            plata e confirmată.
+          </Text>
+        </View>
+      ) : errorMessage ? (
         <View
           style={[
             styles.banner,
@@ -149,8 +230,32 @@ export default function PaywallScreen() {
             },
           ]}
         >
-          <Text style={[typography.body, { color: colors.danger }]}>
-            Nu am putut activa abonamentul. Reîncearcă.
+          <Text style={[typography.body, { color: colors.danger }]} testID="paywall-error">
+            {errorMessage}
+          </Text>
+        </View>
+      ) : null}
+
+      {storeUnavailable || missingPlans.length > 0 ? (
+        <View
+          style={[
+            styles.banner,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.danger,
+              borderRadius: radius.md,
+              padding: spacing.md,
+              marginBottom: spacing.lg,
+            },
+          ]}
+        >
+          <Text
+            style={[typography.caption, { color: colors.textSecondary }]}
+            testID="paywall-store-warning"
+          >
+            {storeUnavailable
+              ? 'Nu am putut contacta magazinul, așa că abonamentele nu pot fi cumpărate acum. Verifică-ți conexiunea și reîncearcă.'
+              : 'Unele planuri nu sunt disponibile în magazin momentan. Reîncearcă mai târziu.'}
           </Text>
         </View>
       ) : null}
@@ -162,7 +267,19 @@ export default function PaywallScreen() {
         {plans.map((plan: Plan) => {
           const isActive = plan.code === currentPlan;
           const isPending =
-            purchaseMutation.isPending && purchaseMutation.variables === plan.code;
+            purchaseMutation.isPending && purchaseMutation.variables?.code === plan.code;
+
+          const product = storeProducts.find((item) => item.plan === plan.code);
+          const needsStore = productIdOf(plan) !== undefined;
+          const unavailable = needsStore && !product;
+
+          // Prețul afișat e cel al magazinului (localizat). Cel din catalogul
+          // backend rămâne doar ca ultimă soluție, când magazinul e mut — caz în
+          // care butonul e oricum dezactivat, deci nimeni nu cumpără la el.
+          const priceLabel = product
+            ? `${product.displayPrice} / lună`
+            : `${plan.priceEur} € / lună`;
+
           return (
             <View
               key={plan.code}
@@ -200,8 +317,11 @@ export default function PaywallScreen() {
                 ) : null}
               </View>
 
-              <Text style={[typography.h1, { color: colors.accent }]}>
-                {plan.priceEur} € / lună
+              <Text
+                style={[typography.h1, { color: colors.accent }]}
+                testID={`plan-${plan.code}-price`}
+              >
+                {priceLabel}
               </Text>
 
               <View style={{ gap: spacing.sm }}>
@@ -215,12 +335,21 @@ export default function PaywallScreen() {
                 ))}
               </View>
 
+              {unavailable ? (
+                <Text
+                  testID={`plan-${plan.code}-unavailable`}
+                  style={[typography.caption, { color: colors.danger }]}
+                >
+                  Indisponibil în magazin momentan.
+                </Text>
+              ) : null}
+
               <Button
-                label={isActive ? 'Plan activ' : 'Alege'}
-                variant={isActive ? 'outline' : 'primary'}
-                disabled={isActive}
+                label={isActive ? 'Plan activ' : unavailable ? 'Indisponibil' : 'Alege'}
+                variant={isActive || unavailable ? 'outline' : 'primary'}
+                disabled={isActive || unavailable || purchaseMutation.isPending}
                 loading={isPending}
-                onPress={() => purchaseMutation.mutate(plan.code)}
+                onPress={() => purchaseMutation.mutate(plan)}
                 testID={`plan-${plan.code}-choose`}
               />
             </View>
@@ -237,18 +366,29 @@ export default function PaywallScreen() {
         />
 
         {restoreMutation.isSuccess ? (
-          <Text
-            testID="paywall-restore-done"
-            style={[typography.caption, styles.center, { color: colors.success }]}
-          >
-            Achizițiile au fost restaurate.
-          </Text>
+          restoreMutation.data.restoredPlans.length > 0 ? (
+            <Text
+              testID="paywall-restore-done"
+              style={[typography.caption, styles.center, { color: colors.success }]}
+            >
+              Achizițiile au fost restaurate.
+            </Text>
+          ) : (
+            <Text
+              testID="paywall-restore-empty"
+              style={[typography.caption, styles.center, { color: colors.textSecondary }]}
+            >
+              Nu am găsit achiziții de restaurat pe acest cont.
+            </Text>
+          )
         ) : restoreMutation.isError ? (
           <Text
             testID="paywall-restore-error"
             style={[typography.caption, styles.center, { color: colors.danger }]}
           >
-            Nu am putut restaura achizițiile. Reîncearcă.
+            {restoreMutation.error instanceof IapError
+              ? restoreMutation.error.message
+              : 'Nu am putut restaura achizițiile. Reîncearcă.'}
           </Text>
         ) : null}
 

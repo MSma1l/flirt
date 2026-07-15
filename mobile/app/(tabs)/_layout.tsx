@@ -1,12 +1,11 @@
 /** Tab bar principal — 3 taburi (TZ secț. 3): Ankete · Mesaje · Setări. */
 import { useQuery } from '@tanstack/react-query';
 import { Tabs } from 'expo-router';
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Text } from 'react-native';
 
 import { fetchChats } from '@/features/chat/chatApi';
 import { ChatSummary } from '@/features/chat/types';
-import { registerDevice } from '@/features/push/pushService';
 import { useTheme } from '@theme/index';
 
 function TabIcon({ icon, color }: { icon: string; color: string }) {
@@ -16,11 +15,9 @@ function TabIcon({ icon, color }: { icon: string; color: string }) {
 export default function TabsLayout() {
   const { colors } = useTheme();
 
-  // La intrarea în aplicație (după autentificare) înregistrăm device-ul pentru push.
-  useEffect(() => {
-    registerDevice();
-  }, []);
-
+  // Push-ul NU se mai înregistrează aici: token-ul se sincronizează tăcut în
+  // `PushBridge` (layout-ul rădăcină), iar permisiunea se cere în tab-ul Mesaje,
+  // când userul are deja conversații — nu la prima deschidere a aplicației.
   const { data: chats } = useQuery<ChatSummary[]>({
     queryKey: ['chats'],
     queryFn: fetchChats,

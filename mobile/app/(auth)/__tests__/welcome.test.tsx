@@ -2,6 +2,7 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
 import Welcome from '../welcome';
+import { SocialAuthError } from '@/features/auth/socialAuth';
 import { ThemeProvider } from '@theme/index';
 
 // Mock router (evită navigarea reală expo-router în teste).
@@ -15,15 +16,51 @@ const mockLoginWithProvider = jest.fn<Promise<void>, [string, string]>(() =>
   Promise.resolve(),
 );
 jest.mock('@/store/authStore', () => ({
-  useAuthStore: (selector: (s: { loginWithProvider: typeof mockLoginWithProvider }) => unknown) =>
-    selector({ loginWithProvider: mockLoginWithProvider }),
+  useAuthStore: (
+    selector: (s: { loginWithProvider: typeof mockLoginWithProvider }) => unknown,
+  ) => selector({ loginWithProvider: mockLoginWithProvider }),
 }));
 
-// Mock achiziția de id_token social (stub).
-jest.mock('@/features/auth/socialAuth', () => ({
-  getGoogleIdToken: () => Promise.resolve('stub:google@example.com'),
-  getAppleIdToken: () => Promise.resolve('stub:apple@example.com'),
-}));
+// Butonul oficial Apple e o vizualizare NATIVĂ — în jest o înlocuim cu un
+// Pressable care păstrează `onPress` și `testID`, singurele care contează aici.
+jest.mock('expo-apple-authentication', () => {
+  const RealReact = require('react');
+  const { Pressable } = require('react-native');
+  return {
+    AppleAuthenticationButton: ({
+      onPress,
+      testID,
+    }: {
+      onPress: () => void;
+      testID?: string;
+    }) => RealReact.createElement(Pressable, { onPress, testID, accessibilityRole: 'button' }),
+    AppleAuthenticationButtonType: { CONTINUE: 1 },
+    AppleAuthenticationButtonStyle: { WHITE: 0 },
+  };
+});
+
+// Achiziția tokenului social e mockată; `SocialAuthError` / `isCanceled` rămân
+// coerente cu ce importă ecranul (aceeași clasă → `instanceof` funcționează).
+const mockGetGoogleIdToken = jest.fn<Promise<string>, []>();
+const mockGetAppleIdToken = jest.fn<Promise<string>, []>();
+const mockGetAvailableSocialProviders = jest.fn();
+jest.mock('@/features/auth/socialAuth', () => {
+  class MockSocialAuthError extends Error {
+    code: string;
+    constructor(code: string, message: string) {
+      super(message);
+      this.code = code;
+    }
+  }
+  return {
+    SocialAuthError: MockSocialAuthError,
+    isCanceled: (e: unknown) =>
+      e instanceof MockSocialAuthError && (e as MockSocialAuthError).code === 'canceled',
+    getGoogleIdToken: () => mockGetGoogleIdToken(),
+    getAppleIdToken: () => mockGetAppleIdToken(),
+    getAvailableSocialProviders: () => mockGetAvailableSocialProviders(),
+  };
+});
 
 function renderScreen() {
   return render(
@@ -33,21 +70,31 @@ function renderScreen() {
   );
 }
 
+/** Eroare în stilul axios (backend-ul a respins tokenul / rețea căzută). */
+function axiosLikeError(status?: number) {
+  return Object.assign(new Error('request failed'), {
+    isAxiosError: true,
+    response: status ? { status } : undefined,
+  });
+}
+
 describe('Welcome', () => {
   beforeEach(() => {
-    mockPush.mockClear();
-    mockLoginWithProvider.mockClear();
+    jest.clearAllMocks();
+    // Implicit: ambele providere disponibile (iOS cu client ID Google).
+    mockGetAvailableSocialProviders.mockResolvedValue({ google: true, apple: true });
+    mockGetGoogleIdToken.mockResolvedValue('google-id-token');
+    mockGetAppleIdToken.mockResolvedValue('apple-id-token');
   });
 
-  it('randează brandul și acțiunile', () => {
+  it('randează brandul și acțiunile de bază', async () => {
     const { getByText } = renderScreen();
     expect(getByText('FLIRT')).toBeTruthy();
     expect(getByText('No Regrets')).toBeTruthy();
     expect(getByText('Creează cont')).toBeTruthy();
     expect(getByText('Am deja cont')).toBeTruthy();
-    expect(getByText('Continuă cu Google')).toBeTruthy();
-    expect(getByText('Continuă cu Apple')).toBeTruthy();
     expect(getByText('Continuă cu telefonul')).toBeTruthy();
+    await waitFor(() => expect(mockGetAvailableSocialProviders).toHaveBeenCalled());
   });
 
   it('„Creează cont" navighează la register', () => {
@@ -68,19 +115,103 @@ describe('Welcome', () => {
     expect(mockPush).toHaveBeenCalledWith('/(auth)/phone');
   });
 
-  it('butonul Google apelează loginWithProvider cu token-ul stub', async () => {
-    const { getByTestId } = renderScreen();
-    fireEvent.press(getByTestId('welcome-google'));
+  it('butonul Google trimite id_token-ul real către backend', async () => {
+    const { findByTestId } = renderScreen();
+    fireEvent.press(await findByTestId('welcome-google'));
+
     await waitFor(() => {
-      expect(mockLoginWithProvider).toHaveBeenCalledWith('google', 'stub:google@example.com');
+      expect(mockLoginWithProvider).toHaveBeenCalledWith('google', 'google-id-token');
     });
   });
 
-  it('butonul Apple apelează loginWithProvider cu token-ul stub', async () => {
-    const { getByTestId } = renderScreen();
-    fireEvent.press(getByTestId('welcome-apple'));
+  it('butonul Apple trimite identityToken-ul real către backend', async () => {
+    const { findByTestId } = renderScreen();
+    fireEvent.press(await findByTestId('welcome-apple'));
+
     await waitFor(() => {
-      expect(mockLoginWithProvider).toHaveBeenCalledWith('apple', 'stub:apple@example.com');
+      expect(mockLoginWithProvider).toHaveBeenCalledWith('apple', 'apple-id-token');
+    });
+  });
+
+  it('fără client ID Google butonul NU apare, iar ecranul rămâne funcțional', async () => {
+    mockGetAvailableSocialProviders.mockResolvedValue({ google: false, apple: true });
+    const { queryByTestId, findByTestId, getByTestId } = renderScreen();
+
+    await findByTestId('welcome-apple'); // disponibilitatea s-a încărcat
+    expect(queryByTestId('welcome-google')).toBeNull();
+    // Restul ecranului merge mai departe.
+    fireEvent.press(getByTestId('welcome-phone'));
+    expect(mockPush).toHaveBeenCalledWith('/(auth)/phone');
+  });
+
+  it('pe Android butonul Apple nu apare', async () => {
+    mockGetAvailableSocialProviders.mockResolvedValue({ google: true, apple: false });
+    const { queryByTestId, findByTestId } = renderScreen();
+
+    await findByTestId('welcome-google');
+    expect(queryByTestId('welcome-apple')).toBeNull();
+  });
+
+  it('fără niciun provider configurat nu apare niciun buton social', async () => {
+    mockGetAvailableSocialProviders.mockResolvedValue({ google: false, apple: false });
+    const { queryByTestId } = renderScreen();
+
+    await waitFor(() => expect(mockGetAvailableSocialProviders).toHaveBeenCalled());
+    expect(queryByTestId('welcome-google')).toBeNull();
+    expect(queryByTestId('welcome-apple')).toBeNull();
+  });
+
+  it('userul anulează → NU se afișează nicio eroare', async () => {
+    mockGetGoogleIdToken.mockRejectedValue(
+      new SocialAuthError('canceled', 'anulat de user'),
+    );
+    const { findByTestId, queryByTestId } = renderScreen();
+
+    fireEvent.press(await findByTestId('welcome-google'));
+
+    await waitFor(() => expect(mockGetGoogleIdToken).toHaveBeenCalled());
+    expect(mockLoginWithProvider).not.toHaveBeenCalled();
+    expect(queryByTestId('welcome-social-error')).toBeNull();
+  });
+
+  it('token respins de backend (401) → mesaj de eroare', async () => {
+    mockLoginWithProvider.mockRejectedValue(axiosLikeError(401));
+    const { findByTestId, getByTestId } = renderScreen();
+
+    fireEvent.press(await findByTestId('welcome-google'));
+
+    await waitFor(() => {
+      expect(getByTestId('welcome-social-error')).toHaveTextContent(
+        'Contul nu a putut fi verificat. Încearcă din nou.',
+      );
+    });
+  });
+
+  it('rețea căzută → mesaj despre conexiune', async () => {
+    mockLoginWithProvider.mockRejectedValue(axiosLikeError());
+    const { findByTestId, getByTestId } = renderScreen();
+
+    fireEvent.press(await findByTestId('welcome-google'));
+
+    await waitFor(() => {
+      expect(getByTestId('welcome-social-error')).toHaveTextContent(
+        'Nu am putut contacta serverul. Verifică conexiunea la internet.',
+      );
+    });
+  });
+
+  it('provider indisponibil → mesaj dedicat', async () => {
+    mockGetAppleIdToken.mockRejectedValue(
+      new SocialAuthError('unavailable', 'indisponibil'),
+    );
+    const { findByTestId, getByTestId } = renderScreen();
+
+    fireEvent.press(await findByTestId('welcome-apple'));
+
+    await waitFor(() => {
+      expect(getByTestId('welcome-social-error')).toHaveTextContent(
+        'Autentificarea Apple nu e disponibilă pe acest dispozitiv.',
+      );
     });
   });
 });
