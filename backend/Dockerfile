@@ -36,6 +36,11 @@ COPY . .
 
 # Utilizator non-root
 RUN useradd -m appuser && chown -R appuser:appuser /app
+# Directorul de media (STORAGE_PROVIDER=local) e proprietatea lui appuser din
+# imagine. Când volumul Docker `mediadata` se montează prima dată gol peste el,
+# Docker COPIAZĂ această proprietate în volum → appuser poate scrie fără chown
+# manual. (Pe volumele deja create ca root, se face un chown o singură dată.)
+RUN mkdir -p /data/media && chown -R appuser:appuser /data
 USER appuser
 
 EXPOSE 8000
