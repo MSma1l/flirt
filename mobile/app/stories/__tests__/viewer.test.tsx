@@ -32,6 +32,7 @@ const groups: UserStories[] = [
         id: 's1',
         userId: 'u1',
         mediaUrl: 'https://x/1.jpg',
+        mediaType: 'image',
         caption: 'Prima poveste',
         createdAt: '2026-07-01T10:00:00Z',
         expiresAt: '2026-07-02T10:00:00Z',
@@ -39,7 +40,8 @@ const groups: UserStories[] = [
       {
         id: 's2',
         userId: 'u1',
-        mediaUrl: 'https://x/2.jpg',
+        mediaUrl: 'https://x/2.mp4',
+        mediaType: 'video',
         caption: 'A doua poveste',
         createdAt: '2026-07-01T11:00:00Z',
         expiresAt: '2026-07-02T11:00:00Z',
@@ -83,6 +85,18 @@ describe('StoryViewerScreen', () => {
     expect(getByText('Prima poveste')).toBeTruthy();
     fireEvent.press(getByLabelText('Povestea următoare'));
     expect(getByText('A doua poveste')).toBeTruthy();
+  });
+
+  it('povestea video afișează media de tip video (nu imagine)', () => {
+    const { getByTestId, queryByTestId, getByLabelText } = renderScreen();
+
+    // Prima e imagine.
+    expect(getByTestId('story-image')).toBeTruthy();
+
+    // A doua e video → placeholder nativ de video, fără <Image>.
+    fireEvent.press(getByLabelText('Povestea următoare'));
+    expect(getByTestId('story-video-fallback')).toBeTruthy();
+    expect(queryByTestId('story-image')).toBeNull();
   });
 
   it('proprietarul poate șterge povestea (deleteStory)', async () => {

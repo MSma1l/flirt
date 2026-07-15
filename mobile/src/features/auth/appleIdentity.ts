@@ -14,10 +14,52 @@
  *
  * Stocare: SecureStore (Keychain/Keystore) — sunt date personale, nu le ținem
  * în clar în AsyncStorage.
+ *
+ * Pe WEB: SecureStore nu există și aruncă la primul apel (ex. `getItemAsync`),
+ * ceea ce ar rupe ecranul de login încă de la montare. Dar „Sign in with Apple"
+ * nici nu funcționează în browser, deci datele one-shot de la Apple nu apar
+ * oricum pe web. Cădem pe `localStorage` (ca `tokenStore`), strict ca fallback
+ * inofensiv, ca apelurile să nu arunce — pe producția mobilă rămâne SecureStore.
  */
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 
 const APPLE_IDENTITY_KEY = 'flirt.apple_identity';
+
+/**
+ * Storage uniformizat web/nativ pentru identitatea Apple. Pe nativ e SecureStore
+ * (criptat de sistem); pe web e `localStorage` — singura persistență din browser,
+ * folosită doar ca fallback ca apelurile să nu arunce (Apple Sign-In lipsește pe web).
+ *
+ * `Platform.OS` se citește la fiecare apel (nu cache la nivel de modul): în
+ * producție nu se schimbă, iar așa comportamentul web e verificabil în teste.
+ */
+const identityStore = {
+  async get(): Promise<string | null> {
+    if (Platform.OS === 'web') {
+      try {
+        return globalThis.localStorage?.getItem(APPLE_IDENTITY_KEY) ?? null;
+      } catch {
+        return null;
+      }
+    }
+    return SecureStore.getItemAsync(APPLE_IDENTITY_KEY);
+  },
+  async set(value: string): Promise<void> {
+    if (Platform.OS === 'web') {
+      globalThis.localStorage?.setItem(APPLE_IDENTITY_KEY, value);
+      return;
+    }
+    await SecureStore.setItemAsync(APPLE_IDENTITY_KEY, value);
+  },
+  async remove(): Promise<void> {
+    if (Platform.OS === 'web') {
+      globalThis.localStorage?.removeItem(APPLE_IDENTITY_KEY);
+      return;
+    }
+    await SecureStore.deleteItemAsync(APPLE_IDENTITY_KEY);
+  },
+};
 
 /** Datele one-shot de la Apple, atât cât a acceptat userul să ne dea. */
 export interface AppleIdentity {
@@ -41,7 +83,7 @@ export function formatAppleName(
 /** Citește identitatea Apple salvată local. `null` dacă n-am primit-o niciodată. */
 export async function getSavedAppleIdentity(): Promise<AppleIdentity | null> {
   try {
-    const raw = await SecureStore.getItemAsync(APPLE_IDENTITY_KEY);
+    const raw = await identityStore.get();
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<AppleIdentity>;
     return {
@@ -73,7 +115,7 @@ export async function rememberAppleIdentity(input: AppleIdentity): Promise<void>
       name: name || saved?.name || '',
       email: email || saved?.email || '',
     };
-    await SecureStore.setItemAsync(APPLE_IDENTITY_KEY, JSON.stringify(next));
+    await identityStore.set(JSON.stringify(next));
   } catch {
     // Vezi mai sus: eșecul de scriere nu trebuie să rupă autentificarea.
   }
@@ -82,7 +124,7 @@ export async function rememberAppleIdentity(input: AppleIdentity): Promise<void>
 /** Șterge identitatea salvată (la logout / ștergerea contului). */
 export async function clearSavedAppleIdentity(): Promise<void> {
   try {
-    await SecureStore.deleteItemAsync(APPLE_IDENTITY_KEY);
+    await identityStore.remove();
   } catch {
     /* nimic de făcut: cheia oricum nu mai e citită după logout */
   }

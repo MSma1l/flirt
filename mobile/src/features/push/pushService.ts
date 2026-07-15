@@ -50,6 +50,16 @@ function blocked(reason: PushBlockedReason, message: string): PushOutcome {
 }
 
 /**
+ * Push-ul e strict NATIV. Pe web (react-native-web) nu există APNs/FCM și
+ * `getExpoPushTokenAsync` ar arunca, iar simulatorul n-are nici el token. Le
+ * tratăm la fel: fără dispozitiv real de push nu atingem nici Expo, nici rețeaua.
+ * Astfel ecranele web care importă serviciul (login, tab Mesaje) nu crapă.
+ */
+function pushUnsupportedHere(): boolean {
+  return Platform.OS === 'web' || !Device.isDevice;
+}
+
+/**
  * Tokenul Expo al dispozitivului, memorat după prima obținere.
  *
  * `getExpoPushTokenAsync` face o cerere de rețea la serverele Expo; tokenul e
@@ -161,10 +171,10 @@ async function registerWithPermission(): Promise<PushOutcome> {
  * într-un moment în care userul înțelege DE CE i-o cerem.
  */
 export async function syncPushRegistration(): Promise<PushOutcome> {
-  if (!Device.isDevice) {
+  if (pushUnsupportedHere()) {
     return blocked(
       'simulator',
-      'push-ul nu funcționează pe simulator/emulator — e nevoie de un dispozitiv fizic.',
+      'push-ul nu funcționează pe simulator/emulator sau în browser — e nevoie de un dispozitiv fizic.',
     );
   }
 
@@ -180,10 +190,10 @@ export async function syncPushRegistration(): Promise<PushOutcome> {
  * Se apelează DOAR dintr-un context în care userul se așteaptă la asta.
  */
 export async function requestPushPermissionAndRegister(): Promise<PushOutcome> {
-  if (!Device.isDevice) {
+  if (pushUnsupportedHere()) {
     return blocked(
       'simulator',
-      'push-ul nu funcționează pe simulator/emulator — e nevoie de un dispozitiv fizic.',
+      'push-ul nu funcționează pe simulator/emulator sau în browser — e nevoie de un dispozitiv fizic.',
     );
   }
 
@@ -232,6 +242,13 @@ export async function requestPushPermissionAndRegister(): Promise<PushOutcome> {
  * blocat de o eroare de rețea.
  */
 export async function unregisterDevice(): Promise<void> {
+  // Web: nu s-a înregistrat niciodată un token (push-ul e nativ), deci n-avem ce
+  // dezînregistra și nu atingem `Notifications` (ar arunca în browser).
+  if (Platform.OS === 'web') {
+    cachedToken = null;
+    return;
+  }
+
   const token = cachedToken;
   // Golim cache-ul indiferent de rezultat: următorul user va cere tokenul din
   // nou și îl va înregistra pe contul LUI.

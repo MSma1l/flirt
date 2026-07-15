@@ -2,12 +2,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { StoryMedia } from '@/features/stories/StoryMedia';
 import { deleteStory, fetchStories } from '@/features/stories/storiesApi';
 import { Story, UserStories } from '@/features/stories/types';
 import { useAuthStore } from '@/store/authStore';
+import { alertMessage } from '@/utils/dialog';
 import { useTheme } from '@theme/index';
 
 /** Durata unei povești (ms) și pasul de progres. */
@@ -46,7 +48,7 @@ export default function StoryViewerScreen() {
       queryClient.invalidateQueries({ queryKey: ['stories'] });
       router.back();
     },
-    onError: () => Alert.alert('Ceva n-a mers', 'Nu am putut șterge povestea. Reîncearcă.'),
+    onError: () => alertMessage('Ceva n-a mers', 'Nu am putut șterge povestea. Reîncearcă.'),
   });
 
   // Avans automat cu progres pe povestea curentă.
@@ -109,8 +111,13 @@ export default function StoryViewerScreen() {
         </View>
       ) : (
         <>
-          {/* Media pe fundal întunecat */}
-          <Image source={{ uri: current.mediaUrl }} style={styles.media} resizeMode="contain" />
+          {/* Media pe fundal întunecat (imagine sau video, după media_type) */}
+          <StoryMedia
+            uri={current.mediaUrl}
+            mediaType={current.mediaType ?? 'image'}
+            style={styles.media}
+            hintColor={colors.textSecondary}
+          />
 
           {/* Zone de tap: stânga = anterior, dreapta = următor */}
           <View style={StyleSheet.absoluteFill} pointerEvents="box-none">

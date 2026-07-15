@@ -2,10 +2,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Button, ScreenContainer } from '@/components/ui';
 import { FavoriteItem, fetchFavorites, removeFavorite } from '@/features/social/socialApi';
+import { alertMessage } from '@/utils/dialog';
 import { useTheme } from '@theme/index';
 
 /** Un rând din lista de favorite: nume, vârstă, oraș + buton de eliminare. */
@@ -67,7 +68,7 @@ export default function FavoritesScreen() {
   const mutation = useMutation({
     mutationFn: (targetUserId: string) => removeFavorite(targetUserId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['favorites'] }),
-    onError: () => Alert.alert('Ceva n-a mers', 'Nu am putut elimina din favorite. Reîncearcă.'),
+    onError: () => alertMessage('Ceva n-a mers', 'Nu am putut elimina din favorite. Reîncearcă.'),
   });
 
   if (isLoading) {

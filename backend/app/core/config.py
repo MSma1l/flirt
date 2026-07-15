@@ -70,6 +70,12 @@ class Settings(BaseSettings):
 
     # Stories
     story_ttl_hours: int = 24    # durata de viață a unei povești (TZ secț. 11)
+    # Media de story (foto/video). Un story acceptă și VIDEO, nu doar imagini:
+    # tipurile video permise + o limită de dimensiune SEPARATĂ de pozele de profil
+    # (`max_upload_bytes` = 8 MB) — un clip scurt e legitim mai mare decât o poză.
+    # Fără hardcodare: allowlist-ul și limita vin din config.
+    allowed_video_types: str = "video/mp4,video/quicktime"
+    story_video_max_bytes: int = 52_428_800   # 50 MB limită upload video story
 
     # Moderare (TZ 10)
     report_autoban_threshold: int = 3   # câte rapoarte distincte → auto-ascundere cont
@@ -224,6 +230,11 @@ class Settings(BaseSettings):
     @property
     def allowed_image_types_set(self) -> set[str]:
         return {t.strip() for t in self.allowed_image_types.split(",") if t.strip()}
+
+    @property
+    def allowed_video_types_set(self) -> set[str]:
+        # Tipurile video permise la upload-ul de story (separat de imagini).
+        return {t.strip() for t in self.allowed_video_types.split(",") if t.strip()}
 
     # Ponderi Compatibility Score (sumă = 1.0) — TZ 4.6
     compat_w_interests: float = 0.30

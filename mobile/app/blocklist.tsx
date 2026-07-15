@@ -2,10 +2,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, useRouter } from 'expo-router';
 import React from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Button, ScreenContainer } from '@/components/ui';
 import { BlockedUser, fetchBlocks, unblock } from '@/features/settings/settingsApi';
+import { alertMessage } from '@/utils/dialog';
 import { useTheme } from '@theme/index';
 
 export default function BlocklistScreen() {
@@ -21,7 +22,7 @@ export default function BlocklistScreen() {
   const unblockMutation = useMutation({
     mutationFn: (blockedId: string) => unblock(blockedId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['blocks'] }),
-    onError: () => Alert.alert('Ceva n-a mers', 'Nu am putut debloca utilizatorul. Reîncearcă.'),
+    onError: () => alertMessage('Ceva n-a mers', 'Nu am putut debloca utilizatorul. Reîncearcă.'),
   });
 
   if (isLoading) {

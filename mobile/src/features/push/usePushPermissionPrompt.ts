@@ -17,7 +17,9 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
 import { useEffect, useRef } from 'react';
-import { Alert } from 'react-native';
+import { Platform } from 'react-native';
+
+import { confirmAsync } from '@/utils/dialog';
 
 import { requestPushPermissionAndRegister } from './pushService';
 
@@ -25,6 +27,11 @@ import { requestPushPermissionAndRegister } from './pushService';
 const SOFT_PROMPT_DECLINED_KEY = 'flirt.push.soft_prompt_declined';
 
 async function shouldSoftPrompt(): Promise<boolean> {
+  // Web: push-ul e strict nativ, iar SecureStore/Notifications ar arunca aici
+  // (nu există în browser). Ieșim ÎNAINTE de a le atinge — nicio permisiune de
+  // cerut, nimic de crăpat. Tabul Mesaje se montează curat pe web.
+  if (Platform.OS === 'web') return false;
+
   // Simulator: nu există push, deci nu are rost să deranjăm pe nimeni.
   if (!Device.isDevice) return false;
 
@@ -42,27 +49,24 @@ async function shouldSoftPrompt(): Promise<boolean> {
   return declined === null;
 }
 
-function askSoftly(): void {
-  Alert.alert(
+async function askSoftly(): Promise<void> {
+  // `confirmAsync` e dialogul nostru cross-platform (pe web `Alert.alert` e no-op,
+  // deci butoarele ar „părea moarte"). „Da" = confirmare, „Nu acum" = anulare.
+  const yes = await confirmAsync(
     'Te anunțăm când primești un mesaj?',
     'Trimitem notificări doar pentru mesaje noi și potriviri. Poți opri oricând din setările telefonului.',
-    [
-      {
-        text: 'Nu acum',
-        style: 'cancel',
-        onPress: () => {
-          void SecureStore.setItemAsync(SOFT_PROMPT_DECLINED_KEY, '1');
-        },
-      },
-      {
-        text: 'Da, anunță-mă',
-        onPress: () => {
-          // Abia acum atingem dialogul sistemului — cu un „da" deja în buzunar.
-          void requestPushPermissionAndRegister();
-        },
-      },
-    ],
+    { confirmText: 'Da, anunță-mă', cancelText: 'Nu acum' },
   );
+
+  if (yes) {
+    // Abia acum atingem dialogul sistemului — cu un „da" deja în buzunar.
+    void requestPushPermissionAndRegister();
+    return;
+  }
+
+  // „Nu acum": ținem minte refuzul soft ca să nu revenim cu întrebarea la fiecare
+  // montare. (Se ajunge aici doar pe nativ — pe web am ieșit deja din shouldSoftPrompt.)
+  void SecureStore.setItemAsync(SOFT_PROMPT_DECLINED_KEY, '1');
 }
 
 /**
@@ -77,7 +81,7 @@ export function usePushPermissionPrompt(enabled: boolean): void {
     alreadyAsked.current = true;
 
     void shouldSoftPrompt().then((should) => {
-      if (should) askSoftly();
+      if (should) void askSoftly();
     });
   }, [enabled]);
 }

@@ -2,7 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui';
@@ -10,6 +10,7 @@ import { formatEventDate, kindColor, kindLabel } from '@/features/events/EventCa
 import { EventMap } from '@/features/events/EventMap';
 import { checkin, fetchEvent, setGoing } from '@/features/events/eventsApi';
 import { EventItem } from '@/features/events/types';
+import { alertMessage } from '@/utils/dialog';
 import { useTheme } from '@theme/index';
 
 export default function EventDetailScreen() {
@@ -34,7 +35,7 @@ export default function EventDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ['events'] });
     },
     onError: () => {
-      Alert.alert('Ceva n-a mers', 'Nu am putut actualiza participarea. Reîncearcă.');
+      alertMessage('Ceva n-a mers', 'Nu am putut actualiza participarea. Reîncearcă.');
     },
   });
 
@@ -45,7 +46,7 @@ export default function EventDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ['passport'] });
     },
     onError: () => {
-      Alert.alert('Check-in eșuat', 'Nu am putut face check-in-ul. Reîncearcă.');
+      alertMessage('Check-in eșuat', 'Nu am putut face check-in-ul. Reîncearcă.');
     },
   });
 

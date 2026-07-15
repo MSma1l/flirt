@@ -1,4 +1,5 @@
-"""Teste pentru modulul Stories (rulează pe SQLite in-memory, TZ secț. 11)."""
+"""Teste pentru modulul Stories (rulează pe POSTGRESQL real, TZ secț. 11)."""
+import base64
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
@@ -8,6 +9,16 @@ from app.models.story import Story
 
 API = "/api/v1"
 _ADULT_YEAR = date.today().year - 25
+
+# PNG 1x1 valid (recunoscut de imghdr / Pillow) — pentru upload-ul de imagine.
+_PNG_1X1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+)
+# Container ISO-BMFF minimal cu box-ul `ftyp` (brand `mp42`) — un „video" mp4
+# valid ca magic-bytes, suficient pentru validarea de tip din backend.
+_MP4_MIN = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"
+# Idem, dar brand `qt  ` → QuickTime (.mov).
+_MOV_MIN = b"\x00\x00\x00\x18ftypqt  \x00\x00\x00\x00qt  qt  "
 
 
 def _extract_token(payload: dict) -> str | None:
@@ -151,3 +162,104 @@ async def test_expired_story_not_listed(client, db_session):
     assert mine.json() == [], "Poveștile expirate nu se listează."
     grouped = await client.get(f"{API}/stories/", headers=headers)
     assert grouped.json() == []
+
+
+# --- Upload media (imagine + video) -------------------------------------------
+@pytest.mark.asyncio
+async def test_upload_image_media(client):
+    """POST /stories/media cu o imagine validă → media_type 'image' + URL https."""
+    headers, _ = await _make_user(client, "a@example.com", "A")
+
+    resp = await client.post(
+        f"{API}/stories/media",
+        files={"file": ("x.png", _PNG_1X1, "image/png")},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["media_type"] == "image"
+    assert body["media_url"].startswith("https://")
+    assert "/stories/" in body["media_url"]
+
+
+@pytest.mark.asyncio
+async def test_upload_video_media(client):
+    """POST /stories/media cu un video (mp4/mov) → media_type 'video'."""
+    headers, _ = await _make_user(client, "a@example.com", "A")
+
+    for name, blob, ctype in (
+        ("clip.mp4", _MP4_MIN, "video/mp4"),
+        ("clip.mov", _MOV_MIN, "video/quicktime"),
+    ):
+        resp = await client.post(
+            f"{API}/stories/media",
+            files={"file": (name, blob, ctype)},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["media_type"] == "video"
+
+
+@pytest.mark.asyncio
+async def test_upload_rejects_disallowed_type(client):
+    """Un tip nepermis (ex. text) e respins cu 422."""
+    headers, _ = await _make_user(client, "a@example.com", "A")
+
+    resp = await client.post(
+        f"{API}/stories/media",
+        files={"file": ("x.txt", b"nu sunt media", "text/plain")},
+        headers=headers,
+    )
+    assert resp.status_code == 422, resp.text
+
+
+@pytest.mark.asyncio
+async def test_upload_rejects_spoofed_video(client):
+    """Content-Type 'video/mp4' dar conținut ce NU e ISO-BMFF → 422 (anti-spoof)."""
+    headers, _ = await _make_user(client, "a@example.com", "A")
+
+    resp = await client.post(
+        f"{API}/stories/media",
+        files={"file": ("fake.mp4", b"acesta nu e un mp4 real", "video/mp4")},
+        headers=headers,
+    )
+    assert resp.status_code == 422, resp.text
+
+
+@pytest.mark.asyncio
+async def test_create_story_with_video_media_type(client):
+    """Upload video → creare story cu media_type 'video', regăsit în listări."""
+    headers, uid = await _make_user(client, "a@example.com", "A")
+
+    up = await client.post(
+        f"{API}/stories/media",
+        files={"file": ("clip.mp4", _MP4_MIN, "video/mp4")},
+        headers=headers,
+    )
+    assert up.status_code == 200, up.text
+    media = up.json()
+
+    created = await client.post(
+        f"{API}/stories/",
+        json={"media_url": media["media_url"], "media_type": media["media_type"]},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["media_type"] == "video"
+
+    mine = await client.get(f"{API}/stories/mine", headers=headers)
+    assert mine.json()[0]["media_type"] == "video"
+
+
+@pytest.mark.asyncio
+async def test_create_story_defaults_to_image(client):
+    """Fără media_type explicit, povestea rămâne 'image' (compatibilitate)."""
+    headers, _ = await _make_user(client, "a@example.com", "A")
+
+    created = await client.post(
+        f"{API}/stories/",
+        json={"media_url": "https://cdn/x.jpg"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["media_type"] == "image"

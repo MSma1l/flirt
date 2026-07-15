@@ -7,7 +7,6 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Linking,
   Pressable,
   ScrollView,
@@ -31,6 +30,7 @@ import {
   updateSettings,
 } from '@/features/settings/settingsApi';
 import { useAuthStore } from '@/store/authStore';
+import { alertMessage, confirmAsync } from '@/utils/dialog';
 import { searchRadiusKm } from '@/utils/validation';
 import { useTheme } from '@theme/index';
 
@@ -125,19 +125,15 @@ export default function SetariScreen() {
     settingsMutation.mutate({ profileHidden: value });
   };
 
-  const confirmDelete = () => {
-    Alert.alert(
+  const confirmDelete = async () => {
+    const ok = await confirmAsync(
       'Ștergere cont',
       'Ești sigur? Contul și datele tale vor fi șterse definitiv după perioada de grație.',
-      [
-        { text: 'Anulează', style: 'cancel' },
-        {
-          text: 'Șterge contul',
-          style: 'destructive',
-          onPress: () => deleteMutation.mutate(),
-        },
-      ],
+      { confirmText: 'Șterge contul', destructive: true },
     );
+    if (ok) {
+      deleteMutation.mutate();
+    }
   };
 
   if (isLoading) {
@@ -217,7 +213,7 @@ export default function SetariScreen() {
       testID,
       () => {
         Linking.openURL(url).catch(() =>
-          Alert.alert('Ceva n-a mers', 'Nu am putut deschide pagina. Încearcă din nou.'),
+          alertMessage('Ceva n-a mers', 'Nu am putut deschide pagina. Încearcă din nou.'),
         );
       },
       '↗',

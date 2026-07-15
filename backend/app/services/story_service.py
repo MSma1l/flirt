@@ -38,6 +38,7 @@ def _to_story_out(story: Story) -> StoryOut:
         id=story.id,
         user_id=story.user_id,
         media_url=story.media_url,
+        media_type=story.media_type,
         caption=story.caption,
         created_at=story.created_at,
         expires_at=story.expires_at,
@@ -50,6 +51,7 @@ async def create_story(db: AsyncSession, user: User, data: StoryIn) -> StoryOut:
     story = Story(
         user_id=user.id,
         media_url=data.media_url,
+        media_type=data.media_type,
         caption=data.caption,
         expires_at=datetime.now(timezone.utc)
         + timedelta(hours=settings.story_ttl_hours),

@@ -107,6 +107,22 @@ describe('pushService', () => {
       expect(getToken).not.toHaveBeenCalled();
       expect(api.post).not.toHaveBeenCalled();
     });
+
+    it('pe WEB (push nativ inexistent) degradează curat, chiar cu isDevice=true', async () => {
+      // react-native-web poate raporta isDevice=true; contează platforma.
+      mockIsDevice = true;
+      const platform = jest.replaceProperty(Platform, 'OS', 'web');
+
+      const outcome = await syncPushRegistration();
+
+      expect(outcome).toMatchObject({ status: 'blocked', reason: 'simulator' });
+      // Nimic nativ atins: nici permisiuni, nici Expo, nici backend — zero crash.
+      expect(perms).not.toHaveBeenCalled();
+      expect(getToken).not.toHaveBeenCalled();
+      expect(api.post).not.toHaveBeenCalled();
+
+      platform.restore();
+    });
   });
 
   describe('requestPushPermissionAndRegister — dialogul explicit', () => {
@@ -222,6 +238,16 @@ describe('pushService', () => {
       await unregisterDevice();
 
       expect(api.delete).not.toHaveBeenCalled();
+    });
+
+    it('pe WEB nu atinge Notifications și nu aruncă', async () => {
+      const platform = jest.replaceProperty(Platform, 'OS', 'web');
+
+      await expect(unregisterDevice()).resolves.toBeUndefined();
+      expect(api.delete).not.toHaveBeenCalled();
+      expect(Notifications.dismissAllNotificationsAsync).not.toHaveBeenCalled();
+
+      platform.restore();
     });
 
     it('nu blochează logout-ul dacă serverul nu răspunde', async () => {

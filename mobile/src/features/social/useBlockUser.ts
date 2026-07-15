@@ -8,9 +8,9 @@
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
-import { Alert } from 'react-native';
 
 import { blockUser } from '@/features/settings/settingsApi';
+import { alertMessage, confirmAsync } from '@/utils/dialog';
 
 interface Options {
   /** Apelat după blocarea reușită (ex. ieșirea din conversație). */
@@ -19,7 +19,7 @@ interface Options {
 
 interface BlockUserApi {
   /** Cere confirmarea și, la accept, blochează utilizatorul. */
-  confirmBlock: (userId: string, name?: string) => void;
+  confirmBlock: (userId: string, name?: string) => Promise<void>;
   /** Blocarea este în curs (pentru starea de loading a butonului). */
   isBlocking: boolean;
 }
@@ -37,29 +37,25 @@ export function useBlockUser({ onBlocked }: Options = {}): BlockUserApi {
       onBlocked?.();
     },
     onError: () => {
-      Alert.alert('Ceva n-a mers', 'Nu am putut bloca utilizatorul. Reîncearcă.');
+      alertMessage('Ceva n-a mers', 'Nu am putut bloca utilizatorul. Reîncearcă.');
     },
   });
 
   const { mutate } = mutation;
 
   const confirmBlock = useCallback(
-    (userId: string, name?: string) => {
+    async (userId: string, name?: string) => {
       if (!userId) return;
-      Alert.alert(
+      const ok = await confirmAsync(
         'Blochează utilizatorul',
         name
           ? `${name} nu te va mai putea contacta și nu va mai apărea în aplicație.`
           : 'Persoana nu te va mai putea contacta și nu va mai apărea în aplicație.',
-        [
-          { text: 'Anulează', style: 'cancel' },
-          {
-            text: 'Blochează',
-            style: 'destructive',
-            onPress: () => mutate(userId),
-          },
-        ],
+        { confirmText: 'Blochează', destructive: true },
       );
+      if (ok) {
+        mutate(userId);
+      }
     },
     [mutate],
   );

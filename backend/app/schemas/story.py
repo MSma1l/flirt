@@ -3,11 +3,14 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, Field, StringConstraints
 
 from app.core.validators import is_https_url, optional_safe_str
+
+# Tipul de media al unei povești: imagine sau video (TZ secț. 11).
+MediaType = Literal["image", "video"]
 
 # Plafon lungime caption aliniat cu coloana Story.caption = String(500).
 CAPTION_MAX_LENGTH = 500
@@ -25,11 +28,13 @@ HttpsUrl = Annotated[
 class StoryIn(BaseModel):
     """Payload la crearea unei povești.
 
-    `media_url` trebuie să fie un URL https valid; `caption` (opțional) e curățat
-    defensiv (trim, non-gol, fără HTML/control chars, plafon lungime).
+    `media_url` trebuie să fie un URL https valid (întors de upload-ul de media);
+    `media_type` spune vizualizatorului dacă e imagine sau video; `caption`
+    (opțional) e curățat defensiv (trim, non-gol, fără HTML/control chars, plafon).
     """
 
     media_url: HttpsUrl
+    media_type: MediaType = "image"
     caption: optional_safe_str(CAPTION_MAX_LENGTH) | None = None
 
 
@@ -39,9 +44,20 @@ class StoryOut(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     media_url: str
+    media_type: str
     caption: str | None = None
     created_at: datetime
     expires_at: datetime
+
+
+class StoryMediaOut(BaseModel):
+    """Rezultatul upload-ului de media pentru story: URL-ul salvat + tipul detectat.
+
+    Clientul folosește apoi aceste valori în POST /stories/ (`media_url` + `media_type`).
+    """
+
+    media_url: str
+    media_type: MediaType
 
 
 class UserStories(BaseModel):

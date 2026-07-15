@@ -1,4 +1,10 @@
-import { createStory, deleteStory, fetchMyStories, fetchStories } from '../storiesApi';
+import {
+  createStory,
+  deleteStory,
+  fetchMyStories,
+  fetchStories,
+  uploadStoryMedia,
+} from '../storiesApi';
 
 jest.mock('@/services/api', () => ({
   api: {
@@ -15,6 +21,7 @@ const RAW_STORY = {
   id: 's1',
   user_id: 'u1',
   media_url: 'https://x/media.jpg',
+  media_type: 'image',
   caption: 'Salut!',
   created_at: '2026-07-06T10:00:00Z',
   expires_at: '2026-07-07T10:00:00Z',
@@ -46,6 +53,7 @@ describe('fetchStories', () => {
             id: 's1',
             userId: 'u1',
             mediaUrl: 'https://x/media.jpg',
+            mediaType: 'image',
             caption: 'Salut!',
             createdAt: '2026-07-06T10:00:00Z',
             expiresAt: '2026-07-07T10:00:00Z',
@@ -53,6 +61,15 @@ describe('fetchStories', () => {
         ],
       },
     ]);
+  });
+
+  it('poveștile fără media_type sunt tratate ca imagine', async () => {
+    (api.get as jest.Mock).mockResolvedValue({
+      data: [{ ...RAW_GROUP, stories: [{ ...RAW_STORY, media_type: undefined }] }],
+    });
+
+    const groups = await fetchStories();
+    expect(groups[0].stories[0].mediaType).toBe('image');
   });
 
   it('tolerează caption lipsă și listă goală', async () => {
@@ -87,25 +104,58 @@ describe('fetchMyStories', () => {
 describe('createStory', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('trimite {media_url, caption} și mapează povestea creată', async () => {
+  it('trimite {media_url, media_type, caption} și mapează povestea creată', async () => {
     (api.post as jest.Mock).mockResolvedValue({ data: RAW_STORY });
 
-    const story = await createStory('https://x/media.jpg', 'Salut!');
+    const story = await createStory('https://x/media.jpg', 'image', 'Salut!');
 
     expect(api.post).toHaveBeenCalledTimes(1);
     const [url, payload] = (api.post as jest.Mock).mock.calls[0];
     expect(url).toBe('/stories/');
-    expect(payload).toEqual({ media_url: 'https://x/media.jpg', caption: 'Salut!' });
+    expect(payload).toEqual({
+      media_url: 'https://x/media.jpg',
+      media_type: 'image',
+      caption: 'Salut!',
+    });
     expect(story.id).toBe('s1');
   });
 
-  it('trimite caption undefined când lipsește', async () => {
-    (api.post as jest.Mock).mockResolvedValue({ data: RAW_STORY });
+  it('trimite caption undefined când lipsește și păstrează media_type', async () => {
+    (api.post as jest.Mock).mockResolvedValue({ data: { ...RAW_STORY, media_type: 'video' } });
 
-    await createStory('https://x/media.jpg');
+    await createStory('https://x/clip.mp4', 'video');
 
     const [, payload] = (api.post as jest.Mock).mock.calls[0];
-    expect(payload).toEqual({ media_url: 'https://x/media.jpg', caption: undefined });
+    expect(payload).toEqual({
+      media_url: 'https://x/clip.mp4',
+      media_type: 'video',
+      caption: undefined,
+    });
+  });
+});
+
+describe('uploadStoryMedia', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('trimite multipart la /stories/media și mapează răspunsul', async () => {
+    (api.post as jest.Mock).mockResolvedValue({
+      data: { media_url: 'https://cdn/stories/u1/abc.mp4', media_type: 'video' },
+    });
+
+    const result = await uploadStoryMedia({
+      uri: 'file:///clip.mp4',
+      mimeType: 'video/mp4',
+      fileName: 'clip.mp4',
+      mediaType: 'video',
+    });
+
+    const [url, body] = (api.post as jest.Mock).mock.calls[0];
+    expect(url).toBe('/stories/media');
+    expect(body).toBeInstanceOf(FormData);
+    expect(result).toEqual({
+      mediaUrl: 'https://cdn/stories/u1/abc.mp4',
+      mediaType: 'video',
+    });
   });
 });
 

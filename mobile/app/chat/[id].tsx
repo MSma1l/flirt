@@ -1,7 +1,7 @@
 /** Conversație (TZ secț. 5): mesaje cu poll ~3s, trimitere, marcare citit la intrare. */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -82,6 +82,18 @@ export default function ChatScreen() {
   // FlatList inversat: cel mai nou mesaj primul.
   const messages = data ?? [];
   const inverted = useMemo(() => [...messages].reverse(), [messages]);
+
+  // Prop-ul `inverted` al lui FlatList e RUPT pe react-native-web (folosește
+  // `transform: scaleY(-1)` și adesea nu randează itemele) — mesajele nu se
+  // vedeau deloc în browser. Pe web randăm o listă NORMALĂ, sortată cronologic
+  // (cel mai vechi sus, cel mai nou jos) și derulăm la ultimul mesaj. Pe nativ
+  // rămâne exact ca înainte (inverted).
+  const isWeb = Platform.OS === 'web';
+  const chronological = useMemo(
+    () => [...messages].sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1)),
+    [messages],
+  );
+  const listRef = useRef<FlatList<ChatMessage>>(null);
 
   // Celălalt participant: primul senderId diferit de utilizatorul curent
   // (fallback pe datele din lista de dialoguri).
@@ -194,8 +206,12 @@ export default function ChatScreen() {
             </View>
           ) : (
             <FlatList
-              data={inverted}
-              inverted
+              ref={listRef}
+              data={isWeb ? chronological : inverted}
+              inverted={!isWeb}
+              onContentSizeChange={
+                isWeb ? () => listRef.current?.scrollToEnd({ animated: false }) : undefined
+              }
               keyExtractor={(m) => m.id}
               contentContainerStyle={{ padding: spacing.lg }}
               renderItem={({ item }) => (

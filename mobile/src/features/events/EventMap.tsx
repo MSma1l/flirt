@@ -2,9 +2,14 @@
  * Hartă reală pentru un eveniment: WebView + Leaflet + tiles OpenStreetMap.
  * Gratuit, fără cheie API și fără cont — merge în Expo Go, identic pe iOS și Android.
  * Fără coordonate, cade elegant înapoi pe caseta cu orașul (comportamentul vechi).
+ *
+ * Pe web (`Platform.OS === 'web'`) `react-native-webview` NU are modul nativ, deci
+ * WebView-ul nu se randează (ecran gol/eroare). Acolo degradăm curat pe un `<iframe>`
+ * cu harta de embed OpenStreetMap — aceleași tiles, fără cheie API. Nativul rămâne
+ * NESCHIMBAT (WebView + Leaflet).
  */
 import React, { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 
 import { config } from '@/config';
@@ -112,6 +117,18 @@ export function buildMapHtml({ lat, lng, title }: HtmlParams): string {
 </html>`;
 }
 
+/**
+ * URL de embed OpenStreetMap pentru varianta web (`<iframe>`).
+ * `bbox` e o fereastră mică în jurul punctului (nivel stradă), iar `marker` fixează
+ * pinul pe coordonatele evenimentului. Coordonatele vin din datele evenimentului.
+ */
+export function buildEmbedUrl(lat: number, lng: number): string {
+  // ~800 m în jurul punctului: nivel stradă/cvartal, aliniat cu zoom-ul de pe nativ.
+  const d = 0.008;
+  const bbox = [lng - d, lat - d, lng + d, lat + d].join('%2C');
+  return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat}%2C${lng}`;
+}
+
 /** Hartă a locului evenimentului; fără coordonate valide afișează caseta cu orașul. */
 export function EventMap({ lat, lng, title, city, height = 180 }: EventMapProps) {
   const { colors, typography, radius } = useTheme();
@@ -140,6 +157,25 @@ export function EventMap({ lat, lng, title, city, height = 180 }: EventMapProps)
         <Text style={[typography.bodyStrong, { color: colors.textSecondary }]}>
           📍 {city}
         </Text>
+      </View>
+    );
+  }
+
+  // Web: WebView nu se randează → folosim un <iframe> cu harta de embed OSM.
+  if (Platform.OS === 'web') {
+    return (
+      <View
+        accessibilityRole="image"
+        accessibilityLabel={title ? `Harta locației: ${title}` : 'Harta locației'}
+        style={[styles.frame, frame]}
+      >
+        {React.createElement('iframe', {
+          title: title ? `Harta locației: ${title}` : 'Harta locației',
+          src: buildEmbedUrl(lat as number, lng as number),
+          style: { border: 0, width: '100%', height: '100%' },
+          loading: 'lazy',
+          referrerPolicy: 'no-referrer',
+        })}
       </View>
     );
   }
