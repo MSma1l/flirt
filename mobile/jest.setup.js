@@ -99,3 +99,23 @@ jest.mock('react-native-webview', () => {
     WebView: React.forwardRef((props, ref) => React.createElement(View, { ...props, ref })),
   };
 });
+
+// Izolare de platformă între teste. Unele teste mută `Platform.OS` (ex. la 'web')
+// ca să verifice degradarea web. În `--runInBand` modulul react-native e partajat
+// între fișiere, deci o mutare nerestaurată se scurge în fișierul următor și rupe
+// intermitent testele sensibile la platformă (ex. ecranul de story cu cameră).
+// Capturăm valoarea implicită O SINGURĂ DATĂ (înainte de orice mutare) și o
+// restaurăm după FIECARE test, în toate fișierele. Deterministic, fără flakiness.
+const { Platform: __RNPlatform } = require('react-native');
+if (global.__ORIGINAL_PLATFORM_OS === undefined) {
+  global.__ORIGINAL_PLATFORM_OS = __RNPlatform.OS;
+}
+afterEach(() => {
+  if (__RNPlatform.OS !== global.__ORIGINAL_PLATFORM_OS) {
+    Object.defineProperty(__RNPlatform, 'OS', {
+      value: global.__ORIGINAL_PLATFORM_OS,
+      configurable: true,
+      writable: true,
+    });
+  }
+});

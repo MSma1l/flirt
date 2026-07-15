@@ -1,15 +1,29 @@
 /** Tab bar principal — 3 taburi (TZ secț. 3): Ankete · Mesaje · Setări. */
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { Text } from 'react-native';
 
 import { fetchChats } from '@/features/chat/chatApi';
 import { ChatSummary } from '@/features/chat/types';
 import { useTheme } from '@theme/index';
 
-function TabIcon({ icon, color }: { icon: string; color: string }) {
-  return <Text style={{ fontSize: 22, color }}>{icon}</Text>;
+/**
+ * Iconiță vectorială pentru tab (Ionicons). Varianta plină pe tab-ul activ,
+ * outline pe cele inactive — ca la aplicațiile moderne. Culoarea vine din temă
+ * prin `color` (accent pe activ, gri pe inactiv).
+ */
+function TabIcon({
+  name,
+  color,
+  focused,
+}: {
+  name: 'flame' | 'chatbubble' | 'settings';
+  color: string;
+  focused: boolean;
+}) {
+  const iconName = (focused ? name : `${name}-outline`) as keyof typeof Ionicons.glyphMap;
+  return <Ionicons name={iconName} size={24} color={color} />;
 }
 
 export default function TabsLayout() {
@@ -42,14 +56,18 @@ export default function TabsLayout() {
         name="ankete"
         options={{
           title: 'Ankete',
-          tabBarIcon: ({ color }) => <TabIcon icon="🂠" color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name="flame" color={color} focused={focused} />
+          ),
         }}
       />
       <Tabs.Screen
         name="mesaje"
         options={{
           title: 'Mesaje',
-          tabBarIcon: ({ color }) => <TabIcon icon="💬" color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name="chatbubble" color={color} focused={focused} />
+          ),
           tabBarBadge: unreadTotal > 0 ? unreadTotal : undefined,
         }}
       />
@@ -57,7 +75,9 @@ export default function TabsLayout() {
         name="setari"
         options={{
           title: 'Setări',
-          tabBarIcon: ({ color }) => <TabIcon icon="⚙️" color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name="settings" color={color} focused={focused} />
+          ),
         }}
       />
     </Tabs>

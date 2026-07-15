@@ -23,9 +23,14 @@ export const STORY_MESSAGES = {
   permissionBlocked:
     'Accesul la galerie este oprit. Deschide setările, activează-l pentru FLIRT, apoi revino.',
   cameraPermission:
-    'Avem nevoie de cameră și microfon ca să poți filma un story.',
+    'Avem nevoie de acces la cameră ca să faci o poză sau să filmezi un story.',
   cameraPermissionBlocked:
     'Accesul la cameră este oprit. Deschide setările și activează camera pentru FLIRT, apoi revino.',
+  cameraUnavailable:
+    'Nu am putut porni camera aici. Poți alege în schimb o poză sau un clip din galerie.',
+  micPermission:
+    'Pentru clipuri cu sunet avem nevoie și de microfon. Îl poți activa din setări.',
+  captureFailed: 'Nu am putut face poza. Încearcă din nou.',
   recordFailed: 'Nu am putut înregistra clipul. Încearcă din nou.',
   videoTooLong: `Clipul e prea lung. Alege unul de cel mult ${STORY_VIDEO_MAX_SECONDS} de secunde.`,
   videoTooLarge: 'Clipul e prea mare pentru încărcare. Alege unul mai scurt.',
