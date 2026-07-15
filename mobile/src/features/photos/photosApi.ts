@@ -9,6 +9,7 @@
  * e poza, nu conexiunea, iar mesajul backend-ului e afișat ca atare.
  */
 import axios from 'axios';
+import { Platform } from 'react-native';
 
 import { api } from '@/services/api';
 
@@ -78,16 +79,32 @@ async function postPhoto(
   onProgress?: (ratio: number) => void,
 ): Promise<string[]> {
   const form = new FormData();
-  const part: RNFilePart = {
-    uri: photo.uri,
-    name: photo.fileName,
-    type: photo.mimeType,
-  };
-  // RN acceptă un obiect {uri,name,type} ca fișier; tipurile DOM cer `Blob`.
-  form.append('file', part as unknown as Blob);
+  // Header-ele diferă pe platformă: pe nativ forțăm `multipart/form-data`, pe web
+  // NU (browserul trebuie să pună singur boundary-ul — vezi mai jos).
+  let headers: Record<string, string> | undefined;
+
+  if (Platform.OS === 'web') {
+    // Browserul NU acceptă obiectul {uri,name,type} ca fișier — l-ar serializa ca
+    // `[object Object]`, iar backend-ul n-ar vedea niciun `file`. Aducem conținutul
+    // din `photo.uri` (un URL `blob:`/`data:`) într-un `Blob` real și îl atașăm cu
+    // nume (al 3-lea argument), ca multipart-ul să conțină un fișier cu `filename`.
+    const blob = await (await fetch(photo.uri)).blob();
+    form.append('file', blob, photo.fileName);
+    // NU setăm manual `Content-Type`: dacă îl forțăm, lipsește `boundary=...` și
+    // parsarea multipart pică. Lăsăm browserul să-l compună (cu boundary corect).
+  } else {
+    const part: RNFilePart = {
+      uri: photo.uri,
+      name: photo.fileName,
+      type: photo.mimeType,
+    };
+    // RN acceptă un obiect {uri,name,type} ca fișier; tipurile DOM cer `Blob`.
+    form.append('file', part as unknown as Blob);
+    headers = { 'Content-Type': 'multipart/form-data' };
+  }
 
   const { data } = await api.post<string[]>('/profiles/photos', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers,
     onUploadProgress: (event) => {
       if (!onProgress) return;
       const total = event.total ?? 0;

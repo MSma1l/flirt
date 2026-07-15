@@ -112,6 +112,67 @@ describe('uploadPhoto', () => {
   });
 });
 
+/**
+ * Bug real: pe WEB uploadul pica cu „Lipsește câmpul 'file'". Cauza — browserul NU
+ * acceptă obiectul {uri,name,type} ca fișier (îl serializează `[object Object]`), iar
+ * header-ul `Content-Type: multipart/form-data` forțat manual rupe boundary-ul.
+ * Aici blindăm ambele platforme: web = Blob real + fără header manual; nativ = neschimbat.
+ */
+describe('postPhoto — web vs nativ', () => {
+  it('pe WEB atașează un Blob REAL cu nume și NU forțează Content-Type', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const RN = require('react-native');
+    const originalOS = RN.Platform.OS;
+    RN.Platform.OS = 'web';
+
+    const blob = new Blob(['bytes-poza'], { type: 'image/jpeg' });
+    const fetchMock = jest.fn(async () => ({ blob: async () => blob }));
+    (global as unknown as { fetch: unknown }).fetch = fetchMock;
+    const appendSpy = jest.spyOn(FormData.prototype, 'append');
+    (api.post as jest.Mock).mockResolvedValue({ data: ['u-web'] });
+
+    try {
+      const urls = await uploadPhoto(photo);
+
+      // Conținutul e adus din URL-ul `blob:`/`data:` local...
+      expect(fetchMock).toHaveBeenCalledWith(photo.uri);
+      const fileCall = appendSpy.mock.calls.find((c) => c[0] === 'file');
+      // ...și atașat ca Blob real (NU obiectul {uri,name,type}), cu numele fișierului.
+      expect(fileCall?.[1]).toBeInstanceOf(Blob);
+      expect(fileCall?.[2]).toBe(photo.fileName);
+      // Pe web NU trimitem `Content-Type` manual: browserul pune boundary-ul corect.
+      const [, , cfg] = (api.post as jest.Mock).mock.calls[0];
+      expect(cfg.headers).toBeUndefined();
+      expect(urls).toEqual(['u-web']);
+    } finally {
+      appendSpy.mockRestore();
+      RN.Platform.OS = originalOS;
+      delete (global as unknown as { fetch?: unknown }).fetch;
+    }
+  });
+
+  it('pe NATIV păstrează obiectul {uri,name,type} + header multipart (fără regresie)', async () => {
+    const appendSpy = jest.spyOn(FormData.prototype, 'append');
+    (api.post as jest.Mock).mockResolvedValue({ data: ['u-nat'] });
+
+    try {
+      await uploadPhoto(photo);
+
+      const fileCall = appendSpy.mock.calls.find((c) => c[0] === 'file');
+      expect(fileCall?.[1]).toEqual({
+        uri: photo.uri,
+        name: photo.fileName,
+        type: photo.mimeType,
+      });
+      expect(fileCall?.[2]).toBeUndefined(); // fără al 3-lea argument pe nativ
+      const [, , cfg] = (api.post as jest.Mock).mock.calls[0];
+      expect(cfg.headers).toEqual({ 'Content-Type': 'multipart/form-data' });
+    } finally {
+      appendSpy.mockRestore();
+    }
+  });
+});
+
 describe('isRetriableError', () => {
   it('reîncearcă doar rețeaua căzută, 5xx și 429', () => {
     expect(isRetriableError(axiosError())).toBe(true);

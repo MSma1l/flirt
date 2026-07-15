@@ -134,7 +134,7 @@ export const config = {
 
   /**
    * Poze de profil (TZ 2.4). Valorile implicite sunt SIMETRICE cu backend-ul
-   * (`app/core/config.py`: min_photos=3, max_photos=9, max_upload_bytes=8 MB,
+   * (`app/core/config.py`: min_photos=1, max_photos=9, max_upload_bytes=8 MB,
    * allowed_image_types) — dacă backend-ul își schimbă limitele, se suprascriu
    * din `app.json` → `expo.extra.photo*`, fără a atinge codul ecranelor.
    *
@@ -146,7 +146,7 @@ export const config = {
    */
   photos: {
     /** Numărul minim de poze cerut de anketă (backend: `min_photos`). */
-    min: extra.photoMinCount ?? 3,
+    min: extra.photoMinCount ?? 1,
     /** Numărul maxim de poze pe profil (backend: `max_photos`). */
     max: extra.photoMaxCount ?? 9,
     /** Dimensiunea maximă a unui fișier (backend: `max_upload_bytes` = 8 MB). */

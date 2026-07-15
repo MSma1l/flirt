@@ -184,15 +184,15 @@ describe('ProfileEditScreen — poze', () => {
       languages: ['Română'],
       datingStatuses: ['Prietenie'],
       interests: ['sport'],
-      photos: [PHOTOS[0]],
+      photos: [],
     });
     const utils = renderScreen();
-    await waitFor(() => utils.getByTestId('photo-tile-0'));
+    await waitFor(() => utils.getByText('Salvează'));
 
     fireEvent.press(utils.getByText('Salvează'));
 
     await waitFor(() =>
-      utils.getByText('Adaugă cel puțin 3 poze ca să continui (mai ai 2 de adăugat).'),
+      utils.getByText('Adaugă cel puțin 1 poze ca să continui (mai ai 1 de adăugat).'),
     );
     expect(mockSubmitAnketa).not.toHaveBeenCalled();
   });

@@ -10,8 +10,8 @@ import {
 } from '../validation';
 
 describe('limitele de poze', () => {
-  it('sunt simetrice cu backend-ul (min 3, max 9, 8 MB, jpeg/png/webp)', () => {
-    expect(PHOTO_LIMITS.min).toBe(3);
+  it('sunt simetrice cu backend-ul (min 1, max 9, 8 MB, jpeg/png/webp)', () => {
+    expect(PHOTO_LIMITS.min).toBe(1);
     expect(PHOTO_LIMITS.max).toBe(9);
     expect(PHOTO_LIMITS.maxUploadBytes).toBe(8_388_608);
     expect(PHOTO_LIMITS.allowedTypes).toEqual(['image/jpeg', 'image/png', 'image/webp']);
@@ -63,12 +63,12 @@ describe('validatePhotoSize', () => {
 
 describe('validatePhotoCount', () => {
   it('cere minimul de poze și spune câte mai lipsesc', () => {
-    expect(validatePhotoCount(0)).toContain('cel puțin 3 poze');
-    expect(validatePhotoCount(2)).toContain('mai ai 1 de adăugat');
+    expect(validatePhotoCount(0)).toContain('cel puțin 1 poze');
+    expect(validatePhotoCount(0)).toContain('mai ai 1 de adăugat');
   });
 
   it('acceptă între min și max', () => {
-    expect(validatePhotoCount(3)).toBeNull();
+    expect(validatePhotoCount(1)).toBeNull();
     expect(validatePhotoCount(9)).toBeNull();
   });
 

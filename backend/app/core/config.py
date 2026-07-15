@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # APP 18+ ONLY (cerință App Store / Google Play pentru dating): vârsta minimă
     # de înregistrare NU poate coborî sub `adult_age` (validat mai jos).
     min_registration_age: int = 18
-    min_photos: int = 3
+    min_photos: int = 1
     max_photos: int = 9
     search_radius_default_km: int = 50
     account_deletion_grace_days: int = 30

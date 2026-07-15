@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -62,16 +63,27 @@ export function PhotoGrid({
 
   /** Ștergerea cere confirmare — o poză ștearsă din greșeală nu se recuperează. */
   const confirmRemove = (index: number) => {
-    Alert.alert(
-      'Ștergi poza?',
+    // Mesajul e extras o singură dată: același text pe ambele platforme, inclusiv
+    // avertismentul special când dispare poza principală (index 0 dintre mai multe).
+    const message =
       index === 0 && photos.length > 1
         ? 'Este poza ta principală. Următoarea poză îi va lua locul.'
-        : 'Poza va fi eliminată din profil.',
-      [
-        { text: 'Anulează', style: 'cancel' },
-        { text: 'Șterge', style: 'destructive', onPress: () => onRemove(index) },
-      ],
-    );
+        : 'Poza va fi eliminată din profil.';
+
+    // Pe web `Alert.alert` din react-native-web e un no-op → dialogul nu apărea
+    // niciodată și butonul „✕" părea mort. Folosim `window.confirm` nativ browserului.
+    if (Platform.OS === 'web') {
+      if (window.confirm(message)) {
+        onRemove(index);
+      }
+      return;
+    }
+
+    // Nativ: dialogul RN cu buton distructiv, neschimbat.
+    Alert.alert('Ștergi poza?', message, [
+      { text: 'Anulează', style: 'cancel' },
+      { text: 'Șterge', style: 'destructive', onPress: () => onRemove(index) },
+    ]);
   };
 
   const tileStyle = {
