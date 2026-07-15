@@ -4,15 +4,14 @@
 > sunt **verificate prin rulare**, nu estimate. Dacă un lucru nu merge, scrie aici că nu merge.
 > Un PROGRESS care minte e mai rău decât unul care lipsește — pe baza lui se iau decizii.
 >
-> Ultima verificare: **13 iulie 2026**, ramura `feat/auth-anketa-scaffold`, commit `c4205f6`.
+> Ultima verificare: **15 iulie 2026**, ramura `feat/auth-anketa-scaffold`, commit `24c169d`.
 
 ## Cifre reale
 
 | Măsurătoare | Valoare | Cum am verificat |
 |---|---|---|
-| Teste backend | **445** ✔ (37 fișiere, 392 funcții de test) | `cd backend && pytest -q` |
-| Acoperire backend | **83%** | `pytest --cov=app` |
-| Teste mobile | **340** ✔ (57 suite) | `cd mobile && npm test` |
+| Teste backend | **507** ✔ | `cd backend && pytest -q` (Postgres real) |
+| Teste mobile | **436** ✔ (61 suite) | `cd mobile && npm test` · `tsc --noEmit` curat |
 | Teste admin | **19** ✔ (6 fișiere) | `cd admin && npm test` |
 | API | **79 operațiuni** pe **68 căi** (58 aplicație + 21 admin) | din OpenAPI-ul aplicației |
 | Bază de date | **22 tabele**, 13 migrații Alembic | `Base.metadata` |
@@ -32,7 +31,14 @@
 | Aplicația mobilă — **gata de store** | **Blocată**: fără IAP nativ nu se poate face submit | **~40%** |
 | AI (hint chat, Chemistry Score, NLP umor) | Neînceput (TZ 5.3/5.4) | **0%** |
 
-**Blocantul #1 al lansării: plățile IAP** (secțiunea ❌ AMÂNAT). Totul în afară de asta e livrabil.
+**Actualizare 15 iul 2026 — integrările native sunt IMPLEMENTATE (cod + teste), rămâne procurarea cheilor.**
+IAP nativ (StoreKit 2), login social (Apple+Google), push (expo-notifications) și captura selfie
+au fost scoase din stub și sunt reale în cod, cu teste verzi. Backend-ul verifică JWS-ul StoreKit 2
+(lanț x5c până la Apple Root CA G3), cu anti-replay pe `transaction_id` (index UNIQUE, în producție).
+Pagini legale publice live la `https://api.flrt.md/legal/{terms,privacy,support}`.
+Ce mai lipsește NU e cod, ci **conturi + chei**: Apple Developer (produse IAP în App Store Connect +
+Paid Applications Agreement), Google OAuth client ID, EAS projectId + APNs/FCM, AWS (S3+Rekognition).
+Vezi `.context/CHEI_EXTERNE.md`. Fără conturile de developer, funcțiile degradează curat (nu crapă).
 
 ---
 
