@@ -9,7 +9,13 @@ export {
   openAppSettings,
   pickPhoto,
 } from './photoPicker';
-export { deletePhoto, reorderPhotos, uploadPhoto } from './photosApi';
+export {
+  deletePhoto,
+  isPhotoUploadError,
+  PhotoUploadError,
+  reorderPhotos,
+  uploadPhoto,
+} from './photosApi';
 export type { UploadOptions } from './photosApi';
 export { moveItem } from './reorder';
 export type {
@@ -20,8 +26,10 @@ export type {
   PickPhotoResult,
 } from './types';
 export {
+  IMAGE_PROCESSING_FAILED_MESSAGE,
   PERMISSION_DENIED_MESSAGE,
   PHOTO_LIMITS,
+  PICKER_FAILED_MESSAGE,
   validateCanAddPhoto,
   validatePhotoCount,
   validatePhotoSize,

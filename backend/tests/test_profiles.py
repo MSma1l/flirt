@@ -89,8 +89,53 @@ async def test_reference_public_non_empty(client):
     assert len(data["genders"]) > 0
     assert len(data["interests"]) > 0
     assert len(data["dating_statuses"]) > 0
+    assert len(data["languages"]) > 0
     # interesele au slug + etichete
     assert "slug" in data["interests"][0]
+
+
+@pytest.mark.asyncio
+async def test_reference_has_all_four_labels(client):
+    """Aplicația e în 4 limbi: fiecare intrare de referință are ro/ru/uk/en."""
+    resp = await client.get(f"{API}/profiles/reference")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+
+    for key in ("genders", "dating_statuses", "languages", "interests"):
+        assert data[key], f"catalogul {key} e gol"
+        for item in data[key]:
+            for label in ("label_ro", "label_ru", "label_uk", "label_en"):
+                assert item.get(label), f"{key}: lipsește {label} din {item}"
+
+
+@pytest.mark.asyncio
+async def test_reference_languages_include_ukrainian(client):
+    """Ucraineana e printre limbile știute sugerate, cu etichetele ei corecte."""
+    resp = await client.get(f"{API}/profiles/reference")
+    assert resp.status_code == 200, resp.text
+    languages = {item["value"]: item for item in resp.json()["languages"]}
+
+    assert {"ro", "ru", "uk", "en"} <= set(languages)
+    uk = languages["uk"]
+    assert uk["label_uk"] == "Українська"
+    assert uk["label_ro"] == "Ucraineană"
+    # uk NU e transliterare din ru — etichetele diferă între cele două limbi
+    assert uk["label_ru"] != uk["label_uk"]
+
+
+@pytest.mark.asyncio
+async def test_upsert_accepts_ukrainian_language(client):
+    """Un profil poate salva `languages: ["uk"]` și îl primește înapoi la GET."""
+    headers = await _auth_headers(client)
+    anketa = _valid_anketa() | {"languages": ["uk"]}
+
+    resp = await client.put(f"{API}/profiles/me", json=anketa, headers=headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["languages"] == ["uk"]
+
+    resp = await client.get(f"{API}/profiles/me", headers=headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["languages"] == ["uk"]
 
 
 @pytest.mark.asyncio

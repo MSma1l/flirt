@@ -178,6 +178,105 @@ describe('compresie înainte de upload', () => {
   });
 });
 
+/**
+ * Bug real: pe WEB `expo-file-system` e doar un stub (`new File(uri)` aruncă), deci
+ * `fileSizeBytes` întorcea MEREU 0 → bucla de recompresie se oprea din prima, iar o
+ * poză peste 8 MB pleca spre backend doar ca să fie respinsă cu 413.
+ */
+describe('dimensiunea pozei pe WEB', () => {
+  /** Mută platforma pe web; `jest.setup.js` restaurează `Platform.OS` după test. */
+  function useWeb(): void {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    require('react-native').Platform.OS = 'web';
+  }
+
+  /** Un `fetch` care întoarce, pe rând, blob-uri de dimensiunile cerute. */
+  function mockBlobSizes(...sizes: number[]): jest.Mock {
+    const queue = [...sizes];
+    const fetchMock = jest.fn(async () => ({
+      blob: async () => ({ size: queue.length > 1 ? queue.shift() : queue[0] }),
+    }));
+    (global as unknown as { fetch: unknown }).fetch = fetchMock;
+    return fetchMock;
+  }
+
+  afterEach(() => {
+    delete (global as unknown as { fetch?: unknown }).fetch;
+  });
+
+  it('citește dimensiunea din blob (nu din expo-file-system) și recomprimă', async () => {
+    useWeb();
+    // 9 MB la calitate 0.8 → peste limită; 5 MB la 0.6 → intră.
+    const fetchMock = mockBlobSizes(9 * 1024 * 1024, 5 * 1024 * 1024);
+
+    const result = await compressPhoto({ ...bigAsset, uri: 'blob:http://localhost/abc' });
+
+    expect(fetchMock).toHaveBeenCalledWith('blob:http://localhost/abc-compressed');
+    // Dovada că bucla chiar rulează pe web: a doua trecere, la calitate mai mică.
+    expect(mockManipulateAsync).toHaveBeenCalledTimes(2);
+    expect(mockManipulateAsync.mock.calls[1][2]).toEqual({ compress: 0.6, format: 'jpeg' });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.photo.sizeBytes).toBe(5 * 1024 * 1024);
+  });
+
+  it('respinge pe web poza rămasă prea mare (înainte de a atinge rețeaua)', async () => {
+    useWeb();
+    mockBlobSizes(20 * 1024 * 1024);
+
+    const result = await compressPhoto({ ...bigAsset, uri: 'blob:http://localhost/abc' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain('20 MB');
+  });
+
+  it('un blob necitibil nu blochează userul: dimensiune 0 → decide backend-ul', async () => {
+    useWeb();
+    (global as unknown as { fetch: unknown }).fetch = jest.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+
+    const result = await compressPhoto({ ...bigAsset, uri: 'blob:http://localhost/abc' });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.photo.sizeBytes).toBe(0);
+  });
+});
+
+/**
+ * Pe web, `expo-image-manipulator` decodează poza într-un `<img>`: un HEIC de pe
+ * iPhone pică acolo, iar promisiunea e respinsă cu un `HTMLCanvasElement` (nu cu un
+ * `Error`). Înainte, excepția urca în `pickPhoto` și userul citea „Nu am putut
+ * deschide galeria" — deși galeria se deschisese perfect.
+ */
+describe('poză imposibil de decodat', () => {
+  it('compressPhoto întoarce un mesaj util, nu aruncă', async () => {
+    // Respins EXACT ca pe web: cu un obiect oarecare, nu cu un Error.
+    mockManipulateAsync.mockRejectedValueOnce({ tagName: 'CANVAS' } as never);
+
+    const result = await compressPhoto(bigAsset);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toMatch(/Nu am putut procesa poza/);
+      expect(result.message).toMatch(/HEIC/);
+    }
+  });
+
+  it('pickPhoto NU mai dă vina pe galerie când poza e cea cu probleme', async () => {
+    grantPermission();
+    pickAsset();
+    mockManipulateAsync.mockRejectedValueOnce({ tagName: 'CANVAS' } as never);
+
+    const result = await pickPhoto();
+
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.message).toMatch(/Nu am putut procesa poza/);
+      expect(result.message).not.toMatch(/deschide galeria/);
+    }
+  });
+});
+
 describe('pickPhoto', () => {
   it('întoarce poza comprimată, gata de upload', async () => {
     grantPermission();

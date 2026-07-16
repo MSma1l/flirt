@@ -11,10 +11,11 @@
 import { File } from 'expo-file-system';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
-import { Linking } from 'react-native';
+import { Linking, Platform } from 'react-native';
 
 import { CompressResult, LocalPhoto, PickedAsset, PickPhotoResult } from './types';
 import {
+  IMAGE_PROCESSING_FAILED_MESSAGE,
   OUTPUT_MIME_TYPE,
   PHOTO_LIMITS,
   PICKER_FAILED_MESSAGE,
@@ -50,8 +51,25 @@ export async function openAppSettings(): Promise<void> {
   await Linking.openSettings();
 }
 
-/** Dimensiunea reală (bytes) a unui fișier local; 0 dacă nu poate fi citită. */
-export function fileSizeBytes(uri: string): number {
+/**
+ * Dimensiunea reală (bytes) a unei poze locale; 0 dacă nu poate fi citită.
+ *
+ * Pe WEB `expo-file-system` NU e implementat: `File` e un stub care doar dă un
+ * `console.warn` și îi lipsește `validatePath`, deci `new File(uri)` ARUNCĂ mereu
+ * → funcția întorcea 0 de fiecare dată. Consecința nu era cosmetică: bucla de
+ * recompresie din `compressPhoto` se oprea din prima iterație (0 ≤ limită), așa
+ * că o poză rămasă peste 8 MB pleca spre backend doar ca să fie respinsă cu 413.
+ * În browser singura sursă reală de dimensiune e chiar blob-ul din spatele
+ * URI-ului `blob:`/`data:`, deci îl citim de acolo.
+ */
+export async function fileSizeBytes(uri: string): Promise<number> {
+  if (Platform.OS === 'web') {
+    try {
+      return (await (await fetch(uri)).blob()).size;
+    } catch {
+      return 0;
+    }
+  }
   try {
     return new File(uri).size ?? 0;
   } catch {
@@ -78,11 +96,23 @@ export async function compressPhoto(asset: PickedAsset): Promise<CompressResult>
   let quality = PHOTO_LIMITS.compressQuality;
 
   for (;;) {
-    const result = await manipulateAsync(asset.uri, actions, {
-      compress: quality,
-      format: SaveFormat.JPEG,
-    });
-    const sizeBytes = fileSizeBytes(result.uri);
+    // `manipulateAsync` poate ARUNCA, nu doar eșua: pe web încarcă poza într-un
+    // `<img>`, iar dacă browserul nu știe formatul (HEIC de pe iPhone, fișier
+    // corupt) respinge promisiunea — și o respinge cu un `HTMLCanvasElement`, nu
+    // cu un `Error`. Îl transformăm într-un rezultat explicit, cu mesaj util:
+    // altfel excepția urca până în `pickPhoto` și era raportată, greșit, drept
+    // „nu am putut deschide galeria".
+    let result: { uri: string; width: number; height: number };
+    try {
+      result = await manipulateAsync(asset.uri, actions, {
+        compress: quality,
+        format: SaveFormat.JPEG,
+      });
+    } catch {
+      return { ok: false, message: IMAGE_PROCESSING_FAILED_MESSAGE };
+    }
+
+    const sizeBytes = await fileSizeBytes(result.uri);
 
     // sizeBytes === 0 → platforma nu ne dă dimensiunea; nu blocăm utilizatorul
     // degeaba (backend-ul rămâne poarta finală, cu magic-bytes și limită de 8 MB).
@@ -128,6 +158,10 @@ export async function pickPhoto(): Promise<PickPhotoResult> {
     return { status: 'denied', canAskAgain: permission.canAskAgain };
   }
 
+  // Cele două etape au cauze de eșec DIFERITE, deci și mesaje diferite. Într-un
+  // singur try/catch, o poză nedecodabilă (HEIC pe web) era raportată drept „nu am
+  // putut deschide galeria" — neadevărat și fără nicio indicație ce să facă userul.
+  let asset: PickedAsset | undefined;
   try {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
@@ -136,15 +170,20 @@ export async function pickPhoto(): Promise<PickPhotoResult> {
       quality: 1,
       exif: false,
     });
-
-    const asset = result.canceled ? undefined : result.assets[0];
-    if (!asset) return { status: 'cancelled' };
-
-    const compressed = await compressPhoto(asset);
-    if (!compressed.ok) return { status: 'rejected', message: compressed.message };
-
-    return { status: 'picked', photo: compressed.photo };
+    asset = result.canceled ? undefined : result.assets[0];
   } catch {
     return { status: 'rejected', message: PICKER_FAILED_MESSAGE };
+  }
+
+  if (!asset) return { status: 'cancelled' };
+
+  // `compressPhoto` are mesajele lui (tip nepermis / prea mare / nedecodabilă) și
+  // nu ar trebui să arunce; try/catch-ul rămâne doar ca plasă de siguranță.
+  try {
+    const compressed = await compressPhoto(asset);
+    if (!compressed.ok) return { status: 'rejected', message: compressed.message };
+    return { status: 'picked', photo: compressed.photo };
+  } catch {
+    return { status: 'rejected', message: IMAGE_PROCESSING_FAILED_MESSAGE };
   }
 }

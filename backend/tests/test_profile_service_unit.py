@@ -3,9 +3,11 @@ from datetime import date
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.security import hash_password
+from app.models.interest import Interest
 from app.models.profile import Profile
 from app.models.user import User
 from app.schemas.profile import AnketaIn
@@ -47,6 +49,38 @@ async def test_seed_interests_is_idempotent(db_session):
     ref = await PS.get_reference(db_session)
     slugs = [i.slug for i in ref.interests]
     assert len(slugs) == len(set(slugs)) == len(PS.INTERESTS_CATALOG)
+
+
+@pytest.mark.asyncio
+async def test_seed_interests_backfills_labels_on_existing_rows(db_session):
+    """Rândurile deja în DB primesc etichetele noi, nu doar cele inserate acum.
+
+    Simulează un rând rămas dintr-o versiune veche a catalogului (2 limbi):
+    migrarea îi pune ceva în `label_uk`/`label_en`, dar sursa de adevăr rămâne
+    `INTERESTS_CATALOG`, deci `seed_interests` trebuie să-l aducă la zi.
+    """
+    db_session.add(
+        Interest(
+            slug="sport",
+            label_ru="vechi",
+            label_ro="vechi",
+            label_uk="vechi",
+            label_en="vechi",
+        )
+    )
+    await db_session.commit()
+
+    await PS.seed_interests(db_session)
+
+    row = (
+        await db_session.execute(select(Interest).where(Interest.slug == "sport"))
+    ).scalar_one()
+    assert (row.label_ru, row.label_ro, row.label_uk, row.label_en) == (
+        "Спорт",
+        "Sport",
+        "Спорт",
+        "Sports",
+    )
 
 
 @pytest.mark.asyncio

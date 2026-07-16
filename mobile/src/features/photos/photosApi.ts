@@ -47,6 +47,28 @@ function delay(ms: number): Promise<void> {
   });
 }
 
+/**
+ * Eroare de upload al cărei `message` e DEJA scris pentru utilizator, în română.
+ *
+ * Există ca să putem deosebi mesajele NOASTRE de excepțiile tehnice ale
+ * platformei (`TypeError: Failed to fetch`, `Network request failed`) — pe
+ * acelea nu avem voie să le arătăm ca atare. Marcarea se face cu o proprietate,
+ * nu doar cu `instanceof`: după transpilare, lanțul de prototipuri al
+ * subclaselor de `Error` nu e garantat în toate mediile.
+ */
+export class PhotoUploadError extends Error {
+  readonly isPhotoUploadError = true;
+}
+
+/** True doar pentru erorile create de noi, cu mesaj gata de afișat. */
+export function isPhotoUploadError(error: unknown): error is PhotoUploadError {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { isPhotoUploadError?: boolean }).isPhotoUploadError === true
+  );
+}
+
 /** True pentru erorile care merită reîncercate: rețea căzută, 5xx, 429. */
 export function isRetriableError(error: unknown): boolean {
   if (!axios.isAxiosError(error)) return false;
@@ -57,6 +79,9 @@ export function isRetriableError(error: unknown): boolean {
 
 /** Traduce o eroare de upload într-un mesaj clar pentru utilizator. */
 export function uploadErrorMessage(error: unknown): string {
+  // Mesajele noastre sunt deja în română și explică ce are userul de făcut.
+  if (isPhotoUploadError(error) && error.message) return error.message;
+
   if (axios.isAxiosError(error)) {
     const status = error.response?.status;
     if (status === undefined) {
@@ -69,7 +94,9 @@ export function uploadErrorMessage(error: unknown): string {
     if (typeof detail === 'string' && detail.trim()) return detail;
     return 'Nu am putut încărca poza. Încearcă din nou.';
   }
-  if (error instanceof Error && error.message) return error.message;
+  // ORICE altceva e o excepție tehnică a platformei, cu mesaj în engleză
+  // (`Failed to fetch`, `Network request failed`). Utilizatorul nu are ce face cu
+  // el, așa că îl înlocuim — nu îl afișăm „ca să nu pierdem informația".
   return 'Nu am putut încărca poza. Încearcă din nou.';
 }
 
@@ -88,7 +115,24 @@ async function postPhoto(
     // `[object Object]`, iar backend-ul n-ar vedea niciun `file`. Aducem conținutul
     // din `photo.uri` (un URL `blob:`/`data:`) într-un `Blob` real și îl atașăm cu
     // nume (al 3-lea argument), ca multipart-ul să conțină un fișier cu `filename`.
-    const blob = await (await fetch(photo.uri)).blob();
+    let raw: Blob;
+    try {
+      raw = await (await fetch(photo.uri)).blob();
+    } catch {
+      // `fetch` pe un URL `blob:` aruncă un `TypeError` sec („Failed to fetch"),
+      // NU o eroare axios — de obicei fiindcă URL-ul a fost revocat între timp
+      // (pagina reîncărcată). Fără traducere, userul citea exact „Failed to fetch".
+      throw new PhotoUploadError(
+        'Poza nu mai este disponibilă în browser. Alege-o din nou și încearcă iar.',
+      );
+    }
+
+    // Backend-ul respinge cu 422 („Tip de fișier nepermis") după tipul DECLARAT al
+    // părții multipart, adică `blob.type`. `canvas.toBlob` ne dă `image/jpeg`, dar
+    // dacă tipul lipsește, partea ar pleca `application/octet-stream` și poza ar fi
+    // refuzată deși e validă. Îl impunem pe cel pe care l-am produs la compresie.
+    const blob =
+      raw.type === photo.mimeType ? raw : new Blob([raw], { type: photo.mimeType });
     form.append('file', blob, photo.fileName);
     // NU setăm manual `Content-Type`: dacă îl forțăm, lipsește `boundary=...` și
     // parsarea multipart pică. Lăsăm browserul să-l compună (cu boundary corect).
@@ -126,10 +170,10 @@ export async function uploadPhoto(
   options: UploadOptions = {},
 ): Promise<string[]> {
   const typeError = validateUploadType(photo.mimeType);
-  if (typeError) throw new Error(typeError);
+  if (typeError) throw new PhotoUploadError(typeError);
   // sizeBytes === 0 → dimensiune necunoscută pe platformă; backend-ul decide.
   const sizeError = photo.sizeBytes > 0 ? validatePhotoSize(photo.sizeBytes) : null;
-  if (sizeError) throw new Error(sizeError);
+  if (sizeError) throw new PhotoUploadError(sizeError);
 
   const retries = options.retries ?? DEFAULT_RETRIES;
   const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
@@ -145,7 +189,7 @@ export async function uploadPhoto(
         options.onProgress?.(0);
         continue;
       }
-      throw new Error(uploadErrorMessage(error));
+      throw new PhotoUploadError(uploadErrorMessage(error));
     }
   }
 }

@@ -1,4 +1,11 @@
-import { deletePhoto, isRetriableError, reorderPhotos, uploadPhoto } from '../photosApi';
+import {
+  deletePhoto,
+  isRetriableError,
+  PhotoUploadError,
+  reorderPhotos,
+  uploadErrorMessage,
+  uploadPhoto,
+} from '../photosApi';
 import { LocalPhoto } from '../types';
 
 jest.mock('@/services/api', () => ({
@@ -119,6 +126,11 @@ describe('uploadPhoto', () => {
  * Aici blindăm ambele platforme: web = Blob real + fără header manual; nativ = neschimbat.
  */
 describe('postPhoto — web vs nativ', () => {
+  /** Platforma reală, capturată de `jest.setup.js` înainte de orice mutare. */
+  function originalOS(): string {
+    return (global as unknown as { __ORIGINAL_PLATFORM_OS: string }).__ORIGINAL_PLATFORM_OS;
+  }
+
   it('pe WEB atașează un Blob REAL cu nume și NU forțează Content-Type', async () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const RN = require('react-native');
@@ -151,6 +163,59 @@ describe('postPhoto — web vs nativ', () => {
     }
   });
 
+  /**
+   * `fetch` pe un `blob:` revocat aruncă un `TypeError` sec — NU o eroare axios.
+   * Cădea pe ramura `error instanceof Error` și userul citea, în engleză, exact
+   * „Failed to fetch".
+   */
+  it('pe WEB un blob mort dă un mesaj ÎN ROMÂNĂ, nu „Failed to fetch"', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const RN = require('react-native');
+    RN.Platform.OS = 'web';
+    (global as unknown as { fetch: unknown }).fetch = jest.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+
+    try {
+      await expect(uploadPhoto(photo, { retryDelayMs: 0 })).rejects.toThrow(
+        /Poza nu mai este disponibilă în browser/,
+      );
+      // Nu are rost reîncercat: un URL revocat nu învie, iar rețeaua e nevinovată.
+      expect(api.post).not.toHaveBeenCalled();
+    } finally {
+      RN.Platform.OS = originalOS();
+      delete (global as unknown as { fetch?: unknown }).fetch;
+    }
+  });
+
+  /**
+   * Backend-ul respinge cu 422 „Tip de fișier nepermis" după tipul DECLARAT al
+   * părții multipart (`blob.type`). Un blob fără tip ar pleca octet-stream.
+   */
+  it('pe WEB impune tipul MIME al pozei dacă blob-ul vine fără tip', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const RN = require('react-native');
+    RN.Platform.OS = 'web';
+
+    const untyped = new Blob(['bytes-poza']); // type === ''
+    (global as unknown as { fetch: unknown }).fetch = jest.fn(async () => ({
+      blob: async () => untyped,
+    }));
+    const appendSpy = jest.spyOn(FormData.prototype, 'append');
+    (api.post as jest.Mock).mockResolvedValue({ data: ['u-web'] });
+
+    try {
+      await uploadPhoto(photo);
+
+      const fileCall = appendSpy.mock.calls.find((c) => c[0] === 'file');
+      expect((fileCall?.[1] as Blob).type).toBe('image/jpeg');
+    } finally {
+      appendSpy.mockRestore();
+      RN.Platform.OS = originalOS();
+      delete (global as unknown as { fetch?: unknown }).fetch;
+    }
+  });
+
   it('pe NATIV păstrează obiectul {uri,name,type} + header multipart (fără regresie)', async () => {
     const appendSpy = jest.spyOn(FormData.prototype, 'append');
     (api.post as jest.Mock).mockResolvedValue({ data: ['u-nat'] });
@@ -170,6 +235,24 @@ describe('postPhoto — web vs nativ', () => {
     } finally {
       appendSpy.mockRestore();
     }
+  });
+});
+
+describe('uploadErrorMessage', () => {
+  it('NU scapă spre user mesaje tehnice, în engleză, ale platformei', () => {
+    // Exact excepțiile pe care le aruncă platformele când cade rețeaua.
+    expect(uploadErrorMessage(new TypeError('Failed to fetch'))).toBe(
+      'Nu am putut încărca poza. Încearcă din nou.',
+    );
+    expect(uploadErrorMessage(new Error('Network request failed'))).toBe(
+      'Nu am putut încărca poza. Încearcă din nou.',
+    );
+  });
+
+  it('păstrează mesajele NOASTRE, deja scrise în română', () => {
+    const mine = new PhotoUploadError('Poza nu mai este disponibilă în browser.');
+
+    expect(uploadErrorMessage(mine)).toBe('Poza nu mai este disponibilă în browser.');
   });
 });
 

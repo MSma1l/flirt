@@ -1,0 +1,19 @@
+{
+  "actions": {
+    "cancel": "Anulează",
+    "save": "Salvează",
+    "retry": "Încearcă din nou",
+    "close": "Închide",
+    "back": "Înapoi",
+    "next": "Continuă",
+    "delete": "Șterge",
+    "confirm": "Confirmă"
+  },
+  "errors": {
+    "generic": "Ceva n-a mers. Încearcă din nou.",
+    "network": "Nu avem legătură cu serverul. Verifică internetul."
+  },
+  "age_one": "{{count}} an",
+  "age_few": "{{count}} ani",
+  "age_other": "{{count}} de ani"
+}

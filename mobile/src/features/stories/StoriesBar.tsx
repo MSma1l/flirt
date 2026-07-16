@@ -29,6 +29,11 @@ export function StoriesBar() {
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
+      // Înălțimea e OBLIGATORIE, nu cosmetică: un ScrollView orizontal fără ea se
+      // strânge la conținut pe nativ, dar pe WEB se ÎNTINDE pe toată înălțimea
+      // liberă a coloanei — bara mânca ecranul și împingea deck-ul de anchete
+      // aproape de marginea de jos. Vezi `styles.bar`.
+      style={styles.bar}
       contentContainerStyle={{ gap: spacing.md, paddingHorizontal: spacing.xs }}
     >
       {/* Primul cerc: „+" Adaugă story */}
@@ -82,8 +87,17 @@ export function StoriesBar() {
 }
 
 const RING_SIZE = 64;
+/** Distanța dintre inel și numele de sub el (vezi `styles.name`). */
+const NAME_GAP = 4;
+/** `typography.caption.lineHeight` — numele de sub inel e un singur rând. */
+const NAME_LINE_HEIGHT = 18;
+/** Înălțimea totală a barei: inel + spațiu + un rând de nume. */
+const BAR_HEIGHT = RING_SIZE + NAME_GAP + NAME_LINE_HEIGHT;
 
 const styles = StyleSheet.create({
+  // `height` oprește întinderea pe web; `flexGrow: 0` o oprește și dacă un
+  // părinte viitor ar încerca să distribuie spațiu peste rândul ăsta.
+  bar: { height: BAR_HEIGHT, flexGrow: 0, flexShrink: 0 },
   item: { alignItems: 'center', width: 72 },
   ring: {
     width: RING_SIZE,
@@ -94,5 +108,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   addRing: { borderStyle: 'dashed' },
-  name: { marginTop: 4, maxWidth: 72, textAlign: 'center' },
+  name: { marginTop: NAME_GAP, maxWidth: 72, textAlign: 'center' },
 });

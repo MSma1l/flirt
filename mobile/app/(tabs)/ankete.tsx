@@ -402,6 +402,8 @@ export default function AnketeScreen() {
 const styles = StyleSheet.create({
   deck: {
     flex: 1,
+    // Deck-ul începe imediat sub bara de story-uri, cu un mic respiro.
+    marginTop: 12,
   },
   animatedCard: {
     flex: 1,

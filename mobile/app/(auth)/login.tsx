@@ -1,6 +1,15 @@
-/** Ecran de autentificare: email + parolă → authStore.login(). */
+/** Ecran de autentificare: email + parolă → authStore.login().
+ *
+ * ECRAN DE REFERINȚĂ pentru i18n — tiparul de copiat la migrarea altor ecrane:
+ *  - `useTranslation('<namespace>')` o dată, sus în componentă;
+ *  - chei ierarhice `ecran.element` în namespace-ul zonei (aici: `auth`);
+ *  - texte generice (butoane, erori comune) din `common`, prin prefix explicit:
+ *    `t('common:actions.cancel')`.
+ * Vezi `src/i18n/README.md` pentru convenții, pluralizare și interpolare.
+ */
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Text, View } from 'react-native';
 
 import { Button, Input, ScreenContainer } from '@/components/ui';
@@ -12,6 +21,7 @@ export default function Login() {
   const router = useRouter();
   const login = useAuthStore((s) => s.login);
   const { colors, typography, spacing } = useTheme();
+  const { t } = useTranslation('auth');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,6 +31,9 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
 
   const onSubmit = async () => {
+    // NOTĂ: `validateEmail` / `validatePassword` întorc încă mesaje fixe, în
+    // română. Stau în `src/features/auth/validation.ts`, partajat cu register și
+    // phone, deci migrarea lor e o sarcină separată (vezi README, „Ce a rămas").
     const eErr = validateEmail(email);
     const pErr = validatePassword(password);
     setEmailError(eErr);
@@ -35,7 +48,7 @@ export default function Login() {
       // (consistent cu register.tsx) pentru a nu rămâne blocat pe login.
       router.replace('/');
     } catch {
-      setFormError('Email sau parolă incorecte. Încearcă din nou.');
+      setFormError(t('login.invalidCredentials'));
     } finally {
       setLoading(false);
     }
@@ -44,35 +57,35 @@ export default function Login() {
   return (
     <ScreenContainer>
       <View style={{ marginBottom: spacing.xxl }}>
-        <Text style={[typography.h1, { color: colors.textPrimary }]}>Bine ai revenit</Text>
+        <Text style={[typography.h1, { color: colors.textPrimary }]}>{t('login.title')}</Text>
         <Text
           style={[
             typography.body,
             { color: colors.textSecondary, marginTop: spacing.xs },
           ]}
         >
-          Autentifică-te ca să continui.
+          {t('login.subtitle')}
         </Text>
       </View>
 
       <View style={{ gap: spacing.lg }}>
         <Input
-          label="Email"
+          label={t('login.emailLabel')}
           value={email}
           onChangeText={setEmail}
           error={emailError}
-          placeholder="nume@exemplu.com"
+          placeholder={t('login.emailPlaceholder')}
           autoCapitalize="none"
           keyboardType="email-address"
           autoComplete="email"
           testID="login-email"
         />
         <Input
-          label="Parolă"
+          label={t('login.passwordLabel')}
           value={password}
           onChangeText={setPassword}
           error={passwordError}
-          placeholder="Parola ta"
+          placeholder={t('login.passwordPlaceholder')}
           secureTextEntry
           autoCapitalize="none"
           testID="login-password"
@@ -83,13 +96,13 @@ export default function Login() {
         ) : null}
 
         <Button
-          label="Autentificare"
+          label={t('login.submit')}
           onPress={onSubmit}
           loading={loading}
           testID="login-submit"
         />
         <Button
-          label="Nu ai cont? Creează unul"
+          label={t('login.goToRegister')}
           variant="ghost"
           onPress={() => router.replace('/(auth)/register')}
         />

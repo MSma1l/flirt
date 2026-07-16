@@ -423,10 +423,12 @@ async def ensure_interests(session: AsyncSession, now: datetime) -> list[uuid.UU
             "slug": slug,
             "label_ru": label_ru,
             "label_ro": label_ro,
+            "label_uk": label_uk,
+            "label_en": label_en,
             "created_at": now,
             "updated_at": now,
         }
-        for slug, label_ru, label_ro in INTERESTS_CATALOG
+        for slug, label_ru, label_ro, label_uk, label_en in INTERESTS_CATALOG
         if slug not in existing
     ]
     if missing:
@@ -434,7 +436,7 @@ async def ensure_interests(session: AsyncSession, now: datetime) -> list[uuid.UU
         await session.commit()
         for row in missing:
             existing[row["slug"]] = row["id"]
-    return [existing[slug] for slug, _, _ in INTERESTS_CATALOG]
+    return [existing[slug] for slug, *_ in INTERESTS_CATALOG]
 
 
 # ---------------------------------------------------------------------------

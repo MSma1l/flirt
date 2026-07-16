@@ -128,6 +128,69 @@ async def test_chat_appears_after_match(client):
 
 
 @pytest.mark.asyncio
+async def test_no_chat_without_match(client):
+    """Cerința 1: în Mesaje apar DOAR conversațiile cu match (like reciproc).
+
+    Un like într-o singură direcție NU produce niciun dialog — nici pentru cel
+    care a dat like, nici pentru cel care l-a primit. Fără chat, nu are unde să
+    fie trimis un mesaj: singura cale de a obține un `chat_id` e un match.
+    """
+    a_headers, a_id = await _make_user(client, "solo-a@example.com", "Alice")
+    b_headers, b_id = await _make_user(client, "solo-b@example.com", "Bob")
+
+    # A îl place pe B; B NU răspunde → fără reciprocitate, fără match.
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "like"},
+        headers=a_headers,
+    )
+    assert resp.status_code in (200, 201), resp.text
+    assert resp.json()["matched"] is False, resp.text
+
+    # Lista de dialoguri e goală în AMBELE sensuri.
+    for headers in (a_headers, b_headers):
+        resp = await client.get(f"{API}/chats/", headers=headers)
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == [], resp.text
+
+
+@pytest.mark.asyncio
+async def test_chat_becomes_writable_only_after_match(client):
+    """Cerința 4 (partea de mesagerie): abia după match se pot trimite mesaje.
+
+    Înainte de like-ul reciproc nu există chat (deci nici un `chat_id` de scris);
+    imediat după match, chat-ul apare și mesajul trece.
+    """
+    a_headers, a_id = await _make_user(client, "pair-a@example.com", "Alice")
+    b_headers, b_id = await _make_user(client, "pair-b@example.com", "Bob")
+
+    await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "like"},
+        headers=a_headers,
+    )
+    # Încă fără match → niciun dialog disponibil pentru scris.
+    resp = await client.get(f"{API}/chats/", headers=a_headers)
+    assert resp.json() == [], resp.text
+
+    # B dă like înapoi → match → chat-ul apare la ambii și se poate scrie.
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": a_id, "action": "like"},
+        headers=b_headers,
+    )
+    assert resp.json()["matched"] is True, resp.text
+
+    chat_id = await _chat_id_for(client, a_headers)
+    resp = await client.post(
+        f"{API}/chats/{chat_id}/messages",
+        json={"body": "Salut!"},
+        headers=a_headers,
+    )
+    assert resp.status_code == 201, resp.text
+
+
+@pytest.mark.asyncio
 async def test_outsider_cannot_access_chat(client):
     """Un user din afara chat-ului primește 403/404 la mesaje."""
     (a_headers, _), _ = await _matched_pair(client)

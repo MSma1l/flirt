@@ -13,8 +13,11 @@ class Interest(Base):
     __tablename__ = "interests"
 
     slug: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    # Etichete în cele 4 limbi ale aplicației (ro, ru, uk, en).
     label_ru: Mapped[str] = mapped_column(String(120), nullable=False)
     label_ro: Mapped[str] = mapped_column(String(120), nullable=False)
+    label_uk: Mapped[str] = mapped_column(String(120), nullable=False)
+    label_en: Mapped[str] = mapped_column(String(120), nullable=False)
 
 
 class ProfileInterest(Base):

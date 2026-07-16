@@ -16,6 +16,24 @@ jest.mock('expo-constants', () => ({
   expoConfig: { extra: { apiUrl: 'http://localhost:8000/api/v1' } },
 }));
 
+// i18n: limba dispozitivului e fixată pe română, ca testele să fie
+// deterministe indiferent de mașina pe care rulează (CI, laptop rusificat etc.).
+// Un test care vrea altă limbă cheamă `i18n.changeLanguage('ru')` la el în fișier.
+// `jest.fn` (nu funcții simple): testele de i18n suprascriu limba dispozitivului
+// cu `mockReturnValue` ca să verifice detecția și fallback-ul.
+jest.mock('expo-localization', () => ({
+  getLocales: jest.fn(() => [
+    { languageCode: 'ro', languageTag: 'ro-MD', regionCode: 'MD', textDirection: 'ltr' },
+  ]),
+  getCalendars: jest.fn(() => [{ calendar: 'gregory', timeZone: 'Europe/Chisinau' }]),
+}));
+
+// Inițializează instanța i18n (sincron, pe `ro`) pentru TOATE testele, ca
+// ecranele care folosesc `useTranslation()` să randeze text real, nu chei brute.
+// Fără asta, fiecare test de ecran migrat ar trebui să-și facă singur setup —
+// exact ce nu vrem când zeci de ecrane se migrează în paralel.
+require('@/i18n');
+
 // Poze: modulele native (galerie, compresie, filesystem) nu există în jest.
 // Valorile implicite descriu cazul fericit — permisiune acordată, poză mică —
 // iar testele care au nevoie de alt scenariu (refuz, poză uriașă) suprascriu

@@ -121,3 +121,15 @@ export const PERMISSION_DENIED_MESSAGE =
 /** Mesaj când galeria nu a putut fi deschisă (eroare neașteptată de sistem). */
 export const PICKER_FAILED_MESSAGE =
   'Nu am putut deschide galeria. Încearcă din nou.';
+
+/**
+ * Mesaj când poza a fost ALEASĂ, dar nu a putut fi decodată/procesată.
+ *
+ * Cazul real: pe web `expo-image-manipulator` încarcă poza într-un `<img>`, iar
+ * browserul nu știe să decodeze HEIC/HEIF (formatul implicit al iPhone-ului) —
+ * încărcarea eșuează, iar galeria n-are nicio vină. Mesajul trebuie să spună ce
+ * are utilizatorul de FĂCUT, nu că „nu am putut deschide galeria" (neadevărat).
+ */
+export const IMAGE_PROCESSING_FAILED_MESSAGE =
+  'Nu am putut procesa poza. Unele formate (de exemplu HEIC, cel implicit pe ' +
+  'iPhone) nu pot fi deschise aici. Alege altă poză sau salveaz-o ca JPEG.';

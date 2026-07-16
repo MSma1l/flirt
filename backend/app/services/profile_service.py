@@ -27,55 +27,82 @@ from app.core.validators import is_https_url
 
 # --- Cataloage de referință (derivate din TZ, nu hardcodate ca reguli) ---------
 
+# Toate cataloagele au etichete în cele 4 limbi ale aplicației: ro, ru, uk, en.
+
 # Genuri (TZ 2.4: муж / жен / другое)
 GENDERS: list[ReferenceItem] = [
-    ReferenceItem(value="male", label_ru="Мужчина", label_ro="Bărbat"),
-    ReferenceItem(value="female", label_ru="Женщина", label_ro="Femeie"),
-    ReferenceItem(value="other", label_ru="Другое", label_ro="Altul"),
+    ReferenceItem(value="male", label_ru="Мужчина", label_ro="Bărbat",
+                  label_uk="Чоловік", label_en="Man"),
+    ReferenceItem(value="female", label_ru="Женщина", label_ro="Femeie",
+                  label_uk="Жінка", label_en="Woman"),
+    ReferenceItem(value="other", label_ru="Другое", label_ro="Altul",
+                  label_uk="Інше", label_en="Other"),
 ]
 
 # Statusuri de cunoștință (TZ 2.6)
 DATING_STATUSES: list[ReferenceItem] = [
     ReferenceItem(value="serious", label_ru="Серьёзные отношения",
-                  label_ro="Relație serioasă"),
+                  label_ro="Relație serioasă",
+                  label_uk="Серйозні стосунки",
+                  label_en="Serious relationship"),
     ReferenceItem(value="acquaintance", label_ru="Просто познакомиться",
-                  label_ro="Doar cunoștință"),
+                  label_ro="Doar cunoștință",
+                  label_uk="Просто познайомитися",
+                  label_en="Just to meet someone"),
     ReferenceItem(value="friendship", label_ru="Дружба / общение",
-                  label_ro="Prietenie / comunicare"),
+                  label_ro="Prietenie / comunicare",
+                  label_uk="Дружба / спілкування",
+                  label_en="Friendship / chatting"),
     ReferenceItem(value="events", label_ru="Совместный поход на мероприятия",
-                  label_ro="Mers împreună la evenimente"),
+                  label_ro="Mers împreună la evenimente",
+                  label_uk="Спільні походи на заходи",
+                  label_en="Going to events together"),
     ReferenceItem(value="casual", label_ru="Без обязательств",
-                  label_ro="Fără obligații"),
+                  label_ro="Fără obligații",
+                  label_uk="Без зобов'язань",
+                  label_en="No strings attached"),
 ]
 
-# Limbi sugerate (TZ 2.4: русский, румынский, английский + свой вариант)
+# Limbi sugerate (TZ 2.4 — extins: aplicația e în 4 limbi, ro / ru / uk / en;
+# lista rămâne „sugestie", userul poate trimite și varianta proprie).
 LANGUAGES: list[ReferenceItem] = [
-    ReferenceItem(value="ru", label_ru="Русский", label_ro="Rusă"),
-    ReferenceItem(value="ro", label_ru="Румынский", label_ro="Română"),
-    ReferenceItem(value="en", label_ru="Английский", label_ro="Engleză"),
+    ReferenceItem(value="ru", label_ru="Русский", label_ro="Rusă",
+                  label_uk="Російська", label_en="Russian"),
+    ReferenceItem(value="ro", label_ru="Румынский", label_ro="Română",
+                  label_uk="Румунська", label_en="Romanian"),
+    ReferenceItem(value="uk", label_ru="Украинский", label_ro="Ucraineană",
+                  label_uk="Українська", label_en="Ukrainian"),
+    ReferenceItem(value="en", label_ru="Английский", label_ro="Engleză",
+                  label_uk="Англійська", label_en="English"),
 ]
 
-# Catalog de interese (TZ 2.5). (slug, label_ru, label_ro)
-INTERESTS_CATALOG: list[tuple[str, str, str]] = [
-    ("sport", "Спорт", "Sport"),
-    ("travel", "Путешествия", "Călătorii"),
-    ("cars", "Автомобили", "Automobile"),
-    ("music", "Музыка", "Muzică"),
-    ("dancing", "Танцы", "Dans"),
-    ("business", "Бизнес", "Business"),
-    ("movies", "Кино и сериалы", "Filme și seriale"),
-    ("books", "Книги", "Cărți"),
-    ("games", "Игры", "Jocuri"),
-    ("animals", "Собаки / животные", "Câini / animale"),
-    ("cooking", "Кулинария", "Gătit"),
-    ("photography", "Фотография", "Fotografie"),
-    ("yoga", "Йога и медитация", "Yoga și meditație"),
-    ("fashion", "Мода", "Modă"),
-    ("nature", "Природа и активный отдых", "Natură și activități în aer liber"),
-    ("board_games", "Настольные игры", "Jocuri de societate"),
-    ("volunteering", "Волонтёрство", "Voluntariat"),
-    ("technology", "Технологии", "Tehnologie"),
-    ("art", "Искусство", "Artă"),
+# Catalog de interese (TZ 2.5). (slug, label_ru, label_ro, label_uk, label_en)
+INTERESTS_CATALOG: list[tuple[str, str, str, str, str]] = [
+    ("sport", "Спорт", "Sport", "Спорт", "Sports"),
+    ("travel", "Путешествия", "Călătorii", "Подорожі", "Travel"),
+    ("cars", "Автомобили", "Automobile", "Автомобілі", "Cars"),
+    ("music", "Музыка", "Muzică", "Музика", "Music"),
+    ("dancing", "Танцы", "Dans", "Танці", "Dancing"),
+    ("business", "Бизнес", "Business", "Бізнес", "Business"),
+    ("movies", "Кино и сериалы", "Filme și seriale", "Кіно та серіали",
+     "Movies & TV series"),
+    ("books", "Книги", "Cărți", "Книги", "Books"),
+    ("games", "Игры", "Jocuri", "Ігри", "Games"),
+    ("animals", "Собаки / животные", "Câini / animale", "Собаки / тварини",
+     "Dogs / animals"),
+    ("cooking", "Кулинария", "Gătit", "Кулінарія", "Cooking"),
+    ("photography", "Фотография", "Fotografie", "Фотографія", "Photography"),
+    ("yoga", "Йога и медитация", "Yoga și meditație", "Йога та медитація",
+     "Yoga & meditation"),
+    ("fashion", "Мода", "Modă", "Мода", "Fashion"),
+    ("nature", "Природа и активный отдых", "Natură și activități în aer liber",
+     "Природа та активний відпочинок", "Nature & outdoors"),
+    ("board_games", "Настольные игры", "Jocuri de societate", "Настільні ігри",
+     "Board games"),
+    ("volunteering", "Волонтёрство", "Voluntariat", "Волонтерство",
+     "Volunteering"),
+    ("technology", "Технологии", "Tehnologie", "Технології", "Technology"),
+    ("art", "Искусство", "Artă", "Мистецтво", "Art"),
 ]
 
 
@@ -114,16 +141,45 @@ def _calc_age(birth_date: date, today: date | None = None) -> int:
 
 
 async def seed_interests(db: AsyncSession) -> None:
-    """Inserează catalogul de interese dacă lipsește (idempotent)."""
-    result = await db.execute(select(Interest.slug))
-    existing = {row[0] for row in result.all()}
-    new_rows = [
-        Interest(slug=slug, label_ru=label_ru, label_ro=label_ro)
-        for slug, label_ru, label_ro in INTERESTS_CATALOG
-        if slug not in existing
-    ]
-    if new_rows:
-        db.add_all(new_rows)
+    """Sincronizează catalogul de interese cu `INTERESTS_CATALOG` (idempotent).
+
+    Inserează slug-urile lipsă ȘI aduce la zi etichetele rândurilor existente.
+    Al doilea pas contează la trecerea la 4 limbi: rândurile inserate înainte de
+    migrare au `label_uk`/`label_en` completate de migrare, dar orice corectură
+    ulterioară de traducere în catalog trebuie să ajungă în DB fără o migrare
+    nouă. Scrie doar când chiar diferă ceva, ca să rămână un no-op la al doilea
+    apel.
+    """
+    result = await db.execute(select(Interest))
+    existing = {row.slug: row for row in result.scalars().all()}
+
+    changed = False
+    for slug, label_ru, label_ro, label_uk, label_en in INTERESTS_CATALOG:
+        row = existing.get(slug)
+        if row is None:
+            db.add(
+                Interest(
+                    slug=slug,
+                    label_ru=label_ru,
+                    label_ro=label_ro,
+                    label_uk=label_uk,
+                    label_en=label_en,
+                )
+            )
+            changed = True
+            continue
+        labels = {
+            "label_ru": label_ru,
+            "label_ro": label_ro,
+            "label_uk": label_uk,
+            "label_en": label_en,
+        }
+        for field, value in labels.items():
+            if getattr(row, field) != value:
+                setattr(row, field, value)
+                changed = True
+
+    if changed:
         await db.commit()
 
 
@@ -132,7 +188,13 @@ async def get_reference(db: AsyncSession) -> ReferenceOut:
     await seed_interests(db)
     result = await db.execute(select(Interest).order_by(Interest.label_ru))
     interests = [
-        InterestItem(slug=i.slug, label_ru=i.label_ru, label_ro=i.label_ro)
+        InterestItem(
+            slug=i.slug,
+            label_ru=i.label_ru,
+            label_ro=i.label_ro,
+            label_uk=i.label_uk,
+            label_en=i.label_en,
+        )
         for i in result.scalars().all()
     ]
     return ReferenceOut(

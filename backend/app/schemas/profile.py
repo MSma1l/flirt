@@ -114,19 +114,27 @@ class PhotoOrderIn(BaseModel):
 
 
 class ReferenceItem(BaseModel):
-    """Opțiune de referință cu valoare + etichete localizate."""
+    """Opțiune de referință cu valoare + etichete localizate în cele 4 limbi.
+
+    `label_ru`/`label_ro` rămân pentru clientul deja publicat (contract aditiv);
+    `label_uk`/`label_en` sunt câmpurile noi. Aplicația e în 4 limbi: ro, ru, uk, en.
+    """
 
     value: str
     label_ru: str
     label_ro: str
+    label_uk: str
+    label_en: str
 
 
 class InterestItem(BaseModel):
-    """Interes din catalog (slug + etichete)."""
+    """Interes din catalog (slug + etichete în cele 4 limbi)."""
 
     slug: str
     label_ru: str
     label_ro: str
+    label_uk: str
+    label_en: str
 
 
 class ReferenceOut(BaseModel):

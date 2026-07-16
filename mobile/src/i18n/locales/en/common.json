@@ -1,0 +1,18 @@
+{
+  "actions": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "retry": "Try again",
+    "close": "Close",
+    "back": "Back",
+    "next": "Continue",
+    "delete": "Delete",
+    "confirm": "Confirm"
+  },
+  "errors": {
+    "generic": "Something went wrong. Please try again.",
+    "network": "Can't reach the server. Check your connection."
+  },
+  "age_one": "{{count}} year old",
+  "age_other": "{{count}} years old"
+}

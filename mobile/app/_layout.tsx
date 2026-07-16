@@ -8,10 +8,13 @@ import {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { PushBridge } from '@/features/push/PushBridge';
+// Importul inițializează instanța i18n (sincron, pe `ro`); `initI18n` comută
+// apoi pe limba salvată de user sau pe cea a dispozitivului.
+import { initI18n } from '@/i18n';
 import { useAuthStore } from '@/store/authStore';
 import { ThemeProvider } from '@theme/index';
 
@@ -70,11 +73,26 @@ export default function RootLayout() {
     Manrope_700Bold,
   });
 
+  // Limba salvată se citește asincron (SecureStore). Ținem splash-ul până se
+  // rezolvă, exact ca la fonturi: altfel un user rus ar vedea o clipă românește,
+  // apoi textul ar sări. `initI18n` nu aruncă — cel mai rău caz rămâne `ro`.
+  const [languageReady, setLanguageReady] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    initI18n().finally(() => {
+      if (active) setLanguageReady(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   useEffect(() => {
     hydrate();
   }, [hydrate]);
 
-  if (!fontsLoaded) return null;
+  if (!fontsLoaded || !languageReady) return null;
 
   return (
     <SafeAreaProvider>
