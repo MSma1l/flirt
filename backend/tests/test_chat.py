@@ -191,6 +191,117 @@ async def test_chat_becomes_writable_only_after_match(client):
 
 
 @pytest.mark.asyncio
+async def test_match_notifies_the_other_user_only(client, monkeypatch):
+    """Cerința 4: la match pleacă push către CELĂLALT, nu către cel care a swipe-uit.
+
+    Cel care tocmai a dat like vede `matched: True` direct în răspunsul HTTP;
+    notificarea e utilă doar celui care a primit like-ul reciproc și nu are
+    aplicația deschisă.
+    """
+    sent: list[tuple[str, str, str]] = []
+
+    async def _spy(db, user_id, title, body):
+        sent.append((str(user_id), title, body))
+
+    monkeypatch.setattr("app.services.push.send_to_user", _spy)
+
+    a_headers, a_id = await _make_user(client, "notif-a@example.com", "Alice")
+    b_headers, b_id = await _make_user(client, "notif-b@example.com", "Bob")
+
+    # A dă like primul: încă fără reciprocitate → niciun match, deci niciun push.
+    await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "like"},
+        headers=a_headers,
+    )
+    assert sent == [], "Un like fără reciprocitate nu trebuie să notifice pe nimeni."
+
+    # B dă like înapoi → match. B e cel care a swipe-uit ultimul → notificat e A.
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": a_id, "action": "like"},
+        headers=b_headers,
+    )
+    assert resp.json()["matched"] is True, resp.text
+
+    assert len(sent) == 1, f"Exact o notificare, am primit: {sent}"
+    notified_id, title, body = sent[0]
+    assert notified_id == a_id, "Notificat trebuie să fie A, nu B (ultimul swiper)."
+    assert notified_id != b_id
+    assert title and body  # text în română, nenul
+
+
+@pytest.mark.asyncio
+async def test_no_push_without_match(client, monkeypatch):
+    """Cerința 4: like într-o singură direcție → NICIO notificare."""
+    sent: list[str] = []
+
+    async def _spy(db, user_id, title, body):
+        sent.append(str(user_id))
+
+    monkeypatch.setattr("app.services.push.send_to_user", _spy)
+
+    a_headers, _ = await _make_user(client, "nopush-a@example.com", "Alice")
+    _, b_id = await _make_user(client, "nopush-b@example.com", "Bob")
+
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "like"},
+        headers=a_headers,
+    )
+    assert resp.json()["matched"] is False, resp.text
+    assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_failing_push_does_not_break_match(client, monkeypatch):
+    """Cerința 4, regula de aur: un push căzut NU are voie să rupă match-ul.
+
+    Providerul aruncă; swipe-ul trebuie să întoarcă în continuare `matched: True`,
+    iar match-ul + chat-ul să existe și să fie funcționale. O notificare pierdută
+    e infinit mai ieftină decât un match pierdut.
+    """
+
+    async def _boom(db, user_id, title, body):
+        raise RuntimeError("provider de push căzut")
+
+    monkeypatch.setattr("app.services.push.send_to_user", _boom)
+
+    a_headers, a_id = await _make_user(client, "boom-a@example.com", "Alice")
+    b_headers, b_id = await _make_user(client, "boom-b@example.com", "Bob")
+
+    await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "like"},
+        headers=a_headers,
+    )
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": a_id, "action": "like"},
+        headers=b_headers,
+    )
+    # Swipe-ul reușește, în ciuda push-ului căzut.
+    assert resp.status_code in (200, 201), resp.text
+    data = resp.json()
+    assert data["matched"] is True, resp.text
+    assert data["match_id"] is not None
+    assert data["chat_id"] is not None
+
+    # Match-ul apare la ambii, iar chat-ul e real: se poate scrie în el.
+    for headers in (a_headers, b_headers):
+        chats = (await client.get(f"{API}/chats/", headers=headers)).json()
+        assert len(chats) == 1, f"Match-ul trebuie să existe și după push căzut: {chats}"
+
+    chat_id = await _chat_id_for(client, a_headers)
+    resp = await client.post(
+        f"{API}/chats/{chat_id}/messages",
+        json={"body": "Merge!"},
+        headers=a_headers,
+    )
+    assert resp.status_code == 201, resp.text
+
+
+@pytest.mark.asyncio
 async def test_outsider_cannot_access_chat(client):
     """Un user din afara chat-ului primește 403/404 la mesaje."""
     (a_headers, _), _ = await _matched_pair(client)

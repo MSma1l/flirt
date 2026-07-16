@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
 import StoryViewerScreen from '../[userId]';
@@ -100,6 +100,46 @@ describe('StoryViewerScreen', () => {
     expect(getByText('Prima poveste')).toBeTruthy();
     fireEvent.press(getByLabelText('Povestea următoare'));
     expect(getByText('A doua poveste')).toBeTruthy();
+  });
+
+  it('tap dreapta pe ULTIMA poveste închide ecranul (router.back), o singură dată', () => {
+    const { getByLabelText } = renderScreen();
+
+    fireEvent.press(getByLabelText('Povestea următoare')); // s1 -> s2 (ultima)
+    fireEvent.press(getByLabelText('Povestea următoare')); // ultima -> închide
+
+    expect(mockBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('avansul automat trece la povestea următoare, apoi închide — fără setState în randare', () => {
+    jest.useFakeTimers();
+    // `router.back()` se chema dintr-un updater de state, pe care React îl rulează
+    // în timpul randării → avertisment „Cannot update a component while rendering".
+    // Îl prindem ca eroare ca să nu se poată strecura înapoi.
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { getByText } = renderScreen();
+
+      expect(getByText('Prima poveste')).toBeTruthy();
+
+      // Prima poveste expiră → avans automat la a doua.
+      act(() => {
+        jest.advanceTimersByTime(4000);
+      });
+      expect(getByText('A doua poveste')).toBeTruthy();
+      expect(mockBack).not.toHaveBeenCalled();
+
+      // A doua (ultima) expiră → se închide.
+      act(() => {
+        jest.advanceTimersByTime(4000);
+      });
+      expect(mockBack).toHaveBeenCalledTimes(1);
+
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+      jest.useRealTimers();
+    }
   });
 
   it('povestea video afișează media de tip video (nu imagine)', () => {

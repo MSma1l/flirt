@@ -57,4 +57,34 @@ describe('SendFirstMessageSheet', () => {
     fireEvent.press(getByTestId('first-msg-skip'));
     expect(onSkip).toHaveBeenCalledTimes(1);
   });
+
+  /* --- Regresie: backdrop-ul NU mai e părintele conținutului (buton în buton pe web) --- */
+
+  it('apăsarea pe „Salut 👋" trimite mesajul și NU închide foaia', () => {
+    const { getByTestId, onSend, onClose } = renderSheet();
+
+    fireEvent.press(getByTestId('first-msg-quick-Salut 👋'));
+    // Cât timp backdrop-ul era părinte, pe web click-ul putea ajunge la el și
+    // închidea foaia în loc să completeze mesajul.
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.press(getByTestId('first-msg-send'));
+    expect(onSend).toHaveBeenCalledWith('Salut 👋');
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('apăsarea pe butoanele din sheet nu declanșează onClose', () => {
+    const { getByTestId, onClose } = renderSheet();
+
+    fireEvent.press(getByTestId('first-msg-quick-Salut, ce faci?'));
+    fireEvent.press(getByTestId('first-msg-skip'));
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('tap în afara sheet-ului (backdrop) închide foaia', () => {
+    const { getByLabelText, onClose } = renderSheet();
+    fireEvent.press(getByLabelText('Închide'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });

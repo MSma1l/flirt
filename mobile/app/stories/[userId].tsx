@@ -52,38 +52,43 @@ export default function StoryViewerScreen() {
   });
 
   // Avans automat cu progres pe povestea curentă.
+  //
+  // DE CE ținem progresul și într-o variabilă locală (`p`), nu doar în state:
+  // înainte, avansul se făcea în interiorul unui updater `setProgress((p) => ...)`,
+  // iar acolo se chemau `setIndex(...)` și `router.back()`. Updater-ele de state
+  // NU sunt handler-e: React le execută în timpul randării și trebuie să fie pure.
+  // Așa, `router.back()` ajungea să actualizeze NavigationContainer în timpul
+  // randării ecranului („Cannot update a component while rendering a different
+  // component") — de unde randări duble și navigare pierdută. Acum efectele
+  // secundare se produc în callback-ul de interval, în afara randării.
   useEffect(() => {
     if (stories.length === 0) return;
     setProgress(0);
+    let p = 0;
     const step = TICK_MS / STORY_MS;
     const timer = setInterval(() => {
-      setProgress((p) => {
-        const next = p + step;
-        if (next >= 1) {
-          clearInterval(timer);
-          setIndex((i) => {
-            if (i + 1 < stories.length) return i + 1;
-            router.back();
-            return i;
-          });
-          return 1;
-        }
-        return next;
-      });
+      p += step;
+      if (p >= 1) {
+        clearInterval(timer);
+        setProgress(1);
+        if (index + 1 < stories.length) setIndex(index + 1);
+        else router.back();
+        return;
+      }
+      setProgress(p);
     }, TICK_MS);
     return () => clearInterval(timer);
   }, [index, stories.length, router]);
 
   const goPrev = () => {
-    setIndex((i) => Math.max(0, i - 1));
+    setIndex(Math.max(0, index - 1));
   };
 
+  // La fel ca mai sus: decidem din `index`-ul curent și chemăm `router.back()`
+  // direct din handler, nu dintr-un updater de state.
   const goNext = () => {
-    setIndex((i) => {
-      if (i + 1 < stories.length) return i + 1;
-      router.back();
-      return i;
-    });
+    if (index + 1 < stories.length) setIndex(index + 1);
+    else router.back();
   };
 
   const close = () => router.back();
@@ -151,8 +156,9 @@ export default function StoryViewerScreen() {
           />
 
           {/* Zone de tap: stânga = anterior, dreapta = următor */}
-          <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-            <View style={styles.tapRow} pointerEvents="box-none">
+          {/* `pointerEvents` ca prop e depreciat — se dă prin style. */}
+          <View style={[StyleSheet.absoluteFill, styles.boxNone]}>
+            <View style={[styles.tapRow, styles.boxNone]}>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Povestea anterioară"
@@ -206,7 +212,7 @@ export default function StoryViewerScreen() {
           </View>
 
           {/* Caption jos + ștergere pentru poveștile proprii */}
-          <View style={[styles.bottom, { padding: spacing.lg, gap: spacing.sm }]} pointerEvents="box-none">
+          <View style={[styles.bottom, styles.boxNone, { padding: spacing.lg, gap: spacing.sm }]}>
             {current.caption ? (
               <Text style={[typography.body, { color: colors.textPrimary }]}>{current.caption}</Text>
             ) : null}
@@ -243,6 +249,7 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   centerText: { textAlign: 'center' },
   media: { ...StyleSheet.absoluteFillObject },
+  boxNone: { pointerEvents: 'box-none' },
   tapRow: { flex: 1, flexDirection: 'row' },
   tapLeft: { flex: 1 },
   tapRight: { flex: 2 },

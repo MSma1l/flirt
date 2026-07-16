@@ -44,7 +44,14 @@ from app.models.account import UserSettings  # noqa: E402
 from app.models.interest import Interest, ProfileInterest  # noqa: E402
 from app.models.profile import Profile  # noqa: E402
 from app.models.user import User  # noqa: E402
-from app.services.profile_service import seed_interests  # noqa: E402
+# `_sync_profile_completed` e „privat", dar îl refolosim INTENȚIONAT: regula
+# „profil complet = anketă completă ȘI destule poze" trebuie să existe într-un
+# singur loc. Dacă am duplica-o aici, scriptul ar rămâne în urmă când se schimbă
+# `settings.min_photos` — și conturile de test ar ajunge iar în onboarding.
+from app.services.profile_service import (  # noqa: E402
+    _sync_profile_completed,
+    seed_interests,
+)
 from app.services.storage import build_photo_key, get_storage  # noqa: E402
 
 # Parola comună. E un cont de TEST, nu de producție — de aceea e vizibilă aici.
@@ -276,6 +283,11 @@ async def run(reset: bool) -> None:
             await db.flush()  # profile.id e necesar pentru cheia pozei și pentru interese
             # Poza vine DUPĂ flush: cheia sigură e `photos/{profile_id}/...`.
             await _ensure_photo(profile, spec["photo_rgb"])
+            # Scriem profilul direct prin ORM, deci ocolim `upsert_anketa` — care e
+            # singurul loc ce sincronizează `users.profile_completed`. Fără linia
+            # asta, conturile de test rămâneau cu flagul pe `false` și AuthGuard-ul
+            # le trimitea în onboarding la login, deși aveau profil complet + poză.
+            _sync_profile_completed(user, profile)
             await _link_interests(db, profile, spec["interests"])
 
             settings_row = (

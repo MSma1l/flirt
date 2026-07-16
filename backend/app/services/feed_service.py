@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import logging
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
@@ -33,9 +34,11 @@ from app.models.profile import Profile
 from app.models.swipe import Like, Match
 from app.models.user import User
 from app.schemas.feed import FeedCard, FeedPage, MatchOut, SwipeResult, UndoResult
-from app.services import account_service, billing, chat_service, geo
+from app.services import account_service, billing, chat_service, geo, push
 from app.services.compatibility import compute_compatibility
 from app.services.contact_masker import mask_contacts
+
+logger = logging.getLogger("app.feed")
 
 # --- Reguli de business (din config, nu hardcodate în mijlocul logicii) ------
 MAX_TOP_INTERESTS = 3   # câte interese afișăm pe cartelă (TZ 4.1)
@@ -666,7 +669,46 @@ async def swipe(
     await _deliver_deferred_messages(db, chat, like, reciprocal)
 
     await db.commit()
+
+    # Notificarea de match pleacă DUPĂ commit — vezi `_notify_match` pentru de ce.
+    # Doar către CELĂLALT user: cel care tocmai a dat swipe vede match-ul direct
+    # în răspunsul HTTP (`matched: True`), deci n-are ce să-l anunțe.
+    await _notify_match(db, target_user_id)
+
     return SwipeResult(matched=True, match_id=match.id, chat_id=chat.id)
+
+
+async def _notify_match(db: AsyncSession, other_user_id: uuid.UUID) -> None:
+    """Anunță prin push userul care tocmai a primit like-ul reciproc (TZ 6.3).
+
+    ORDINEA FAȚĂ DE COMMIT (deliberată): notificarea se trimite DUPĂ `db.commit()`.
+    Dacă am trimite-o înainte și tranzacția ar pica, userul ar primi o notificare
+    pentru un match care nu există — o minciună pe care nu o mai putem retrage și
+    care îl trimite într-un chat inexistent. Invers, dacă push-ul pică după commit,
+    match-ul și chat-ul rămân create, iar userul le vede la prima deschidere a
+    aplicației: o notificare pierdută e mult mai ieftină decât un match pierdut.
+
+    BEST-EFFORT: prindem ORICE excepție. `send_to_user` e deja robust la erori HTTP
+    per token, dar mai poate arunca din alte motive (provider necunoscut în config →
+    `NotImplementedError`, DB indisponibil la citirea token-urilor, timeout). Niciuna
+    nu are voie să iasă spre apelant: match-ul e deja comis, iar un swipe care
+    întoarce 500 după ce a creat match-ul ar fi un bug mult mai grav decât o
+    notificare nelivrată. Cu `push_provider='stub'` (implicit) doar se loghează.
+    """
+    try:
+        await push.send_to_user(
+            db,
+            other_user_id,
+            "Aveți un match! 💜",
+            "V-ați plăcut reciproc. Trimite-i primul mesaj!",
+        )
+    except Exception:  # noqa: BLE001 — un push căzut nu are voie să rupă match-ul
+        logger.warning(
+            "Push de match nelivrat către user_id=%s — match-ul și chat-ul rămân "
+            "create, userul le vede la următoarea deschidere a aplicației.",
+            other_user_id,
+            exc_info=True,
+        )
 
 
 async def _deliver_deferred_messages(

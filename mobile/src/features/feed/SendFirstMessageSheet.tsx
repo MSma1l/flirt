@@ -34,13 +34,30 @@ export function SendFirstMessageSheet({ visible, name, onSend, onSkip, onClose }
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable
-        style={[styles.backdrop, { backgroundColor: colors.scrim }]}
-        onPress={onClose}
-        accessibilityRole="button"
-        accessibilityLabel="Închide"
-      >
+      {/* ATENȚIE (capcană specifică web-ului): pe React Native Web fiecare `Pressable`
+          devine un `<button>`. Înainte, backdrop-ul era PĂRINTELE sheet-ului, deci
+          toate butoanele din interior („Salut 👋", „Trimite") ajungeau `<button>`
+          în `<button>` — HTML invalid. Browserul „repară" DOM-ul cum vrea el și
+          click-ul pe butonul interior putea ajunge la cel exterior: userul apăsa
+          „Salut 👋" și, în loc să se completeze mesajul, se închidea foaia.
+          Pe nativ nu se vede nimic, ierarhia de Pressable e legală acolo.
+          FIX: backdrop-ul e acum FRATE cu sheet-ul (absolut, dedesubt), nu părinte. */}
+      <View style={styles.root}>
         <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Închide"
+        >
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.scrim }]} />
+        </Pressable>
+
+        <View
+          // Pe nativ un View simplu nu prinde touch-ul, așa că apăsarea pe o zonă
+          // goală a sheet-ului ar cădea pe backdrop-ul de dedesubt și ar închide
+          // foaia. Revendicăm responder-ul ca să oprim asta — fără a genera un
+          // `<button>` care ar reintroduce problema de mai sus pe web.
+          onStartShouldSetResponder={() => true}
           style={[
             styles.sheet,
             {
@@ -52,8 +69,6 @@ export function SendFirstMessageSheet({ visible, name, onSend, onSkip, onClose }
               gap: spacing.md,
             },
           ]}
-          // Blocăm propagarea către backdrop (apăsare în interiorul sheet-ului).
-          onPress={() => {}}
         >
           <Text style={[typography.h1, { color: colors.textPrimary }]}>
             Scrie-i lui {name}
@@ -107,14 +122,14 @@ export function SendFirstMessageSheet({ visible, name, onSend, onSkip, onClose }
               onPress={onSkip}
             />
           </View>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  root: {
     flex: 1,
     justifyContent: 'flex-end',
   },
