@@ -1,5 +1,7 @@
 #!/usr/bin/env python
-"""Creează 5 conturi de TEST cu profil complet, ca să poți încerca aplicația pe viu.
+"""Creează 7 conturi de TEST cu profil complet, ca să poți încerca aplicația pe viu.
+
+Ultimele două (`control1@`, `control2@`) sunt conturi de CONTROL, pentru demonstrații.
 
 De ce un script separat de `seed_load_data.py`: acela generează SUTE DE MII de rânduri
 pentru testarea la scară, cu emailuri aleatoare. Aici vrem exact 5 conturi cu credențiale
@@ -164,6 +166,35 @@ TEST_USERS = [
         "interested_in": ["male"],
         # Culoare distinctă a pozei, ca să deosebești conturile în feed.
         "photo_rgb": (60, 190, 150),
+    },
+    # --- Conturi de CONTROL (cerute pentru demonstrații) ---------------------
+    # Aceleași garanții ca restul: 18+, același oraș, preferințe care se acoperă
+    # reciproc cu celelalte conturi — altfel ar avea feed gol și ar părea stricat.
+    {
+        "email": "control1@test.flrt.md",
+        "name": "Cristina",
+        "gender": "female",
+        "birth_date": date(1997, 9, 18),   # ~28 ani
+        "height_cm": 170,
+        "about": "Cont de control. Îmi place teatrul, muzica live și diminețile lente.",
+        "interests": ["music", "travel"],
+        "statuses": ["serious", "friendship"],
+        "interested_in": ["male"],
+        # Culoare distinctă a pozei, ca să deosebești conturile în feed.
+        "photo_rgb": (250, 200, 60),
+    },
+    {
+        "email": "control2@test.flrt.md",
+        "name": "Andrei",
+        "gender": "male",
+        "birth_date": date(1994, 4, 3),    # ~32 ani
+        "height_cm": 185,
+        "about": "Cont de control. Fac drumeții, joc șah, gătesc când am timp.",
+        "interests": ["sport", "travel"],
+        "statuses": ["serious", "friendship"],
+        "interested_in": ["female"],
+        # Culoare distinctă a pozei, ca să deosebești conturile în feed.
+        "photo_rgb": (90, 200, 255),
     },
 ]
 
