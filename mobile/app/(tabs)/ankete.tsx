@@ -1,8 +1,17 @@
-/** Deck-ul de ankete (TZ 4.4, 4.7): feed React Query, swipe cu gesturi+butoane, undo, mesaj la like. */
+/**
+ * Deck-ul de ankete (TZ 4.4, 4.7): feed React Query, undo, mesaj la like.
+ *
+ * Comanda e 100% pe gesturi, în patru direcții — nu mai există butoane:
+ *   stânga = dislike · dreapta = like · sus = super like · jos = înapoi (undo)
+ * Aceleași patru direcții merg și prin înclinarea telefonului (doar pe nativ).
+ * Pentru cine nu poate face swipe (VoiceOver), aceleași acțiuni sunt expuse ca
+ * `accessibilityActions` pe bara de indicii de sub deck.
+ */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  AccessibilityActionEvent,
   ActivityIndicator,
   Animated,
   Dimensions,
@@ -18,13 +27,24 @@ import { fetchFeed, swipe, undoSwipe } from '@/features/feed/feedApi';
 import { MatchModal } from '@/features/feed/MatchModal';
 import { ProfileCard } from '@/features/feed/ProfileCard';
 import { SendFirstMessageSheet } from '@/features/feed/SendFirstMessageSheet';
+import {
+  resolveDirection,
+  SWIPE_THRESHOLD_X,
+  SWIPE_THRESHOLD_Y,
+  SwipeDirection,
+} from '@/features/feed/swipeDirection';
 import { FeedCard, SwipeAction } from '@/features/feed/types';
+import { useTiltSwipe } from '@/features/feed/useTiltSwipe';
 import { StoriesBar } from '@/features/stories/StoriesBar';
 import { useTheme } from '@theme/index';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
-/** Distanța (px) de la care un drag orizontal se consideră swipe. */
-const SWIPE_THRESHOLD = 110;
+const SCREEN_HEIGHT = Dimensions.get('window').height;
+/** Cât de departe „aruncăm" cardul în afara ecranului la o acțiune confirmată. */
+const FLING_X = SCREEN_WIDTH * 1.5;
+const FLING_Y = SCREEN_HEIGHT * 1.5;
+/** Cât se mișcă degetul până acceptăm că e un gest, nu o atingere. */
+const GESTURE_SLOP = 8;
 
 export default function AnketeScreen() {
   const { colors, typography, spacing, radius } = useTheme();
@@ -94,52 +114,6 @@ export default function AnketeScreen() {
     setPendingLike(current);
   };
 
-  const requestDislike = () => {
-    if (!current || busy) return;
-    performSwipe(current, 'dislike');
-  };
-
-  // Menținem cea mai recentă logică de release într-un ref (PanResponder e creat o singură dată).
-  const onSwipeReleaseRef = useRef<(direction: 'left' | 'right') => void>(() => {});
-  onSwipeReleaseRef.current = (direction) => {
-    if (!current || busy) {
-      resetCardPosition();
-      return;
-    }
-    if (direction === 'right') {
-      // Like: readucem cardul în centru și deschidem sheet-ul.
-      resetCardPosition();
-      requestLike();
-    } else {
-      // Dislike: aruncăm cardul în afara ecranului, apoi confirmăm.
-      Animated.timing(position, {
-        toValue: { x: -SCREEN_WIDTH * 1.5, y: 0 },
-        duration: 200,
-        useNativeDriver: false,
-      }).start(() => performSwipe(current, 'dislike'));
-    }
-  };
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_evt, gesture) =>
-        Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
-      onPanResponderMove: (_evt, gesture) => {
-        position.setValue({ x: gesture.dx, y: gesture.dy });
-      },
-      onPanResponderRelease: (_evt, gesture) => {
-        if (gesture.dx > SWIPE_THRESHOLD) {
-          onSwipeReleaseRef.current('right');
-        } else if (gesture.dx < -SWIPE_THRESHOLD) {
-          onSwipeReleaseRef.current('left');
-        } else {
-          resetCardPosition();
-        }
-      },
-      onPanResponderTerminate: () => resetCardPosition(),
-    }),
-  ).current;
-
   const onSendFirstMessage = (message: string) => {
     const card = pendingLike;
     setPendingLike(null);
@@ -177,6 +151,111 @@ export default function AnketeScreen() {
     }
   };
 
+  /**
+   * Execută acțiunea unei direcții, FĂRĂ animație.
+   * Punctul unic în care se decide ce înseamnă fiecare direcție — degetul,
+   * înclinarea telefonului și VoiceOver ajung toate aici.
+   */
+  const runActionRef = useRef<(direction: SwipeDirection) => void>(() => {});
+  runActionRef.current = (direction) => {
+    // Jos = undo: singura direcție care are sens și fără card pe ecran.
+    if (direction === 'down') {
+      onUndo();
+      return;
+    }
+    if (!current || busy) return;
+    if (direction === 'right') {
+      requestLike();
+    } else if (direction === 'left') {
+      performSwipe(current, 'dislike');
+    } else {
+      // Sus = super like. Backendul nu acceptă încă `super_like`: până atunci
+      // serverul răspunde cu eroare, iar `performSwipe` o prinde și afișează
+      // mesajul standard, păstrând cardul. Nimic nu crapă.
+      performSwipe(current, 'super_like');
+    }
+  };
+
+  /**
+   * Gest confirmat (deget sau înclinare): întâi confirmarea vizuală, apoi acțiunea.
+   * Like-ul e singurul care NU aruncă cardul: deschide sheet-ul de mesaj, deci
+   * cardul trebuie să rămână pe ecran.
+   */
+  const handleDirectionRef = useRef<(direction: SwipeDirection) => void>(() => {});
+  handleDirectionRef.current = (direction) => {
+    if (direction === 'down') {
+      resetCardPosition();
+      runActionRef.current('down');
+      return;
+    }
+    if (!current || busy) {
+      resetCardPosition();
+      return;
+    }
+    if (direction === 'right') {
+      resetCardPosition();
+      runActionRef.current('right');
+      return;
+    }
+    const toValue =
+      direction === 'left' ? { x: -FLING_X, y: 0 } : { x: 0, y: -FLING_Y };
+    Animated.timing(position, {
+      toValue,
+      duration: 200,
+      useNativeDriver: false,
+    }).start(() => runActionRef.current(direction));
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      // Preluăm gestul pe ORICE axă: verticalul e la fel de important ca orizontalul.
+      onMoveShouldSetPanResponder: (_evt, gesture) =>
+        Math.abs(gesture.dx) > GESTURE_SLOP || Math.abs(gesture.dy) > GESTURE_SLOP,
+      onPanResponderMove: (_evt, gesture) => {
+        position.setValue({ x: gesture.dx, y: gesture.dy });
+      },
+      onPanResponderRelease: (_evt, gesture) => {
+        const direction = resolveDirection(gesture.dx, gesture.dy);
+        // Gest scurt sau diagonal (indecis) → cardul revine, nu ghicim o direcție.
+        if (!direction) {
+          resetCardPosition();
+          return;
+        }
+        handleDirectionRef.current(direction);
+      },
+      onPanResponderTerminate: () => resetCardPosition(),
+    }),
+  ).current;
+
+  // Înclinarea telefonului, doar pe nativ. Aceleași direcții, aceeași gardă `busy`,
+  // aceeași confirmare vizuală (trece prin exact același handler ca degetul).
+  // Cât timp e deschis un modal (sheet-ul de mesaj / match-ul), senzorul tace:
+  // degetul e blocat de modal, deci nici înclinarea n-are voie să acționeze
+  // pe cardul de dedesubt — altfel userul dă like „pe nevăzute" din spatele lui.
+  const tiltEnabled = !busy && pendingLike === null && matchName === null;
+  useTiltSwipe({
+    enabled: tiltEnabled,
+    onDirection: (direction) => handleDirectionRef.current(direction),
+  });
+
+  /** VoiceOver nu poate face swipe pe un card: aceleași 4 acțiuni, ca acțiuni a11y. */
+  const onAccessibilityAction = (event: AccessibilityActionEvent) => {
+    switch (event.nativeEvent.actionName) {
+      case 'like':
+        runActionRef.current('right');
+        break;
+      case 'dislike':
+        runActionRef.current('left');
+        break;
+      case 'superLike':
+        runActionRef.current('up');
+        break;
+      case 'undo':
+        runActionRef.current('down');
+        break;
+    }
+  };
+
   const closeMatch = () => {
     setMatchName(null);
     setMatchChatId(null);
@@ -193,15 +272,26 @@ export default function AnketeScreen() {
     refetch();
   };
 
-  // Indicii vizuale LIKE / NOPE în funcție de direcția drag-ului.
+  // Indicii vizuale pentru toate cele 4 direcții. Butoanele nu mai există, deci
+  // ăsta e SINGURUL mod în care userul află că sus/jos fac ceva.
   const likeOpacity = position.x.interpolate({
-    inputRange: [0, SWIPE_THRESHOLD],
+    inputRange: [0, SWIPE_THRESHOLD_X],
     outputRange: [0, 1],
     extrapolate: 'clamp',
   });
   const nopeOpacity = position.x.interpolate({
-    inputRange: [-SWIPE_THRESHOLD, 0],
+    inputRange: [-SWIPE_THRESHOLD_X, 0],
     outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+  const superOpacity = position.y.interpolate({
+    inputRange: [-SWIPE_THRESHOLD_Y, 0],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+  const undoOpacity = position.y.interpolate({
+    inputRange: [0, SWIPE_THRESHOLD_Y],
+    outputRange: [0, 1],
     extrapolate: 'clamp',
   });
   const rotate = position.x.interpolate({
@@ -299,7 +389,6 @@ export default function AnketeScreen() {
 
           {/* Indiciu LIKE (drag dreapta) */}
           <Animated.View
-            pointerEvents="none"
             style={[
               styles.cue,
               styles.cueLeft,
@@ -315,7 +404,6 @@ export default function AnketeScreen() {
 
           {/* Indiciu NOPE (drag stânga) */}
           <Animated.View
-            pointerEvents="none"
             style={[
               styles.cue,
               styles.cueRight,
@@ -328,55 +416,68 @@ export default function AnketeScreen() {
           >
             <Text style={[typography.bodyStrong, { color: colors.danger }]}>NOPE</Text>
           </Animated.View>
+
+          {/* Indiciu SUPER LIKE (drag sus) */}
+          <Animated.View
+            style={[
+              styles.cue,
+              styles.cueTop,
+              {
+                borderColor: colors.accent,
+                borderRadius: radius.md,
+                opacity: superOpacity,
+              },
+            ]}
+          >
+            <Text style={[typography.bodyStrong, { color: colors.accent }]}>
+              ★ SUPER LIKE
+            </Text>
+          </Animated.View>
+
+          {/* Indiciu ÎNAPOI / undo (drag jos) */}
+          <Animated.View
+            style={[
+              styles.cue,
+              styles.cueBottom,
+              {
+                borderColor: colors.textSecondary,
+                borderRadius: radius.md,
+                opacity: undoOpacity,
+              },
+            ]}
+          >
+            <Text style={[typography.bodyStrong, { color: colors.textSecondary }]}>
+              ↩ ÎNAPOI
+            </Text>
+          </Animated.View>
         </Animated.View>
       </View>
 
-      <View style={[styles.actions, { marginTop: spacing.xl }]}>
-        <Pressable
-          testID="deck-undo"
-          accessibilityRole="button"
-          accessibilityLabel="Înapoi"
-          disabled={busy || swipeCount === 0}
-          onPress={onUndo}
-          style={[
-            styles.sideBtn,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              opacity: swipeCount === 0 ? 0.4 : 1,
-            },
-          ]}
-        >
-          <Text style={[styles.sideIcon, { color: colors.textSecondary }]}>↩</Text>
-        </Pressable>
-
-        <Pressable
-          testID="swipe-dislike"
-          accessibilityRole="button"
-          accessibilityLabel="Nu-mi place"
-          disabled={busy}
-          onPress={requestDislike}
-          style={[
-            styles.actionBtn,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-          ]}
-        >
-          <Text style={[styles.actionIcon, { color: colors.textSecondary }]}>✕</Text>
-        </Pressable>
-
-        <Pressable
-          testID="swipe-like"
-          accessibilityRole="button"
-          accessibilityLabel="Îmi place"
-          disabled={busy}
-          onPress={requestLike}
-          style={[
-            styles.actionBtn,
-            { backgroundColor: colors.accent, borderColor: colors.accent },
-          ]}
-        >
-          <Text style={[styles.actionIcon, { color: colors.onAccent }]}>♥</Text>
-        </Pressable>
+      {/*
+        Bara de indicii. Are două roluri, ambele obligatorii:
+        1. Sighted: butoanele au dispărut, deci userul n-ar avea de unde ști că
+           sus/jos există până nu nimerește gestul din greșeală.
+        2. VoiceOver: e elementul focusabil care poartă cele 4 acțiuni. NU punem
+           `accessible` pe card — ar înghiți butoanele de favorit/raportare/blocare
+           din ProfileCard și le-ar face inaccesibile la screen reader.
+      */}
+      <View
+        testID="deck-gestures"
+        accessible
+        accessibilityLabel={`Anketa ${current.name}, ${current.age} ani`}
+        accessibilityHint="Trage cardul: dreapta pentru like, stânga pentru nu-mi place, sus pentru super like, jos pentru înapoi. Sau înclină telefonul în aceleași direcții."
+        accessibilityActions={[
+          { name: 'like', label: 'Îmi place' },
+          { name: 'dislike', label: 'Nu-mi place' },
+          { name: 'superLike', label: 'Super like' },
+          { name: 'undo', label: 'Înapoi la anketa anterioară' },
+        ]}
+        onAccessibilityAction={onAccessibilityAction}
+        style={[styles.hintWrap, { marginTop: spacing.lg }]}
+      >
+        <Text style={[typography.caption, styles.center, { color: colors.textSecondary }]}>
+          ← nu-mi place · îmi place → · ↑ super like · ↓ înapoi
+        </Text>
       </View>
 
       {actionErrorText}
@@ -409,6 +510,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cue: {
+    // Indiciile sunt pur vizuale: nu prind atingeri, ca să nu fure gestul
+    // de swipe de sub ele. `pointerEvents` aici, în style — ca PROP e deprecat
+    // pe React Native Web și scoate warning la fiecare randare.
+    pointerEvents: 'none',
     position: 'absolute',
     top: 24,
     borderWidth: 3,
@@ -421,35 +526,17 @@ const styles = StyleSheet.create({
   cueRight: {
     right: 24,
   },
-  actions: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+  cueTop: {
+    alignSelf: 'center',
+  },
+  cueBottom: {
+    // Indiciul de undo stă jos, în direcția în care trage degetul.
+    top: undefined,
+    bottom: 24,
+    alignSelf: 'center',
+  },
+  hintWrap: {
     alignItems: 'center',
-    gap: 24,
-  },
-  actionBtn: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionIcon: {
-    fontSize: 28,
-    lineHeight: 32,
-  },
-  sideBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sideIcon: {
-    fontSize: 22,
-    lineHeight: 26,
   },
   center: {
     textAlign: 'center',

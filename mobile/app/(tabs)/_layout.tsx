@@ -11,24 +11,30 @@ import { useTheme } from '@theme/index';
 
 /**
  * Dimensiunile barei de taburi — TOATE derivă din `TAB_ICON_SIZE`.
- * Dacă schimbi mărimea iconiței, înălțimea barei se recalculează singură,
- * ca să nu rămână iconița tăiată sau eticheta înghesuită.
+ * Bara e FĂRĂ etichete (doar iconițe), așa că înălțimea = iconiță + aer.
+ * Dacă schimbi mărimea iconiței, înălțimea barei se recalculează singură.
  */
 
 /** Latura iconiței de tab (era 24 — userul le-a cerut de două ori mai mari). */
 const TAB_ICON_SIZE = 48;
-/** Înălțimea rândului de etichetă (fontSize 13 × ~1.25). */
-const TAB_LABEL_LINE_HEIGHT = 16;
-/** Mărimea textului etichetei — 10px (default) e prea mic lângă o iconiță de 48. */
-const TAB_LABEL_FONT_SIZE = 13;
-/** Aer sus/jos în interiorul fiecărui tab (react-navigation pune 5 implicit). */
-const TAB_ITEM_VERTICAL_PADDING = 6;
 /**
- * Înălțimea utilă a barei (fără safe area): iconiță + etichetă + aer.
- * = 48 + 16 + 12 = 76 → și zonă de atins mult peste minimul de 44px (Apple HIG).
+ * Aer vertical de fiecare parte a iconiței, pus de react-navigation.
+ * Cei 5px vin din `tabVerticalUiKit` (padding: 5) și NU pot fi schimbați prin
+ * opțiuni publice: `tabBarItemStyle` ajunge pe containerul din AFARA butonului,
+ * nu pe buton. Îi trecem aici ca să iasă socoteala înălțimii, nu ca să-i setăm.
+ */
+const TAB_ITEM_PADDING_RN = 5;
+/** Aer în plus, pus de noi pe containerul itemului, ca bara să nu fie înghesuită. */
+const TAB_ITEM_PADDING_EXTRA = 5;
+/**
+ * Înălțimea utilă a barei (fără safe area) = iconiță + aer sus/jos.
+ * = 48 + 2×(5+5) = 68. Socoteala e EXACTĂ, adică butonul rămâne fix cât iconița:
+ * așa iese iconița centrată vertical, deși react-navigation aliniază `flex-start`
+ * (`marginVertical: 'auto'` de mai jos o ține centrată și dacă cifrele se schimbă).
+ * Zona de atins = toată înălțimea barei → mult peste minimul de 44px (Apple HIG).
  */
 const TAB_BAR_CONTENT_HEIGHT =
-  TAB_ICON_SIZE + TAB_LABEL_LINE_HEIGHT + TAB_ITEM_VERTICAL_PADDING * 2;
+  TAB_ICON_SIZE + 2 * (TAB_ITEM_PADDING_RN + TAB_ITEM_PADDING_EXTRA);
 
 /**
  * Iconiță vectorială pentru tab (Ionicons). Varianta plină pe tab-ul activ,
@@ -73,25 +79,36 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.textSecondary,
+        // Fără scris sub iconițe — doar iconița. `tabBarShowLabel` e DEPRECAT în
+        // react-navigation v7; varianta corectă e `tabBarLabelVisibilityMode`.
+        // Numele fiecărui tab rămâne pentru cititorul de ecran, prin
+        // `tabBarAccessibilityLabel` (vezi mai jos) — obligatoriu, altfel bara
+        // e mută pentru VoiceOver/TalkBack.
+        tabBarLabelVisibilityMode: 'unlabeled',
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           height: TAB_BAR_CONTENT_HEIGHT + insets.bottom,
         },
         // Containerul iconiței e fix 31×28 în react-navigation; fără asta,
-        // iconița de 48px ar da pe dinafară peste etichetă.
-        tabBarIconStyle: { width: TAB_ICON_SIZE, height: TAB_ICON_SIZE },
-        tabBarItemStyle: { paddingVertical: TAB_ITEM_VERTICAL_PADDING },
-        tabBarLabelStyle: {
-          fontSize: TAB_LABEL_FONT_SIZE,
-          lineHeight: TAB_LABEL_LINE_HEIGHT,
+        // iconița de 48px ar da pe dinafară. Badge-ul de necitite e ancorat de
+        // acest container, deci se așază singur pe colțul iconiței.
+        tabBarIconStyle: {
+          width: TAB_ICON_SIZE,
+          height: TAB_ICON_SIZE,
+          marginVertical: 'auto',
         },
+        tabBarItemStyle: { paddingVertical: TAB_ITEM_PADDING_EXTRA },
       }}
     >
       <Tabs.Screen
         name="ankete"
         options={{
           title: 'Ankete',
+          // „Ankete", nu „Anchete": în română *anchetă* înseamnă investigație.
+          // Termenul consacrat al aplicației e „anketă" (chestionar/profil), iar
+          // eticheta pentru VoiceOver trebuie să spună exact ce spune aplicația.
+          tabBarAccessibilityLabel: 'Ankete',
           tabBarIcon: ({ color, focused }) => (
             <TabIcon name="flame" color={color} focused={focused} />
           ),
@@ -101,6 +118,7 @@ export default function TabsLayout() {
         name="mesaje"
         options={{
           title: 'Mesaje',
+          tabBarAccessibilityLabel: 'Mesaje',
           tabBarIcon: ({ color, focused }) => (
             <TabIcon name="chatbubble" color={color} focused={focused} />
           ),
@@ -111,6 +129,7 @@ export default function TabsLayout() {
         name="setari"
         options={{
           title: 'Setări',
+          tabBarAccessibilityLabel: 'Setări',
           tabBarIcon: ({ color, focused }) => (
             <TabIcon name="settings" color={color} focused={focused} />
           ),

@@ -124,14 +124,18 @@ describe('StoryViewerScreen', () => {
 
       // Prima poveste expiră → avans automat la a doua.
       act(() => {
-        jest.advanceTimersByTime(4000);
+        // Puțin peste durata poveștii: pasul de progres (50/4000) se acumulează
+        // în virgulă mobilă, deci pragul e atins la tick-ul imediat următor.
+        jest.advanceTimersByTime(4200);
       });
       expect(getByText('A doua poveste')).toBeTruthy();
       expect(mockBack).not.toHaveBeenCalled();
 
       // A doua (ultima) expiră → se închide.
       act(() => {
-        jest.advanceTimersByTime(4000);
+        // Puțin peste durata poveștii: pasul de progres (50/4000) se acumulează
+        // în virgulă mobilă, deci pragul e atins la tick-ul imediat următor.
+        jest.advanceTimersByTime(4200);
       });
       expect(mockBack).toHaveBeenCalledTimes(1);
 

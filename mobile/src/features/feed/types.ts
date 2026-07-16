@@ -35,8 +35,13 @@ export interface MatchItem {
   compatibility: number;
 }
 
-/** Acțiunea posibilă la swipe. */
-export type SwipeAction = 'like' | 'dislike';
+/**
+ * Acțiunea posibilă la swipe.
+ * `super_like` (swipe în sus) e trimis pe ACELAȘI endpoint `/feed/swipe`.
+ * Atenție: backendul încă nu îl acceptă — până aterizează, serverul răspunde cu
+ * eroare, iar ecranul o tratează ca pe orice eroare de rețea (mesaj, fără crash).
+ */
+export type SwipeAction = 'like' | 'dislike' | 'super_like';
 
 /** Rezultatul unui undo: dacă s-a anulat ultimul swipe și pe cine viza. */
 export interface UndoResult {
