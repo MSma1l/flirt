@@ -71,9 +71,24 @@ function renderScreen() {
   );
 }
 
+/** Randare FĂRĂ cache pre-populat (intrare directă, nu prin bara de stories). */
+function renderColdScreen() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <ThemeProvider>
+        <StoryViewerScreen />
+      </ThemeProvider>
+    </QueryClientProvider>,
+  );
+}
+
 describe('StoryViewerScreen', () => {
   beforeEach(() => {
-    mockFetchStories.mockClear();
+    mockFetchStories.mockReset();
+    mockFetchStories.mockResolvedValue(groups);
     mockDeleteStory.mockClear();
     mockBack.mockClear();
     mockAuth.userId = 'me';
@@ -106,5 +121,49 @@ describe('StoryViewerScreen', () => {
     fireEvent.press(getByLabelText('Șterge povestea'));
 
     await waitFor(() => expect(mockDeleteStory).toHaveBeenCalledWith('s1'));
+  });
+
+  /* --- Fără cache: încărcare / eroare / gol trebuie să se distingă între ele --- */
+
+  it('cât timp poveștile se încarcă arată spinner, NU mesajul de gol', async () => {
+    // Promisiune ținută în aer: rămânem în starea de încărcare.
+    let resolve: (v: UserStories[]) => void = () => {};
+    mockFetchStories.mockReturnValue(
+      new Promise<UserStories[]>((r) => {
+        resolve = r;
+      }),
+    );
+
+    const { getByTestId, queryByText } = renderColdScreen();
+
+    expect(getByTestId('stories-loading')).toBeTruthy();
+    expect(queryByText('Nu există povești de afișat.')).toBeNull();
+
+    resolve(groups);
+    await waitFor(() => expect(queryByText('Prima poveste')).toBeTruthy());
+  });
+
+  it('la eroare arată mesajul + „Reîncearcă", NU mesajul de gol', async () => {
+    mockFetchStories.mockRejectedValueOnce(new Error('boom'));
+    const { getByText, queryByText } = renderColdScreen();
+
+    await waitFor(() => getByText('Nu am putut încărca poveștile.'));
+    expect(queryByText('Nu există povești de afișat.')).toBeNull();
+
+    // Retry: a doua oară datele vin.
+    mockFetchStories.mockResolvedValue(groups);
+    fireEvent.press(getByText('Reîncearcă'));
+
+    await waitFor(() => getByText('Prima poveste'));
+  });
+
+  it('gol REAL (răspuns fără povești) → mesajul de gol cu „Închide"', async () => {
+    mockFetchStories.mockResolvedValue([]);
+    const { getByText, getByLabelText } = renderColdScreen();
+
+    await waitFor(() => getByText('Nu există povești de afișat.'));
+
+    fireEvent.press(getByLabelText('Închide'));
+    expect(mockBack).toHaveBeenCalled();
   });
 });

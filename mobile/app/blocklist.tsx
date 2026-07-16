@@ -1,11 +1,11 @@
-/** Utilizatori blocați (TZ secț. 6.2): listă + deblocare. */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+/** Utilizatori blocați (TZ secț. 6.2): listă paginată pe cursor + deblocare. */
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Stack, useRouter } from 'expo-router';
 import React from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Button, ScreenContainer } from '@/components/ui';
-import { BlockedUser, fetchBlocks, unblock } from '@/features/settings/settingsApi';
+import { fetchBlocks, unblock } from '@/features/settings/settingsApi';
 import { alertMessage } from '@/utils/dialog';
 import { useTheme } from '@theme/index';
 
@@ -14,9 +14,27 @@ export default function BlocklistScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  const { data, isLoading, isError, refetch } = useQuery<BlockedUser[]>({
-    queryKey: ['blocks'],
-    queryFn: fetchBlocks,
+  // Backendul paginează pe cursor (`X-Next-Cursor`), deci `useInfiniteQuery`:
+  // el acumulează paginile în cache, fără stare locală care s-ar pierde la
+  // refetch-ul de după deblocare.
+  //
+  // Sufixul 'infinite' din cheie ține cache-ul paginat separat de eventualii
+  // consumatori ai unei liste simple pe ['blocks']; invalidarea pe ['blocks']
+  // (vezi `useBlockUser`) ajunge oricum aici — cheile se potrivesc pe prefix.
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useInfiniteQuery({
+    queryKey: ['blocks', 'infinite'],
+    queryFn: ({ pageParam }) => fetchBlocks({ cursor: pageParam }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.nextCursor,
   });
 
   const unblockMutation = useMutation({
@@ -34,7 +52,9 @@ export default function BlocklistScreen() {
     );
   }
 
-  if (isError) {
+  // Ecran de eroare DOAR când n-avem nimic de arătat. Dacă pagina 1 e deja pe
+  // ecran și pică pagina 2, lista rămâne, iar eroarea apare în piciorul ei.
+  if (isError && data === undefined) {
     return (
       <ScreenContainer center>
         <Stack.Screen options={{ headerShown: false }} />
@@ -56,7 +76,8 @@ export default function BlocklistScreen() {
     );
   }
 
-  const blocks = data ?? [];
+  // Paginile aduse până acum, aplatizate într-o singură listă.
+  const blocks = data?.pages.flatMap((p) => p.items) ?? [];
 
   return (
     <ScreenContainer>
@@ -85,6 +106,38 @@ export default function BlocklistScreen() {
           data={blocks}
           keyExtractor={(b) => b.blockedId}
           ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+          // Infinite scroll + buton: derularea aduce pagina următoare singură,
+          // iar butonul rămâne pentru cine nu ajunge la capătul listei.
+          onEndReachedThreshold={0.5}
+          onEndReached={() => {
+            if (hasNextPage && !isFetchingNextPage && !isFetchNextPageError) fetchNextPage();
+          }}
+          ListFooterComponent={
+            hasNextPage || isFetchNextPageError ? (
+              <View style={{ paddingVertical: spacing.lg, gap: spacing.sm }}>
+                {isFetchingNextPage ? (
+                  <ActivityIndicator color={colors.accent} testID="blocks-loading-more" />
+                ) : (
+                  <>
+                    {isFetchNextPageError && (
+                      <Text
+                        testID="blocks-load-more-error"
+                        style={[typography.caption, styles.center, { color: colors.danger }]}
+                      >
+                        Nu am putut încărca mai multe.
+                      </Text>
+                    )}
+                    <Button
+                      label={isFetchNextPageError ? 'Reîncearcă' : 'Încarcă mai multe'}
+                      variant="outline"
+                      onPress={() => fetchNextPage()}
+                      testID="blocks-load-more"
+                    />
+                  </>
+                )}
+              </View>
+            ) : null
+          }
           renderItem={({ item }) => (
             <View
               testID={`block-${item.blockedId}`}

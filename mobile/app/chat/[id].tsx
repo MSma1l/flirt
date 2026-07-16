@@ -16,7 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui';
-import { fetchMessages, markRead, reactToMessage, sendMessage } from '@/features/chat/chatApi';
+import { fetchChats, fetchMessages, markRead, reactToMessage, sendMessage } from '@/features/chat/chatApi';
 import { MessageBubble } from '@/features/chat/MessageBubble';
 import { ChatMessage, ChatSummary } from '@/features/chat/types';
 import { CompatBadge } from '@/features/feed/CompatBadge';
@@ -46,8 +46,17 @@ export default function ChatScreen() {
     refetchInterval: REFETCH_MS,
   });
 
-  // Numele celuilalt din lista de dialoguri (cache partajat).
-  const chats = queryClient.getQueryData<ChatSummary[]>(['chats']);
+  // Numele celuilalt din lista de dialoguri. Backendul NU expune un endpoint
+  // pentru un chat singular (`backend/app/api/v1/chat.py` are doar `GET /chats/`),
+  // deci folosim aceeași cheie `['chats']` ca ecranul Mesaje: când tab-urile sunt
+  // montate datele vin instant din cache-ul partajat, iar la cold-start dintr-o
+  // notificare (cache gol, tab-uri nemontate) React Query le aduce singur —
+  // altfel headerul rămânea „Conversație", fără badge și cu Blochează/Raportează
+  // dezactivate (App Store Guideline 1.2).
+  const { data: chats } = useQuery<ChatSummary[]>({
+    queryKey: ['chats'],
+    queryFn: fetchChats,
+  });
   const summary = chats?.find((c) => c.chatId === chatId);
   const headerName = summary?.otherName ?? 'Conversație';
   const compatibility = summary?.compatibility;

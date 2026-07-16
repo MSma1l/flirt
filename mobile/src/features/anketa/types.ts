@@ -39,6 +39,21 @@ export interface AnketaDraft {
   datingStatuses: string[];
   interests: string[];
   /**
+   * Preferințele de căutare (TZ 4) — „pe cine cauți".
+   *
+   * Sunt culese în wizard, dar backend-ul le PERSISTĂ în `UserSettings` (aceeași
+   * sursă ca `PUT /settings`), nu în profil. De aceea sunt OPȚIONALE: `undefined`
+   * ⇒ câmpul nu se trimite ⇒ backend-ul nu le atinge. Ecranul de editare a
+   * profilului se bazează pe asta: el nu întreabă de preferințe, deci nu are
+   * cum să le rescrie din greșeală (schimbarea lor se face din Setări).
+   */
+  /** Genurile căutate (valori din referință). Listă goală = fără restricție de gen. */
+  interestedIn?: string[];
+  /** Vârsta minimă căutată — niciodată sub 18 (aplicația este 18+ ONLY). */
+  ageMin?: number;
+  /** Vârsta maximă căutată. */
+  ageMax?: number;
+  /**
    * URL-urile pozelor DEJA încărcate pe server, în ordinea afișării.
    *
    * ATENȚIE: `PUT /profiles/me` REESCRIE lista de poze a profilului

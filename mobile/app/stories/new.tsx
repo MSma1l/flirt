@@ -2,10 +2,15 @@
  * Publicare story nou (TZ secț. 11), stil Instagram/Snapchat:
  *  - se deschide DIRECT pe camera LIVE (selfie), cu buton mare de captură, flip
  *    și acces la galerie — vezi `StoryCameraScreen`. Merge și pe web (getUserMedia);
- *  - după captură (poză/clip) SAU alegere din galerie se trece la COMPUNERE:
- *    previzualizarea media + descriere opțională + „Publică" (ori „Refă");
- *  - media e urcată prin `POST /stories/media`, apoi povestea se creează cu
+ *  - după captură SAU alegere din galerie se trece la COMPUNERE: previzualizarea
+ *    pozei + descriere opțională + „Publică" (ori „Refă");
+ *  - poza e urcată prin `POST /stories/media`, apoi povestea se creează cu
  *    `createStory`. Progres + erori în română, prin helperul de dialog.
+ *
+ * Un story e DOAR o poză — nu există filmare/alegere de video. Motivul: Apple
+ * Guideline 1.2 cere filtrarea automată a conținutului obiecționabil, iar noi putem
+ * modera NSFW doar pozele (`photo_moderation` în backend); un clip ar intra
+ * nemoderat. Backend-ul refuză oricum orice upload de video cu 422.
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Stack, useRouter } from 'expo-router';
@@ -72,13 +77,13 @@ export default function NewStoryScreen() {
     [],
   );
 
-  /** Media capturată live (poză/clip) → trecem la compunere. */
+  /** Poza capturată live → trecem la compunere. */
   const onCaptured = useCallback((file: StoryMediaFile) => {
     setError(null);
     setMedia(file);
   }, []);
 
-  /** Alege media din galerie (imagine sau video). */
+  /** Alege poza din galerie (doar imagini). */
   const onPickGallery = useCallback(async () => {
     setError(null);
     mutation.reset();
@@ -93,7 +98,7 @@ export default function NewStoryScreen() {
       );
     } else if (res.status === 'rejected') {
       // Suntem încă pe cameră (fără cutie de eroare) → mesaj clar prin dialog.
-      alertMessage('Media respinsă', res.message);
+      alertMessage('Poză respinsă', res.message);
     }
   }, [handleDenied, mutation]);
 
@@ -147,7 +152,7 @@ export default function NewStoryScreen() {
       </View>
 
       <Text style={[typography.caption, { color: colors.textSecondary, marginTop: spacing.sm, marginBottom: spacing.lg }]}>
-        Verifică media, adaugă un text și publică.
+        Verifică poza, adaugă un text și publică.
       </Text>
 
       <View

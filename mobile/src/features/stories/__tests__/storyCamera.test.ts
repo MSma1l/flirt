@@ -1,4 +1,5 @@
-import { captureStoryPhoto, recordStoryVideo } from '../storyCamera';
+import * as storyCamera from '../storyCamera';
+import { captureStoryPhoto } from '../storyCamera';
 import { STORY_MESSAGES } from '../storyLimits';
 
 // compressPhoto / manipulateAsync / File sunt mock-uite în jest.setup.js
@@ -43,29 +44,9 @@ describe('captureStoryPhoto', () => {
   });
 });
 
-describe('recordStoryVideo', () => {
-  it('împachetează clipul filmat ca media de tip video', async () => {
-    const camera = {
-      recordAsync: jest.fn(async () => ({ uri: 'file:///clip.mp4' })),
-      stopRecording: jest.fn(),
-    };
-
-    const res = await recordStoryVideo(camera, 30);
-
-    expect(camera.recordAsync).toHaveBeenCalledWith({ maxDuration: 30 });
-    expect(res.status).toBe('recorded');
-    if (res.status === 'recorded') {
-      expect(res.file.mediaType).toBe('video');
-      expect(res.file.mimeType).toBe('video/mp4');
-    }
-  });
-
-  it('respinge dacă înregistrarea nu produce niciun URI', async () => {
-    const camera = {
-      recordAsync: jest.fn(async () => undefined),
-      stopRecording: jest.fn(),
-    };
-    const res = await recordStoryVideo(camera, 30);
-    expect(res).toEqual({ status: 'rejected', message: STORY_MESSAGES.recordFailed });
+describe('story = doar poză (Apple Guideline 1.2)', () => {
+  it('nu expune nicio cale de filmare: modulul are DOAR captura de poză', () => {
+    // Video-ul nu poate fi moderat automat → nu-l lăsăm să reapară din reflex.
+    expect(Object.keys(storyCamera)).toEqual(['captureStoryPhoto']);
   });
 });

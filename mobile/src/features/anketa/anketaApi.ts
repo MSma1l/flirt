@@ -47,9 +47,14 @@ export async function fetchReference(): Promise<Reference> {
  *
  * `photos` se trimite ÎNTOTDEAUNA: `PUT /profiles/me` rescrie lista de poze a
  * profilului, deci omiterea ei ar șterge toate pozele deja încărcate.
+ *
+ * Preferințele de căutare (`interested_in`, `age_min`, `age_max`) se trimit DOAR
+ * dacă draftul le are: pentru backend `null`/absent = „nu le atinge". Ecranul de
+ * editare a profilului nu le culege, deci omiterea lor păstrează ce a ales
+ * utilizatorul în wizard sau în Setări.
  */
 export async function submitAnketa(draft: AnketaDraft): Promise<void> {
-  await api.put('/profiles/me', {
+  const payload: Record<string, unknown> = {
     name: draft.name,
     birth_date: draft.birthDate,
     gender: draft.gender,
@@ -62,5 +67,11 @@ export async function submitAnketa(draft: AnketaDraft): Promise<void> {
     dating_statuses: draft.datingStatuses,
     interests: draft.interests,
     photos: draft.photos ?? [],
-  });
+  };
+
+  if (draft.interestedIn !== undefined) payload.interested_in = draft.interestedIn;
+  if (draft.ageMin !== undefined) payload.age_min = draft.ageMin;
+  if (draft.ageMax !== undefined) payload.age_max = draft.ageMax;
+
+  await api.put('/profiles/me', payload);
 }

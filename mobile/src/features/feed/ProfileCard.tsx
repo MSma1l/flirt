@@ -4,6 +4,7 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ReportModal } from '@/features/moderation/ReportModal';
 import { useBlockUser } from '@/features/social/useBlockUser';
+import { useFavorite } from '@/features/social/useFavorite';
 import { useTheme } from '@theme/index';
 
 import { CompatBadge } from './CompatBadge';
@@ -20,6 +21,7 @@ export function ProfileCard({ card }: Props) {
   const interests = card.topInterests.slice(0, 3);
   const [reportOpen, setReportOpen] = useState(false);
   const { confirmBlock, isBlocking } = useBlockUser();
+  const { isFavorite, markFavorite, isAdding } = useFavorite(card.userId);
 
   return (
     <View
@@ -55,8 +57,28 @@ export function ProfileCard({ card }: Props) {
           <CompatBadge score={card.compatibility} />
         </View>
 
-        {/* Butoane discrete de siguranță sus-stânga: raportare + blocare */}
+        {/* Butoane discrete sus-stânga: favorit, raportare, blocare */}
         <View style={[styles.safetyWrap, { gap: spacing.sm }]}>
+          {/* ★ = adaugă la favorite. Steaua plină + butonul dezactivat arată
+              că profilul e DEJA la favorite (fără să pară că apăsarea n-a mers). */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={isFavorite ? 'Deja la favorite' : 'Adaugă la favorite'}
+            accessibilityState={{ selected: isFavorite, disabled: isFavorite || isAdding }}
+            disabled={isFavorite || isAdding}
+            onPress={markFavorite}
+            hitSlop={8}
+            testID="card-favorite"
+            style={[
+              styles.safetyBtn,
+              { backgroundColor: colors.surface, borderRadius: radius.pill },
+            ]}
+          >
+            <Text style={[typography.badge, { color: colors.accent }]}>
+              {isFavorite ? '★' : '☆'}
+            </Text>
+          </Pressable>
+
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Raportează"

@@ -5,19 +5,20 @@
  *    frontală (selfie) implicit;
  *  - buton mare, rotund, de captură (jos-centru) → poză (`takePictureAsync`);
  *  - comutare cameră frontală ↔ spate (flip) și acces la galerie (jos-stânga);
- *  - pe NATIV, un comutator Foto/Video păstrează și filmarea unui clip scurt;
  *  - permisiunea de cameră e cerută corect; refuzul NU lasă ecran mort: arătăm
  *    mesaj + „Permite acces" / „Deschide setările" + alegerea din galerie;
  *  - pe WEB funcționează prin getUserMedia; dacă browserul chiar nu dă camera,
  *    degradează elegant la galerie, fără crash.
  *
- * Captura efectivă (poză/clip) stă în `storyCamera.ts` — aici e doar interfața.
+ * Un story e DOAR o poză: nu există mod Video / filmare. Motivul e Apple Guideline
+ * 1.2 — conținutul încărcat trebuie filtrat automat, iar noi putem modera NSFW doar
+ * pozele (`photo_moderation` în backend); un clip ar intra nemoderat. Nu repune
+ * filmarea aici fără moderare de video: backend-ul o refuză oricum cu 422.
+ * Așa că nu cerem nici microfon.
+ *
+ * Captura efectivă stă în `storyCamera.ts` — aici e doar interfața.
  */
-import {
-  CameraView,
-  useCameraPermissions,
-  useMicrophonePermissions,
-} from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -31,20 +32,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui';
 import { StoryMediaFile } from '@/features/stories/storiesApi';
-import { captureStoryPhoto, recordStoryVideo } from '@/features/stories/storyCamera';
-import { STORY_MESSAGES, STORY_VIDEO_MAX_SECONDS } from '@/features/stories/storyLimits';
+import { captureStoryPhoto } from '@/features/stories/storyCamera';
+import { STORY_MESSAGES } from '@/features/stories/storyLimits';
 import { openAppSettings } from '@/features/stories/storyPicker';
 import { useTheme } from '@theme/index';
-
-/** Filmarea (mod Video) e oferită doar pe nativ; pe web rămâne doar poza. */
-const CAN_RECORD = Platform.OS !== 'web';
 
 /** Fundal întunecat, imersiv — camera arată la fel indiferent de tema aplicației. */
 const CAMERA_BG = '#0D0D0F';
 const ON_DARK = '#FFFFFF';
 
 interface Props {
-  /** Media capturată (poză sau clip), gata de compunere/upload. */
+  /** Poza capturată, gata de compunere/upload. */
   onCaptured: (file: StoryMediaFile) => void;
   /** Deschide galeria (alternativă la captura live). */
   onPickGallery: () => void;
@@ -59,12 +57,9 @@ export function StoryCameraScreen({ onCaptured, onPickGallery, onClose, busy }: 
 
   const cameraRef = useRef<CameraView | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
-  const [micPermission, requestMicPermission] = useMicrophonePermissions();
 
   const [facing, setFacing] = useState<'front' | 'back'>('front');
-  const [mode, setMode] = useState<'photo' | 'video'>('photo');
   const [capturing, setCapturing] = useState(false);
-  const [recording, setRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // La prima afișare cerem permisiunea o singură dată (dacă sistemul ne mai lasă).
@@ -88,36 +83,6 @@ export function StoryCameraScreen({ onCaptured, onPickGallery, onClose, busy }: 
     if (res.status === 'captured') onCaptured(res.file);
     else setError(res.message);
   }, [capturing, busy, onCaptured]);
-
-  /** Pornește/oprește filmarea (nativ). Fără microfon filmăm mut — nu blocăm. */
-  const onToggleRecord = useCallback(async () => {
-    const cam = cameraRef.current;
-    if (!cam || busy) return;
-    if (recording) {
-      cam.stopRecording();
-      return;
-    }
-    setError(null);
-    setRecording(true);
-    const res = await recordStoryVideo(cam, STORY_VIDEO_MAX_SECONDS);
-    setRecording(false);
-    if (res.status === 'recorded') onCaptured(res.file);
-    else setError(res.message);
-  }, [recording, busy, onCaptured]);
-
-  /** Trece în modul Video, cerând (opțional) și microfonul pentru sunet. */
-  const enterVideoMode = useCallback(async () => {
-    if (micPermission && !micPermission.granted && micPermission.canAskAgain) {
-      await requestMicPermission();
-    }
-    setMode('video');
-  }, [micPermission, requestMicPermission]);
-
-  const toggleMode = useCallback(() => {
-    if (recording) return; // nu comutăm în timpul filmării
-    if (mode === 'photo') void enterVideoMode();
-    else setMode('photo');
-  }, [mode, recording, enterVideoMode]);
 
   const flip = useCallback(() => {
     setFacing((f) => (f === 'front' ? 'back' : 'front'));
@@ -186,19 +151,18 @@ export function StoryCameraScreen({ onCaptured, onPickGallery, onClose, busy }: 
   }
 
   // --- Camera LIVE ----------------------------------------------------------
-  const showStop = mode === 'video' && recording;
-
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: CAMERA_BG }]} edges={['top', 'bottom']}>
+      {/* `mode="picture"` fix: story-ul e doar poză (vezi antetul fișierului). */}
       <CameraView
         testID="story-camera"
         ref={cameraRef}
         facing={facing}
-        mode={mode === 'video' ? 'video' : 'picture'}
+        mode="picture"
         style={StyleSheet.absoluteFill}
       />
 
-      {/* Bara de sus: închide + comutator Foto/Video (nativ) */}
+      {/* Bara de sus: închide */}
       <View style={[styles.topBar, { padding: spacing.lg }]}>
         <Pressable
           testID="story-close"
@@ -209,21 +173,6 @@ export function StoryCameraScreen({ onCaptured, onPickGallery, onClose, busy }: 
         >
           <Text style={[typography.h2, { color: ON_DARK }]}>✕</Text>
         </Pressable>
-
-        {CAN_RECORD ? (
-          <Pressable
-            testID="story-mode"
-            accessibilityRole="button"
-            accessibilityLabel={mode === 'photo' ? 'Comută pe video' : 'Comută pe foto'}
-            onPress={toggleMode}
-            hitSlop={spacing.sm}
-            style={[styles.modePill, { backgroundColor: 'rgba(0,0,0,0.45)' }]}
-          >
-            <Text style={[typography.badge, { color: ON_DARK }]}>
-              {mode === 'photo' ? 'FOTO' : 'VIDEO'}
-            </Text>
-          </Pressable>
-        ) : null}
       </View>
 
       {/* Eroare de captură (transientă), peste previzualizare */}
@@ -242,7 +191,7 @@ export function StoryCameraScreen({ onCaptured, onPickGallery, onClose, busy }: 
           accessibilityRole="button"
           accessibilityLabel="Alege din galerie"
           onPress={onPickGallery}
-          disabled={recording || busy}
+          disabled={busy}
           hitSlop={spacing.sm}
           style={[styles.sideButton, { borderColor: 'rgba(255,255,255,0.6)' }]}
         >
@@ -252,20 +201,15 @@ export function StoryCameraScreen({ onCaptured, onPickGallery, onClose, busy }: 
         <Pressable
           testID="story-capture"
           accessibilityRole="button"
-          accessibilityLabel={mode === 'video' ? (recording ? 'Oprește filmarea' : 'Filmează') : 'Fă o poză'}
-          onPress={() => (mode === 'video' ? void onToggleRecord() : void onCapture())}
+          accessibilityLabel="Fă o poză"
+          onPress={() => void onCapture()}
           disabled={capturing || busy}
           style={styles.shutterOuter}
         >
           {capturing ? (
             <ActivityIndicator color={CAMERA_BG} />
           ) : (
-            <View
-              style={[
-                showStop ? styles.shutterStop : styles.shutterInner,
-                { backgroundColor: showStop ? colors.accent : ON_DARK },
-              ]}
-            />
+            <View style={[styles.shutterInner, { backgroundColor: ON_DARK }]} />
           )}
         </Pressable>
 
@@ -274,7 +218,7 @@ export function StoryCameraScreen({ onCaptured, onPickGallery, onClose, busy }: 
           accessibilityRole="button"
           accessibilityLabel="Comută camera"
           onPress={flip}
-          disabled={recording || busy}
+          disabled={busy}
           hitSlop={spacing.sm}
           style={[styles.sideButton, { borderColor: 'rgba(255,255,255,0.6)' }]}
         >
@@ -300,11 +244,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     zIndex: 2,
-  },
-  modePill: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 999,
   },
   errorBanner: {
     position: 'absolute',
@@ -349,10 +288,5 @@ const styles = StyleSheet.create({
     width: SHUTTER - 22,
     height: SHUTTER - 22,
     borderRadius: (SHUTTER - 22) / 2,
-  },
-  shutterStop: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
   },
 });

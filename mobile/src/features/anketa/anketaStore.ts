@@ -5,16 +5,20 @@ import { moveItem } from '@/features/photos/reorder';
 import { LocalPhoto } from '@/features/photos/types';
 
 import { AnketaDraft } from './types';
+import { DEFAULT_SEARCH_AGE_MAX, DEFAULT_SEARCH_AGE_MIN } from './validation';
 
 /** Numărul total de pași ai wizardului (ultimul: pozele). */
-export const ANKETA_STEPS = 5;
+export const ANKETA_STEPS = 6;
+
+/** Indexul pasului „Pe cine cauți" (preferințele de căutare). */
+export const SEARCH_PREFS_STEP = 4;
 
 /**
  * Indexul pasului cu poze — ultimul, DELIBERAT: backend-ul respinge uploadul de
  * poze pentru un profil inexistent (`/profiles/photos` → 404), deci pozele urcă
  * abia după ce anketa a fost salvată (PUT /profiles/me creează profilul).
  */
-export const PHOTOS_STEP = 4;
+export const PHOTOS_STEP = 5;
 
 interface AnketaState {
   draft: Partial<AnketaDraft>;
@@ -34,6 +38,11 @@ const initialDraft: Partial<AnketaDraft> = {
   languages: [],
   datingStatuses: [],
   interests: [],
+  // Preferințele de căutare pornesc de la intervalul implicit; genul rămâne
+  // nealess intenționat — pasul „Pe cine cauți" cere o alegere explicită.
+  interestedIn: [],
+  ageMin: DEFAULT_SEARCH_AGE_MIN,
+  ageMax: DEFAULT_SEARCH_AGE_MAX,
 };
 
 export const useAnketaStore = create<AnketaState>((set) => ({

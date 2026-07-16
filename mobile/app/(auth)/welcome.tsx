@@ -1,4 +1,10 @@
-/** Ecran de întâmpinare: logo FLIRT + slogan + acțiuni cont nou / autentificare / social / telefon. */
+/** Ecran de întâmpinare: logo FLIRT + slogan + acțiuni cont nou / autentificare / social.
+ *
+ * Contul se face pe EMAIL. Ruta `/(auth)/phone` și fluxul OTP din backend rămân în cod,
+ * dar nu au nicio intrare din UI: fără Twilio n-ar avea cum să livreze codul, iar un buton
+ * care duce la un ecran mort e mai rău decât lipsa lui. Dacă se reactivează telefonul,
+ * se pune la loc butonul de aici — nimic altceva nu trebuie rescris.
+ */
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { useRouter } from 'expo-router';
 import { isAxiosError } from 'axios';
@@ -69,7 +75,7 @@ export default function Welcome() {
         if (active) setProviders(available);
       })
       .catch(() => {
-        // Fără providere sociale ecranul rămâne complet funcțional (email + telefon).
+        // Fără providere sociale ecranul rămâne complet funcțional: email + parolă.
       });
     return () => {
       active = false;
@@ -151,14 +157,6 @@ export default function Welcome() {
           />
         ) : null}
 
-        <Button
-          label="Continuă cu telefonul"
-          variant="outline"
-          onPress={() => router.push('/(auth)/phone')}
-          disabled={loadingProvider !== null}
-          testID="welcome-phone"
-        />
-
         {error ? (
           <Text
             testID="welcome-social-error"
@@ -168,8 +166,8 @@ export default function Welcome() {
           </Text>
         ) : null}
 
-        {/* Autentificarea socială / prin telefon creează cont fără a trece prin
-            ecranul de înregistrare — acordul trebuie prezentat și aici. */}
+        {/* Autentificarea socială creează cont fără a trece prin ecranul de
+            înregistrare — acordul trebuie prezentat și aici. */}
         <Text
           testID="welcome-legal"
           style={[

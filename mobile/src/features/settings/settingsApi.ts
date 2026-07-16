@@ -22,6 +22,14 @@ export interface Settings {
   notifications: NotificationSettings;
   profileHidden: boolean;
   region: string;
+
+  /* --- Preferințe de căutare (filtre DURE în feed) ------------------------ */
+  /** Genurile căutate (valori din `/profiles/reference`). Gol = fără restricție. */
+  interestedIn: string[];
+  /** Vârsta minimă căutată — valoarea EFECTIVĂ (backend-ul o ridică la 18+). */
+  ageMin: number;
+  /** Vârsta maximă căutată — valoarea EFECTIVĂ. */
+  ageMax: number;
 }
 
 /** Actualizare parțială a setărilor (notificările pot fi și ele parțiale). */
@@ -31,6 +39,9 @@ export interface SettingsUpdate {
   notifications?: Partial<NotificationSettings>;
   profileHidden?: boolean;
   region?: string;
+  interestedIn?: string[];
+  ageMin?: number;
+  ageMax?: number;
 }
 
 /** Rezultatul unei cereri de ștergere a contului. */
@@ -51,6 +62,26 @@ export interface BlockedUser {
   name: string;
 }
 
+/** Câte blocări cerem pe pagină. Backendul plafonează la `social_max_limit`. */
+const BLOCKS_PAGE_SIZE = 20;
+
+/**
+ * O pagină din lista de blocări.
+ *
+ * `nextCursor` vine din header-ul `X-Next-Cursor` (convenția `/feed`, folosită
+ * de tot ce e paginat pe cursor în backend); `null` = nu mai există date.
+ */
+export interface BlocksPage {
+  items: BlockedUser[];
+  nextCursor: string | null;
+}
+
+/** Argumentele unei cereri paginate. Fără `cursor` = prima pagină. */
+export interface BlocksPageParams {
+  limit?: number;
+  cursor?: string | null;
+}
+
 /* ------------------------- Forme brute (backend) ------------------------- */
 
 interface NotificationSettingsResponse {
@@ -67,6 +98,10 @@ interface SettingsResponse {
   notifications: NotificationSettingsResponse;
   profile_hidden: boolean;
   region: string;
+  // `SettingsOut` le întoarce ÎNTOTDEAUNA (vârstele deja cu default-urile aplicate).
+  interested_in: string[];
+  age_min: number;
+  age_max: number;
 }
 
 interface AccountDeletionResponse {
@@ -103,6 +138,9 @@ function mapSettings(s: SettingsResponse): Settings {
     notifications: mapNotifications(s.notifications),
     profileHidden: !!s.profile_hidden,
     region: s.region,
+    interestedIn: s.interested_in ?? [],
+    ageMin: s.age_min,
+    ageMax: s.age_max,
   };
 }
 
@@ -113,6 +151,9 @@ function toSettingsPayload(patch: SettingsUpdate): Record<string, unknown> {
   if (patch.searchRadiusKm !== undefined) payload.search_radius_km = patch.searchRadiusKm;
   if (patch.profileHidden !== undefined) payload.profile_hidden = patch.profileHidden;
   if (patch.region !== undefined) payload.region = patch.region;
+  if (patch.interestedIn !== undefined) payload.interested_in = patch.interestedIn;
+  if (patch.ageMin !== undefined) payload.age_min = patch.ageMin;
+  if (patch.ageMax !== undefined) payload.age_max = patch.ageMax;
   if (patch.notifications) {
     const n = patch.notifications;
     const notif: Record<string, boolean> = {};
@@ -157,10 +198,27 @@ export async function fetchTicket(): Promise<Ticket> {
   return { code: data.code, used: !!data.used };
 }
 
-/** Aduce lista utilizatorilor blocați și o mapează în camelCase. */
-export async function fetchBlocks(): Promise<BlockedUser[]> {
-  const { data } = await api.get<BlockedUserResponse[]>('/social/blocks');
-  return (data ?? []).map((b) => ({ blockedId: b.blocked_id, name: b.name }));
+/**
+ * Aduce o pagină din lista utilizatorilor blocați, mapată în camelCase.
+ *
+ * `/social/blocks` paginează pe cursor: trimitem `limit`/`cursor` și citim
+ * cursorul paginii următoare din header-ul `X-Next-Cursor`. Ca să ajungem la
+ * headere ne trebuie răspunsul axios întreg, nu doar `data`.
+ */
+export async function fetchBlocks(
+  { limit = BLOCKS_PAGE_SIZE, cursor }: BlocksPageParams = {},
+): Promise<BlocksPage> {
+  const params: Record<string, string | number> = { limit };
+  if (cursor) params.cursor = cursor;
+
+  const res = await api.get<BlockedUserResponse[]>('/social/blocks', { params });
+  // Axios normalizează numele headerelor la litere mici. Lipsă/gol = ultima pagină.
+  const raw = (res.headers as Record<string, unknown> | undefined)?.['x-next-cursor'];
+
+  return {
+    items: (res.data ?? []).map((b) => ({ blockedId: b.blocked_id, name: b.name })),
+    nextCursor: typeof raw === 'string' && raw.length > 0 ? raw : null,
+  };
 }
 
 /** Blochează un utilizator (nu te mai poate contacta și dispare din feed). */

@@ -2,7 +2,7 @@
 import { create } from 'zustand';
 
 import { unregisterDevice } from '@/features/push/pushService';
-import { api } from '@/services/api';
+import { api, setUnauthorizedHandler } from '@/services/api';
 import { tokenStore } from '@/services/tokenStore';
 
 export type AuthStatus = 'loading' | 'unauthenticated' | 'authenticated';
@@ -27,6 +27,7 @@ interface AuthState {
   requestPhoneOtp: (phone: string) => Promise<void>;
   verifyPhoneOtp: (phone: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
+  forceLogout: () => Promise<void>;
   hydrate: () => Promise<void>;
   setProfileCompleted: (v: boolean) => void;
 }
@@ -36,7 +37,7 @@ async function fetchMe(): Promise<AuthUser> {
   return data;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   status: 'loading',
   user: null,
 
@@ -84,6 +85,16 @@ export const useAuthStore = create<AuthState>((set) => ({
     } catch {
       /* revocarea locală rămâne validă chiar dacă serverul nu răspunde */
     }
+    await get().forceLogout();
+  },
+
+  /**
+   * Ieșire forțată, fără drum de întoarcere la server: golește tokenurile și
+   * trece store-ul pe `unauthenticated`, ca AuthGuard să ducă userul la login.
+   * Folosit când sesiunea a expirat (refresh eșuat) — acolo nu mai avem cu ce
+   * chema /auth/logout, deci nu încercăm.
+   */
+  forceLogout: async () => {
     await tokenStore.clear();
     set({ status: 'unauthenticated', user: null });
   },
@@ -102,11 +113,17 @@ export const useAuthStore = create<AuthState>((set) => ({
       const user = await fetchMe();
       set({ status: 'authenticated', user });
     } catch {
-      await tokenStore.clear();
-      set({ status: 'unauthenticated', user: null });
+      await get().forceLogout();
     }
   },
 
   setProfileCompleted: (v) =>
     set((s) => (s.user ? { user: { ...s.user, profile_completed: v } } : s)),
 }));
+
+// Sesiune expirată în timpul folosirii aplicației: clientul HTTP ne anunță, noi
+// scoatem userul la ecranul de login. Fără asta, store-ul rămâne „authenticated"
+// cu tokenuri moarte, iar userul e blocat pe erori, fără cale de ieșire.
+// `?.` doar pentru testele care mock-uiesc parțial modulul `api`: în aplicația
+// reală exportul e garantat de tipuri, aici doar nu vrem să pice la import.
+setUnauthorizedHandler?.(() => useAuthStore.getState().forceLogout());

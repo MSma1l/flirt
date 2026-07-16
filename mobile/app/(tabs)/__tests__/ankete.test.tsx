@@ -22,23 +22,24 @@ const mockUndoSwipe = jest.fn(
   (): Promise<{ undone: boolean; targetUserId: string | null }> =>
     Promise.resolve({ undone: true, targetUserId: 'u1' }),
 );
-const mockFetchFeed = jest.fn(() =>
-  Promise.resolve([
-    {
-      userId: 'u1',
-      name: 'Ana',
-      age: 24,
-      gender: 'female',
-      city: 'Chișinău',
-      distanceKm: 3,
-      about: 'Salut!',
-      topInterests: ['sport'],
-      languages: ['ro'],
-      compatibility: 82,
-      photos: [],
-    },
-  ]),
-);
+/** Card de feed minimal, pentru deck-uri de test. */
+function card(userId: string, name: string) {
+  return {
+    userId,
+    name,
+    age: 24,
+    gender: 'female',
+    city: 'Chișinău',
+    distanceKm: 3,
+    about: 'Salut!',
+    topInterests: ['sport'],
+    languages: ['ro'],
+    compatibility: 82,
+    photos: [],
+  };
+}
+
+const mockFetchFeed = jest.fn(() => Promise.resolve([card('u1', 'Ana')]));
 
 jest.mock('@/features/feed/feedApi', () => ({
   fetchFeed: () => mockFetchFeed(),
@@ -125,7 +126,7 @@ describe('AnketeScreen', () => {
     expect(queryByTestId('first-msg-send')).toBeNull();
   });
 
-  it('undo apelează undoSwipe și reîncarcă feed-ul după un swipe', async () => {
+  it('undo apelează undoSwipe după un swipe', async () => {
     const { getByTestId } = renderScreen();
 
     // Facem un dislike ca să existe ce anula.
@@ -155,5 +156,51 @@ describe('AnketeScreen', () => {
     await waitFor(() => {
       expect(mockFetchFeed).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it('când swipe-ul eșuează, arată mesaj de eroare și păstrează cardul curent', async () => {
+    mockSwipe.mockRejectedValueOnce(new Error('network down'));
+    const { getByTestId, getByText, queryByTestId } = renderScreen();
+
+    await waitFor(() => getByTestId('swipe-dislike'));
+    fireEvent.press(getByTestId('swipe-dislike'));
+
+    // Userul e anunțat, nu rămâne în tăcere.
+    await waitFor(() => getByTestId('deck-action-error'));
+    expect(getByText('Nu am putut trimite. Încearcă din nou.')).toBeTruthy();
+
+    // Cardul nu s-a pierdut: Ana e tot pe ecran, butoanele sunt din nou active.
+    expect(getByText(/Ana/)).toBeTruthy();
+    expect(getByTestId('swipe-dislike')).toBeTruthy();
+
+    // La o reîncercare reușită, eroarea dispare și deck-ul avansează.
+    fireEvent.press(getByTestId('swipe-dislike'));
+    await waitFor(() => getByTestId('deck-reload'));
+    expect(queryByTestId('deck-action-error')).toBeNull();
+  });
+
+  it('undo revine la cardul anterior, nu la primul card din deck', async () => {
+    // Deck de 3 carduri: doar așa se vede diferența dintre „cardul anterior" și index 0.
+    mockFetchFeed.mockResolvedValueOnce([
+      card('u1', 'Ana'),
+      card('u2', 'Bogdan'),
+      card('u3', 'Corina'),
+    ]);
+    const { getByTestId, getByText, queryByText } = renderScreen();
+
+    // Două dislike-uri: Ana → Bogdan → Corina.
+    await waitFor(() => getByText(/Ana/));
+    fireEvent.press(getByTestId('swipe-dislike'));
+    await waitFor(() => getByText(/Bogdan/));
+    fireEvent.press(getByTestId('swipe-dislike'));
+    await waitFor(() => getByText(/Corina/));
+
+    // Undo → trebuie să revină la Bogdan (cardul anterior), nu la Ana (index 0).
+    fireEvent.press(getByTestId('deck-undo'));
+    await waitFor(() => {
+      expect(mockUndoSwipe).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => getByText(/Bogdan/));
+    expect(queryByText(/Ana/)).toBeNull();
   });
 });

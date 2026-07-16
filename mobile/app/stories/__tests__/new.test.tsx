@@ -28,16 +28,11 @@ jest.mock('expo-camera', () => {
   return {
     CameraView: React.forwardRef((props: Record<string, unknown>, ref: unknown) => {
       mockCameraProps.current = props;
-      React.useImperativeHandle(ref, () => ({
-        takePictureAsync: jest.fn(),
-        recordAsync: jest.fn(),
-        stopRecording: jest.fn(),
-      }));
+      React.useImperativeHandle(ref, () => ({ takePictureAsync: jest.fn() }));
       // Randăm un host node cu testID ca query-urile să găsească „camera".
       return React.createElement(View, { testID: props.testID });
     }),
     useCameraPermissions: () => [mockCamPerm, mockRequestCamPerm],
-    useMicrophonePermissions: () => [{ granted: true, canAskAgain: true }, jest.fn()],
   };
 });
 
@@ -55,12 +50,10 @@ jest.mock('@/features/stories/storyPicker', () => ({
   openAppSettings: jest.fn(),
 }));
 
-// Captura live (poză/clip) — controlăm rezultatul.
+// Captura live a pozei — controlăm rezultatul.
 const mockCapture = jest.fn();
-const mockRecord = jest.fn();
 jest.mock('@/features/stories/storyCamera', () => ({
   captureStoryPhoto: (...args: unknown[]) => mockCapture(...args),
-  recordStoryVideo: (...args: unknown[]) => mockRecord(...args),
 }));
 
 // API: spionăm upload-ul + crearea.
@@ -114,7 +107,6 @@ describe('NewStoryScreen', () => {
     mockRequestCamPerm.mockClear();
     mockPick.mockReset();
     mockCapture.mockReset();
-    mockRecord.mockReset();
     mockUpload.mockReset();
     mockCreate.mockReset();
     mockAlert.mockReset();
@@ -130,6 +122,15 @@ describe('NewStoryScreen', () => {
     // NU cere URL / texte de tip „vine curând" (Guideline 2.1).
     expect(queryByText(/curând/i)).toBeNull();
     expect(queryByText(/stub/i)).toBeNull();
+  });
+
+  it('NU oferă nicio cale spre video: fără comutator Foto/Video, camera e pe poză', () => {
+    // Story = doar poză: un clip n-ar putea fi moderat automat (Guideline 1.2).
+    const { getByTestId, queryByTestId, queryByText } = renderScreen();
+    expect(queryByTestId('story-mode')).toBeNull();
+    expect(mockCameraProps.current?.mode).toBe('picture');
+    expect(queryByText(/video/i)).toBeNull();
+    expect(getByTestId('story-capture').props.accessibilityLabel).toBe('Fă o poză');
   });
 
   it('cameră frontală implicită; flip-ul comută pe spate', () => {
@@ -179,12 +180,12 @@ describe('NewStoryScreen', () => {
   });
 
   it('galerie respinsă local → mesaj clar prin dialog (fără crash)', async () => {
-    mockPick.mockResolvedValue({ status: 'rejected', message: 'Clipul e prea mare.' });
+    mockPick.mockResolvedValue({ status: 'rejected', message: 'Poza e prea mare.' });
 
     const { getByTestId, queryByTestId } = renderScreen();
     fireEvent.press(getByTestId('story-gallery'));
 
-    await waitFor(() => expect(mockAlert).toHaveBeenCalledWith('Media respinsă', 'Clipul e prea mare.'));
+    await waitFor(() => expect(mockAlert).toHaveBeenCalledWith('Poză respinsă', 'Poza e prea mare.'));
     expect(queryByTestId('story-preview')).toBeNull();
   });
 

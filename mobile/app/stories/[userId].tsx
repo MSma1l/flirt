@@ -2,7 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { StoryMedia } from '@/features/stories/StoryMedia';
@@ -27,7 +27,7 @@ export default function StoryViewerScreen() {
 
   // Preferăm cache-ul din bara de stories; dacă lipsește, refetch.
   const cached = queryClient.getQueryData<UserStories[]>(['stories']);
-  const { data } = useQuery<UserStories[]>({
+  const { data, isLoading, isError, refetch } = useQuery<UserStories[]>({
     queryKey: ['stories'],
     queryFn: fetchStories,
     initialData: cached,
@@ -94,7 +94,38 @@ export default function StoryViewerScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]} edges={['top', 'bottom']}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      {!current ? (
+      {/* Încărcare și eroare ÎNAINTEA ramurii de gol: altfel, cât timp
+          `fetchStories` e în zbor (sau dacă pică), `data` e `undefined` și
+          userul vedea „Nu există povești" în loc de spinner/eroare. */}
+      {isLoading ? (
+        <View style={styles.center} testID="stories-loading">
+          <ActivityIndicator color={colors.accent} />
+        </View>
+      ) : isError ? (
+        <View style={styles.center}>
+          <Text style={[typography.body, styles.centerText, { color: colors.danger }]}>
+            Nu am putut încărca poveștile.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Reîncearcă"
+            onPress={() => refetch()}
+            hitSlop={spacing.sm}
+            style={{ marginTop: spacing.lg }}
+          >
+            <Text style={[typography.bodyStrong, { color: colors.accent }]}>Reîncearcă</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Închide"
+            onPress={close}
+            hitSlop={spacing.sm}
+            style={{ marginTop: spacing.md }}
+          >
+            <Text style={[typography.body, { color: colors.textSecondary }]}>Închide</Text>
+          </Pressable>
+        </View>
+      ) : !current ? (
         <View style={styles.center}>
           <Text style={[typography.body, { color: colors.textSecondary }]}>
             Nu există povești de afișat.
@@ -210,6 +241,7 @@ export default function StoryViewerScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  centerText: { textAlign: 'center' },
   media: { ...StyleSheet.absoluteFillObject },
   tapRow: { flex: 1, flexDirection: 'row' },
   tapLeft: { flex: 1 },

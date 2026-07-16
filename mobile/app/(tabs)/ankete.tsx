@@ -43,6 +43,8 @@ export default function AnketeScreen() {
   const [pendingLike, setPendingLike] = useState<FeedCard | null>(null);
   // Câte swipe-uri s-au făcut în sesiune (pentru activarea butonului de undo).
   const [swipeCount, setSwipeCount] = useState(0);
+  // Eroare la o acțiune (swipe / undo), afișată sub butoane. Null = fără eroare.
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const cards = data ?? [];
   const current = cards[index];
@@ -67,6 +69,7 @@ export default function AnketeScreen() {
   const performSwipe = async (card: FeedCard, action: SwipeAction, message?: string) => {
     if (busy) return;
     setBusy(true);
+    setActionError(null);
     try {
       const result = await swipe(card.userId, action, message);
       if (result.matched) {
@@ -76,6 +79,9 @@ export default function AnketeScreen() {
       }
       setSwipeCount((c) => c + 1);
       setIndex((i) => i + 1);
+    } catch {
+      // Rețea/server picat: nu avansăm indexul, rămânem pe același card și anunțăm userul.
+      setActionError('Nu am putut trimite. Încearcă din nou.');
     } finally {
       position.setValue({ x: 0, y: 0 });
       setBusy(false);
@@ -154,14 +160,18 @@ export default function AnketeScreen() {
   const onUndo = async () => {
     if (busy || swipeCount === 0) return;
     setBusy(true);
+    setActionError(null);
     try {
       const result = await undoSwipe();
       if (result.undone) {
         setSwipeCount((c) => Math.max(0, c - 1));
         setIndex((i) => Math.max(0, i - 1));
         position.setValue({ x: 0, y: 0 });
-        await refetch();
+        // Fără refetch: deck-ul local încă păstrează cardul anterior, iar un feed nou
+        // ar reseta indexul la 0 (efectul de mai sus) și ne-ar arunca la primul card.
       }
+    } catch {
+      setActionError('Nu am putut anula. Încearcă din nou.');
     } finally {
       setBusy(false);
     }
@@ -198,6 +208,20 @@ export default function AnketeScreen() {
     inputRange: [-SCREEN_WIDTH, 0, SCREEN_WIDTH],
     outputRange: ['-8deg', '0deg', '8deg'],
   });
+
+  // Mesajul de eroare pentru acțiuni, sub butoane (același stil ca eroarea de feed).
+  const actionErrorText = actionError ? (
+    <Text
+      testID="deck-action-error"
+      style={[
+        typography.body,
+        styles.center,
+        { color: colors.danger, marginTop: spacing.md },
+      ]}
+    >
+      {actionError}
+    </Text>
+  ) : null;
 
   if (isLoading) {
     return (
@@ -240,6 +264,7 @@ export default function AnketeScreen() {
               testID="deck-undo"
             />
           ) : null}
+          {actionErrorText}
         </View>
 
         {/* Match-ul poate apărea și pe ultimul card (deck golit după swipe). */}
@@ -353,6 +378,8 @@ export default function AnketeScreen() {
           <Text style={[styles.actionIcon, { color: colors.onAccent }]}>♥</Text>
         </Pressable>
       </View>
+
+      {actionErrorText}
 
       <SendFirstMessageSheet
         visible={pendingLike !== null}

@@ -25,6 +25,20 @@ export const MAX_ABOUT_LENGTH = LIMITS.about;
 export const MAX_NAME_LENGTH = LIMITS.name;
 export const MAX_CITY_LENGTH = LIMITS.city;
 
+/**
+ * Limitele intervalului de vârstă căutat, simetrice cu backend-ul
+ * (`account_service._validate_preferences`):
+ *  - minimul absolut = pragul de adult (18) — aplicația este 18+ ONLY;
+ *  - maximul acceptat de backend = `search_age_max_limit`.
+ * Le validăm în UI ca utilizatorul să vadă un mesaj clar, nu un 422 de la server.
+ */
+export const SEARCH_AGE_MIN = MIN_AGE_UTIL;
+export const SEARCH_AGE_MAX_LIMIT = 120;
+
+/** Intervalul propus implicit — aceleași valori ca default-urile backend-ului. */
+export const DEFAULT_SEARCH_AGE_MIN = SEARCH_AGE_MIN;
+export const DEFAULT_SEARCH_AGE_MAX = 99;
+
 /** Calculează vârsta în ani împliniți la data `now`, pe baza datei de naștere. */
 export const computeAge = computeAgeUtil;
 
@@ -76,6 +90,42 @@ export function validateInterests(value?: string[]): string | null {
   return null;
 }
 
+/** Cel puțin un gen căutat — altfel feed-ul i-ar arăta pe toți. */
+export function validateInterestedIn(value?: string[]): string | null {
+  if (!value || value.length === 0) return 'Alege cel puțin un gen.';
+  return null;
+}
+
+/** Vârsta minimă căutată: obligatorie, ≥ 18 (18+ ONLY), ≤ plafonul backend-ului. */
+export function validateSearchAgeMin(value?: number): string | null {
+  if (value == null || Number.isNaN(value)) return 'Introdu vârsta minimă.';
+  if (value < SEARCH_AGE_MIN) {
+    return `Vârsta minimă nu poate fi sub ${SEARCH_AGE_MIN} ani (aplicația este 18+).`;
+  }
+  if (value > SEARCH_AGE_MAX_LIMIT) {
+    return `Vârsta minimă nu poate depăși ${SEARCH_AGE_MAX_LIMIT} de ani.`;
+  }
+  return null;
+}
+
+/**
+ * Vârsta maximă căutată: obligatorie, în aceleași limite ca minima și niciodată
+ * sub ea (`age_min <= age_max`, altfel backend-ul respinge intervalul inversat).
+ */
+export function validateSearchAgeMax(value?: number, min?: number): string | null {
+  if (value == null || Number.isNaN(value)) return 'Introdu vârsta maximă.';
+  if (value < SEARCH_AGE_MIN) {
+    return `Vârsta maximă nu poate fi sub ${SEARCH_AGE_MIN} ani (aplicația este 18+).`;
+  }
+  if (value > SEARCH_AGE_MAX_LIMIT) {
+    return `Vârsta maximă nu poate depăși ${SEARCH_AGE_MAX_LIMIT} de ani.`;
+  }
+  if (min != null && !Number.isNaN(min) && value < min) {
+    return 'Vârsta maximă nu poate fi mai mică decât cea minimă.';
+  }
+  return null;
+}
+
 /** Un mapping câmp → mesaj de eroare (câmpurile fără eroare lipsesc). */
 export type FieldErrors = Partial<Record<keyof AnketaDraft, string>>;
 
@@ -102,6 +152,12 @@ export function validateStep(step: number, draft: Partial<AnketaDraft>): FieldEr
       break;
     case 3:
       add('interests', validateInterests(draft.interests));
+      break;
+    case 4:
+      // „Pe cine cauți" — preferințele de căutare (gen + interval de vârstă).
+      add('interestedIn', validateInterestedIn(draft.interestedIn));
+      add('ageMin', validateSearchAgeMin(draft.ageMin));
+      add('ageMax', validateSearchAgeMax(draft.ageMax, draft.ageMin));
       break;
   }
   return errors;

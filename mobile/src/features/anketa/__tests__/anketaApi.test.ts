@@ -130,4 +130,78 @@ describe('submitAnketa', () => {
     const [, payload] = (api.put as jest.Mock).mock.calls[0];
     expect(payload.photos).toEqual(['https://cdn.flirt.local/photos/p1/a.jpg']);
   });
+
+  it('trimite preferințele de căutare — fără ele feed-ul i-ar arăta pe toți', async () => {
+    (api.put as jest.Mock).mockResolvedValue({ data: {} });
+
+    const draft: AnketaDraft = {
+      name: 'Ana',
+      birthDate: '2000-05-20',
+      gender: 'female',
+      heightCm: 170,
+      city: 'Chișinău',
+      languages: ['ro'],
+      datingStatuses: [],
+      interests: ['sport'],
+      interestedIn: ['male', 'other'],
+      ageMin: 25,
+      ageMax: 40,
+    };
+
+    await submitAnketa(draft);
+
+    const [, payload] = (api.put as jest.Mock).mock.calls[0];
+    expect(payload.interested_in).toEqual(['male', 'other']);
+    expect(payload.age_min).toBe(25);
+    expect(payload.age_max).toBe(40);
+    // camelCase-ul NU pleacă spre backend.
+    expect(payload).not.toHaveProperty('interestedIn');
+    expect(payload).not.toHaveProperty('ageMin');
+    expect(payload).not.toHaveProperty('ageMax');
+  });
+
+  it('fără preferințe în draft, câmpurile lipsesc din payload (backend: „nu le atinge")', async () => {
+    (api.put as jest.Mock).mockResolvedValue({ data: {} });
+
+    // Ecranul de editare a profilului nu culege preferințe; dacă le-ar trimite
+    // goale, ar rescrie ce a ales utilizatorul în wizard / Setări.
+    const draft: AnketaDraft = {
+      name: 'Ana',
+      birthDate: '2000-05-20',
+      gender: 'female',
+      heightCm: 170,
+      city: 'Chișinău',
+      languages: ['ro'],
+      datingStatuses: [],
+      interests: ['sport'],
+    };
+
+    await submitAnketa(draft);
+
+    const [, payload] = (api.put as jest.Mock).mock.calls[0];
+    expect(payload).not.toHaveProperty('interested_in');
+    expect(payload).not.toHaveProperty('age_min');
+    expect(payload).not.toHaveProperty('age_max');
+  });
+
+  it('lista goală de genuri se trimite explicit (= fără restricție de gen)', async () => {
+    (api.put as jest.Mock).mockResolvedValue({ data: {} });
+
+    const draft: AnketaDraft = {
+      name: 'Ana',
+      birthDate: '2000-05-20',
+      gender: 'female',
+      heightCm: 170,
+      city: 'Chișinău',
+      languages: ['ro'],
+      datingStatuses: [],
+      interests: ['sport'],
+      interestedIn: [],
+    };
+
+    await submitAnketa(draft);
+
+    const [, payload] = (api.put as jest.Mock).mock.calls[0];
+    expect(payload.interested_in).toEqual([]);
+  });
 });

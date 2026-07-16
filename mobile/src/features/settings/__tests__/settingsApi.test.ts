@@ -32,6 +32,10 @@ const RAW_SETTINGS = {
   },
   profile_hidden: true,
   region: 'Chișinău',
+  // Preferințele de căutare — `SettingsOut` le întoarce mereu.
+  interested_in: ['female'],
+  age_min: 21,
+  age_max: 35,
 };
 
 const MAPPED_SETTINGS = {
@@ -46,6 +50,9 @@ const MAPPED_SETTINGS = {
   },
   profileHidden: true,
   region: 'Chișinău',
+  interestedIn: ['female'],
+  ageMin: 21,
+  ageMax: 35,
 };
 
 describe('fetchSettings', () => {
@@ -98,6 +105,28 @@ describe('updateSettings', () => {
     expect(payload).not.toHaveProperty('theme');
     expect(payload).not.toHaveProperty('notifications');
   });
+
+  it('trimite preferințele de căutare în snake_case (filtrele dure ale feed-ului)', async () => {
+    (api.put as jest.Mock).mockResolvedValue({ data: RAW_SETTINGS });
+
+    await updateSettings({ interestedIn: ['male', 'other'], ageMin: 25, ageMax: 40 });
+
+    const [, payload] = (api.put as jest.Mock).mock.calls[0];
+    expect(payload).toEqual({
+      interested_in: ['male', 'other'],
+      age_min: 25,
+      age_max: 40,
+    });
+  });
+
+  it('lista goală de genuri se trimite (= fără restricție), nu se omite ca `undefined`', async () => {
+    (api.put as jest.Mock).mockResolvedValue({ data: RAW_SETTINGS });
+
+    await updateSettings({ interestedIn: [] });
+
+    const [, payload] = (api.put as jest.Mock).mock.calls[0];
+    expect(payload).toEqual({ interested_in: [] });
+  });
 });
 
 describe('requestAccountDeletion', () => {
@@ -144,27 +173,52 @@ describe('fetchTicket', () => {
 describe('fetchBlocks', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('cheamă /social/blocks și mapează snake_case → camelCase', async () => {
+  it('cheamă /social/blocks cu limit și mapează snake_case → camelCase', async () => {
     (api.get as jest.Mock).mockResolvedValue({
       data: [
         { blocked_id: 'u1', name: 'Ana' },
         { blocked_id: 'u2', name: 'Ion' },
       ],
+      headers: {},
     });
 
-    const blocks = await fetchBlocks();
+    const page = await fetchBlocks();
 
-    expect(api.get).toHaveBeenCalledWith('/social/blocks');
-    expect(blocks).toEqual([
+    // Prima pagină: `limit` da, `cursor` nu.
+    expect(api.get).toHaveBeenCalledWith('/social/blocks', { params: { limit: 20 } });
+    expect(page.items).toEqual([
       { blockedId: 'u1', name: 'Ana' },
       { blockedId: 'u2', name: 'Ion' },
     ]);
   });
 
+  it('citește cursorul paginii următoare din header-ul X-Next-Cursor', async () => {
+    (api.get as jest.Mock).mockResolvedValue({
+      data: [{ blocked_id: 'u1', name: 'Ana' }],
+      headers: { 'x-next-cursor': 'CURSOR2' },
+    });
+
+    expect((await fetchBlocks()).nextCursor).toBe('CURSOR2');
+  });
+
+  it('fără header X-Next-Cursor → nextCursor null (ultima pagină)', async () => {
+    (api.get as jest.Mock).mockResolvedValue({ data: [], headers: {} });
+    expect((await fetchBlocks()).nextCursor).toBeNull();
+  });
+
+  it('trimite cursorul primit înapoi la backend', async () => {
+    (api.get as jest.Mock).mockResolvedValue({ data: [], headers: {} });
+
+    await fetchBlocks({ cursor: 'CURSOR2', limit: 5 });
+
+    expect(api.get).toHaveBeenCalledWith('/social/blocks', {
+      params: { limit: 5, cursor: 'CURSOR2' },
+    });
+  });
+
   it('tolerează listă goală/absentă', async () => {
-    (api.get as jest.Mock).mockResolvedValue({ data: null });
-    const blocks = await fetchBlocks();
-    expect(blocks).toEqual([]);
+    (api.get as jest.Mock).mockResolvedValue({ data: null, headers: {} });
+    expect(await fetchBlocks()).toEqual({ items: [], nextCursor: null });
   });
 });
 

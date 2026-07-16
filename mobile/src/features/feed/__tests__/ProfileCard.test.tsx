@@ -19,6 +19,14 @@ jest.mock('@/features/settings/settingsApi', () => ({
   blockUser: (userId: string) => mockBlockUser(userId),
 }));
 
+// ★ (favorite) lovește backendul → mock la API-ul social.
+const mockAddFavorite = jest.fn((_userId: string) => Promise.resolve());
+const mockFetchFavorites = jest.fn<Promise<unknown[]>, []>(() => Promise.resolve([]));
+jest.mock('@/features/social/socialApi', () => ({
+  addFavorite: (userId: string) => mockAddFavorite(userId),
+  fetchFavorites: () => mockFetchFavorites(),
+}));
+
 /** Apasă butonul distructiv din Alert-ul de confirmare. */
 function pressConfirm(spy: jest.SpyInstance): void {
   const buttons = spy.mock.calls[0][2] as AlertButton[] | undefined;
@@ -117,6 +125,36 @@ describe('ProfileCard', () => {
       await waitFor(() => expect(mockBlockUser).toHaveBeenCalledWith('u42'));
 
       alertSpy.mockRestore();
+    });
+  });
+
+  /* --- Favorite din card (★) --- */
+
+  describe('favorite', () => {
+    beforeEach(() => {
+      mockAddFavorite.mockClear();
+      mockFetchFavorites.mockReset();
+      mockFetchFavorites.mockResolvedValue([]);
+    });
+
+    it('★ apelează addFavorite cu id-ul din card', async () => {
+      const { getByTestId } = renderCard(makeCard({ userId: 'u7' }));
+
+      fireEvent.press(getByTestId('card-favorite'));
+
+      await waitFor(() => expect(mockAddFavorite).toHaveBeenCalledWith('u7'));
+    });
+
+    it('profil DEJA favorit: steaua e plină și butonul nu mai trimite nimic', async () => {
+      mockFetchFavorites.mockResolvedValue([
+        { targetUserId: 'u7', name: 'Ana', age: 27, city: 'Chișinău', photos: [] },
+      ]);
+      const { getByTestId, getByLabelText } = renderCard(makeCard({ userId: 'u7' }));
+
+      await waitFor(() => getByLabelText('Deja la favorite'));
+      fireEvent.press(getByTestId('card-favorite'));
+
+      expect(mockAddFavorite).not.toHaveBeenCalled();
     });
   });
 });

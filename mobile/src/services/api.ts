@@ -16,12 +16,40 @@ api.interceptors.request.use((cfg) => {
   return cfg;
 });
 
+/**
+ * Sesiune expirată: cine reacționează când refresh-ul eșuează definitiv.
+ *
+ * `authStore` importă `api`, deci un import invers de aici ar închide un ciclu.
+ * În schimb, store-ul își înregistrează handlerul la încărcare (vezi authStore),
+ * iar noi îl chemăm fără să știm nimic despre el.
+ */
+type UnauthorizedHandler = () => void | Promise<void>;
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(fn: UnauthorizedHandler | null): void {
+  unauthorizedHandler = fn;
+}
+
+async function onUnauthorized(): Promise<void> {
+  if (unauthorizedHandler) {
+    // Handlerul (forceLogout) curăță tokenurile ȘI scoate userul din aplicație.
+    await unauthorizedHandler();
+    return;
+  }
+  // Nimeni înregistrat: măcar nu păstrăm tokenuri moarte.
+  await tokenStore.clear();
+}
+
 // Refresh automat: la primul 401, încearcă /auth/refresh o singură dată.
 let refreshing: Promise<string | null> | null = null;
 
 async function doRefresh(): Promise<string | null> {
   const refresh = await tokenStore.getRefresh();
-  if (!refresh) return null;
+  if (!refresh) {
+    // 401 fără refresh token = sesiune pierdută la fel de sigur ca un refresh eșuat.
+    await onUnauthorized();
+    return null;
+  }
   try {
     const { data } = await axios.post(`${config.apiUrl}/auth/refresh`, {
       refresh_token: refresh,
@@ -29,7 +57,7 @@ async function doRefresh(): Promise<string | null> {
     await tokenStore.setTokens(data.access_token, data.refresh_token);
     return data.access_token as string;
   } catch {
-    await tokenStore.clear();
+    await onUnauthorized();
     return null;
   }
 }

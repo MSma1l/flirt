@@ -4,7 +4,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -18,6 +18,14 @@ import {
 
 import { Button, Input, ScreenContainer } from '@/components/ui';
 import { config } from '@/config';
+import { fetchReference } from '@/features/anketa/anketaApi';
+import { OptionItem } from '@/features/anketa/types';
+import {
+  SEARCH_AGE_MIN,
+  validateInterestedIn,
+  validateSearchAgeMax,
+  validateSearchAgeMin,
+} from '@/features/anketa/validation';
 import {
   AccountDeletion,
   cancelAccountDeletion,
@@ -40,6 +48,25 @@ const MODE_OPTIONS: { value: ThemeMode; label: string }[] = [
   { value: 'system', label: 'Sistem' },
 ];
 
+/** Erorile de validare ale secțiunii „Pe cine cauți". */
+type PrefErrors = {
+  interestedIn?: string | null;
+  ageMin?: string | null;
+  ageMax?: string | null;
+};
+
+/**
+ * Citește o vârstă dintr-un câmp text: doar cifre; câmpul golit = „nimic ales"
+ * (`undefined`), ca validarea să ceară o valoare, nu să reclame un 0 absurd.
+ * Același comportament ca în wizardul de anketă.
+ */
+function parseAge(text: string): number | undefined {
+  const digits = text.replace(/[^0-9]/g, '');
+  if (!digits) return undefined;
+  const n = parseInt(digits, 10);
+  return Number.isNaN(n) ? undefined : n;
+}
+
 const NOTIFICATION_OPTIONS: { key: keyof NotificationSettings; label: string }[] = [
   { key: 'match', label: 'Potriviri (match)' },
   { key: 'messages', label: 'Mesaje' },
@@ -60,9 +87,25 @@ export default function SetariScreen() {
   const [radiusError, setRadiusError] = useState<string | null>(null);
   const [deletion, setDeletion] = useState<AccountDeletion | null>(null);
 
+  /* --- „Pe cine cauți" (preferințe de căutare) --- */
+  const [interestedIn, setInterestedIn] = useState<string[]>([]);
+  const [ageMinText, setAgeMinText] = useState('');
+  const [ageMaxText, setAgeMaxText] = useState('');
+  const [prefErrors, setPrefErrors] = useState<PrefErrors>({});
+
   const { data, isLoading, isError, refetch } = useQuery<Settings>({
     queryKey: ['settings'],
     queryFn: fetchSettings,
+  });
+
+  /**
+   * Opțiunile de gen vin din referința backendului — aceeași sursă ca wizardul de
+   * anketă (`['anketa-reference']`, deci cache-ul e partajat, fără cerere în plus).
+   * Dacă referința nu se încarcă, ascundem doar chips-urile, nu tot ecranul de setări.
+   */
+  const { data: reference } = useQuery({
+    queryKey: ['anketa-reference'],
+    queryFn: fetchReference,
   });
 
   const settingsMutation = useMutation({
@@ -82,22 +125,55 @@ export default function SetariScreen() {
   const deleteMutation = useMutation({
     mutationFn: requestAccountDeletion,
     onSuccess: (res) => setDeletion(res),
+    onError: () => {
+      alertMessage(
+        'Nu am putut șterge contul',
+        'Cererea nu a ajuns la server. Contul tău a rămas neschimbat — încearcă din nou.',
+      );
+    },
   });
 
   const cancelMutation = useMutation({
     mutationFn: cancelAccountDeletion,
     onSuccess: () => setDeletion(null),
+    // Important: dacă anularea pică, ștergerea rămâne programată. Userul trebuie
+    // să afle, altfel crede că a salvat contul și îl pierde la finalul grației.
+    onError: () => {
+      alertMessage(
+        'Nu am putut anula ștergerea',
+        'Ștergerea contului rămâne programată. Încearcă din nou.',
+      );
+    },
   });
+
+  /**
+   * Ultima rază TRIMISĂ deja la server (sau primită de la el). Garda pe `data`
+   * nu era suficientă: `data` se reîmprospătează abia după ce răspunde PUT-ul,
+   * deci al doilea handler (vezi `commitRadius`) o vedea încă pe cea veche.
+   * Ref-ul se actualizează SINCRON, înainte de `mutate`.
+   */
+  const lastRadiusRef = useRef<number | null>(null);
 
   // Sincronizează tema persistată și câmpul de rază la prima încărcare.
   useEffect(() => {
     if (data) {
       setMode(data.theme);
       setRadiusText(String(data.searchRadiusKm));
+      lastRadiusRef.current = data.searchRadiusKm;
     }
     // Rulează doar când sosesc datele din backend.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.theme, data?.searchRadiusKm]);
+
+  // Sincronizează preferințele de căutare când sosesc setările din backend.
+  useEffect(() => {
+    if (data) {
+      setInterestedIn(data.interestedIn);
+      setAgeMinText(String(data.ageMin));
+      setAgeMaxText(String(data.ageMax));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.interestedIn, data?.ageMin, data?.ageMax]);
 
   const onSelectTheme = (value: ThemeMode) => {
     setMode(value);
@@ -113,8 +189,54 @@ export default function SetariScreen() {
     }
     setRadiusError(null);
     const parsed = parseInt(radiusText, 10);
-    if (data && parsed === data.searchRadiusKm) return;
-    settingsMutation.mutate({ searchRadiusKm: parsed });
+    // Garda reală contra dublului PUT: comparăm cu ultima valoare trimisă, nu cu
+    // `data` (care încă n-a apucat să se reîmprospăteze).
+    if (parsed === lastRadiusRef.current) return;
+    lastRadiusRef.current = parsed;
+    settingsMutation.mutate(
+      { searchRadiusKm: parsed },
+      {
+        // Dacă PUT-ul pică, valoarea de pe server rămâne cea veche, deci efectul de
+        // sincronizare NU se re-declanșează (`data.searchRadiusKm` e neschimbat) și
+        // ref-ul ar rămâne blocat pe valoarea eșuată — a doua încercare a userului
+        // ar fi înghițită de gardă. Îl eliberăm ca reîncercarea să treacă.
+        onError: () => {
+          lastRadiusRef.current = null;
+        },
+      },
+    );
+  };
+
+  /** Comută un gen căutat (multi-select, ca în wizardul de anketă). */
+  const toggleInterestedIn = (value: string) => {
+    setInterestedIn((current) =>
+      current.includes(value) ? current.filter((v) => v !== value) : [...current, value],
+    );
+  };
+
+  /**
+   * Validează și salvează preferințele de căutare într-un singur PUT.
+   * Validăm în UI (18+, `age_min <= age_max`) ca userul să vadă un mesaj clar în
+   * română, nu un 422 de la backend. Refolosim validatoarele anketei.
+   */
+  const commitPreferences = () => {
+    const ageMin = parseAge(ageMinText);
+    const ageMax = parseAge(ageMaxText);
+    const errs: PrefErrors = {
+      interestedIn: validateInterestedIn(interestedIn),
+      ageMin: validateSearchAgeMin(ageMin),
+      ageMax: validateSearchAgeMax(ageMax, ageMin),
+    };
+    if (errs.interestedIn || errs.ageMin || errs.ageMax) {
+      setPrefErrors(errs);
+      return;
+    }
+    setPrefErrors({});
+    settingsMutation.mutate({
+      interestedIn,
+      ageMin: ageMin as number,
+      ageMax: ageMax as number,
+    });
   };
 
   const onToggleNotification = (key: keyof NotificationSettings, value: boolean) => {
@@ -161,6 +283,16 @@ export default function SetariScreen() {
         >
           Reîncearcă
         </Text>
+        {/* Deconectarea rămâne la îndemână și aici: dacă setările nu se încarcă
+            din cauza sesiunii, ăsta e singurul drum de ieșire al userului. */}
+        <View style={{ alignSelf: 'stretch', marginTop: spacing.xl }}>
+          <Button
+            label="Deconectare"
+            variant="outline"
+            onPress={onLogout}
+            testID="logout"
+          />
+        </View>
       </ScreenContainer>
     );
   }
@@ -279,6 +411,100 @@ export default function SetariScreen() {
               );
             })}
           </View>
+        </View>
+
+        {/* Pe cine cauți — filtre DURE în feed (gen + interval de vârstă) */}
+        <View style={{ marginBottom: spacing.xl, gap: spacing.md }}>
+          {sectionLabel('Pe cine cauți')}
+          <Text style={[typography.caption, { color: colors.textSecondary }]}>
+            Așa știm pe cine să-ți arătăm în feed.
+          </Text>
+
+          {/* Genurile vin din referința backendului, nu sunt hardcodate aici. */}
+          {reference ? (
+            <View style={{ gap: spacing.sm }}>
+              <Text style={[typography.caption, { color: colors.textSecondary }]}>Gen</Text>
+              <View style={styles.chips}>
+                {reference.genders.map((opt: OptionItem) => {
+                  const active = interestedIn.includes(opt.value);
+                  return (
+                    <Pressable
+                      key={opt.value}
+                      testID={`interested-in-${opt.value}`}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      onPress={() => toggleInterestedIn(opt.value)}
+                      style={[
+                        styles.chip,
+                        {
+                          borderRadius: radius.pill,
+                          paddingVertical: spacing.sm,
+                          paddingHorizontal: spacing.lg,
+                          backgroundColor: active ? colors.tagBg : colors.surface,
+                          borderColor: active ? colors.accent : colors.border,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          typography.caption,
+                          { color: active ? colors.accent : colors.textSecondary },
+                        ]}
+                      >
+                        {opt.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              {prefErrors.interestedIn ? (
+                <Text
+                  testID="interested-in-error"
+                  style={[typography.caption, { color: colors.danger }]}
+                >
+                  {prefErrors.interestedIn}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          <View style={styles.ageRow}>
+            <View style={styles.flex}>
+              <Input
+                testID="search-age-min"
+                label="Vârsta minimă"
+                placeholder={String(SEARCH_AGE_MIN)}
+                keyboardType="number-pad"
+                value={ageMinText}
+                error={prefErrors.ageMin}
+                onChangeText={setAgeMinText}
+              />
+            </View>
+            <View style={styles.flex}>
+              <Input
+                testID="search-age-max"
+                label="Vârsta maximă"
+                placeholder="99"
+                keyboardType="number-pad"
+                value={ageMaxText}
+                error={prefErrors.ageMax}
+                onChangeText={setAgeMaxText}
+              />
+            </View>
+          </View>
+
+          <Text style={[typography.caption, { color: colors.textSecondary }]}>
+            FLIRT este o aplicație 18+, deci vârsta minimă nu poate coborî sub{' '}
+            {SEARCH_AGE_MIN} ani.
+          </Text>
+
+          <Button
+            label="Salvează preferințele"
+            variant="outline"
+            loading={settingsMutation.isPending}
+            onPress={commitPreferences}
+            testID="save-search-prefs"
+          />
         </View>
 
         {/* Rază de căutare */}
@@ -437,6 +663,10 @@ const styles = StyleSheet.create({
   center: { textAlign: 'center' },
   modes: { flexDirection: 'row', gap: 8 },
   modeBtn: { flex: 1, alignItems: 'center', borderWidth: 1 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { borderWidth: 1.5 },
+  ageRow: { flexDirection: 'row', gap: 12 },
+  flex: { flex: 1 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

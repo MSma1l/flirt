@@ -1,11 +1,15 @@
 /**
- * Alegerea unei media de story din galerie (imagine SAU video) + pregătirea ei
- * pentru upload (TZ secț. 11), stil Instagram.
+ * Alegerea POZEI unui story din galerie + pregătirea ei pentru upload
+ * (TZ secț. 11), stil Instagram.
  *
- * Imaginile trec prin ACEEAȘI compresie ca pozele de profil (`compressPhoto` din
+ * Un story e doar o poză: galeria se deschide filtrată pe imagini (`mediaTypes:
+ * ['images']`). Video-ul e scos deliberat — nu-l putem modera automat, iar Apple
+ * Guideline 1.2 cere filtrarea conținutului obiecționabil; backend-ul refuză oricum
+ * orice upload de video cu 422.
+ *
+ * Pozele trec prin ACEEAȘI compresie ca pozele de profil (`compressPhoto` din
  * `features/photos`, singurul loc cu limitele de upload) — un JPEG de pe un telefon
- * modern ar lua altfel 413. Videoclipurile se trimit ca atare (nu le recomprimăm
- * pe client), dar filtrăm durata (max 30s) și dimensiunea ÎNAINTE de upload.
+ * modern ar lua altfel 413.
  */
 import * as ImagePicker from 'expo-image-picker';
 import { Linking } from 'react-native';
@@ -13,22 +17,17 @@ import { Linking } from 'react-native';
 import { compressPhoto, ensureLibraryPermission } from '@/features/photos';
 
 import { StoryMediaFile } from './storiesApi';
-import {
-  DEFAULT_VIDEO_MIME,
-  STORY_MESSAGES,
-  STORY_VIDEO_MAX_BYTES,
-  STORY_VIDEO_MAX_SECONDS,
-} from './storyLimits';
+import { STORY_MESSAGES } from './storyLimits';
 
-/** Rezultatul alegerii unei media — nu aruncă niciodată. */
+/** Rezultatul alegerii unei poze — nu aruncă niciodată. */
 export type PickStoryResult =
-  /** Media aleasă, validată/comprimată — gata de upload. */
+  /** Poza aleasă, validată/comprimată — gata de upload. */
   | { status: 'picked'; file: StoryMediaFile }
   /** Utilizatorul a închis galeria fără să aleagă. */
   | { status: 'cancelled' }
   /** Permisiune refuzată; `canAskAgain=false` → doar ecranul de Setări mai ajută. */
   | { status: 'denied'; canAskAgain: boolean }
-  /** Media respinsă local (prea mare/prea lungă) sau galeria a eșuat. */
+  /** Poză respinsă local (prea mare) sau galeria a eșuat. */
   | { status: 'rejected'; message: string };
 
 /** Deschide ecranul de Setări al aplicației (calea de recuperare după refuz). */
@@ -36,36 +35,7 @@ export async function openAppSettings(): Promise<void> {
   await Linking.openSettings();
 }
 
-/** Contor pentru nume de fișier unice (backend-ul oricum își generează cheia). */
-let clipCounter = 0;
-
-/** Extrage extensia din URI pentru a alege un MIME plauzibil (backend-ul reconfirmă). */
-function videoMimeFromUri(uri: string, declared?: string | null): string {
-  if (declared && declared.startsWith('video/')) return declared;
-  return /\.mov($|\?)/i.test(uri) ? 'video/quicktime' : DEFAULT_VIDEO_MIME;
-}
-
-/** Pregătește un asset video pentru upload; respinge dacă e prea mare. */
-function prepareVideo(asset: ImagePicker.ImagePickerAsset): PickStoryResult {
-  // Dimensiune peste limită → oprim înainte de un upload inutil (când o știm).
-  if (typeof asset.fileSize === 'number' && asset.fileSize > STORY_VIDEO_MAX_BYTES) {
-    return { status: 'rejected', message: STORY_MESSAGES.videoTooLarge };
-  }
-  clipCounter += 1;
-  const mimeType = videoMimeFromUri(asset.uri, asset.mimeType);
-  const ext = mimeType === 'video/quicktime' ? 'mov' : 'mp4';
-  return {
-    status: 'picked',
-    file: {
-      uri: asset.uri,
-      mimeType,
-      fileName: `story-${Date.now()}-${clipCounter}.${ext}`,
-      mediaType: 'video',
-    },
-  };
-}
-
-/** Pregătește un asset imagine: compresie (reia logica pozelor de profil). */
+/** Pregătește o poză aleasă: compresie (reia logica pozelor de profil). */
 async function prepareImage(
   asset: ImagePicker.ImagePickerAsset,
 ): Promise<PickStoryResult> {
@@ -88,11 +58,11 @@ async function prepareImage(
 }
 
 /**
- * Deschide galeria (imagini + video) și întoarce media gata de upload.
+ * Deschide galeria (DOAR imagini) și întoarce poza gata de upload.
  *
- * Nu aruncă: orice eșec (permisiune, tip nepermis, clip prea mare, eroare de
- * sistem) devine un rezultat explicit, ca ecranul să afișeze un mesaj și o cale
- * de recuperare în loc să crape.
+ * Nu aruncă: orice eșec (permisiune, poză prea mare, eroare de sistem) devine un
+ * rezultat explicit, ca ecranul să afișeze un mesaj și o cale de recuperare în loc
+ * să crape.
  */
 export async function pickStoryMedia(): Promise<PickStoryResult> {
   let permission;
@@ -107,19 +77,17 @@ export async function pickStoryMedia(): Promise<PickStoryResult> {
 
   try {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images', 'videos'],
+      // Doar imagini: video-ul nu e moderabil automat (Guideline 1.2).
+      mediaTypes: ['images'],
       allowsMultipleSelection: false,
-      quality: 1, // comprimăm NOI imaginile, controlat, mai jos
-      videoMaxDuration: STORY_VIDEO_MAX_SECONDS,
+      quality: 1, // comprimăm NOI pozele, controlat, mai jos
       exif: false,
     });
 
     const asset = result.canceled ? undefined : result.assets[0];
     if (!asset) return { status: 'cancelled' };
 
-    const isVideo =
-      asset.type === 'video' || (asset.mimeType?.startsWith('video/') ?? false);
-    return isVideo ? prepareVideo(asset) : await prepareImage(asset);
+    return await prepareImage(asset);
   } catch {
     return { status: 'rejected', message: STORY_MESSAGES.pickerFailed };
   }

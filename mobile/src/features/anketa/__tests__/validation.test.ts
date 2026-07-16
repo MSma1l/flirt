@@ -122,4 +122,44 @@ describe('validateStep', () => {
     expect(isValid(validateStep(3, { interests: [] }))).toBe(false);
     expect(isValid(validateStep(3, { interests: ['sport'] }))).toBe(true);
   });
+
+  describe('pasul 4 — „Pe cine cauți" (preferințe de căutare)', () => {
+    const ok = { interestedIn: ['female'], ageMin: 25, ageMax: 40 };
+
+    it('acceptă un pas complet și corect', () => {
+      expect(isValid(validateStep(4, ok))).toBe(true);
+    });
+
+    it('cere cel puțin un gen — altfel feed-ul i-ar arăta pe toți', () => {
+      const errs = validateStep(4, { ...ok, interestedIn: [] });
+      expect(isValid(errs)).toBe(false);
+      expect(errs.interestedIn).toBe('Alege cel puțin un gen.');
+    });
+
+    it('respinge vârsta minimă sub 18 (aplicația este 18+ ONLY)', () => {
+      const errs = validateStep(4, { ...ok, ageMin: 17 });
+      expect(isValid(errs)).toBe(false);
+      expect(errs.ageMin).toMatch(/nu poate fi sub 18 ani/);
+      // 18 fix rămâne valid — e pragul, nu o valoare interzisă.
+      expect(isValid(validateStep(4, { ...ok, ageMin: 18 }))).toBe(true);
+    });
+
+    it('respinge intervalul inversat (min > max)', () => {
+      const errs = validateStep(4, { ...ok, ageMin: 40, ageMax: 25 });
+      expect(isValid(errs)).toBe(false);
+      expect(errs.ageMax).toBe('Vârsta maximă nu poate fi mai mică decât cea minimă.');
+      // Interval degenerat, dar coerent (min === max) → acceptat.
+      expect(isValid(validateStep(4, { ...ok, ageMin: 30, ageMax: 30 }))).toBe(true);
+    });
+
+    it('cere ambele capete ale intervalului', () => {
+      const errs = validateStep(4, { interestedIn: ['female'] });
+      expect(errs.ageMin).toBe('Introdu vârsta minimă.');
+      expect(errs.ageMax).toBe('Introdu vârsta maximă.');
+    });
+
+    it('respinge vârste peste plafonul acceptat de backend', () => {
+      expect(isValid(validateStep(4, { ...ok, ageMax: 121 }))).toBe(false);
+    });
+  });
 });

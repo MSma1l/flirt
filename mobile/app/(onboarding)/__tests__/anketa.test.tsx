@@ -145,6 +145,12 @@ async function goToPhotosStep(utils: ReturnType<typeof renderWizard>) {
   fireEvent.press(getByText('Sport'));
   fireEvent.press(getByText('Continuă'));
 
+  // „Pe cine cauți" — genul căutat e obligatoriu; intervalul de vârstă vine
+  // deja completat cu valorile implicite.
+  await waitFor(() => getByText('Pe cine cauți?'));
+  fireEvent.press(getByText('Bărbat'));
+  fireEvent.press(getByText('Continuă'));
+
   await waitFor(() => getByText('Pozele tale'));
 }
 
@@ -185,6 +191,92 @@ describe('AnketaWizard (onboarding)', () => {
     await waitFor(() => utils.getByText('Trebuie să ai cel puțin 18 ani.'));
     expect(utils.getByText('Despre tine')).toBeTruthy();
     expect(utils.queryByText('Localizare')).toBeNull();
+  });
+
+  describe('pasul „Pe cine cauți" (preferințele de căutare)', () => {
+    /** Parcurge pașii 0–3 valid și oprește wizardul pe pasul preferințelor. */
+    async function goToSearchPrefsStep(utils: ReturnType<typeof renderWizard>) {
+      const { getByPlaceholderText, getByText } = utils;
+      await waitFor(() => getByText('Despre tine'));
+
+      fillStep0(utils);
+      fireEvent.press(getByText('Continuă'));
+
+      await waitFor(() => getByText('Localizare'));
+      fireEvent.changeText(getByPlaceholderText('Orașul tău'), 'Chișinău');
+      fireEvent.press(getByText('Română'));
+      fireEvent.press(getByText('Continuă'));
+
+      await waitFor(() => getByText('Prezentare'));
+      fireEvent.press(getByText('Continuă'));
+
+      await waitFor(() => getByText('Interese'));
+      fireEvent.press(getByText('Sport'));
+      fireEvent.press(getByText('Continuă'));
+
+      await waitFor(() => getByText('Pe cine cauți?'));
+    }
+
+    it('arată genurile din REFERINȚĂ, nu dintr-o listă locală', async () => {
+      const utils = renderWizard();
+      await goToSearchPrefsStep(utils);
+
+      // Exact opțiunile întoarse de `fetchReference` — nicio valoare hardcodată.
+      expect(mockFetchReference).toHaveBeenCalled();
+      expect(utils.getByText('Femeie')).toBeTruthy();
+      expect(utils.getByText('Bărbat')).toBeTruthy();
+    });
+
+    it('fără gen ales wizardul NU avansează', async () => {
+      const utils = renderWizard();
+      await goToSearchPrefsStep(utils);
+
+      fireEvent.press(utils.getByText('Continuă'));
+
+      await waitFor(() => utils.getByText('Alege cel puțin un gen.'));
+      expect(utils.queryByText('Pozele tale')).toBeNull();
+    });
+
+    it('blochează din UI o vârstă minimă sub 18 (aplicația e 18+ only)', async () => {
+      const utils = renderWizard();
+      await goToSearchPrefsStep(utils);
+
+      fireEvent.press(utils.getByText('Bărbat'));
+      fireEvent.changeText(utils.getByTestId('search-age-min'), '16');
+      fireEvent.press(utils.getByText('Continuă'));
+
+      await waitFor(() =>
+        utils.getByText('Vârsta minimă nu poate fi sub 18 ani (aplicația este 18+).'),
+      );
+      expect(utils.queryByText('Pozele tale')).toBeNull();
+    });
+
+    it('blochează intervalul inversat (min > max) cu mesaj clar', async () => {
+      const utils = renderWizard();
+      await goToSearchPrefsStep(utils);
+
+      fireEvent.press(utils.getByText('Bărbat'));
+      fireEvent.changeText(utils.getByTestId('search-age-min'), '40');
+      fireEvent.changeText(utils.getByTestId('search-age-max'), '25');
+      fireEvent.press(utils.getByText('Continuă'));
+
+      await waitFor(() =>
+        utils.getByText('Vârsta maximă nu poate fi mai mică decât cea minimă.'),
+      );
+      expect(utils.queryByText('Pozele tale')).toBeNull();
+    });
+
+    it('cu preferințe valide avansează la pasul cu poze', async () => {
+      const utils = renderWizard();
+      await goToSearchPrefsStep(utils);
+
+      fireEvent.press(utils.getByText('Femeie'));
+      fireEvent.changeText(utils.getByTestId('search-age-min'), '21');
+      fireEvent.changeText(utils.getByTestId('search-age-max'), '35');
+      fireEvent.press(utils.getByText('Continuă'));
+
+      await waitFor(() => utils.getByText('Pozele tale'));
+    });
   });
 
   it('sub minimul de poze wizardul NU avansează și explică de ce', async () => {
@@ -259,6 +351,11 @@ describe('AnketaWizard (onboarding)', () => {
           city: 'Chișinău',
           languages: ['Română'],
           interests: ['sport'],
+          // Preferințele de căutare pleacă odată cu anketa (altfel feedul i-ar
+          // arăta pe toată lumea).
+          interestedIn: ['Bărbat'],
+          ageMin: 18,
+          ageMax: 99,
         }),
       );
     });

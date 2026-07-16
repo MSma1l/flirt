@@ -93,7 +93,6 @@ describe('Welcome', () => {
     expect(getByText('No Regrets')).toBeTruthy();
     expect(getByText('Creează cont')).toBeTruthy();
     expect(getByText('Am deja cont')).toBeTruthy();
-    expect(getByText('Continuă cu telefonul')).toBeTruthy();
     await waitFor(() => expect(mockGetAvailableSocialProviders).toHaveBeenCalled());
   });
 
@@ -109,10 +108,14 @@ describe('Welcome', () => {
     expect(mockPush).toHaveBeenCalledWith('/(auth)/login');
   });
 
-  it('„Continuă cu telefonul" navighează la phone', () => {
-    const { getByTestId } = renderScreen();
-    fireEvent.press(getByTestId('welcome-phone'));
-    expect(mockPush).toHaveBeenCalledWith('/(auth)/phone');
+  // Contul se face pe email: intrarea către telefon a fost scoasă din UI, iar fluxul
+  // OTP a rămas dormant în cod. Testul păzește decizia — dacă butonul reapare fără o
+  // decizie explicită (și fără Twilio), userul ajunge într-un ecran care nu poate livra
+  // codul.
+  it('NU există intrare către login prin telefon', () => {
+    const { queryByTestId, queryByText } = renderScreen();
+    expect(queryByTestId('welcome-phone')).toBeNull();
+    expect(queryByText('Continuă cu telefonul')).toBeNull();
   });
 
   it('butonul Google trimite id_token-ul real către backend', async () => {
@@ -135,13 +138,13 @@ describe('Welcome', () => {
 
   it('fără client ID Google butonul NU apare, iar ecranul rămâne funcțional', async () => {
     mockGetAvailableSocialProviders.mockResolvedValue({ google: false, apple: true });
-    const { queryByTestId, findByTestId, getByTestId } = renderScreen();
+    const { queryByTestId, findByTestId, getByText } = renderScreen();
 
     await findByTestId('welcome-apple'); // disponibilitatea s-a încărcat
     expect(queryByTestId('welcome-google')).toBeNull();
-    // Restul ecranului merge mai departe.
-    fireEvent.press(getByTestId('welcome-phone'));
-    expect(mockPush).toHaveBeenCalledWith('/(auth)/phone');
+    // Restul ecranului merge mai departe: emailul rămâne calea garantată spre cont.
+    fireEvent.press(getByText('Am deja cont'));
+    expect(mockPush).toHaveBeenCalledWith('/(auth)/login');
   });
 
   it('pe Android butonul Apple nu apare', async () => {

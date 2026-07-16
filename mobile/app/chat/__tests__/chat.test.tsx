@@ -5,7 +5,7 @@ import { Alert, AlertButton } from 'react-native';
 
 import ChatScreen from '../[id]';
 import { ThemeProvider } from '@theme/index';
-import type { ChatMessage } from '@/features/chat/types';
+import type { ChatMessage, ChatSummary } from '@/features/chat/types';
 
 // Mock router + parametru de rută.
 const mockBack = jest.fn();
@@ -26,7 +26,9 @@ const mockFetchMessages = jest.fn<Promise<ChatMessage[]>, []>(() => Promise.reso
 const mockSendMessage = jest.fn((_id: string, _body: string) => Promise.resolve());
 const mockReact = jest.fn((_id: string, _mid: string, _r: string | null) => Promise.resolve());
 const mockMarkRead = jest.fn((_id: string) => Promise.resolve());
+const mockFetchChats = jest.fn<Promise<ChatSummary[]>, []>(() => Promise.resolve([]));
 jest.mock('@/features/chat/chatApi', () => ({
+  fetchChats: () => mockFetchChats(),
   fetchMessages: () => mockFetchMessages(),
   sendMessage: (id: string, body: string) => mockSendMessage(id, body),
   reactToMessage: (id: string, mid: string, r: string | null) => mockReact(id, mid, r),
@@ -55,6 +57,14 @@ const receivedMessage: ChatMessage = {
   createdAt: '2026-07-01T10:00:00Z',
 };
 
+const chatSummary: ChatSummary = {
+  chatId: 'c1',
+  otherUserId: 'u1',
+  otherName: 'Ana',
+  unreadCount: 0,
+  compatibility: 82,
+};
+
 function renderScreen() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -72,6 +82,8 @@ describe('ChatScreen', () => {
   beforeEach(() => {
     mockFetchMessages.mockReset();
     mockFetchMessages.mockResolvedValue([]);
+    mockFetchChats.mockReset();
+    mockFetchChats.mockResolvedValue([chatSummary]);
     mockSendMessage.mockClear();
     mockReact.mockClear();
     mockMarkRead.mockClear();
@@ -146,6 +158,37 @@ describe('ChatScreen', () => {
     pressConfirm(alertSpy);
 
     // Id-ul celuilalt participant vine din mesajele primite.
+    await waitFor(() => expect(mockBlockUser).toHaveBeenCalledWith('u1'));
+    await waitFor(() => expect(mockBack).toHaveBeenCalled());
+
+    alertSpy.mockRestore();
+  });
+
+  /* --- Cold-start din notificare: cache-ul ['chats'] e gol (tab-urile nu s-au montat) --- */
+
+  it('cu cache gol aduce singur dialogul: nume real, badge și butoane ACTIVE', async () => {
+    // Chat nou, fără mesaje primite → datele celuilalt pot veni DOAR din /chats/.
+    mockFetchMessages.mockResolvedValue([]);
+    const { getByText, getByTestId, getByLabelText } = renderScreen();
+
+    await waitFor(() => expect(mockFetchChats).toHaveBeenCalled());
+    // Numele real, nu placeholderul „Conversație".
+    await waitFor(() => getByText('Ana'));
+    getByLabelText('Potrivire excelentă: 82%');
+
+    expect(getByTestId('chat-block')).toBeEnabled();
+    expect(getByTestId('chat-report')).toBeEnabled();
+  });
+
+  it('blochează cu id-ul din /chats/ chiar dacă nu există niciun mesaj', async () => {
+    mockFetchMessages.mockResolvedValue([]);
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const { getByText, getByTestId } = renderScreen();
+
+    await waitFor(() => getByText('Ana'));
+    fireEvent.press(getByTestId('chat-block'));
+    pressConfirm(alertSpy);
+
     await waitFor(() => expect(mockBlockUser).toHaveBeenCalledWith('u1'));
     await waitFor(() => expect(mockBack).toHaveBeenCalled());
 
