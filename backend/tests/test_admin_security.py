@@ -216,7 +216,7 @@ async def test_ban_revokes_refresh_sessions(client, db_session):
     """Banarea invalidează REFRESH token-ul, nu doar access token-ul.
 
     Fără asta, banul ar fi fost teatru: access token-ul expiră în 15 minute, dar
-    refresh token-ul e o creanță de 30 de zile. Un cont banat care poate roti
+    refresh token-ul e o creanță de 7 zile. Un cont banat care poate roti
     refresh-ul continuă să folosească aplicația o lună.
     """
     headers, _ = await _make_admin(client, db_session, "admin@flrt.md")

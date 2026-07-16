@@ -1,5 +1,6 @@
 """Rute anketă/profil — sub prefixul /api/v1/profiles."""
 import io
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -18,9 +19,12 @@ from app.schemas.profile import (
     ReferenceOut,
 )
 from app.services import profile_service
+from app.services.photo_moderation import get_photo_moderator
 from app.services.storage import key_from_own_url
 
 router = APIRouter()
+
+logger = logging.getLogger("app.profiles")
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
@@ -89,6 +93,70 @@ def _validate_image_upload(content: bytes, declared_content_type: str) -> str:
     return detected
 
 
+# RO: mesajele arătate userului la respingere — pe categorie, în ROMÂNĂ. Nu spunem
+# „modelul AI a decis": userul are nevoie să știe CE să facă, nu cine a decis.
+_MODERATION_MESSAGES = {
+    "nudity": (
+        "Poza conține nuditate explicită și nu poate fi publicată. "
+        "Alege altă fotografie."
+    ),
+    "sexual_activity": (
+        "Poza conține conținut sexual explicit și nu poate fi publicată. "
+        "Alege altă fotografie."
+    ),
+    "violence": (
+        "Poza conține violență și nu poate fi publicată. Alege altă fotografie."
+    ),
+    "minor": (
+        "Poza pare să conțină un minor într-un context nepotrivit și nu poate fi "
+        "publicată. FLIRT este o aplicație 18+. Alege altă fotografie."
+    ),
+}
+_MODERATION_MESSAGE_DEFAULT = (
+    "Poza conține conținut explicit și nu poate fi publicată. "
+    "Alege altă fotografie."
+)
+
+
+async def _moderate_photo(content: bytes, content_type: str, user: User) -> None:
+    """Moderare NSFW ÎNAINTE de salvarea în storage (Apple Guideline 1.2).
+
+    Ridică 422 cu un mesaj clar în română dacă providerul respinge EXPLICIT poza.
+    Dacă providerul cade, `check` întoarce deja FAIL-OPEN (allowed=True,
+    needs_review=True): logăm pentru review uman și lăsăm poza să treacă — o pană
+    externă nu are voie să blocheze uploadul.
+    """
+    verdict = await get_photo_moderator().check(content, content_type)
+
+    if verdict.needs_review:
+        # RO: nu putem crea un raport automat în coada de moderare: `Report` cere un
+        # `reporter_id` real (FK spre users) și nu există un user „sistem"; un raport
+        # cu userul însuși ca raportor l-ar împinge spre auto-ban. Deci: LOG.
+        logger.warning(
+            "photo_moderation: NEDECIS pentru user_id=%s (motiv=%s) — poza a fost "
+            "acceptată FAIL-OPEN și necesită REVIEW UMAN.",
+            user.id,
+            verdict.raw_label,
+        )
+        return
+
+    if verdict.allowed:
+        return
+
+    logger.info(
+        "photo_moderation: poză RESPINSĂ pentru user_id=%s (categorie=%s, label=%s).",
+        user.id,
+        verdict.reason,
+        verdict.raw_label,
+    )
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail=_MODERATION_MESSAGES.get(
+            verdict.reason or "", _MODERATION_MESSAGE_DEFAULT
+        ),
+    )
+
+
 @router.get("/reference", response_model=ReferenceOut)
 async def get_reference(db: DbDep) -> ReferenceOut:
     """Opțiunile de referință (genuri, statusuri, limbi, interese) — PUBLIC."""
@@ -133,6 +201,9 @@ async def add_photo(request: Request, db: DbDep, user: UserDep) -> list[str]:
         safe_content_type = _validate_image_upload(
             content, upload.content_type or ""
         )
+        # Moderare NSFW ÎNAINTE de storage: o poză respinsă nu are voie să atingă
+        # niciodată discul/bucket-ul (Apple Guideline 1.2).
+        await _moderate_photo(content, safe_content_type, user)
         return await profile_service.add_photo(
             db,
             user,

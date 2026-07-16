@@ -107,7 +107,7 @@ Testul de securitate merge mai departe: lista rutelor verificate **nu e scrisă 
 Un „ban" care setează doar `banned_at` e teatru de securitate. Banul complet face **trei** lucruri, în aceeași tranzacție:
 
 1. **`banned_at` + motiv** → login refuzat (`auth_service`), orice cerere autentificată respinsă cu 403 (`get_current_user` verifică DB-ul);
-2. **revocarea sesiunilor de refresh** → refresh token-ul devine inutilizabil **acum**. Fără asta, access token-ul expiră în 15 minute, dar refresh token-ul e o creanță de **30 de zile**: un cont banat care poate roti refresh-ul continuă să folosească aplicația o lună;
+2. **revocarea sesiunilor de refresh** → refresh token-ul devine inutilizabil **acum**. Fără asta, access token-ul expiră în 15 minute, dar refresh token-ul e o creanță de **7 zile**: un cont banat care poate roti refresh-ul continuă să folosească aplicația o săptămână;
 3. **`profile_hidden`** → profilul dispare din feed-ul celorlalți.
 
 ### Zero secrete în răspunsuri

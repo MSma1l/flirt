@@ -79,6 +79,30 @@ INTERESTS_CATALOG: list[tuple[str, str, str]] = [
 ]
 
 
+def _sync_profile_completed(user, profile: Profile) -> None:
+    """Recalculează `users.profile_completed` = anketă completă ȘI destule poze.
+
+    DE CE EXISTĂ: `users.profile_completed` e SINGURUL semnal după care clientul
+    decide dacă userul intră în feed sau rămâne în onboarding (`AuthGuard`).
+    Înainte, `upsert_anketa` îl seta `True` necondiționat, iar pozele se încarcă
+    într-un pas ULTERIOR (`POST /profiles/photos` dă 404 fără profil, deci anketa
+    trebuie salvată prima). Dacă uploadul pozei pica (rețea) și userul reintra în
+    aplicație, serverul îi raporta `profile_completed=true` → era aruncat în feed
+    cu un profil fără nicio poză, fără cale de întoarcere în onboarding. Într-o
+    aplicație de dating, un profil fără poze e inutil. Validarea `min` era doar
+    client-side, deci ocolibilă definitiv.
+
+    Pragul e `settings.min_photos` (config, NU hardcodat) — aceeași valoare pe
+    care mobilul o folosește ca `photoMinCount` din `app.json`.
+
+    Se cheamă din ORICE loc care schimbă numărul de poze sau `profile.completed`
+    (`upsert_anketa`, `add_photo`, `remove_photo`) — flagul se RECALCULEAZĂ, nu
+    se setează o singură dată. Apelantul trebuie să facă `db.add(user)` + commit.
+    """
+    has_min_photos = len(profile.photos or []) >= settings.min_photos
+    user.profile_completed = bool(profile.completed) and has_min_photos
+
+
 def _calc_age(birth_date: date, today: date | None = None) -> int:
     """Calculează vârsta în ani împliniți la `today` (implicit azi)."""
     today = today or date.today()
@@ -225,6 +249,11 @@ async def add_photo(
     photos.append(saved_url)
     profile.photos = photos  # reasignare → SQLAlchemy detectează modificarea JSON
     db.add(profile)
+
+    # RO: prima poză poate face profilul complet → recalculăm gate-ul de onboarding.
+    _sync_profile_completed(user, profile)
+    db.add(user)
+
     await db.commit()
     await db.refresh(profile)
     return list(profile.photos or [])
@@ -244,6 +273,13 @@ async def remove_photo(db: AsyncSession, user, url: str) -> list[str]:
     photos = [p for p in photos if p != url]
     profile.photos = photos
     db.add(profile)
+
+    # RO: ștergerea ULTIMEI poze scoate userul din feed înapoi în onboarding.
+    # Intenționat: altfel și-ar putea goli pozele după onboarding și ar rămâne în
+    # feed cu un profil gol — exact starea pe care fixul o previne la înregistrare.
+    _sync_profile_completed(user, profile)
+    db.add(user)
+
     await db.commit()
     await db.refresh(profile)
 
@@ -407,8 +443,9 @@ async def upsert_anketa(db: AsyncSession, user, data: AnketaIn) -> ProfileOut:
     for interest in interests:
         db.add(ProfileInterest(profile_id=profile.id, interest_id=interest.id))
 
-    # Marchează user-ul ca având anketa completată + activ acum (semnal de feed).
-    user.profile_completed = True
+    # Gate-ul de onboarding: anketa e completă, dar userul intră în feed DOAR dacă
+    # are și pozele. Fără poze rămâne `False` până le încarcă (vezi `add_photo`).
+    _sync_profile_completed(user, profile)
     db.add(user)
 
     await db.commit()

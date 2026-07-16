@@ -30,7 +30,9 @@ class Settings(BaseSettings):
     jwt_private_key: str = ""
     jwt_public_key: str = ""
     access_token_expire_minutes: int = 15
-    refresh_token_expire_days: int = 30
+    # Fereastra de inactivitate: 7 zile fără refresh → userul se reloghează.
+    # Cât timp refreshul e valid, accessul (15 min) se reînnoiește tăcut.
+    refresh_token_expire_days: int = 7
 
     # CORS
     cors_origins: str = "http://localhost:19006,http://localhost:8081"
@@ -167,6 +169,19 @@ class Settings(BaseSettings):
     # Verificare facială (TZ 2.2). Provider: 'stub' | 'rekognition'
     face_verify_provider: str = "stub"
     face_match_threshold: float = 90.0   # scor minim de similaritate (0-100)
+
+    # --- Moderare automată a pozelor (NSFW) — Apple App Store Guideline 1.2 -----
+    # Apple CERE filtrarea conținutului obiecționabil generat de utilizatori. Fără
+    # ea, aplicația e respinsă la review. Provider: 'stub' | 'anthropic' | 'rekognition'
+    #  - 'stub' (implicit): nu atinge rețeaua, lasă totul să treacă. Dev + teste.
+    #  - 'anthropic': Claude vision (înțelege contextul „e o poză la plajă, nu porno").
+    #  - 'rekognition': AWS detect_moderation_labels (aceleași chei ca S3/face_verify).
+    photo_moderation_provider: str = "stub"
+    anthropic_api_key: str = ""
+    photo_moderation_model: str = "claude-haiku-4-5"
+    # Pragul de încredere (0-100) peste care o etichetă Rekognition e luată în seamă.
+    # Sub el, eticheta e ignorată — Rekognition raportează și „poate că e ceva" la 55%.
+    nsfw_confidence_threshold: float = 80.0
 
     # Redis (store OTP live, cache) — ex. redis://localhost:6379/0
     redis_url: str = ""
@@ -383,6 +398,21 @@ class Settings(BaseSettings):
             required_keys["FACE_VERIFY_PROVIDER=rekognition"] = [
                 ("AWS_ACCESS_KEY_ID", self.aws_access_key_id),
                 ("AWS_SECRET_ACCESS_KEY", self.aws_secret_access_key),
+            ]
+        # Moderarea foto e cerută de Apple (Guideline 1.2), dar un provider „live"
+        # fără chei e mai rău decât stub-ul: aplicația pornește sănătoasă și fiecare
+        # upload cade tăcut în FAIL-OPEN — adică moderarea NU există, fără nicio
+        # eroare vizibilă, exact scenariul pentru care Apple respinge aplicația.
+        if self.photo_moderation_provider == "anthropic":
+            required_keys["PHOTO_MODERATION_PROVIDER=anthropic"] = [
+                ("ANTHROPIC_API_KEY", self.anthropic_api_key),
+                ("PHOTO_MODERATION_MODEL", self.photo_moderation_model),
+            ]
+        if self.photo_moderation_provider == "rekognition":
+            required_keys["PHOTO_MODERATION_PROVIDER=rekognition"] = [
+                ("AWS_ACCESS_KEY_ID", self.aws_access_key_id),
+                ("AWS_SECRET_ACCESS_KEY", self.aws_secret_access_key),
+                ("S3_REGION", self.s3_region),
             ]
         if self.social_auth_mode == "live":
             # Cel puțin un provider social trebuie configurat, altfel butoanele

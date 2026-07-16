@@ -23,6 +23,7 @@ from app.models.swipe import Match
 from app.models.user import User
 from app.schemas.story import StoryIn
 from app.services import account_service, chat_service, event_service, story_service
+from tests.conftest import upload_photo
 
 API = "/api/v1"
 _ADULT_YEAR = date.today().year - 25
@@ -369,6 +370,10 @@ async def test_get_messages_over_http_does_not_mark_read(client):
     }
     await client.put(f"{API}/profiles/me", json=anketa, headers=a_headers)
     await client.put(f"{API}/profiles/me", json={**anketa, "name": "Y"}, headers=b_headers)
+    # Fără poze, profilurile sunt incomplete → swipe-ul de mai jos e respins și
+    # nu s-ar mai forma chat-ul pe care îl măsoară testul.
+    await upload_photo(client, a_headers)
+    await upload_photo(client, b_headers)
 
     a_id = (await client.get(f"{API}/auth/me", headers=a_headers)).json()["id"]
     b_id = (await client.get(f"{API}/auth/me", headers=b_headers)).json()["id"]

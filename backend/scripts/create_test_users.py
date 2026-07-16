@@ -7,6 +7,8 @@ CUNOSCUTE, pe care le poți da cuiva să se autentifice și să vadă aplicația
 
 Ce garantează:
   - toate profilurile sunt COMPLETE (altfel nu apar în feed și nu pot da swipe);
+  - fiecare are o POZĂ (un profil fără poze nu apare în feed — vezi
+    `feed_service._min_photos_clause`; fără ea feed-ul ar ieși gol);
   - toți au 18+ (aplicația e 18+ only — un profil sub prag e respins de validare);
   - sunt în ACELAȘI oraș, cu coordonate reale, ca să se vadă reciproc în feed
     (raza implicită e 50 km — dacă i-am împrăștia, feed-ul ar ieși gol și ai crede
@@ -41,9 +43,57 @@ from app.models.interest import Interest, ProfileInterest  # noqa: E402
 from app.models.profile import Profile  # noqa: E402
 from app.models.user import User  # noqa: E402
 from app.services.profile_service import seed_interests  # noqa: E402
+from app.services.storage import build_photo_key, get_storage  # noqa: E402
 
 # Parola comună. E un cont de TEST, nu de producție — de aceea e vizibilă aici.
 TEST_PASSWORD = "TestFlirt2026!"
+
+
+def _solid_png(width: int, height: int, rgb: tuple[int, int, int]) -> bytes:
+    """PNG de o singură culoare, scris cu biblioteca standard (fără Pillow).
+
+    DE CE existăm: un profil FĂRĂ poze nu mai apare în feed (principiu: profilul
+    trebuie să aibă poze — vezi `feed_service._min_photos_clause`). Conturile de
+    test fără poze ar da un feed gol și ai crede că aplicația e stricată.
+
+    Fără Pillow în dependențe, encodăm PNG-ul manual: semnătură + IHDR + IDAT +
+    IEND. Culoare plină, ca fiecare cont să se distingă vizual în feed.
+    """
+    import binascii
+    import struct
+    import zlib
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        body = tag + data
+        return struct.pack(">I", len(data)) + body + struct.pack(
+            ">I", binascii.crc32(body) & 0xFFFFFFFF
+        )
+
+    # color_type=2 (RGB), bit_depth=8, fără interlace.
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    # Fiecare scanline e prefixată de octetul de filtru (0 = None).
+    row = b"\x00" + bytes(rgb) * width
+    idat = zlib.compress(row * height, 9)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", ihdr)
+        + chunk(b"IDAT", idat)
+        + chunk(b"IEND", b"")
+    )
+
+
+async def _ensure_photo(profile: Profile, rgb: tuple[int, int, int]) -> None:
+    """Pune o poză pe profil dacă nu are niciuna (idempotent).
+
+    Trece prin `get_storage()`, deci respectă providerul configurat (`local` pe
+    server, `stub` în dev) și cheia sigură `photos/{profile_id}/{uuid}.png` —
+    aceeași pe care o generează endpointul real de upload.
+    """
+    if profile.photos:
+        return  # rulare repetată: nu dubla pozele
+    key = build_photo_key(profile.id, "image/png")
+    url = await get_storage().save(key, _solid_png(600, 800, rgb), "image/png")
+    profile.photos = [url]
 
 # Toți în Chișinău, cu jitter mic: se văd reciproc în feed (raza implicită = 50 km).
 CITY = "Chișinău"
@@ -60,6 +110,8 @@ TEST_USERS = [
         "interests": ["travel", "music"],
         "statuses": ["serious", "friendship"],
         "interested_in": ["male"],
+        # Culoare distinctă a pozei, ca să deosebești conturile în feed.
+        "photo_rgb": (255, 45, 120),
     },
     {
         "email": "mihai@test.flrt.md",
@@ -71,6 +123,8 @@ TEST_USERS = [
         "interests": ["sport", "music"],
         "statuses": ["serious"],
         "interested_in": ["female"],
+        # Culoare distinctă a pozei, ca să deosebești conturile în feed.
+        "photo_rgb": (45, 120, 255),
     },
     {
         "email": "elena@test.flrt.md",
@@ -82,6 +136,8 @@ TEST_USERS = [
         "interests": ["travel", "music"],
         "statuses": ["friendship", "casual"],
         "interested_in": ["male", "female"],
+        # Culoare distinctă a pozei, ca să deosebești conturile în feed.
+        "photo_rgb": (160, 90, 255),
     },
     {
         "email": "victor@test.flrt.md",
@@ -93,6 +149,8 @@ TEST_USERS = [
         "interests": ["music", "sport"],
         "statuses": ["serious"],
         "interested_in": ["female"],
+        # Culoare distinctă a pozei, ca să deosebești conturile în feed.
+        "photo_rgb": (255, 140, 60),
     },
     {
         "email": "daria@test.flrt.md",
@@ -104,6 +162,8 @@ TEST_USERS = [
         "interests": ["travel", "sport"],
         "statuses": ["serious", "friendship"],
         "interested_in": ["male"],
+        # Culoare distinctă a pozei, ca să deosebești conturile în feed.
+        "photo_rgb": (60, 190, 150),
     },
 ]
 
@@ -178,12 +238,13 @@ async def run(reset: bool) -> None:
             profile.languages = ["ro", "ru"]          # limbă comună: gate DUR în feed
             profile.about = spec["about"]
             profile.dating_statuses = spec["statuses"]
-            profile.photos = []
             profile.completed = True                  # fără asta NU apare în feed
             # Coordonate reale + jitter mic: se văd reciproc (raza implicită 50 km).
             profile.lat = CITY_LAT + (i - 2) * 0.004
             profile.lng = CITY_LNG + (i - 2) * 0.004
-            await db.flush()  # profile.id e necesar pentru legătura de interese
+            await db.flush()  # profile.id e necesar pentru cheia pozei și pentru interese
+            # Poza vine DUPĂ flush: cheia sigură e `photos/{profile_id}/...`.
+            await _ensure_photo(profile, spec["photo_rgb"])
             await _link_interests(db, profile, spec["interests"])
 
             settings_row = (

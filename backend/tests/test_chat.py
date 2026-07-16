@@ -4,6 +4,7 @@ from datetime import date
 import pytest
 
 from app.services.contact_masker import MASK, mask_contacts
+from tests.conftest import upload_photo
 
 API = "/api/v1"
 
@@ -73,6 +74,10 @@ async def _make_user(client, email: str, name: str) -> tuple[dict, str]:
         f"{API}/profiles/me", json=_anketa(name=name), headers=headers
     )
     assert resp.status_code == 200, resp.text
+    # Un profil fără poze nu apare în feedul nimănui (principiu al aplicației) —
+    # anketa singură nu e de ajuns. Al doilea pas, exact ca în aplicația reală:
+    # PUT /profiles/me, apoi POST /profiles/photos.
+    await upload_photo(client, headers)
     user_id = await _me_id(client, headers)
     return headers, user_id
 

@@ -26,6 +26,7 @@ from app.models.story import Story
 from app.models.swipe import Like, Match
 from app.models.user import User
 from app.services import account_service as A
+from tests.conftest import upload_photo
 
 API = "/api/v1"
 _ADULT_YEAR = date.today().year - 25
@@ -74,6 +75,10 @@ async def _make_user(client, email: str, name: str) -> tuple[dict, str]:
     headers = await _register(client, email)
     resp = await client.put(f"{API}/profiles/me", json=_anketa(name), headers=headers)
     assert resp.status_code == 200, resp.text
+    # Un profil fără poze nu apare în feedul nimănui (principiu al
+    # aplicației) — anketa singură nu e de ajuns. Al doilea pas, exact ca în
+    # aplicația reală: PUT /profiles/me, apoi POST /profiles/photos.
+    await upload_photo(client, headers)
     return headers, await _me_id(client, headers)
 
 

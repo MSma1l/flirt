@@ -775,8 +775,14 @@ async def list_users(
     if verified is not None:
         stmt = stmt.where(Profile.verified.is_(verified))
     if completed is not None:
-        # Sursa de adevăr pentru „anketă completă" e `profiles.completed`;
-        # `users.profile_completed` e doar oglinda ei.
+        # ATENȚIE: acest filtru înseamnă „ANKETA e completă" (`profiles.completed`),
+        # NU „profilul e complet". Cele două NU mai sunt sinonime și pot diverge
+        # LEGITIM: `users.profile_completed` (și vizibilitatea în feed) cer în plus
+        # cel puțin `settings.min_photos` poze — vezi
+        # `profile_service._sync_profile_completed` și `feed_service._min_photos_clause`.
+        # Deci un user cu `completed=true` aici poate fi, corect, invizibil în feed
+        # fiindcă n-are poze. Filtrul rămâne intenționat pe anketă: adminul are
+        # nevoie exact de acest decupaj ca să vadă cine a completat chestionarul.
         stmt = stmt.where(
             Profile.completed.is_(True)
             if completed

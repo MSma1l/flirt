@@ -6,6 +6,8 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 
 from app.models.story import Story
+from app.services.photo_moderation import ModerationVerdict
+from tests.conftest import upload_photo
 
 API = "/api/v1"
 _ADULT_YEAR = date.today().year - 25
@@ -15,7 +17,7 @@ _PNG_1X1 = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 )
 # Container ISO-BMFF minimal cu box-ul `ftyp` (brand `mp42`) — un „video" mp4
-# valid ca magic-bytes, suficient pentru validarea de tip din backend.
+# valid ca magic-bytes, suficient pentru poarta anti-video din backend.
 _MP4_MIN = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"
 # Idem, dar brand `qt  ` → QuickTime (.mov).
 _MOV_MIN = b"\x00\x00\x00\x18ftypqt  \x00\x00\x00\x00qt  qt  "
@@ -62,6 +64,10 @@ async def _make_user(client, email: str, name: str) -> tuple[dict, str]:
     headers = await _register(client, email)
     resp = await client.put(f"{API}/profiles/me", json=_anketa(name), headers=headers)
     assert resp.status_code == 200, resp.text
+    # Un profil fără poze nu apare în feedul nimănui (principiu al
+    # aplicației) — anketa singură nu e de ajuns. Al doilea pas, exact ca în
+    # aplicația reală: PUT /profiles/me, apoi POST /profiles/photos.
+    await upload_photo(client, headers)
     return headers, await _me_id(client, headers)
 
 
@@ -164,7 +170,7 @@ async def test_expired_story_not_listed(client, db_session):
     assert grouped.json() == []
 
 
-# --- Upload media (imagine + video) -------------------------------------------
+# --- Upload media (DOAR imagini — vezi poarta anti-video) ---------------------
 @pytest.mark.asyncio
 async def test_upload_image_media(client):
     """POST /stories/media cu o imagine validă → media_type 'image' + URL https."""
@@ -183,8 +189,11 @@ async def test_upload_image_media(client):
 
 
 @pytest.mark.asyncio
-async def test_upload_video_media(client):
-    """POST /stories/media cu un video (mp4/mov) → media_type 'video'."""
+async def test_upload_video_is_rejected(client):
+    """Video (mp4/mov) → 422: story-urile acceptă DOAR fotografii (Guideline 1.2).
+
+    Video-ul nu poate fi moderat automat, deci nu are voie să intre deloc.
+    """
     headers, _ = await _make_user(client, "a@example.com", "A")
 
     for name, blob, ctype in (
@@ -196,8 +205,36 @@ async def test_upload_video_media(client):
             files={"file": (name, blob, ctype)},
             headers=headers,
         )
-        assert resp.status_code == 200, resp.text
-        assert resp.json()["media_type"] == "video"
+        assert resp.status_code == 422, resp.text
+        assert "doar fotografii" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_upload_video_disguised_as_image_is_rejected(client):
+    """Un mp4 declarat 'image/jpeg' → tot 422: ne uităm la magic-bytes, nu la header."""
+    headers, _ = await _make_user(client, "a@example.com", "A")
+
+    resp = await client.post(
+        f"{API}/stories/media",
+        files={"file": ("poza.jpg", _MP4_MIN, "image/jpeg")},
+        headers=headers,
+    )
+    assert resp.status_code == 422, resp.text
+    assert "doar fotografii" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_create_story_with_video_media_type_is_rejected(client):
+    """A doua cale (media_type='video' + URL arbitrar) e închisă tot cu 422."""
+    headers, _ = await _make_user(client, "a@example.com", "A")
+
+    resp = await client.post(
+        f"{API}/stories/",
+        json={"media_url": "https://cdn.example.com/clip.mp4", "media_type": "video"},
+        headers=headers,
+    )
+    assert resp.status_code == 422, resp.text
+    assert "doar fotografii" in resp.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -227,13 +264,13 @@ async def test_upload_rejects_spoofed_video(client):
 
 
 @pytest.mark.asyncio
-async def test_create_story_with_video_media_type(client):
-    """Upload video → creare story cu media_type 'video', regăsit în listări."""
-    headers, uid = await _make_user(client, "a@example.com", "A")
+async def test_create_story_from_uploaded_photo(client):
+    """Upload poză → creare story 'image', regăsit în listări."""
+    headers, _ = await _make_user(client, "a@example.com", "A")
 
     up = await client.post(
         f"{API}/stories/media",
-        files={"file": ("clip.mp4", _MP4_MIN, "video/mp4")},
+        files={"file": ("x.png", _PNG_1X1, "image/png")},
         headers=headers,
     )
     assert up.status_code == 200, up.text
@@ -245,10 +282,10 @@ async def test_create_story_with_video_media_type(client):
         headers=headers,
     )
     assert created.status_code == 201, created.text
-    assert created.json()["media_type"] == "video"
+    assert created.json()["media_type"] == "image"
 
     mine = await client.get(f"{API}/stories/mine", headers=headers)
-    assert mine.json()[0]["media_type"] == "video"
+    assert mine.json()[0]["media_type"] == "image"
 
 
 @pytest.mark.asyncio
@@ -263,3 +300,131 @@ async def test_create_story_defaults_to_image(client):
     )
     assert created.status_code == 201, created.text
     assert created.json()["media_type"] == "image"
+
+
+# --- Moderare NSFW a pozelor de story (Apple Guideline 1.2) -------------------
+class _SpyStorage:
+    """Storage fals care NUMĂRĂ salvările — dovada că poza n-a atins discul."""
+
+    def __init__(self) -> None:
+        self.saved: list[tuple[str, bytes]] = []
+
+    async def save(self, key: str, content: bytes, content_type: str) -> str:
+        self.saved.append((key, content))
+        return f"https://cdn.flirt.local/{key}"
+
+    async def delete(self, key: str) -> None:  # pragma: no cover — nefolosit aici
+        pass
+
+
+def _patch_story_moderator(monkeypatch, moderator) -> None:
+    """Înlocuiește fabrica de moderator DIN endpoint-ul de stories."""
+    from app.api.v1 import stories
+
+    monkeypatch.setattr(stories, "get_photo_moderator", lambda: moderator)
+
+
+def _patch_story_storage(monkeypatch, storage) -> None:
+    """Înlocuiește fabrica de storage folosită de uploadul de story."""
+    from app.api.v1 import stories
+
+    monkeypatch.setattr(stories, "get_storage", lambda: storage)
+
+
+@pytest.mark.asyncio
+async def test_story_photo_rejected_by_moderation_is_not_stored(client, monkeypatch):
+    """Verdict allowed=False → 422 în română, iar poza NU ajunge în storage."""
+
+    class _Rejecting:
+        async def check(self, image, media_type):
+            return ModerationVerdict(allowed=False, reason="nudity", raw_label="nudity")
+
+    storage = _SpyStorage()
+    _patch_story_moderator(monkeypatch, _Rejecting())
+    _patch_story_storage(monkeypatch, storage)
+
+    headers, _ = await _make_user(client, "a@example.com", "A")
+    resp = await client.post(
+        f"{API}/stories/media",
+        files={"file": ("x.png", _PNG_1X1, "image/png")},
+        headers=headers,
+    )
+    assert resp.status_code == 422, resp.text
+    assert "nuditate" in resp.json()["detail"].lower()
+    # DOVADA că moderarea rulează ÎNAINTE de storage:
+    assert storage.saved == []
+
+
+@pytest.mark.asyncio
+async def test_clean_story_photo_is_stored(client, monkeypatch):
+    """Verdict allowed=True → poza se salvează normal și se poate publica."""
+
+    class _Allowing:
+        async def check(self, image, media_type):
+            return ModerationVerdict(allowed=True, raw_label="safe")
+
+    storage = _SpyStorage()
+    _patch_story_moderator(monkeypatch, _Allowing())
+    _patch_story_storage(monkeypatch, storage)
+
+    headers, _ = await _make_user(client, "a@example.com", "A")
+    resp = await client.post(
+        f"{API}/stories/media",
+        files={"file": ("x.png", _PNG_1X1, "image/png")},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["media_type"] == "image"
+    assert len(storage.saved) == 1
+    assert storage.saved[0][1] == _PNG_1X1
+
+
+@pytest.mark.asyncio
+async def test_story_moderation_provider_down_is_fail_open(client, monkeypatch, caplog):
+    """Providerul cade → FAIL-OPEN: uploadul reușește, dar e logat pentru om."""
+
+    class _Broken:
+        async def check(self, image, media_type):
+            return ModerationVerdict(
+                allowed=True, raw_label="connection_error", needs_review=True
+            )
+
+    storage = _SpyStorage()
+    _patch_story_moderator(monkeypatch, _Broken())
+    _patch_story_storage(monkeypatch, storage)
+
+    headers, _ = await _make_user(client, "a@example.com", "A")
+    with caplog.at_level("WARNING"):
+        resp = await client.post(
+            f"{API}/stories/media",
+            files={"file": ("x.png", _PNG_1X1, "image/png")},
+            headers=headers,
+        )
+    assert resp.status_code == 200, resp.text  # NU 500, NU 422
+    assert len(storage.saved) == 1             # poza s-a salvat
+    assert "REVIEW UMAN" in caplog.text        # dar e marcată pentru om
+
+
+@pytest.mark.asyncio
+async def test_video_is_rejected_before_moderation(client, monkeypatch):
+    """Video-ul e oprit de poartă, nu de moderator: moderatorul nici nu e chemat."""
+    calls: list[bytes] = []
+
+    class _Counting:
+        async def check(self, image, media_type):
+            calls.append(image)
+            return ModerationVerdict(allowed=True)
+
+    storage = _SpyStorage()
+    _patch_story_moderator(monkeypatch, _Counting())
+    _patch_story_storage(monkeypatch, storage)
+
+    headers, _ = await _make_user(client, "a@example.com", "A")
+    resp = await client.post(
+        f"{API}/stories/media",
+        files={"file": ("clip.mp4", _MP4_MIN, "video/mp4")},
+        headers=headers,
+    )
+    assert resp.status_code == 422, resp.text
+    assert calls == []
+    assert storage.saved == []

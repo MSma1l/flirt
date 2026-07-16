@@ -65,6 +65,30 @@ class FavoriteOut(BaseModel):
     name: str
     age: int
     city: str
+    # Pozele profilului (prima = avatarul din listă). Gol = profil fără poze.
+    # Câmp ADITIV: clienții vechi îl ignoră, cei noi pot randa un card complet.
+    photos: list[str] = Field(default_factory=list)
+
+
+class LikeSentOut(BaseModel):
+    """Un profil căruia userul curent i-a dat LIKE (swipe dreapta).
+
+    Formă IDENTICĂ cu `FavoriteOut` intenționat: ecranul de favorite afișează
+    ambele liste cu același rând, iar mobilul folosește un singur mapper.
+    """
+
+    target_user_id: uuid.UUID
+    name: str
+    age: int
+    city: str
+    photos: list[str] = Field(default_factory=list)
+
+
+class LikeSentPage(BaseModel):
+    """O pagină de like-uri TRIMISE + cursorul spre următoarea (convenția `/feed`)."""
+
+    items: list[LikeSentOut] = Field(default_factory=list)
+    next_cursor: str | None = None
 
 
 class BlockOut(BaseModel):

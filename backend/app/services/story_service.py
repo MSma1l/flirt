@@ -46,7 +46,21 @@ def _to_story_out(story: Story) -> StoryOut:
 
 
 async def create_story(db: AsyncSession, user: User, data: StoryIn) -> StoryOut:
-    """Creează o poveste care expiră peste 24h."""
+    """Creează o poveste FOTO care expiră peste 24h; video → 422.
+
+    Story-urile noi sunt doar poze: uploadul de video e refuzat în endpoint, iar aici
+    închidem și a doua cale (`media_type='video'` cu un `media_url` arbitrar). Motivul
+    e același — un video nu poate fi moderat automat (Apple Guideline 1.2), spre
+    deosebire de poze, care trec prin `photo_moderation`.
+    `media_type='video'` rămâne valid în schemă doar pentru poveștile deja existente
+    în baza de date, ca vizualizatorul să le poată reda până expiră.
+    """
+    if data.media_type != "image":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Story-urile acceptă doar fotografii.",
+        )
+
     # Durata de viață a poveștii vine din config (TZ secț. 11), fără hardcodare.
     story = Story(
         user_id=user.id,

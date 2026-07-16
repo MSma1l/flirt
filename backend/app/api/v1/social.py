@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.account import BlockOut, FavoriteOut, TargetIn
+from app.schemas.account import BlockOut, FavoriteOut, LikeSentOut, TargetIn
 from app.services import account_service
 from app.services.pagination import MAX_CURSOR_LENGTH, SOCIAL_MAX_LIMIT
 
@@ -57,6 +57,29 @@ async def remove_favorite(
     """Scoate un user din favorite (protejat)."""
     await account_service.remove_favorite(db, user, target_user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- Like-uri trimise --------------------------------------------------------
+@router.get("/likes/sent", response_model=list[LikeSentOut])
+async def list_likes_sent(
+    db: DbDep,
+    user: UserDep,
+    response: Response,
+    limit: LimitQuery = None,
+    cursor: CursorQuery = None,
+) -> list[LikeSentOut]:
+    """Profilurile cărora userul curent le-a dat LIKE în deck (protejat), paginat.
+
+    `/likes/sent` (nu `/likes`): direcția e explicită în URL, deci un viitor
+    „cine mi-a dat mie like" devine `/likes/received`, fără să rescriem ruta asta.
+
+    Cursorul paginii următoare vine în header-ul `X-Next-Cursor` (convenția
+    `/feed`), la fel ca `/favorites` și `/blocks`.
+    """
+    page = await account_service.list_likes_sent(db, user, limit=limit, cursor=cursor)
+    if page.next_cursor:
+        response.headers["X-Next-Cursor"] = page.next_cursor
+    return page.items
 
 
 # --- Black list --------------------------------------------------------------

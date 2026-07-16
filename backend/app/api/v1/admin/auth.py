@@ -16,7 +16,7 @@ DE CE O RUTĂ SEPARATĂ DE `/auth/login`, dacă tot userul și tot tabelul sunt 
 3. REFUZ ÎNAINTE DE EMITEREA TOKEN-ULUI. `require_role=ROLE_ADMIN` respinge un
    user obișnuit cu 403 ÎNAINTE ca `auth_service` să emită perechea de token-uri
    (vezi docstring-ul lui `authenticate`) — un login de admin respins nu lasă în
-   urmă o sesiune de refresh valabilă 30 de zile.
+   urmă o sesiune de refresh valabilă 7 zile.
 
 Verificarea rolului se face DUPĂ parolă, deliberat: un 403 înaintea validării
 parolei ar fi un oracol de enumerare („acest email e admin"), oferit gratuit

@@ -65,6 +65,24 @@ def test_refresh_token_claims():
     assert payload["sub"] == "u1"
 
 
+def test_refresh_token_default_lifetime_is_7_days():
+    """Decizie de produs: 7 zile de inactivitate → userul se reloghează.
+
+    Se verifică default-ul DECLARAT pe câmp (nu `settings`, care poate fi
+    suprascris dintr-un `.env` local — testul trebuie să rămână ermetic).
+    """
+    from app.core.config import Settings
+
+    assert Settings.model_fields["refresh_token_expire_days"].default == 7
+
+
+def test_refresh_token_exp_follows_configured_lifetime():
+    """`exp - iat` respectă exact fereastra din config (fără zile hardcodate)."""
+    payload = decode_token(create_refresh_token("u1", family_id="f", jti="j"))
+    lifetime = timedelta(days=_cfg().refresh_token_expire_days)
+    assert payload["exp"] - payload["iat"] == int(lifetime.total_seconds())
+
+
 # --- Decode: erori -----------------------------------------------------------
 def test_decode_rejects_garbage():
     with pytest.raises(JWTError):

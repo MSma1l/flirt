@@ -36,6 +36,8 @@ from app.schemas.account import (
     BlockPage,
     FavoriteOut,
     FavoritePage,
+    LikeSentOut,
+    LikeSentPage,
     SettingsIn,
     SettingsOut,
     TicketOut,
@@ -435,9 +437,102 @@ async def list_favorites(
                 name=p.name if p is not None else "",
                 age=_calc_age(p.birth_date) if p is not None else 0,
                 city=p.city if p is not None else "",
+                photos=list(p.photos or []) if p is not None else [],
             )
         )
     return FavoritePage(items=out, next_cursor=next_cursor)
+
+
+# --- Like-uri TRIMISE (swipe dreapta) ----------------------------------------
+async def list_likes_sent(
+    db: AsyncSession,
+    user: User,
+    limit: int | None = None,
+    cursor: str | None = None,
+) -> LikeSentPage:
+    """Profilurile cărora userul curent le-a dat LIKE (paginat, cele noi primele).
+
+    Sursa e `likes` (swipe-ul din feed), NU `favorites`: e lista „le-ai dat like",
+    populată automat de deck. Dislike-urile (`is_like = False`) nu apar.
+
+    Excluderi (aliniate cu feed-ul — nu inventăm reguli noi aici):
+      - block în ORICE direcție (eu → el sau el → eu), ca în `get_feed`/`swipe`;
+      - conturi PURJATE GDPR (`users.deleted_at` setat) — datele lor personale
+        nu mai există, deci n-au ce căuta într-o listă afișabilă;
+      - `JOIN Profile` implicit: fără profil nu există card de randat.
+
+    Paginare: cursor peste `(created_at, id)` al LIKE-ului, ca la `list_favorites`.
+    """
+    limit = clamp_limit(limit, SOCIAL_PAGE_LIMIT, SOCIAL_MAX_LIMIT)
+
+    # Block în orice direcție, prin NOT EXISTS (semi-join pe index), ca în feed.
+    not_blocked = ~(
+        select(Block.id)
+        .where(
+            or_(
+                and_(
+                    Block.blocker_id == user.id,
+                    Block.blocked_id == Like.to_user_id,
+                ),
+                and_(
+                    Block.blocker_id == Like.to_user_id,
+                    Block.blocked_id == user.id,
+                ),
+            )
+        )
+        .exists()
+    )
+
+    stmt = (
+        select(Like, Profile)
+        .join(Profile, Profile.user_id == Like.to_user_id)
+        .join(User, User.id == Like.to_user_id)
+        .where(
+            Like.from_user_id == user.id,
+            Like.is_like.is_(True),
+            User.deleted_at.is_(None),
+            not_blocked,
+        )
+    )
+
+    if cursor:
+        anchor_id = decode_cursor(cursor)
+        # Momentul rândului-ancoră, citit DB-side (vezi pagination.py).
+        anchor_at = (
+            select(Like.created_at)
+            .where(Like.id == anchor_id, Like.from_user_id == user.id)
+            .scalar_subquery()
+        )
+        stmt = stmt.where(
+            or_(
+                Like.created_at < anchor_at,
+                and_(Like.created_at == anchor_at, Like.id < anchor_id),
+            )
+        )
+
+    result = await db.execute(
+        stmt.order_by(Like.created_at.desc(), Like.id.desc()).limit(limit + 1)
+    )
+    rows = list(result.all())
+
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    if not rows:
+        return LikeSentPage(items=[], next_cursor=None)
+
+    return LikeSentPage(
+        items=[
+            LikeSentOut(
+                target_user_id=like.to_user_id,
+                name=p.name,
+                age=_calc_age(p.birth_date),
+                city=p.city,
+                photos=list(p.photos or []),
+            )
+            for like, p in rows
+        ],
+        next_cursor=encode_cursor(rows[-1][0].id) if has_more else None,
+    )
 
 
 # --- Black list --------------------------------------------------------------

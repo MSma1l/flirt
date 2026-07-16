@@ -62,7 +62,9 @@ async def test_upsert_creates_then_updates(db_session):
     out = await PS.upsert_anketa(db_session, user, _anketa(name="Ion"))
     assert out.name == "Ion"
     assert out.completed is True
-    assert user.profile_completed is True
+    # Anketa e completă, dar FĂRĂ poze → gate-ul de onboarding rămâne închis.
+    # (vezi `test_profile_completed_*` mai jos pentru contractul complet)
+    assert user.profile_completed is False
     assert set(out.interests) == {"sport", "travel"}
 
     # Update: schimbă numele + interesele (înlocuire completă M2M).
@@ -232,3 +234,92 @@ async def test_verify_face_stub_sets_verified(db_session):
     # Persistat pe profil.
     out = await PS.get_profile_out(db_session, user)
     assert out.verified is True
+
+
+# --- Gate de onboarding: profile_completed depinde de poze -------------------
+# Regresie (audit UX): anketa se marca `profile_completed=True` NECONDIȚIONAT de
+# poze. Dacă uploadul primei poze pica, la restart `hydrate()` citea adevărul de
+# pe server și `AuthGuard` arunca userul în feed cu un profil fără nicio poză.
+@pytest.mark.asyncio
+async def test_profile_completed_false_without_photos(db_session):
+    """(a) Anketă salvată fără poze → `profile_completed` rămâne False."""
+    user = await _make_user(db_session, "gate-a@example.com")
+    out = await PS.upsert_anketa(db_session, user, _anketa())
+    assert out.completed is True  # anketa în sine e completă
+    assert user.profile_completed is False  # dar gate-ul rămâne închis
+
+
+@pytest.mark.asyncio
+async def test_profile_completed_true_after_first_photo(db_session):
+    """(b) După prima poză → `profile_completed` devine True."""
+    user = await _make_user(db_session, "gate-b@example.com")
+    await PS.upsert_anketa(db_session, user, _anketa())
+    assert user.profile_completed is False
+
+    await PS.add_photo(
+        db_session, user, filename="a.jpg", content=b"x",
+        content_type="image/jpeg", url="https://cdn/a.jpg",
+    )
+    assert user.profile_completed is True
+
+
+@pytest.mark.asyncio
+async def test_profile_completed_false_after_removing_last_photo(db_session):
+    """(c) După ștergerea ULTIMEI poze → `profile_completed` redevine False."""
+    user = await _make_user(db_session, "gate-c@example.com")
+    await PS.upsert_anketa(db_session, user, _anketa())
+    await PS.add_photo(
+        db_session, user, filename="a.jpg", content=b"x",
+        content_type="image/jpeg", url="https://cdn/a.jpg",
+    )
+    await PS.add_photo(
+        db_session, user, filename="b.jpg", content=b"x",
+        content_type="image/jpeg", url="https://cdn/b.jpg",
+    )
+    assert user.profile_completed is True
+
+    # Mai rămâne o poză → peste prag, gate-ul stă deschis.
+    await PS.remove_photo(db_session, user, "https://cdn/b.jpg")
+    assert user.profile_completed is True
+
+    # Ultima poză → sub prag, userul e trimis înapoi în onboarding.
+    await PS.remove_photo(db_session, user, "https://cdn/a.jpg")
+    assert user.profile_completed is False
+
+
+@pytest.mark.asyncio
+async def test_profile_completed_true_when_anketa_saved_with_photos(db_session):
+    """(d) Anketă salvată de un user care are deja poze → True imediat."""
+    user = await _make_user(db_session, "gate-d@example.com")
+    await PS.upsert_anketa(db_session, user, _anketa())
+
+    profile = await PS._get_profile_or_404(db_session, user)
+    # URL în namespace-ul propriu — altfel `upsert_anketa` respinge poza (422).
+    url = f"{settings.storage_base_url}/photos/{profile.id}/pic.jpg"
+    await PS.add_photo(
+        db_session, user, filename="pic.jpg", content=b"x",
+        content_type="image/jpeg", url=url,
+    )
+    assert user.profile_completed is True
+
+    # Re-salvarea anketei (cu pozele retrimise) NU închide gate-ul.
+    out = await PS.upsert_anketa(db_session, user, _anketa(photos=[url]))
+    assert out.photos == [url]
+    assert user.profile_completed is True
+
+
+@pytest.mark.asyncio
+async def test_profile_completed_uses_min_photos_from_settings(db_session):
+    """Pragul vine din `settings.min_photos`, nu dintr-o constantă hardcodată."""
+    user = await _make_user(db_session, "gate-min@example.com")
+    await PS.upsert_anketa(db_session, user, _anketa())
+    profile = await PS._get_profile_or_404(db_session, user)
+
+    # Sub prag → False; exact la prag → True, oricare ar fi valoarea din config.
+    profile.photos = [f"https://cdn/{i}.jpg" for i in range(settings.min_photos - 1)]
+    PS._sync_profile_completed(user, profile)
+    assert user.profile_completed is False
+
+    profile.photos = [f"https://cdn/{i}.jpg" for i in range(settings.min_photos)]
+    PS._sync_profile_completed(user, profile)
+    assert user.profile_completed is True

@@ -4,6 +4,7 @@ from datetime import date, datetime
 import pytest
 
 from app.core.config import settings
+from tests.conftest import upload_photo
 
 API = "/api/v1"
 
@@ -207,6 +208,8 @@ async def test_account_deletion_revokes_sessions_and_hides_profile(client):
         f"{API}/profiles/me", json=_anketa("Viewer"), headers=a_headers
     )
     assert resp.status_code == 200, resp.text
+    # Fără poză, A n-ar primi feed deloc (profil incomplet — principiul aplicației).
+    await upload_photo(client, a_headers)
 
     # Userul D care își va șterge contul (profil complet + refresh token).
     d_body = {"email": "delete-me@example.com", "password": "Str0ng-Passw0rd!"}
@@ -218,6 +221,9 @@ async def test_account_deletion_revokes_sessions_and_hides_profile(client):
         f"{API}/profiles/me", json=_anketa("DeleteMe"), headers=d_headers
     )
     assert resp.status_code == 200, resp.text
+    # Fără poză, D n-ar apărea în feedul lui A din start, iar testul ar trece
+    # degeaba (verifică dispariția DUPĂ ștergere, nu absența dinainte).
+    await upload_photo(client, d_headers)
     d_id = await _me_id(client, d_headers)
 
     # Înainte de ștergere: D e vizibil în feed-ul lui A.

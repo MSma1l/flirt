@@ -26,7 +26,7 @@ Toate rutele au prefixul `/api/v1/admin`. Formatul de schimb este JSON.
 | `POST` | `/admin/login` | Login de admin, cu rate limit **strict** (`rate_limit_admin_login_per_min`, implicit 3/min) și audit (`admin.login`) | 🔓 | `200` → `TokenPair` |
 | `GET` | `/admin/me` | Cine sunt și ce rol am | 🔒 | `200` → `AdminMe` |
 
-`POST /admin/login` — `401` la credențiale greșite (identic pentru „email inexistent" și „parolă greșită" — fără oracol de enumerare), `403` dacă credențialele sunt corecte dar contul **nu e admin**. Verificarea rolului se face **după** parolă (altfel ar fi un oracol: „acest email e admin", oferit fără nicio credențială) și **înainte** de emiterea token-urilor (un login de admin respins nu lasă în urmă o sesiune de refresh valabilă 30 de zile).
+`POST /admin/login` — `401` la credențiale greșite (identic pentru „email inexistent" și „parolă greșită" — fără oracol de enumerare), `403` dacă credențialele sunt corecte dar contul **nu e admin**. Verificarea rolului se face **după** parolă (altfel ar fi un oracol: „acest email e admin", oferit fără nicio credențială) și **înainte** de emiterea token-urilor (un login de admin respins nu lasă în urmă o sesiune de refresh valabilă 7 zile).
 
 > `POST /auth/login` (ruta obișnuită) funcționează și el pentru un admin, dar cu rate limit-ul normal (5/min) și **fără** intrare în jurnalul de audit. Panoul ar trebui să folosească `/admin/login`.
 

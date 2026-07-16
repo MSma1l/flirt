@@ -31,7 +31,7 @@
 | Zonă | Stare | Unde, în cod |
 |---|---|---|
 | JWT RS256, access 15 min stateless | ✅ | `app/core/security.py` |
-| Refresh rotativ 30 zile + reuse detection pe familie | ✅ | `app/services/auth_service.py` |
+| Refresh rotativ 7 zile + reuse detection pe familie | ✅ | `app/services/auth_service.py` |
 | Refresh stocat ca **SHA-256 în PostgreSQL** | ✅ | `app/models/session.py` |
 | Parole Argon2 | ✅ | `app/core/security.py` (passlib) |
 | Rol + ban citite **din DB la fiecare cerere** | ✅ | `app/core/deps.py` |
@@ -60,7 +60,7 @@
 | Token | Durată de viață | Rol | Unde circulă |
 |-------|-----------------|-----|--------------|
 | **Access token** | **15 min** (`ACCESS_TOKEN_EXPIRE_MINUTES`) | autorizează fiecare request (`Authorization: Bearer <access>`) | în fiecare request HTTP |
-| **Refresh token** | **30 zile** (`REFRESH_TOKEN_EXPIRE_DAYS`), **rotativ** | obține un nou access token fără re-login | doar către `POST /auth/refresh` |
+| **Refresh token** | **7 zile** (`REFRESH_TOKEN_EXPIRE_DAYS`), **rotativ** | obține un nou access token fără re-login | doar către `POST /auth/refresh` |
 
 - **Access token-ul** e trimis la fiecare request, deci are suprafață mare de expunere (loguri, proxy-uri, memorie proces). Îl ținem **scurt** ca fereastra de abuz să fie mică. Este **stateless** — semnătura se validează fără lookup, deci scalează.
 - **Refresh token-ul** circulă rar (doar la `/auth/refresh`), deci expunerea e mică; poate fi **lung** și **stateful** (îl urmărim în DB), ceea ce ne permite revocare și detecție de reutilizare.
@@ -102,7 +102,7 @@ Implementat în `app/core/security.py`, cu biblioteca **`python-jose`** (`from j
 {
   "sub": "3f0c8b6e-...-uuid",
   "iat": 1751800000,
-  "exp": 1754392000,            // +30 zile
+  "exp": 1752404800,            // +7 zile
   "jti": "a71bf9...",           // uuid4().hex — cheia rândului din refresh_sessions
   "family_id": "3c2e...",       // familia, pentru reuse detection (1.5)
   "type": "refresh"
@@ -122,7 +122,7 @@ Prețul e un `SELECT` pe `users` per cerere autentificată; l-am plătit conști
 | Token | Stocare | Motiv |
 |-------|---------|-------|
 | **Access token** | **doar în memorie** (state în `AuthContext`) | Durată scurtă; nu ajunge niciodată pe disc. La kill/restart dispare — se reobține instant prin refresh. |
-| **Refresh token** | **`expo-secure-store`** | Trebuie persistat 30 de zile, deci are nevoie de stocare securizată, hardware-backed. |
+| **Refresh token** | **`expo-secure-store`** | Trebuie persistat 7 zile, deci are nevoie de stocare securizată, hardware-backed. |
 
 **De ce `SecureStore` și NU `AsyncStorage`:**
 
@@ -196,7 +196,7 @@ if session.revoked:
      │                                                │ INSERT refresh_    │
      │                                                │  sessions (sha256) │
      │                                                │───────────────────▶│
-     │   200 { access (15m), refresh (30d) }          │                    │
+     │   200 { access (15m), refresh (7d) }           │                    │
      │◀───────────────────────────────────────────────│                    │
   ②  │  access → memorie ; refresh → SecureStore      │                    │
      │                                                │                    │
@@ -579,7 +579,7 @@ Testat în `backend/tests/test_config.py`.
 
 ## Rezumat rapid al deciziilor cheie
 
-- **Două tokenuri:** access JWT **15 min** (RS256, `python-jose`, în memorie pe mobil) + refresh **rotativ 30 zile** (în `expo-secure-store`).
+- **Două tokenuri:** access JWT **15 min** (RS256, `python-jose`, în memorie pe mobil) + refresh **rotativ 7 zile** (în `expo-secure-store`).
 - **Sesiunile de refresh stau în PostgreSQL** (`refresh_sessions`), ca **SHA-256** — niciodată token-ul brut. **Redis e doar pentru rate-limiting și OTP.**
 - **Refresh rotation + reuse detection** cu revocare pe **întreaga familie** (`family_id`).
 - **Rolul și banul se citesc din DB la fiecare cerere**, NU din JWT → **revocare instantanee**, fără denylist de tokenuri.

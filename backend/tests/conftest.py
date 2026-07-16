@@ -19,6 +19,7 @@ IZOLARE ÎNTRE TESTE
 Schema se creează O SINGURĂ DATĂ; înaintea fiecărui test golim TOATE tabelele
 (`TRUNCATE ... RESTART IDENTITY CASCADE`) — slate curat, rapid, fără DDL per test.
 """
+import base64
 import os
 
 # Mediu de test determinist ÎNAINTE de importul aplicației.
@@ -88,6 +89,35 @@ os.environ["JWT_PRIVATE_KEY"] = _priv
 os.environ["JWT_PUBLIC_KEY"] = _pub
 
 _schema_ready = False
+
+# --- Helper comun: o poză pe profil ------------------------------------------
+# PNG 1x1 valid (trece de magic-bytes din `_validate_image_upload`) — aceleași
+# bytes ca în test_upload_security / test_photo_moderation.
+PNG_1X1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
+    "YPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+)
+
+
+async def upload_photo(client, headers: dict, api: str = "/api/v1") -> str:
+    """Încarcă o poză prin API-ul REAL și întoarce URL-ul ei.
+
+    DE CE EXISTĂ: un profil fără poze nu e complet (principiu al aplicației) și nu
+    apare în feedul nimănui — `feed_service._min_photos_clause`. Anketa NU poate
+    fi salvată cu poze din prima (`upsert_anketa` cere ca fiecare URL să fie sub
+    `photos/{profile_id}/`, iar un profil nou n-are încă id), deci fixturile care
+    au nevoie de un user VIZIBIL în feed trebuie să facă acest pas al doilea —
+    exact ca aplicația reală: PUT /profiles/me, apoi POST /profiles/photos.
+
+    Merge pe stub-urile implicite (storage + moderare NSFW), fără configurare.
+    """
+    resp = await client.post(
+        f"{api}/profiles/photos",
+        files={"file": ("p.png", PNG_1X1, "image/png")},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()[-1]
 
 
 def pytest_sessionfinish(session, exitstatus):

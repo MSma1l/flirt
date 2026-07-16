@@ -7,6 +7,7 @@ from sqlalchemy import update
 
 from app.models.profile import Profile
 from app.services import geo
+from tests.conftest import upload_photo
 
 API = "/api/v1"
 
@@ -77,6 +78,10 @@ async def _make_user(client, email: str, anketa: dict) -> tuple[dict, str]:
     headers = await _register(client, email)
     resp = await client.put(f"{API}/profiles/me", json=anketa, headers=headers)
     assert resp.status_code == 200, resp.text
+    # Un profil fără poze nu apare în feedul nimănui (principiu al
+    # aplicației) — anketa singură nu e de ajuns. Al doilea pas, exact ca în
+    # aplicația reală: PUT /profiles/me, apoi POST /profiles/photos.
+    await upload_photo(client, headers)
     user_id = await _me_id(client, headers)
     return headers, user_id
 
@@ -547,3 +552,143 @@ async def test_feed_distance_km_none_for_unknown_city(client):
     assert resp.status_code == 200, resp.text
     card = next(c for c in resp.json() if c["user_id"] == b_id)
     assert card["distance_km"] is None
+
+
+# ============================================================================
+# POZE — un profil fără poze nu e complet și nu are ce căuta în feedul nimănui.
+# Principiu al aplicației: într-un app de dating, un profil gol e inutil pentru
+# toată lumea. Gate-ul e în `feed_service._min_photos_clause` (SQL) + în
+# `_authorize_swipe` (acțiune), simetric cu poarta 18+.
+# ============================================================================
+
+
+async def _make_user_without_photo(client, email: str, anketa: dict) -> tuple[dict, str]:
+    """Ca `_make_user`, dar OPREȘTE-te după anketă: profil complet, ZERO poze.
+
+    Exact starea reală în care ajunge un user dacă uploadul pozei pică (rețea):
+    anketa e salvată (`profiles.completed=true`), pozele lipsesc.
+    """
+    headers = await _register(client, email)
+    resp = await client.put(f"{API}/profiles/me", json=anketa, headers=headers)
+    assert resp.status_code == 200, resp.text
+    return headers, await _me_id(client, headers)
+
+
+@pytest.mark.asyncio
+async def test_feed_excludes_profile_without_photos(client):
+    """(a) Anketă completă + ZERO poze ⇒ NU apare în feedul altuia."""
+    a_headers, _ = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    _, b_id = await _make_user_without_photo(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    resp = await client.get(f"{API}/feed/", headers=a_headers)
+    assert resp.status_code == 200, resp.text
+    ids = {c["user_id"] for c in resp.json()}
+    assert b_id not in ids, "Un profil fără poze nu are ce căuta în feed."
+
+
+@pytest.mark.asyncio
+async def test_feed_includes_profile_after_first_photo(client):
+    """(b) După ce încarcă o poză, profilul APARE în feed."""
+    a_headers, _ = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    b_headers, b_id = await _make_user_without_photo(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    # Absent cât timp e fără poze...
+    resp = await client.get(f"{API}/feed/", headers=a_headers)
+    assert b_id not in {c["user_id"] for c in resp.json()}
+
+    # ...și prezent imediat ce are una.
+    await upload_photo(client, b_headers)
+
+    resp = await client.get(f"{API}/feed/", headers=a_headers)
+    assert resp.status_code == 200, resp.text
+    assert b_id in {c["user_id"] for c in resp.json()}, (
+        "Profilul cu poză trebuie să intre în feed."
+    )
+
+
+@pytest.mark.asyncio
+async def test_feed_drops_profile_after_last_photo_removed(client):
+    """(c) Ștergerea ULTIMEI poze scoate profilul din feed.
+
+    Gate-ul se RECALCULEAZĂ, nu se evaluează o singură dată la onboarding: altfel
+    un user și-ar putea goli pozele după ce a intrat în feed și ar rămâne acolo cu
+    un profil gol — exact starea pe care fixul o previne la înregistrare.
+    """
+    a_headers, _ = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    b_headers, b_id = await _make_user_without_photo(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+    photo_url = await upload_photo(client, b_headers)
+
+    resp = await client.get(f"{API}/feed/", headers=a_headers)
+    assert b_id in {c["user_id"] for c in resp.json()}, "Precondiție: B e în feed."
+
+    resp = await client.request(
+        "DELETE", f"{API}/profiles/photos", json={"url": photo_url}, headers=b_headers
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == []
+
+    resp = await client.get(f"{API}/feed/", headers=a_headers)
+    assert resp.status_code == 200, resp.text
+    assert b_id not in {c["user_id"] for c in resp.json()}, (
+        "După ștergerea ultimei poze, profilul trebuie să dispară din feed."
+    )
+
+
+@pytest.mark.asyncio
+async def test_swipe_on_profile_without_photos_rejected(client):
+    """(d) Un profil fără poze nu poate fi swipe-uit nici direct prin API.
+
+    Fără gate-ul din `_authorize_swipe`, ținta doar dispărea din feed, dar rămânea
+    swipe-abilă de oricine îi știa id-ul — același bypass ca la poarta 18+.
+    404 (nu 403): nu divulgăm starea contului țintă.
+    """
+    a_headers, _ = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    _, b_id = await _make_user_without_photo(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "like"},
+        headers=a_headers,
+    )
+    assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.asyncio
+async def test_user_without_photos_cannot_swipe_or_get_feed(client):
+    """(d-bis) Poarta e SIMETRICĂ: fără poze nu dai swipe și nu primești feed.
+
+    Cine nu apare în feedul altora nu are voie să colecteze match-uri din umbră.
+    """
+    a_headers, a_id = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    b_headers, _ = await _make_user_without_photo(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    resp = await client.get(f"{API}/feed/", headers=b_headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == [], "Fără poze nu primești feed."
+
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": a_id, "action": "like"},
+        headers=b_headers,
+    )
+    assert resp.status_code == 403, resp.text

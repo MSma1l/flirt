@@ -80,7 +80,7 @@ Adăugarea unui rol nou (`moderator`, `support`) devine o **migrație de date**,
 Când e setat:
 - login-ul e **refuzat**;
 - orice token existent devine inutilizabil (`get_current_user` → `403`);
-- **sesiunile de refresh sunt revocate** (altfel banatul ar continua să-și reînnoiască accesul 30 de zile);
+- **sesiunile de refresh sunt revocate** (altfel banatul ar continua să-și reînnoiască accesul 7 zile);
 - profilul dispare din feed.
 
 > Nu confunda cu `Report.status = "auto_banned"` — aceea e doar **auto-ascundere**. Vezi [secțiunea Report](#10-report-appmodelsmoderationpy).

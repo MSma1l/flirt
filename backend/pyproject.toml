@@ -26,6 +26,10 @@ dependencies = [
     # Vine oricum ca dependență a bibliotecii Apple; îl declarăm explicit fiindcă îl
     # importăm direct (dependență implicită = bombă cu ceas la un upgrade).
     "pyjwt>=2.8",
+    # Moderarea automată a pozelor (NSFW) cu Claude vision — cerință Apple
+    # Guideline 1.2. Ca și biblioteca Apple de mai sus, NU e opțională: fără ea
+    # providerul `anthropic` (adică producția) nu poate modera nicio poză.
+    "anthropic>=0.40",
 ]
 
 [project.optional-dependencies]

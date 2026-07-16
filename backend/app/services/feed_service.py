@@ -135,6 +135,41 @@ async def _interests_by_profile(
     return mapping
 
 
+def _has_min_photos(profile: Profile) -> bool:
+    """True dacă profilul are cel puțin `settings.min_photos` poze (gate de feed).
+
+    Varianta Python a filtrului SQL `_min_photos_clause` — folosită acolo unde
+    profilul e deja încărcat (gate-ul propriu din `get_feed`, `_authorize_swipe`).
+    """
+    return len(profile.photos or []) >= settings.min_photos
+
+
+def _min_photos_clause():
+    """Filtru SQL: profilul are cel puțin `settings.min_photos` poze (TZ / principiu).
+
+    DE CE ÎN SQL: e un filtru DUR de retrieval, exact ca 18+ sau genul căutat.
+    Aplicat în Python DUPĂ fetch ar strica și paginarea (fereastra de
+    `feed_scan_limit` s-ar goli neuniform), și performanța.
+
+    DE CE `json_array_length` ȘI NU `users.profile_completed`: flagul de pe `users`
+    e o OGLINDĂ, sincronizată de `profile_service._sync_profile_completed` la
+    scriere. Rândurile vechi (dinaintea acelui fix) pot avea `profile_completed=true`
+    cu zero poze, deci oglinda ar lăsa exact profilurile-problemă în feed. Numărăm
+    pozele la SURSĂ — filtrul e adevărat și fără niciun backfill.
+
+    FĂRĂ N+1: `photos` e o coloană JSON pe `profiles` (nu o relație), deci numărarea
+    se face în același scan ca restul predicatelor — zero query-uri suplimentare.
+    `json_array_length` există și în Postgres, și în SQLite (JSON1), ca `LIKE`-ul din
+    `_language_prefilter`. Un `photos` NULL (rând legacy) dă NULL ⇒ rândul e exclus,
+    exact comportamentul dorit.
+
+    `min_photos <= 0` (config) = poartă dezactivată → None (fără predicat).
+    """
+    if settings.min_photos <= 0:
+        return None
+    return func.json_array_length(Profile.photos) >= settings.min_photos
+
+
 def _has_common_language(a: Profile, b: Profile) -> bool:
     """True dacă cele două profiluri au cel puțin o limbă comună (gate TZ 4.6)."""
     la = {str(x) for x in (a.languages or []) if x}
@@ -217,6 +252,12 @@ async def get_feed(
     if _calc_age(my_profile.birth_date) < settings.adult_age:
         return FeedPage(items=[], next_cursor=None)
 
+    # Un profil FĂRĂ poze nu e complet (principiu al aplicației: într-un app de
+    # dating, un profil gol e inutil). Cine nu apare în feedul altora nu primește
+    # nici feed — poarta e simetrică, ca la 18+.
+    if not _has_min_photos(my_profile):
+        return FeedPage(items=[], next_cursor=None)
+
     # Cererea de feed e o dovadă de activitate (scriere rară, cu prag din config).
     await account_service.touch_last_active(db, user)
 
@@ -232,6 +273,13 @@ async def get_feed(
     # 18+ (gate dur, NU derivat din preferințe) — un profil sub prag nu apare
     # niciodată în feed, oricât de permisive ar fi preferințele salvate.
     conditions.append(Profile.birth_date <= _shift_years(today, settings.adult_age))
+
+    # POZE (gate dur, principiu al aplicației): un profil cu anketă completă dar
+    # ZERO poze NU are ce căuta în feedul nimănui. Filtrul stă în SQL, în același
+    # scan (vezi `_min_photos_clause`).
+    photos_clause = _min_photos_clause()
+    if photos_clause is not None:
+        conditions.append(photos_clause)
 
     # Intervalul de vârstă căutat (preferință) — tot pe coloana indexată.
     earliest, latest = _birth_date_bounds(prefs.age_min, prefs.age_max, today)
@@ -437,6 +485,20 @@ async def _authorize_swipe(
             detail=f"Aplicația este disponibilă doar de la {settings.adult_age} ani.",
         )
     if _calc_age(target_profile.birth_date) < settings.adult_age:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Utilizator indisponibil."
+        )
+
+    # POZE — aceeași filozofie ca poarta 18+: bidirecțional și la nivel de ACȚIUNE,
+    # nu doar de listare. Fără asta, un profil gol dispărea din feed dar rămânea
+    # swipe-abil prin `POST /feed/swipe` de către oricine îi știa id-ul, iar un user
+    # fără poze putea colecta match-uri fără să apară vreodată în feedul altcuiva.
+    if not _has_min_photos(my_profile):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Profilul tău nu este complet.",
+        )
+    if not _has_min_photos(target_profile):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Utilizator indisponibil."
         )

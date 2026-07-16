@@ -9,6 +9,7 @@ from datetime import date
 import pytest
 
 from app.services.contact_masker import MASK
+from tests.conftest import upload_photo
 
 API = "/api/v1"
 
@@ -89,6 +90,13 @@ async def test_full_user_journey(client):
         headers=b_headers,
     )
     assert resp.status_code == 200, resp.text
+
+    # --- Pas 2b: pozele — fără ele profilul NU e complet (principiu al ------
+    # aplicației) și nu intră în feedul nimănui. Anketa nu poate fi salvată cu
+    # poze din prima (URL-ul trebuie să fie sub `photos/{profile_id}/`, iar
+    # profilul n-are încă id), deci e un pas separat, ca în aplicația reală.
+    await upload_photo(client, a_headers)
+    await upload_photo(client, b_headers)
 
     # Orașele sunt intenționat diferite (~350 km), ca să testăm distanța reală.
     # Raza de căutare CHIAR se aplică acum (implicit 50 km), deci o lărgim —
