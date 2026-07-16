@@ -287,7 +287,10 @@ async def test_timeseries_fills_missing_days_with_zero(client, db_session):
     points = resp.json()
 
     assert len(points) == 7, "Zilele goale trebuie completate cu 0, nu omise."
-    assert points[-1]["date"] == date.today().isoformat()
+    # UTC, NU `date.today()`: seria e construită server-side în UTC
+    # (`admin_service._now()`). Cu ora locală, testul pica în fiecare seară după
+    # ora 21:00 pe UTC+3 — data locală trecea în ziua următoare înaintea celei UTC.
+    assert points[-1]["date"] == datetime.now(timezone.utc).date().isoformat()
     # Adminul a fost creat azi → ultimul punct are cel puțin un user.
     assert points[-1]["users"] >= 1
     # Un singur apel alimentează toate graficele dashboard-ului.
