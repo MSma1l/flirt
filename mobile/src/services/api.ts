@@ -4,10 +4,24 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { config } from '@/config';
 import { tokenStore } from '@/services/tokenStore';
 
+/**
+ * NU seta `Content-Type` implicit aici.
+ *
+ * Axios 1.x, la `transformRequest`: dacă instanța are deja un content-type JSON,
+ * un `FormData` NU mai e trimis ca multipart — e serializat cu
+ * `JSON.stringify(formDataToJSON(data))`. Adică uploadul de poze de pe WEB
+ * pleca fără fișier, serverul răspundea 500, iar 500-ul (excepție neprinsă) vine
+ * fără antetele CORS → browserul blochează răspunsul → axios nu vede niciun
+ * răspuns → utilizatorul citea „Conexiune întreruptă", deși internetul era bun.
+ *
+ * Fără default, axios pune singur `application/json` pentru obiecte simple și
+ * lasă browserul să compună `multipart/form-data; boundary=...` pentru FormData.
+ */
 export const api = axios.create({
   baseURL: config.apiUrl,
-  timeout: 15000,
-  headers: { 'Content-Type': 'application/json' },
+  // Uploadul de poze merge prin aceeași instanță: 15s erau prea puțini pentru o
+  // poză de câțiva MB pe un uplink lent.
+  timeout: 60000,
 });
 
 api.interceptors.request.use((cfg) => {

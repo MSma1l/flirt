@@ -93,3 +93,42 @@ describe('api — 401 cu refresh eșuat', () => {
     expect(tokenStore.getAccess()).toBe('access-nou');
   });
 });
+
+/**
+ * Regresie: uploadul de poze de pe WEB pleca fără fișier.
+ *
+ * Axios 1.x serializează un `FormData` cu `JSON.stringify(formDataToJSON(...))`
+ * dacă instanța are un content-type JSON implicit. Rezultat: serverul primea
+ * JSON pe un endpoint multipart, răspundea 500, iar 500-ul (excepție neprinsă)
+ * vine fără antete CORS → browserul îl bloca → axios nu vedea niciun răspuns →
+ * utilizatorul citea „Conexiune întreruptă" cu internetul perfect funcțional.
+ */
+describe('api — FormData rămâne multipart', () => {
+  it('NU are Content-Type implicit (altfel FormData devine JSON)', () => {
+    const common = api.defaults.headers.common as Record<string, unknown>;
+    expect(common['Content-Type']).toBeUndefined();
+    expect(common['content-type']).toBeUndefined();
+  });
+
+  it('trimite FormData ca atare, nu serializat ca JSON', async () => {
+    let sent: unknown;
+    api.defaults.adapter = async (config) => {
+      sent = config.data;
+      return {
+        data: [],
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      };
+    };
+
+    const form = new FormData();
+    form.append('file', 'continut-poza');
+    await api.post('/profiles/photos', form);
+
+    // Dacă regresia revine, `sent` ar fi un string JSON, nu FormData.
+    expect(sent).toBeInstanceOf(FormData);
+    expect(typeof sent).not.toBe('string');
+  });
+});
