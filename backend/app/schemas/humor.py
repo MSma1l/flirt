@@ -5,7 +5,7 @@ folosit de algoritmul de compatibilitate.
 """
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 from app.core.validators import safe_str
 
@@ -14,11 +14,30 @@ CARD_ID_MAX_LENGTH = 64
 
 
 class HumorCard(BaseModel):
-    """Un card din quiz — o glumă scurtă etichetată cu un tip de umor."""
+    """Un card din quiz — o glumă scurtă etichetată cu un tip de umor.
+
+    Textele sunt localizate în cele 4 limbi ale aplicației (ro, ru, uk, en), pe
+    tiparul `ReferenceItem` din `schemas/profile.py`: serverul trimite toate
+    variantele, clientul alege limba. Zero hardcodare de limbă în logică.
+    """
 
     id: str
-    text: str
+    text_ro: str
+    text_ru: str
+    text_uk: str
+    text_en: str
     type: str
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def text(self) -> str:
+        """DEPRECAT — păstrat pentru clientul deja publicat (contract aditiv).
+
+        Mobilul curent afișează `card.text` (`mobile/app/humor.tsx`), deci câmpul
+        rămâne în răspuns ca alias pe `text_ro` (UI-ul e azi în română, la fel ca
+        `anketaApi` care alege `label_ro`). Clienții noi citesc `text_<limbă>`.
+        """
+        return self.text_ro
 
 
 class HumorAnswer(BaseModel):

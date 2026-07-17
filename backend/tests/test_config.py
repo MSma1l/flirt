@@ -83,6 +83,51 @@ def test_production_rejects_stub_geocoder():
     assert "GEO_PROVIDER" in str(exc.value)
 
 
+def test_production_rejects_openrouter_without_key():
+    """AI_PROVIDER=openrouter fără OPENROUTER_API_KEY → refuz la PORNIRE.
+
+    Fără guard, serverul ar porni „sănătos", userul ar aprinde AI-ul din setări,
+    iar fiecare apel ar cădea tăcut în degradare — adică funcția n-ar face nimic,
+    fără nicio eroare vizibilă.
+    """
+    with pytest.raises(ValidationError) as exc:
+        Settings(**_prod_kwargs(ai_provider="openrouter", openrouter_api_key=""))
+    assert "OPENROUTER_API_KEY" in str(exc.value)
+
+
+def test_production_accepts_openrouter_with_key():
+    """AI_PROVIDER=openrouter CU cheie → configurație validă."""
+    s = Settings(
+        **_prod_kwargs(ai_provider="openrouter", openrouter_api_key="sk-or-v1-fake")
+    )
+    assert s.ai_provider == "openrouter"
+
+
+def test_production_ok_with_ai_stub():
+    """AI-ul OPRIT (stub) e o configurație de producție LEGITIMĂ.
+
+    Intenționat: `ai_provider` NU e în `stub_integrations`. AI-ul e o funcție de
+    confort, oprită implicit per user — nu o integrare critică precum plățile.
+    """
+    s = Settings(**_prod_kwargs(ai_provider="stub"))
+    assert s.ai_provider == "stub"
+
+
+def test_production_rejects_openrouter_photo_moderation_without_key():
+    """PHOTO_MODERATION_PROVIDER=openrouter fără cheie → refuz la pornire.
+
+    Moderarea e cerută de Apple (Guideline 1.2): fără chei, fiecare upload ar
+    cădea tăcut în FAIL-OPEN, adică moderarea pur și simplu n-ar exista.
+    """
+    with pytest.raises(ValidationError) as exc:
+        Settings(
+            **_prod_kwargs(
+                photo_moderation_provider="openrouter", openrouter_api_key=""
+            )
+        )
+    assert "OPENROUTER_API_KEY" in str(exc.value)
+
+
 def test_development_defaults_ok():
     """Dev cu default-uri → guard-ul nu blochează."""
     s = Settings(environment="development")

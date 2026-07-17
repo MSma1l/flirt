@@ -21,9 +21,11 @@ from app.schemas.story import (
     StoryIn,
     StoryOut,
     StoryPage,
+    StoryReplyOut,
     UserStories,
     UserStoriesPage,
 )
+from app.services import chat_service
 from app.services.pagination import (
     STORIES_MAX_LIMIT,
     STORIES_PAGE_LIMIT,
@@ -31,6 +33,11 @@ from app.services.pagination import (
     decode_cursor,
     encode_cursor,
 )
+
+
+# Contextul cu care pleacă un răspuns la story în chat. Fără el, destinatarul ar
+# primi un „❤️" fără să știe la ce s-a răspuns (povestea expiră în 24h, mesajul nu).
+STORY_REPLY_PREFIX = "↩️ A răspuns la povestea ta: "
 
 
 def _to_story_out(story: Story) -> StoryOut:
@@ -233,6 +240,59 @@ async def delete_story(db: AsyncSession, user: User, story_id: uuid.UUID) -> Non
         )
     await db.delete(story)
     await db.commit()
+
+
+async def reply_to_story(
+    db: AsyncSession, user: User, story_id: uuid.UUID, body: str
+) -> StoryReplyOut:
+    """Răspunde la povestea cuiva → un MESAJ în chatul match-ului (TZ 5.5 + 11).
+
+    DE CE reutilizăm chatul, nu inventăm o mesagerie paralelă: o poveste e
+    vizibilă DOAR autorului și match-urilor lui (`list_active_grouped`), deci
+    oricine poate răspunde are deja un chat cu autorul. Așa răspunsul intră în
+    aceeași conversație, cu aceleași reguli (mascare contacte, blocări, necitite).
+
+    Mesajul e PREFIXAT cu contextul poveștii — altfel destinatarul primește un
+    emoji fără să știe la ce s-a răspuns.
+
+    404 dacă povestea nu există, a expirat sau nu e vizibilă pentru user (nu
+    divulgăm existența poveștilor străine). 422 la propria poveste.
+    """
+    story = await db.get(Story, story_id)
+    if story is None or story.expires_at <= datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Story not found"
+        )
+
+    if story.user_id == user.id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Nu poți răspunde la propria poveste.",
+        )
+
+    # Vizibilitatea (deci și dreptul de a răspunde) = exact regula de la listare:
+    # doar match-urile văd povestea. Fără match → 404, ca la o poveste inexistentă.
+    result = await db.execute(
+        select(Match).where(
+            or_(
+                and_(Match.user_a_id == user.id, Match.user_b_id == story.user_id),
+                and_(Match.user_a_id == story.user_id, Match.user_b_id == user.id),
+            )
+        )
+    )
+    match = result.scalar_one_or_none()
+    if match is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Story not found"
+        )
+
+    # Chatul match-ului (idempotent — normal există deja, creat la match).
+    chat = await chat_service.ensure_chat_for_match(db, match)
+    # `send_message` comite și aplică restul regulilor (blocare, mascare contacte).
+    message = await chat_service.send_message(
+        db, user, chat.id, f"{STORY_REPLY_PREFIX}{body}"
+    )
+    return StoryReplyOut(chat_id=chat.id, message=message)
 
 
 async def _display_names(

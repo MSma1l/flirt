@@ -2,7 +2,12 @@
 
 Provider-ul se alege din `settings.photo_moderation_provider`:
 - 'stub' (implicit): nu atinge rețeaua, întoarce mereu allowed=True.
-- 'anthropic': Claude vision (structured outputs → JSON garantat).
+- 'anthropic': Claude vision direct, prin SDK-ul Anthropic (cere o cheie Anthropic
+  REALĂ). Rămâne suportat, dar NU e providerul nostru — vezi mai jos.
+- 'openrouter': ACELAȘI model Claude vision, dar prin OpenRouter (`services/ai.py`).
+  Ăsta e providerul folosit efectiv: cheia de care dispunem e OpenRouter, iar pe
+  api.anthropic.com dă 401, deci providerul 'anthropic' e mort în practică pentru
+  noi (dar valid pentru oricine are o cheie Anthropic).
 - 'rekognition': AWS `detect_moderation_labels`. Import boto3 LAZY, ca în face_verify.
 
 FAIL-OPEN (decizie deliberată)
@@ -21,6 +26,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from app.core.config import settings
+from app.services import ai
 
 logger = logging.getLogger("app.photo_moderation")
 
@@ -240,6 +246,53 @@ class AnthropicPhotoModerator:
         )
 
 
+class OpenRouterPhotoModerator:
+    """Moderator pe Claude vision, prin OpenRouter. Refolosește `services/ai.py`.
+
+    Diferența față de `AnthropicPhotoModerator` e DOAR transportul (OpenRouter,
+    protocol OpenAI-compatibil, `httpx`) — promptul, schema și regulile de verdict
+    sunt aceleași. `ai.complete_vision` nu ridică excepții: orice eroare vine ca
+    `AIResult.error`, pe care îl transformăm direct în FAIL-OPEN.
+    """
+
+    async def check(self, image: bytes, media_type: str) -> ModerationVerdict:
+        """Cere modelului un verdict; FAIL-OPEN la orice eroare (inclusiv 429)."""
+        result = await ai.complete_vision(
+            _PROMPT,
+            image,
+            media_type,
+            model=settings.ai_vision_model,
+            max_tokens=256,
+            # RO: cerem JSON garantat. `json_schema` nu e suportat de toate
+            # modelele de pe OpenRouter, dar `json_object` da — iar promptul cere
+            # deja explicit „doar obiectul JSON". Parsarea de mai jos e oricum
+            # defensivă, deci un model care ignoră câmpul nu ne strică.
+            response_format={"type": "json_object"},
+        )
+        if not result.ok:
+            # RO: FAIL-OPEN — o pană/limitare la OpenRouter nu blochează uploadul.
+            logger.warning(
+                "photo_moderation: OpenRouter indisponibil (%s) — FAIL-OPEN, poza "
+                "trece și e marcată pentru review uman.",
+                result.error,
+            )
+            return _fail_open(result.error or "openrouter_error")
+
+        try:
+            payload = json.loads(_strip_code_fence(result.text or ""))
+            allowed = bool(payload["allowed"])
+            category = str(payload["category"])
+        except (KeyError, TypeError, ValueError):
+            logger.error(
+                "photo_moderation: răspuns OpenRouter neparsabil — FAIL-OPEN."
+            )
+            return _fail_open("unparsable_response")
+
+        if allowed or category == CATEGORY_SAFE:
+            return ModerationVerdict(allowed=True, raw_label=category)
+        return ModerationVerdict(allowed=False, reason=category, raw_label=category)
+
+
 class RekognitionPhotoModerator:
     """Moderator pe AWS Rekognition (`detect_moderation_labels`). Import boto3 LAZY.
 
@@ -293,6 +346,22 @@ class RekognitionPhotoModerator:
         return ModerationVerdict(allowed=True)
 
 
+def _strip_code_fence(text: str) -> str:
+    """Scoate un eventual gard ```json ... ``` din jurul răspunsului.
+
+    Modelele care nu respectă `response_format` întorc JSON-ul împachetat în
+    markdown. E o linie de cod care salvează un FAIL-OPEN inutil (adică o poză
+    NEmoderată) de fiecare dată când se întâmplă.
+    """
+    text = text.strip()
+    if not text.startswith("```"):
+        return text
+    body = text[3:]
+    if body.lower().startswith("json"):
+        body = body[4:]
+    return body.rsplit("```", 1)[0].strip()
+
+
 def _fail_open(label: str) -> ModerationVerdict:
     """Verdict FAIL-OPEN: poza trece, dar e marcată pentru review uman."""
     return ModerationVerdict(allowed=True, raw_label=label, needs_review=True)
@@ -305,9 +374,11 @@ def get_photo_moderator() -> PhotoModerator:
         return StubPhotoModerator()
     if provider == "anthropic":
         return AnthropicPhotoModerator()
+    if provider == "openrouter":
+        return OpenRouterPhotoModerator()
     if provider == "rekognition":
         return RekognitionPhotoModerator()
     raise NotImplementedError(
         f"Provider de moderare foto necunoscut: '{provider}'. "
-        "Valori permise: 'stub', 'anthropic', 'rekognition'."
+        "Valori permise: 'stub', 'anthropic', 'openrouter', 'rekognition'."
     )

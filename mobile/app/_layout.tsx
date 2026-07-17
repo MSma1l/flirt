@@ -11,6 +11,7 @@ import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { useHumorGate } from '@/features/humor/humorGate';
 import { PushBridge } from '@/features/push/PushBridge';
 // Importul inițializează instanța i18n (sincron, pe `ro`); `initI18n` comută
 // apoi pe limba salvată de user sau pe cea a dispozitivului.
@@ -24,12 +25,20 @@ const queryClient = new QueryClient();
  * Guard reactiv de autentificare. Reacționează la schimbările din store
  * (login/logout, profile_completed) și redirecționează — mecanismul principal
  * de navigare de auth, spre deosebire de `index.tsx` care rulează doar la montare.
+ *
+ * Exportat pentru teste: e singura logică de navigare din aplicație și merită
+ * verificată direct, nu prin randarea întregului layout (fonturi, push, i18n).
  */
-function AuthGuard() {
+export function AuthGuard() {
   const status = useAuthStore((s) => s.status);
   const profileCompleted = useAuthStore((s) => s.user?.profile_completed);
   const segments = useSegments();
   const router = useRouter();
+  // Testul de umor e obligatoriu: fără vector de umor, scorul de compatibilitate
+  // al userului iese slab. Poarta se închide DOAR când serverul confirmă că
+  // datele lipsesc; dacă tace (500, rețea moartă), `needsQuiz` e `false` și
+  // userul trece — vezi `humorGate.ts`.
+  const { needsQuiz } = useHumorGate();
 
   useEffect(() => {
     // Splash: nu facem nimic până când starea nu e cunoscută.
@@ -46,6 +55,7 @@ function AuthGuard() {
 
     const inAuth = path[0] === '(auth)';
     const inOnboarding = path[0] === '(onboarding)';
+    const inHumor = path[0] === 'humor';
 
     if (status === 'unauthenticated') {
       if (!inAuth) router.replace('/(auth)/welcome');
@@ -58,9 +68,17 @@ function AuthGuard() {
       return;
     }
 
+    // Profil complet, dar fără date de umor → testul, oriunde ar fi userul
+    // (prima înregistrare SAU login ulterior). Ieșirea devreme când e deja pe
+    // quiz taie bucla quiz → feed → guard → quiz.
+    if (needsQuiz) {
+      if (!inHumor) router.replace('/humor');
+      return;
+    }
+
     // Autentificat cu profil complet: nu rămâne blocat în (auth)/(onboarding).
     if (inAuth || inOnboarding) router.replace('/(tabs)/ankete');
-  }, [status, profileCompleted, segments, router]);
+  }, [status, profileCompleted, needsQuiz, segments, router]);
 
   return null;
 }

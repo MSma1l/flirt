@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 
 import { api } from '@/services/api';
 
-import { Story, StoryMediaType, UserStories } from './types';
+import { Story, StoryMediaType, StoryReply, UserStories } from './types';
 
 /** Forma brută (snake_case) a unei povești din backend. */
 interface StoryResponse {
@@ -129,6 +129,20 @@ export async function createStory(
     caption,
   });
   return mapStory(data);
+}
+
+/**
+ * Răspunde la o poveste (text liber sau un emoji) → mesaj în chatul match-ului.
+ *
+ * Backendul prefixează mesajul cu contextul poveștii, ca destinatarul să știe la
+ * ce s-a răspuns, și aplică regulile obișnuite de chat (mascare contacte, blocări).
+ */
+export async function replyToStory(storyId: string, body: string): Promise<StoryReply> {
+  const { data } = await api.post<{
+    chat_id: string;
+    message: { id: string; body: string };
+  }>(`/stories/${storyId}/reply`, { body });
+  return { chatId: data.chat_id, messageId: data.message.id, body: data.message.body };
 }
 
 /** Șterge o poveste după id. */

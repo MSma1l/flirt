@@ -52,6 +52,19 @@ class UserSettings(Base):
     search_radius_km: Mapped[int] = mapped_column(Integer, nullable=False)
     # Dict de flag-uri notificări (match/messages/ai_hints/events/promos).
     notifications: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # Comutatorul FUNCȚIILOR AI pentru acest user (hint de chat, Chemistry Score).
+    #
+    # OPRIT IMPLICIT, pe fiecare cont — cerință de produs: AI-ul se aprinde MANUAL
+    # din setări, nu vine pornit „din fabrică".
+    #
+    # NU se confundă cu flag-ul `ai_hints` din `notifications` de mai sus: acela e
+    # o preferință de NOTIFICĂRI („vreau să primesc push când apare un hint"), pe
+    # când ăsta decide dacă hint-ul se GENEREAZĂ — adică dacă trimitem vreodată
+    # datele userului către un model. Sunt două întrebări diferite, cu implicații
+    # de confidențialitate diferite, deci două câmpuri diferite.
+    ai_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     # Ascunde profilul din feed-ul altora.
     profile_hidden: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False

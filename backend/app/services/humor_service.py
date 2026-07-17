@@ -28,40 +28,81 @@ HUMOR_TYPES: list[str] = [
 
 # --- Cardurile quiz-ului — o glumă scurtă per tip ----------------------------
 # Fiecare card are un `type` dintre HUMOR_TYPES; textele sunt scurte și neutre.
+#
+# Glumele sunt ADAPTATE, nu traduse cuvânt cu cuvânt: o glumă tradusă literal
+# încetează să fie glumă, iar userul ar bifa „not funny" din cauza traducerii, nu
+# a tipului de umor — și vectorul (deci scorul de compatibilitate din
+# `compatibility.py`) ar ieși fals. Ce se păstrează identic între limbi e TIPUL;
+# textul poate diferi cât e nevoie ca poanta să funcționeze nativ.
 QUIZ_CARDS: list[HumorCard] = [
+    # Sarcasm: entuziasm fals față de ceva evident neplăcut. Funcționează 1:1 în
+    # toate 4 limbile — nu depinde de joc de cuvinte.
     HumorCard(
         id="c1",
-        text="Oh, great, another Monday. Just what I always wished for.",
+        text_ro="Super, încă o luni. Exact ce ceream de la viață.",
+        text_ru="Прекрасно, ещё один понедельник. Именно то, о чём я мечтал.",
+        text_uk="Чудово, ще один понеділок. Саме про це я й мріяв.",
+        text_en="Oh good, another Monday. Exactly what I put on my wish list.",
         type="sarcasm",
     ),
+    # Dark: autoironie despre epuizare. În ru/uk poanta stă pe „вянем/в'янемо"
+    # (a se ofili) — verbul merge și la plante, și la om, deci gluma e mai
+    # naturală decât calcul după engleză.
     HumorCard(
         id="c2",
-        text="My plants and I have a lot in common: we both die a little inside.",
+        text_ro="Eu și plantele mele avem multe în comun: murim încet, pe dinăuntru.",
+        text_ru="У меня с растениями много общего: мы одинаково медленно вянем внутри.",
+        text_uk="У мене з рослинами багато спільного: ми однаково повільно в'янемо всередині.",
+        text_en="My plants and I have a lot in common: we're both slowly dying inside.",
         type="dark",
     ),
+    # Memes: formatul de caption „Eu, cel care...” / „Я, который...” e recunoscut
+    # ca meme în toate 4 limbile.
     HumorCard(
         id="c3",
-        text="Me pretending to work while the loading spinner does all the effort.",
+        text_ro="Eu, făcând pe ocupatul, în timp ce rotița de încărcare muncește pentru amândoi.",
+        text_ru="Я, изображающий бурную деятельность, пока полоска загрузки работает за меня.",
+        text_uk="Я, який вдає бурхливу діяльність, поки смужка завантаження працює за мене.",
+        text_en="Me looking busy while the loading spinner does all the actual work.",
         type="memes",
     ),
+    # Intellectual: joc de cuvinte pe „reacție” (chimică / de răspuns). Norocos:
+    # cuvântul e polisemic la fel în ro, ru, uk și en, deci poanta se păstrează.
     HumorCard(
         id="c4",
-        text="I told a chemistry joke, but there was no reaction.",
+        text_ro="Am spus o glumă despre chimie. Zero reacție.",
+        text_ru="Рассказал шутку про химию — реакции ноль.",
+        text_uk="Розповів жарт про хімію — жодної реакції.",
+        text_en="I told a chemistry joke, but there was no reaction.",
         type="intellectual",
     ),
+    # Absurd: anti-glumă (construiește așteptarea, apoi refuză poanta). „Intră X
+    # într-un bar” / „Заходит X в бар” e un format cunoscut în toate 4 limbile.
     HumorCard(
         id="c5",
-        text="A horse walks into a bar and orders a glass of water. That's it.",
+        text_ro="Un cal intră într-un bar și comandă un pahar cu apă. Atât.",
+        text_ru="Заходит конь в бар и заказывает стакан воды. Всё.",
+        text_uk="Заходить кінь у бар і замовляє склянку води. Усе.",
+        text_en="A horse walks into a bar and orders a glass of water. That's it.",
         type="absurd",
     ),
+    # Wholesome: tandru, fără victimă. Imaginea e vizuală, deci trece în orice limbă.
     HumorCard(
         id="c6",
-        text="A puppy tried to catch its own tail and fell asleep mid-spin.",
+        text_ro="Un cățel s-a apucat să-și prindă coada și a adormit din prima tură.",
+        text_ru="Щенок гнался за своим хвостом, устал и уснул прямо на первом круге.",
+        text_uk="Цуценя ганялося за власним хвостом і заснуло просто на першому колі.",
+        text_en="A puppy chased its own tail and fell asleep on the very first lap.",
         type="wholesome",
     ),
+    # Physical: slapstick. Comparația pentru brațe e localizată — „morișcă" (ro),
+    # „мельница" (ru), „вітряк" (uk) — literalul ar suna străin în fiecare.
     HumorCard(
         id="c7",
-        text="He slipped on a banana peel — cartoon-style, arms flailing and all.",
+        text_ro="A alunecat pe o coajă de banană — ca în desene, cu brațele ca o morișcă.",
+        text_ru="Поскользнулся на банановой кожуре — как в мультике, руками мельницу изобразил.",
+        text_uk="Посковзнувся на банановій шкірці — як у мультику, руками замахав, наче вітряк.",
+        text_en="He slipped on a banana peel — cartoon-style, arms flailing and all.",
         type="physical",
     ),
 ]

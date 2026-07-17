@@ -19,6 +19,19 @@ export interface Story {
   expiresAt: string;
 }
 
+/** Rezultatul unui răspuns la o poveste.
+ *
+ * Răspunsul NU e o mesagerie paralelă: backendul îl livrează ca mesaj obișnuit
+ * în chatul match-ului (poveștile se văd doar între match-uri). `chatId` permite
+ * deschiderea conversației, dacă vrem asta mai târziu.
+ */
+export interface StoryReply {
+  chatId: string;
+  messageId: string;
+  /** Corpul mesajului AȘA CUM a fost persistat (prefixat cu contextul poveștii). */
+  body: string;
+}
+
 /** Poveștile grupate pe un utilizator, pentru bara de stories. */
 export interface UserStories {
   userId: string;

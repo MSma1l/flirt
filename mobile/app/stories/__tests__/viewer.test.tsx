@@ -1,10 +1,19 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
+import { StyleSheet } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import StoryViewerScreen from '../[userId]';
 import { ThemeProvider } from '@theme/index';
 import type { UserStories } from '@/features/stories/types';
+
+// Insets deterministe (notch + bară gestuală): ecranul le folosește ca să nu
+// pună comenzile sub notch, iar `useSafeAreaInsets` are nevoie de provider.
+const INSET_METRICS = {
+  frame: { x: 0, y: 0, width: 390, height: 844 },
+  insets: { top: 47, left: 0, right: 0, bottom: 34 },
+};
 
 // Mock router + parametru de rută.
 const mockBack = jest.fn();
@@ -51,10 +60,26 @@ const groups: UserStories[] = [
 ];
 const mockFetchStories = jest.fn<Promise<UserStories[]>, []>(() => Promise.resolve(groups));
 const mockDeleteStory = jest.fn((_id: string) => Promise.resolve());
+const mockReplyToStory = jest.fn((id: string, body: string) =>
+  Promise.resolve({ chatId: 'c1', messageId: 'm1', body }),
+);
 jest.mock('@/features/stories/storiesApi', () => ({
   fetchStories: () => mockFetchStories(),
   deleteStory: (id: string) => mockDeleteStory(id),
+  replyToStory: (id: string, body: string) => mockReplyToStory(id, body),
 }));
+
+function wrap(client: QueryClient) {
+  return (
+    <SafeAreaProvider initialMetrics={INSET_METRICS}>
+      <QueryClientProvider client={client}>
+        <ThemeProvider>
+          <StoryViewerScreen />
+        </ThemeProvider>
+      </QueryClientProvider>
+    </SafeAreaProvider>
+  );
+}
 
 function renderScreen() {
   const client = new QueryClient({
@@ -62,13 +87,7 @@ function renderScreen() {
   });
   // Sursa vizualizatorului este cache-ul din bara de stories.
   client.setQueryData(['stories'], groups);
-  return render(
-    <QueryClientProvider client={client}>
-      <ThemeProvider>
-        <StoryViewerScreen />
-      </ThemeProvider>
-    </QueryClientProvider>,
-  );
+  return render(wrap(client));
 }
 
 /** Randare FĂRĂ cache pre-populat (intrare directă, nu prin bara de stories). */
@@ -76,13 +95,7 @@ function renderColdScreen() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return render(
-    <QueryClientProvider client={client}>
-      <ThemeProvider>
-        <StoryViewerScreen />
-      </ThemeProvider>
-    </QueryClientProvider>,
-  );
+  return render(wrap(client));
 }
 
 describe('StoryViewerScreen', () => {
@@ -90,6 +103,7 @@ describe('StoryViewerScreen', () => {
     mockFetchStories.mockReset();
     mockFetchStories.mockResolvedValue(groups);
     mockDeleteStory.mockClear();
+    mockReplyToStory.mockClear();
     mockBack.mockClear();
     mockAuth.userId = 'me';
   });
@@ -209,5 +223,240 @@ describe('StoryViewerScreen', () => {
 
     fireEvent.press(getByLabelText('Închide'));
     expect(mockBack).toHaveBeenCalled();
+  });
+
+  /* --- Full-screen: poza umple TOT ecranul, comenzile rămân atingibile --- */
+
+  it('poza umple tot ecranul (absolut, „cover"), nu o zonă mică', () => {
+    const { getByTestId } = renderScreen();
+
+    const image = getByTestId('story-image');
+    expect(image.props.resizeMode).toBe('cover');
+
+    const flat = StyleSheet.flatten(image.props.style);
+    expect(flat.position).toBe('absolute');
+    expect(flat.top).toBe(0);
+    expect(flat.left).toBe(0);
+    expect(flat.right).toBe(0);
+    expect(flat.bottom).toBe(0);
+  });
+
+  it('comenzile respectă insets: „✕" sub notch nu, bara de răspuns nu sub bara gestuală', () => {
+    const { getByTestId } = renderScreen();
+
+    // Overlay-ul de sus e împins sub notch (top = 47).
+    const top = StyleSheet.flatten(getByTestId('story-top-overlay').props.style);
+    expect(top.paddingTop).toBe(INSET_METRICS.insets.top);
+
+    // Zona de jos stă deasupra barei gestuale (bottom = 34 + spațiere).
+    const bottom = StyleSheet.flatten(getByTestId('story-bottom-overlay').props.style);
+    expect(bottom.paddingBottom).toBeGreaterThan(INSET_METRICS.insets.bottom);
+  });
+
+  /* --- Răspuns la povestea altcuiva --- */
+
+  it('la povestea altcuiva apare bara de răspuns; la a mea, nu (doar ștergere)', () => {
+    const { getByTestId } = renderScreen();
+    expect(getByTestId('story-reply-bar')).toBeTruthy();
+
+    mockAuth.userId = 'u1'; // povestea mea
+    const mine = renderScreen();
+    expect(mine.queryByTestId('story-reply-bar')).toBeNull();
+    expect(mine.getByLabelText('Șterge povestea')).toBeTruthy();
+  });
+
+  it('tap pe emoji trimite imediat un răspuns la povestea curentă', async () => {
+    const { getByLabelText } = renderScreen();
+
+    fireEvent.press(getByLabelText('Reacționează cu ❤️'));
+
+    await waitFor(() => expect(mockReplyToStory).toHaveBeenCalledWith('s1', '❤️'));
+  });
+
+  it('mesajul liber se trimite cu „Trimite" și golește câmpul', async () => {
+    const { getByLabelText, getByTestId } = renderScreen();
+
+    fireEvent.changeText(getByTestId('story-reply-input'), '  Ce poză tare!  ');
+    fireEvent.press(getByLabelText('Trimite răspunsul'));
+
+    await waitFor(() => expect(mockReplyToStory).toHaveBeenCalledWith('s1', 'Ce poză tare!'));
+    expect(getByTestId('story-reply-input').props.value).toBe('');
+  });
+
+  it('un răspuns gol nu pleacă', () => {
+    const { getByLabelText, getByTestId } = renderScreen();
+
+    fireEvent.changeText(getByTestId('story-reply-input'), '   ');
+    fireEvent.press(getByLabelText('Trimite răspunsul'));
+
+    expect(mockReplyToStory).not.toHaveBeenCalled();
+  });
+
+  it('CÂT TIMP userul scrie, povestea NU avansează și NU se închide', () => {
+    jest.useFakeTimers();
+    try {
+      const { getByText, getByTestId, queryByText } = renderScreen();
+
+      // Focus pe câmp = userul scrie → progresul se oprește.
+      fireEvent(getByTestId('story-reply-input'), 'focus');
+      act(() => {
+        jest.advanceTimersByTime(20000); // mult peste durata ambelor povești
+      });
+      expect(getByText('Prima poveste')).toBeTruthy();
+      expect(queryByText('A doua poveste')).toBeNull();
+      expect(mockBack).not.toHaveBeenCalled();
+
+      // Câmpul rămâne cu text după blur → tot oprit (userul n-a terminat).
+      fireEvent.changeText(getByTestId('story-reply-input'), 'scriu ceva');
+      fireEvent(getByTestId('story-reply-input'), 'blur');
+      act(() => {
+        jest.advanceTimersByTime(20000);
+      });
+      expect(getByText('Prima poveste')).toBeTruthy();
+
+      // Câmp golit și fără focus → povestea își reia cursul.
+      fireEvent.changeText(getByTestId('story-reply-input'), '');
+      act(() => {
+        jest.advanceTimersByTime(4200);
+      });
+      expect(getByText('A doua poveste')).toBeTruthy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  /* --- Pauză la apăsare lungă (fără NICIUN indicator vizual — cerință) --- */
+
+  it('apăsarea lungă oprește timpul; ridicarea degetului îl reia de unde a rămas', () => {
+    jest.useFakeTimers();
+    try {
+      const { getByText, getByTestId, queryByText } = renderScreen();
+
+      // ~3s din 4s consumate, apoi degetul se lasă apăsat.
+      act(() => {
+        jest.advanceTimersByTime(3000);
+      });
+      fireEvent(getByTestId('story-tap-next'), 'longPress');
+
+      // Oricât ține degetul, povestea stă pe loc.
+      act(() => {
+        jest.advanceTimersByTime(60000);
+      });
+      expect(getByText('Prima poveste')).toBeTruthy();
+      expect(queryByText('A doua poveste')).toBeNull();
+      expect(mockBack).not.toHaveBeenCalled();
+
+      // Ridică degetul → continuă de UNDE A RĂMAS: mai trebuie ~1s, nu încă 4.
+      fireEvent(getByTestId('story-tap-next'), 'pressOut');
+      act(() => {
+        jest.advanceTimersByTime(1200);
+      });
+      expect(getByText('A doua poveste')).toBeTruthy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('apăsarea lungă NU navighează (doar pune pauză)', () => {
+    jest.useFakeTimers();
+    try {
+      const { getByText, getByTestId } = renderScreen();
+
+      // RN nu cheamă `onPress` după ce `onLongPress` s-a declanșat.
+      fireEvent(getByTestId('story-tap-next'), 'longPress');
+      fireEvent(getByTestId('story-tap-next'), 'pressOut');
+
+      expect(getByText('Prima poveste')).toBeTruthy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('tap SCURT navighează și NU lasă povestea pe pauză', () => {
+    jest.useFakeTimers();
+    try {
+      const { getByText, getByTestId } = renderScreen();
+
+      // Tap scurt = pressIn → pressOut → press, fără longPress.
+      fireEvent(getByTestId('story-tap-next'), 'pressIn');
+      fireEvent(getByTestId('story-tap-next'), 'pressOut');
+      fireEvent.press(getByTestId('story-tap-next'));
+      expect(getByText('A doua poveste')).toBeTruthy();
+
+      // Timpul curge mai departe → ultima poveste expiră și ecranul se închide.
+      act(() => {
+        jest.advanceTimersByTime(4200);
+      });
+      expect(mockBack).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('pauza se eliberează dacă gestul e ANULAT (degetul iese din ecran)', () => {
+    jest.useFakeTimers();
+    try {
+      const { getByText, getByTestId } = renderScreen();
+
+      fireEvent(getByTestId('story-tap-next'), 'longPress');
+      // RN cheamă `onPressOut` și la anularea gestului, nu doar la ridicare.
+      fireEvent(getByTestId('story-tap-next'), 'pressOut');
+
+      act(() => {
+        jest.advanceTimersByTime(4200);
+      });
+      expect(getByText('A doua poveste')).toBeTruthy(); // NU a rămas blocată
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('ridicarea degetului în timp ce userul TASTEAZĂ nu repornește povestea', () => {
+    jest.useFakeTimers();
+    try {
+      const { getByText, getByTestId, queryByText } = renderScreen();
+
+      // Userul scrie un răspuns...
+      fireEvent(getByTestId('story-reply-input'), 'focus');
+      // ...și între timp ține degetul pe ecran, apoi îl ridică.
+      fireEvent(getByTestId('story-tap-next'), 'longPress');
+      fireEvent(getByTestId('story-tap-next'), 'pressOut');
+
+      // Motivul „reply" e încă activ → povestea RĂMÂNE pe pauză.
+      act(() => {
+        jest.advanceTimersByTime(20000);
+      });
+      expect(getByText('Prima poveste')).toBeTruthy();
+      expect(queryByText('A doua poveste')).toBeNull();
+      expect(mockBack).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('progresul se RELUĂ de unde a rămas, nu de la zero', () => {
+    jest.useFakeTimers();
+    try {
+      const { getByText, getByTestId } = renderScreen();
+
+      // ~3s din 4s, apoi pauză lungă cât scrie userul.
+      act(() => {
+        jest.advanceTimersByTime(3000);
+      });
+      fireEvent(getByTestId('story-reply-input'), 'focus');
+      act(() => {
+        jest.advanceTimersByTime(30000);
+      });
+      expect(getByText('Prima poveste')).toBeTruthy();
+
+      // Reluare: mai trebuie ~1s, nu încă 4.
+      fireEvent(getByTestId('story-reply-input'), 'blur');
+      act(() => {
+        jest.advanceTimersByTime(1200);
+      });
+      expect(getByText('A doua poveste')).toBeTruthy();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

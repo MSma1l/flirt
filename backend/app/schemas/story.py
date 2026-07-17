@@ -7,7 +7,8 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, Field, StringConstraints
 
-from app.core.validators import is_https_url, optional_safe_str
+from app.core.validators import is_https_url, optional_safe_str, safe_str
+from app.schemas.chat import MessageOut
 
 # Tipul de media al unei povești: imagine sau video (TZ secț. 11).
 MediaType = Literal["image", "video"]
@@ -16,6 +17,10 @@ MediaType = Literal["image", "video"]
 CAPTION_MAX_LENGTH = 500
 # Plafon URL aliniat cu coloana Story.media_url = String(500).
 MEDIA_URL_MAX_LENGTH = 500
+# Plafon pentru răspunsul la un story. Mai mic decât MESSAGE_MAX_LENGTH (2000):
+# răspunsul se livrează ca mesaj de chat PREFIXAT cu contextul poveștii, iar
+# suma (prefix + text) trebuie să rămână sub limita mesajului de chat.
+STORY_REPLY_MAX_LENGTH = 500
 
 # URL de media: obligatoriu https (anti-mixed-content / SSRF pe scheme exotice).
 HttpsUrl = Annotated[
@@ -58,6 +63,29 @@ class StoryMediaOut(BaseModel):
 
     media_url: str
     media_type: MediaType
+
+
+class StoryReplyIn(BaseModel):
+    """Payload la răspunsul dat unei povești (text liber sau un emoji-reacție).
+
+    `body` e validat ca orice text de la user: trim, non-gol, plafon lungime,
+    fără caractere de control și fără marcaje HTML (anti-XSS stocat) — un emoji
+    trece, `<script>` → 422.
+    """
+
+    body: safe_str(STORY_REPLY_MAX_LENGTH)
+
+
+class StoryReplyOut(BaseModel):
+    """Rezultatul răspunsului la o poveste.
+
+    Răspunsul NU e un sistem paralel de mesagerie: e un mesaj obișnuit în chatul
+    match-ului (poveștile se văd doar între match-uri, deci chatul există deja).
+    Întoarcem și `chat_id`, ca aplicația să poată deschide direct conversația.
+    """
+
+    chat_id: uuid.UUID
+    message: MessageOut
 
 
 class UserStories(BaseModel):

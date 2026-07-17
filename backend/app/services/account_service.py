@@ -238,6 +238,9 @@ async def update_settings(
         record.profile_hidden = data.profile_hidden
     if data.region is not None:
         record.region = data.region
+    if data.ai_enabled is not None:
+        # Comutatorul funcțiilor AI (oprit implicit) — se aprinde DOAR de aici.
+        record.ai_enabled = data.ai_enabled
 
     # Preferințe de căutare (filtre dure în feed). Deduplicate, ordine stabilă.
     if data.interested_in is not None:
@@ -343,6 +346,7 @@ def _to_settings_out(record: UserSettings) -> SettingsOut:
         notifications=record.notifications or {},
         profile_hidden=record.profile_hidden,
         region=record.region,
+        ai_enabled=record.ai_enabled,
         interested_in=list(effective.interested_in),
         age_min=effective.age_min,
         age_max=effective.age_max,

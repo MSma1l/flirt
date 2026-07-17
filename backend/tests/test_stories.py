@@ -428,3 +428,133 @@ async def test_video_is_rejected_before_moderation(client, monkeypatch):
     assert resp.status_code == 422, resp.text
     assert calls == []
     assert storage.saved == []
+
+
+# --- Răspuns la story (mesaj în chatul match-ului) ---------------------------
+@pytest.mark.asyncio
+async def test_reply_to_story_lands_in_match_chat(client):
+    """B răspunde la povestea lui A → mesaj prefixat în chatul match-ului."""
+    a_headers, a_id = await _make_user(client, "a@example.com", "A")
+    b_headers, b_id = await _make_user(client, "b@example.com", "B")
+    await _match(client, a_headers, a_id, b_headers, b_id)
+
+    created = await client.post(
+        f"{API}/stories/", json={"media_url": "https://cdn/a.jpg"}, headers=a_headers
+    )
+    story_id = created.json()["id"]
+
+    resp = await client.post(
+        f"{API}/stories/{story_id}/reply",
+        json={"body": "Ce poză tare!"},
+        headers=b_headers,
+    )
+    assert resp.status_code == 201, resp.text
+    payload = resp.json()
+    chat_id = payload["chat_id"]
+    assert payload["message"]["sender_id"] == b_id
+    # Mesajul poartă contextul poveștii, nu doar textul brut.
+    assert payload["message"]["body"].endswith("Ce poză tare!")
+    assert "poveste" in payload["message"]["body"]
+
+    # A îl vede în conversație, ca pe orice mesaj primit.
+    msgs = await client.get(f"{API}/chats/{chat_id}/messages", headers=a_headers)
+    assert msgs.status_code == 200, msgs.text
+    assert any(m["body"].endswith("Ce poză tare!") for m in msgs.json())
+
+
+@pytest.mark.asyncio
+async def test_reply_with_emoji_reaction(client):
+    """O reacție-emoji e un răspuns valid (tap pe emoji = trimitere imediată)."""
+    a_headers, a_id = await _make_user(client, "a@example.com", "A")
+    b_headers, b_id = await _make_user(client, "b@example.com", "B")
+    await _match(client, a_headers, a_id, b_headers, b_id)
+
+    created = await client.post(
+        f"{API}/stories/", json={"media_url": "https://cdn/a.jpg"}, headers=a_headers
+    )
+    resp = await client.post(
+        f"{API}/stories/{created.json()['id']}/reply",
+        json={"body": "❤️"},
+        headers=b_headers,
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["message"]["body"].endswith("❤️")
+
+
+@pytest.mark.asyncio
+async def test_reply_to_story_of_nonmatch_is_404(client):
+    """Un ne-match nu vede povestea → nici nu poate răspunde (fără divulgare)."""
+    a_headers, _ = await _make_user(client, "a@example.com", "A")
+    c_headers, _ = await _make_user(client, "c@example.com", "C")
+
+    created = await client.post(
+        f"{API}/stories/", json={"media_url": "https://cdn/a.jpg"}, headers=a_headers
+    )
+    resp = await client.post(
+        f"{API}/stories/{created.json()['id']}/reply",
+        json={"body": "salut"},
+        headers=c_headers,
+    )
+    assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.asyncio
+async def test_reply_to_own_story_is_rejected(client):
+    """Nu-ți răspunzi propriei povești (nu există chat cu tine însuți)."""
+    a_headers, _ = await _make_user(client, "a@example.com", "A")
+
+    created = await client.post(
+        f"{API}/stories/", json={"media_url": "https://cdn/a.jpg"}, headers=a_headers
+    )
+    resp = await client.post(
+        f"{API}/stories/{created.json()['id']}/reply",
+        json={"body": "salut"},
+        headers=a_headers,
+    )
+    assert resp.status_code == 422, resp.text
+
+
+@pytest.mark.asyncio
+async def test_reply_to_expired_story_is_404(client, db_session):
+    """O poveste expirată nu mai poate primi răspunsuri."""
+    a_headers, a_id = await _make_user(client, "a@example.com", "A")
+    b_headers, b_id = await _make_user(client, "b@example.com", "B")
+    await _match(client, a_headers, a_id, b_headers, b_id)
+
+    story = Story(
+        user_id=uuid.UUID(a_id),
+        media_url="https://cdn/old.jpg",
+        expires_at=datetime.now(timezone.utc) - timedelta(hours=1),
+    )
+    db_session.add(story)
+    await db_session.commit()
+
+    resp = await client.post(
+        f"{API}/stories/{story.id}/reply", json={"body": "salut"}, headers=b_headers
+    )
+    assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.asyncio
+async def test_reply_body_is_validated(client):
+    """Gol → 422; marcaj HTML → 422 (anti-XSS stocat, ca la mesajele de chat)."""
+    a_headers, a_id = await _make_user(client, "a@example.com", "A")
+    b_headers, b_id = await _make_user(client, "b@example.com", "B")
+    await _match(client, a_headers, a_id, b_headers, b_id)
+
+    created = await client.post(
+        f"{API}/stories/", json={"media_url": "https://cdn/a.jpg"}, headers=a_headers
+    )
+    story_id = created.json()["id"]
+
+    empty = await client.post(
+        f"{API}/stories/{story_id}/reply", json={"body": "   "}, headers=b_headers
+    )
+    assert empty.status_code == 422, empty.text
+
+    xss = await client.post(
+        f"{API}/stories/{story_id}/reply",
+        json={"body": "<script>alert(1)</script>"},
+        headers=b_headers,
+    )
+    assert xss.status_code == 422, xss.text

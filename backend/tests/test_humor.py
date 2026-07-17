@@ -49,6 +49,10 @@ async def _make_user(client, email: str, name: str) -> dict:
     return headers
 
 
+# Cele 4 limbi ale aplicației — sufixele câmpurilor de text de pe card.
+_LOCALES = ("ro", "ru", "uk", "en")
+
+
 @pytest.mark.asyncio
 async def test_quiz_returns_valid_cards(client):
     """GET /humor/quiz întoarce carduri ne-goale cu tip valid."""
@@ -61,6 +65,50 @@ async def test_quiz_returns_valid_cards(client):
     for card in cards:
         assert card["id"] and card["text"]
         assert card["type"] in HUMOR_TYPES
+
+
+@pytest.mark.asyncio
+async def test_quiz_cards_localized_in_all_four_languages(client):
+    """(a) Fiecare card vine cu textul în toate cele 4 limbi, niciunul gol."""
+    headers = await _make_user(client, "loc@example.com", "Loc")
+
+    cards = (await client.get(f"{API}/humor/quiz", headers=headers)).json()
+    for card in cards:
+        for locale in _LOCALES:
+            key = f"text_{locale}"
+            assert key in card, f"cardul {card['id']} nu are {key}"
+            # (d) niciun text gol / doar spații în nicio limbă.
+            assert card[key].strip(), f"cardul {card['id']} are {key} gol"
+
+
+@pytest.mark.asyncio
+async def test_quiz_cards_texts_differ_between_languages(client):
+    """Textele chiar sunt localizate, nu același șir copiat în toate limbile."""
+    headers = await _make_user(client, "diff@example.com", "Diff")
+
+    cards = (await client.get(f"{API}/humor/quiz", headers=headers)).json()
+    for card in cards:
+        texts = {card[f"text_{locale}"] for locale in _LOCALES}
+        assert len(texts) == len(_LOCALES), f"cardul {card['id']} are texte duplicate"
+
+
+@pytest.mark.asyncio
+async def test_quiz_covers_every_humor_type(client):
+    """(b) Toate cele 7 tipuri apar în quiz — altfel vectorul iese distorsionat."""
+    headers = await _make_user(client, "types@example.com", "Types")
+
+    cards = (await client.get(f"{API}/humor/quiz", headers=headers)).json()
+    assert {c["type"] for c in cards} == set(HUMOR_TYPES)
+
+
+@pytest.mark.asyncio
+async def test_quiz_keeps_deprecated_text_alias(client):
+    """Câmpul deprecat `text` rămâne în răspuns (= text_ro) pentru clientul publicat."""
+    headers = await _make_user(client, "alias@example.com", "Alias")
+
+    cards = (await client.get(f"{API}/humor/quiz", headers=headers)).json()
+    for card in cards:
+        assert card["text"] == card["text_ro"]
 
 
 @pytest.mark.asyncio

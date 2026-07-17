@@ -19,7 +19,14 @@ from app.core.config import settings
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.story import StoryIn, StoryMediaOut, StoryOut, UserStories
+from app.schemas.story import (
+    StoryIn,
+    StoryMediaOut,
+    StoryOut,
+    StoryReplyIn,
+    StoryReplyOut,
+    UserStories,
+)
 from app.services import story_service
 from app.services.pagination import MAX_CURSOR_LENGTH, STORIES_MAX_LIMIT
 from app.services.photo_moderation import get_photo_moderator
@@ -258,6 +265,24 @@ async def list_mine(
     if page.next_cursor:
         response.headers["X-Next-Cursor"] = page.next_cursor
     return page.items
+
+
+@router.post(
+    "/{story_id}/reply",
+    response_model=StoryReplyOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def reply_to_story(
+    story_id: uuid.UUID, data: StoryReplyIn, db: DbDep, user: UserDep
+) -> StoryReplyOut:
+    """Răspunde la o poveste (text sau emoji) → mesaj în chatul match-ului.
+
+    Poveștile se văd doar între match-uri, deci chatul există deja: răspunsul e un
+    mesaj obișnuit, prefixat cu contextul poveștii. 404 dacă povestea lipsește, a
+    expirat sau nu e vizibilă; 422 la propria poveste; 403 dacă unul l-a blocat
+    pe celălalt (regula chatului).
+    """
+    return await story_service.reply_to_story(db, user, story_id, data.body)
 
 
 @router.delete("/{story_id}", status_code=status.HTTP_204_NO_CONTENT)

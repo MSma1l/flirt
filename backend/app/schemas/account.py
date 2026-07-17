@@ -24,6 +24,8 @@ class SettingsOut(BaseModel):
     notifications: dict
     profile_hidden: bool
     region: str | None = None
+    # Comutatorul funcțiilor AI. Mereu False pe un cont nou — se aprinde manual.
+    ai_enabled: bool = False
 
     # --- Preferințe de căutare (filtre DURE în feed) --------------------------
     # Genurile căutate; listă goală = fără restricție de gen.
@@ -50,6 +52,9 @@ class SettingsIn(BaseModel):
     notifications: dict | None = None
     profile_hidden: bool | None = None
     region: optional_safe_str(REGION_MAX_LENGTH) | None = None
+    # Aprinde/stinge funcțiile AI pentru userul curent. `None` = netrimis, deci
+    # nu-l atingem (update parțial) — NU „stinge-l".
+    ai_enabled: bool | None = None
 
     # Preferințe de căutare. `max_length` = anti-DoS pe listă (catalogul de
     # genuri e mic); valorile efective sunt validate în serviciu.

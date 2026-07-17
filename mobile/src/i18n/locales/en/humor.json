@@ -1,1 +1,15 @@
-{}
+{
+  "quiz": {
+    "title": "Sense of humor",
+    "progress": "Joke {{current}} of {{total}}",
+    "funny": "😂 Funny",
+    "notFunny": "😐 Not really",
+    "loadError": "We couldn't load the humor test.",
+    "retry": "Try again",
+    "continueAnyway": "Continue to the app",
+    "empty": "No jokes available yet.",
+    "saveError": "We couldn't save that. Please try again.",
+    "saved": "Your humor profile is saved 🎭",
+    "done": "Continue"
+  }
+}

@@ -275,7 +275,11 @@ export default function AnketaWizard() {
 
       setProfileCompleted(true);
       reset();
-      router.replace('/(tabs)/ankete');
+      // NU în feed: testul de umor urmează imediat după anketă. Vectorul de umor
+      // intră în scorul de compatibilitate, deci un user care intră direct în
+      // feed ar primi (și ar da) potriviri slabe. Ordinea de mai sus rămâne
+      // neatinsă — anketă, poze, abia apoi navigarea.
+      router.replace('/humor');
     } catch (error) {
       setUploadingIndex(null);
       const reason =

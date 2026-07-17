@@ -372,8 +372,11 @@ describe('AnketaWizard (onboarding)', () => {
 
     await waitFor(() => {
       expect(mockSetProfileCompleted).toHaveBeenCalledWith(true);
-      expect(mockReplace).toHaveBeenCalledWith('/(tabs)/ankete');
+      // NU în feed: după anketă urmează testul de umor (vectorul lui intră în
+      // scorul de compatibilitate, deci userul nu are ce căuta în feed fără el).
+      expect(mockReplace).toHaveBeenCalledWith('/humor');
     });
+    expect(mockReplace).not.toHaveBeenCalledWith('/(tabs)/ankete');
   });
 
   it('la eroare de upload reia de unde a rămas, fără să retrimită anketa', async () => {
@@ -407,7 +410,7 @@ describe('AnketaWizard (onboarding)', () => {
     // poza rămasă — primele două nu se dublează.
     fireEvent.press(utils.getByText('Finalizează'));
 
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/(tabs)/ankete'));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/humor'));
     expect(mockSubmitAnketa).toHaveBeenCalledTimes(1);
     expect(mockUploadPhoto).toHaveBeenCalledTimes(4); // 3 + doar poza eșuată
     expect(stored).toHaveLength(3);

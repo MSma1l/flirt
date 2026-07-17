@@ -6,7 +6,7 @@
  * SE VEDE în browser, fără degradare. Imaginile rămân pe `<Image>`.
  */
 import React from 'react';
-import { Image, ImageStyle, StyleProp, ViewStyle } from 'react-native';
+import { Image, ImageStyle, StyleProp, StyleSheet, ViewStyle } from 'react-native';
 
 import { StoryMediaType } from './types';
 
@@ -17,14 +17,14 @@ export interface StoryMediaProps {
   hintColor?: string;
 }
 
-/** Umplere pe tot containerul, cu încadrare „contain" (ca `resizeMode`). */
+/** Umplere pe TOT containerul, cu încadrare „cover" (ca `resizeMode` pe nativ). */
 const VIDEO_STYLE: React.CSSProperties = {
   position: 'absolute',
   top: 0,
   left: 0,
   width: '100%',
   height: '100%',
-  objectFit: 'contain',
+  objectFit: 'cover',
   backgroundColor: '#000',
 };
 
@@ -43,5 +43,18 @@ export function StoryMedia({ uri, mediaType, style }: StoryMediaProps) {
       />
     );
   }
-  return <Image source={{ uri }} style={style as StyleProp<ImageStyle>} resizeMode="contain" />;
+  // `cover` + fundal negru = povestea umple tot ecranul (ca la Instagram);
+  // `contain` ar lăsa benzi la orice poză care nu e în formatul ecranului.
+  return (
+    <Image
+      source={{ uri }}
+      style={[styles.fill, style as StyleProp<ImageStyle>]}
+      resizeMode="cover"
+      testID="story-image"
+    />
+  );
 }
+
+const styles = StyleSheet.create({
+  fill: { backgroundColor: '#000' },
+});

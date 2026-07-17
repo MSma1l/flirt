@@ -176,12 +176,36 @@ class Settings(BaseSettings):
     #  - 'stub' (implicit): nu atinge rețeaua, lasă totul să treacă. Dev + teste.
     #  - 'anthropic': Claude vision (înțelege contextul „e o poză la plajă, nu porno").
     #  - 'rekognition': AWS detect_moderation_labels (aceleași chei ca S3/face_verify).
+    #  - 'openrouter': același model Claude, dar prin OpenRouter (vezi blocul AI
+    #    de mai jos) — providerul folosit efectiv, fiindcă cheia noastră e OpenRouter.
     photo_moderation_provider: str = "stub"
     anthropic_api_key: str = ""
     photo_moderation_model: str = "claude-haiku-4-5"
     # Pragul de încredere (0-100) peste care o etichetă Rekognition e luată în seamă.
     # Sub el, eticheta e ignorată — Rekognition raportează și „poate că e ceva" la 55%.
     nsfw_confidence_threshold: float = 80.0
+
+    # === AI (hint de chat, Chemistry Score, moderare foto) — vezi services/ai.py ===
+    # Provider: 'stub' (implicit) | 'openrouter'
+    #  - 'stub': NICIUN apel de rețea. `ai_enabled_for()` întoarce mereu False,
+    #    indiferent ce a bifat userul în setări. Dev + teste + producție „fără AI".
+    #  - 'openrouter': OpenRouter (protocol OpenAI-compatibil). NU folosim SDK-ul
+    #    Anthropic: cheia noastră e OpenRouter (`sk-or-v1`) și dă 401 pe
+    #    api.anthropic.com. Motivarea completă e în `app/services/ai.py`.
+    #
+    # ATENȚIE: `ai_provider` NU e în lista `stub_integrations` de mai jos, adică
+    # producția POATE porni cu AI-ul oprit — și e intenționat. AI-ul e o funcție
+    # de confort, opțională și oprită implicit pe fiecare cont (`ai_enabled`), nu
+    # o integrare critică precum plățile sau OTP-ul, a căror lipsă ar face
+    # aplicația să mintă utilizatorul.
+    ai_provider: str = "stub"
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # Modele separate text/vision: un model text-only ar întoarce eroare pe orice
+    # poză, iar moderarea foto (vision) e pe o cale critică diferită de chat.
+    # Fără sufixul `:free`: variantele gratuite dau 429 la rafală (verificat).
+    ai_text_model: str = "anthropic/claude-haiku-4.5"
+    ai_vision_model: str = "anthropic/claude-haiku-4.5"
 
     # Redis (store OTP live, cache) — ex. redis://localhost:6379/0
     redis_url: str = ""
@@ -407,6 +431,25 @@ class Settings(BaseSettings):
             required_keys["PHOTO_MODERATION_PROVIDER=anthropic"] = [
                 ("ANTHROPIC_API_KEY", self.anthropic_api_key),
                 ("PHOTO_MODERATION_MODEL", self.photo_moderation_model),
+            ]
+        # AI prin OpenRouter fără cheie = același eșec tăcut ca mai sus: serverul
+        # pornește „sănătos", userul aprinde AI-ul din setări, iar fiecare apel
+        # cade în degradare (`not_configured`) — adică funcția pe care a pornit-o
+        # pur și simplu nu face nimic, fără nicio eroare vizibilă nicăieri.
+        if self.ai_provider == "openrouter":
+            required_keys["AI_PROVIDER=openrouter"] = [
+                ("OPENROUTER_API_KEY", self.openrouter_api_key),
+                ("OPENROUTER_BASE_URL", self.openrouter_base_url),
+                ("AI_TEXT_MODEL", self.ai_text_model),
+            ]
+        # Moderarea foto pe OpenRouter folosește ACELEAȘI credențiale, dar e o cale
+        # independentă de `ai_provider` (e cerută de Apple pentru toate pozele, nu
+        # e o preferință de user) — deci își cere cheile separat.
+        if self.photo_moderation_provider == "openrouter":
+            required_keys["PHOTO_MODERATION_PROVIDER=openrouter"] = [
+                ("OPENROUTER_API_KEY", self.openrouter_api_key),
+                ("OPENROUTER_BASE_URL", self.openrouter_base_url),
+                ("AI_VISION_MODEL", self.ai_vision_model),
             ]
         if self.photo_moderation_provider == "rekognition":
             required_keys["PHOTO_MODERATION_PROVIDER=rekognition"] = [

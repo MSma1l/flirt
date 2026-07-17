@@ -1,1 +1,15 @@
-{}
+{
+  "quiz": {
+    "title": "Simțul umorului",
+    "progress": "Gluma {{current}} din {{total}}",
+    "funny": "😂 Amuzant",
+    "notFunny": "😐 Nu prea",
+    "loadError": "Nu am putut încărca testul de umor.",
+    "retry": "Reîncearcă",
+    "continueAnyway": "Continuă spre aplicație",
+    "empty": "Nu există glume disponibile deocamdată.",
+    "saveError": "Nu am putut salva. Reîncearcă.",
+    "saved": "Profilul tău de umor a fost salvat 🎭",
+    "done": "Continuă"
+  }
+}

@@ -44,14 +44,22 @@ export function StoryMedia({ uri, mediaType, style, hintColor }: StoryMediaProps
     <Image
       source={{ uri }}
       // Stilul vine ca ViewStyle (umplere/rază), compatibil ca ImageStyle aici.
-      style={style as StyleProp<ImageStyle>}
-      resizeMode="contain"
+      style={[styles.fill, style as StyleProp<ImageStyle>]}
+      // `cover`, ca la Instagram: povestea trebuie să umple TOT ecranul.
+      // `contain` ar arăta poza întreagă, dar ar lăsa benzi negre sus/jos la orice
+      // poză care nu e exact în formatul ecranului (adică aproape toate) — exact
+      // „poziția mică" pe care o reclama userul. Marginile tăiate sunt compromisul
+      // acceptat de tot ecosistemul de stories.
+      resizeMode="cover"
       testID="story-image"
     />
   );
 }
 
 const styles = StyleSheet.create({
+  // Fundal negru sub media: la o poză cu transparență (PNG) sau cât timp se
+  // încarcă, ecranul rămâne negru, nu alb-orbitor pe tema deschisă.
+  fill: { backgroundColor: '#000' },
   videoFallback: {
     alignItems: 'center',
     justifyContent: 'center',
