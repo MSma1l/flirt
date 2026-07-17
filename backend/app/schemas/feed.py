@@ -45,7 +45,11 @@ class SwipeIn(BaseModel):
     """Payload-ul unui swipe (TZ 4.4)."""
 
     target_user_id: uuid.UUID
-    action: Literal["like", "dislike"]
+    # `super_like` = swipe în SUS pe mobil. E un like cu accent, NU o a treia
+    # categorie: produce match după exact aceleași reguli ca `like` (vezi
+    # `feed_service.swipe`). Clientul îl trimitea deja, dar schema îl respingea
+    # cu 422 la fiecare swipe în sus.
+    action: Literal["like", "dislike", "super_like"]
     # Mesaj opțional trimis odată cu like-ul; devine vizibil la match (TZ 4.7).
     # Validat defensiv: trim, fără HTML/control chars, plafon lungime (anti-DoS).
     message: optional_safe_str(SWIPE_MESSAGE_MAX_LENGTH) | None = None

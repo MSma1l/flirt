@@ -29,6 +29,15 @@ class Like(Base):
     )
     # True = like (swipe dreapta), False = dislike (swipe stânga).
     is_like: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Super like (swipe sus): un FLAG peste like, nu o stare separată — un super
+    # like are mereu `is_like=True`. DE CE flag și nu o valoare nouă în `is_like`:
+    # toată logica de match, feed (`NOT EXISTS` pe swipe-uiți) și undo
+    # interoghează `is_like` și trebuie să continue să vadă un like obișnuit,
+    # fără nicio modificare. `server_default` face coloana non-null pentru
+    # like-urile deja existente, fără un pas separat de backfill.
+    is_super: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     # Mesaj atașat la like, livrat abia la match reciproc (TZ 4.7). Nullable.
     deferred_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 

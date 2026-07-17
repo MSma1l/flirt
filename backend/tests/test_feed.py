@@ -3,10 +3,10 @@ from datetime import date
 from uuid import UUID
 
 import pytest
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from app.models.profile import Profile
-from app.services import geo
+from app.services import geo, push
 from tests.conftest import upload_photo
 
 API = "/api/v1"
@@ -692,3 +692,350 @@ async def test_user_without_photos_cannot_swipe_or_get_feed(client):
         headers=b_headers,
     )
     assert resp.status_code == 403, resp.text
+
+
+# --- SUPER LIKE (swipe sus) --------------------------------------------------
+# Mobilul livra swipe în 4 direcții și trimitea `action: "super_like"`, dar schema
+# accepta doar like/dislike → 422 la fiecare swipe în sus, vizibil în producție.
+
+
+async def _last_like(db_session, from_user_id: str):
+    """Rândul `Like` scris de `from_user_id` (citit direct din DB, nu prin API).
+
+    Flagul `is_super` nu e expus în `SwipeResult` — singurul mod onest de a
+    verifica CE s-a persistat e să ne uităm în tabelă.
+    """
+    from app.models.swipe import Like
+
+    result = await db_session.execute(
+        select(Like)
+        .where(Like.from_user_id == UUID(from_user_id))
+        .order_by(Like.created_at.desc(), Like.id.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+@pytest.mark.asyncio
+async def test_super_like_accepted_not_422(client):
+    """(a) `action: "super_like"` e acceptat — exact bug-ul din producție."""
+    a_headers, _ = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    _, b_id = await _make_user(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "super_like"},
+        headers=a_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["matched"] is False, "Super like fără reciprocitate nu e match."
+    assert data["match_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_super_like_persists_is_like_and_is_super(client, db_session):
+    """(b) Super like se salvează ca `is_like=True` + `is_super=True`.
+
+    `is_like=True` e partea care contează: feed-ul, match-ul și undo-ul continuă
+    să vadă un like obișnuit, fără să știe de flag.
+    """
+    a_headers, a_id = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    _, b_id = await _make_user(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "super_like"},
+        headers=a_headers,
+    )
+    assert resp.status_code == 200, resp.text
+
+    like = await _last_like(db_session, a_id)
+    assert like is not None
+    assert like.is_like is True, "Un super like ESTE un like."
+    assert like.is_super is True
+    assert str(like.to_user_id) == b_id
+
+
+@pytest.mark.asyncio
+async def test_mutual_super_like_creates_match_and_chat(client):
+    """(c) Super like reciproc → match + chat, ca la un like reciproc."""
+    a_headers, a_id = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    b_headers, b_id = await _make_user(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "super_like"},
+        headers=a_headers,
+    )
+    assert resp.json()["matched"] is False
+
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": a_id, "action": "super_like"},
+        headers=b_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["matched"] is True
+    assert data["match_id"] is not None
+    assert data["chat_id"] is not None, "Un match trebuie să producă un chat."
+
+    # Match-ul apare la ambii, ca orice match.
+    for headers, other_id in ((a_headers, b_id), (b_headers, a_id)):
+        resp = await client.get(f"{API}/feed/matches", headers=headers)
+        assert resp.status_code == 200, resp.text
+        assert any(m["user_id"] == other_id for m in resp.json())
+
+
+@pytest.mark.asyncio
+async def test_super_like_plus_normal_like_creates_match(client):
+    """(d) Super like + like normal → tot match, în ambele ordini.
+
+    Nicio regulă nouă: reciprocitatea se decide pe `is_like`, iar `is_super` nu
+    intră în ecuație.
+    """
+    a_headers, a_id = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    b_headers, b_id = await _make_user(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    # A: super like → B: like normal.
+    await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "super_like"},
+        headers=a_headers,
+    )
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": a_id, "action": "like"},
+        headers=b_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["matched"] is True
+    assert resp.json()["chat_id"] is not None
+
+    # Ordinea inversă: C: like normal → A: super like.
+    c_headers, c_id = await _make_user(
+        client, "c@example.com", _anketa(name="C", birth_year=_ADULT_YEAR)
+    )
+    await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": a_id, "action": "like"},
+        headers=c_headers,
+    )
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": c_id, "action": "super_like"},
+        headers=a_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["matched"] is True
+
+
+@pytest.mark.asyncio
+async def test_super_like_match_sends_push(client, monkeypatch):
+    """Notificarea de match pleacă și la un match produs prin super like."""
+    sent: list[tuple] = []
+
+    async def _fake_send_to_user(db, user_id, title, body):
+        sent.append((user_id, title, body))
+
+    monkeypatch.setattr(push, "send_to_user", _fake_send_to_user)
+
+    a_headers, a_id = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    b_headers, b_id = await _make_user(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "super_like"},
+        headers=a_headers,
+    )
+    assert sent == [], "Fără reciprocitate nu există match, deci nici push."
+
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": a_id, "action": "super_like"},
+        headers=b_headers,
+    )
+    assert resp.json()["matched"] is True
+
+    # Push-ul pleacă spre CELĂLALT user (A) — B vede match-ul în răspunsul HTTP.
+    assert len(sent) == 1, sent
+    assert str(sent[0][0]) == a_id
+
+
+@pytest.mark.asyncio
+async def test_undo_removes_super_like(client, db_session):
+    """(e) Undo anulează și un super like: rândul dispare, userul reapare în feed."""
+    a_headers, a_id = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    _, b_id = await _make_user(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "super_like"},
+        headers=a_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    resp = await client.get(f"{API}/feed/", headers=a_headers)
+    assert b_id not in {c["user_id"] for c in resp.json()}
+
+    resp = await client.post(f"{API}/feed/undo", headers=a_headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["undone"] is True
+    assert data["target_user_id"] == b_id
+
+    assert await _last_like(db_session, a_id) is None, "Rândul trebuie șters."
+    resp = await client.get(f"{API}/feed/", headers=a_headers)
+    assert b_id in {c["user_id"] for c in resp.json()}
+
+
+@pytest.mark.asyncio
+async def test_undo_dismantles_match_made_by_super_like(client):
+    """(e-bis) Undo pe un super like care produsese match demontează match + chat."""
+    a_headers, a_id = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    b_headers, b_id = await _make_user(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "like"},
+        headers=a_headers,
+    )
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": a_id, "action": "super_like"},
+        headers=b_headers,
+    )
+    chat_id = resp.json()["chat_id"]
+    assert chat_id is not None
+
+    resp = await client.post(f"{API}/feed/undo", headers=b_headers)
+    assert resp.json()["undone"] is True
+
+    for headers in (a_headers, b_headers):
+        resp = await client.get(f"{API}/feed/matches", headers=headers)
+        assert resp.json() == []
+    resp = await client.get(f"{API}/chats/{chat_id}/messages", headers=a_headers)
+    assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.asyncio
+async def test_reswipe_changes_super_flag_both_ways(client, db_session):
+    """Re-swipe rescrie flagul: like → super like îl ridică, super like → like îl coboară.
+
+    Altfel un rând ar rămâne marcat „super" după ce userul s-a răzgândit.
+    """
+    a_headers, a_id = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    _, b_id = await _make_user(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "like"},
+        headers=a_headers,
+    )
+    like = await _last_like(db_session, a_id)
+    assert like.is_super is False
+
+    # like → super like
+    await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "super_like"},
+        headers=a_headers,
+    )
+    await db_session.refresh(like)
+    assert like.is_like is True and like.is_super is True
+
+    # super like → dislike (răzgândire completă)
+    await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "dislike"},
+        headers=a_headers,
+    )
+    await db_session.refresh(like)
+    assert like.is_like is False
+    assert like.is_super is False, "Un dislike nu poate rămâne marcat super."
+
+
+@pytest.mark.asyncio
+async def test_normal_like_and_dislike_unchanged(client, db_session):
+    """(f) REGRESIE: like/dislike normale se comportă exact ca înainte."""
+    a_headers, a_id = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    _, b_id = await _make_user(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+    c_headers, c_id = await _make_user(
+        client, "c@example.com", _anketa(name="C", birth_year=_ADULT_YEAR)
+    )
+
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "like"},
+        headers=a_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    like = await _last_like(db_session, a_id)
+    assert like.is_like is True
+    assert like.is_super is False, "Un like normal NU e super."
+
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "dislike"},
+        headers=c_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["matched"] is False
+    dislike = await _last_like(db_session, c_id)
+    assert dislike.is_like is False
+    assert dislike.is_super is False
+
+
+@pytest.mark.asyncio
+async def test_unknown_swipe_action_still_rejected(client):
+    """Schema rămâne închisă: o acțiune inventată e tot 422 (nu am lărgit prea mult)."""
+    a_headers, _ = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    _, b_id = await _make_user(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    for bad in ("superlike", "super", "SUPER_LIKE", "undo"):
+        resp = await client.post(
+            f"{API}/feed/swipe",
+            json={"target_user_id": b_id, "action": bad},
+            headers=a_headers,
+        )
+        assert resp.status_code == 422, f"{bad} → {resp.status_code}"

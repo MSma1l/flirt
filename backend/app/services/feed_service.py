@@ -601,7 +601,11 @@ async def swipe(
     # Swipe = activitate reală (scriere rară, cu prag din config).
     await account_service.touch_last_active(db, user)
 
-    is_like = action == "like"
+    # Un super like ESTE un like (swipe sus), doar cu accent. De aici încolo
+    # `is_like` e adevărat pentru ambele, deci match-ul, mesajul deferred și
+    # feed-ul se comportă identic — `is_super` e strict un flag în plus.
+    is_super = action == "super_like"
+    is_like = action == "like" or is_super
     # Mesajul deferred are sens doar pentru like (nu pentru dislike).
     deferred = message if (is_like and message) else None
 
@@ -621,11 +625,16 @@ async def swipe(
             from_user_id=user.id,
             to_user_id=target_user_id,
             is_like=is_like,
+            is_super=is_super,
             deferred_message=deferred,
         )
         db.add(like)
     else:
         like.is_like = is_like
+        # Re-swipe suprascrie flagul, în ambele sensuri: like → super like îl
+        # ridică, iar super like → like/dislike îl coboară. Altfel un rând ar
+        # rămâne marcat „super" după ce userul s-a răzgândit.
+        like.is_super = is_super
         # Re-swipe cu mesaj nou îl actualizează; fără mesaj păstrăm ce era.
         if deferred is not None:
             like.deferred_message = deferred
