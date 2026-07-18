@@ -1,1 +1,23 @@
-{}
+{
+  "title": "Mesaje",
+  "loadError": "Nu am putut încărca mesajele.",
+  "retry": "Reîncearcă",
+  "empty": "Mesajele apar aici după un match 💬",
+  "noConversations": "Încă nu ai conversații. Match-urile apar aici.",
+  "loadMore": "Încarcă mai multe",
+  "loadMoreError": "Nu am putut încărca mai multe.",
+  "pending": {
+    "title": "În așteptare",
+    "hint": "Le-ai dat like, dar încă n-au răspuns. Nu e încă match — nu-ți văd mesajul până nu răspund.",
+    "youWrote": "Ai scris: «{{message}}»",
+    "waiting": "Așteaptă să-ți răspundă",
+    "super": "⭐ Super",
+    "empty": "Nu ai like-uri în așteptare.",
+    "loadError": "Nu am putut încărca lista de așteptare."
+  },
+  "sections": {
+    "newTitle": "Match nou",
+    "newHint": "Ai un match — poți scrie primul mesaj.",
+    "activeTitle": "Conversații"
+  }
+}

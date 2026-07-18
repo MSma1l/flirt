@@ -93,6 +93,49 @@ export async function fetchLikesSentPage(params?: PageParams): Promise<Page<Favo
 }
 
 /**
+ * Un like „în așteptare": ai dat like/super like, dar celălalt încă NU a
+ * răspuns, deci nu e încă match. Vizibil DOAR pentru tine.
+ *
+ * Peste datele de profil obișnuite are două câmpuri proprii:
+ *   - `isSuper` — a fost super like (badge distinct în listă);
+ *   - `myMessage` — mesajul pe care L-AI SCRIS TU la like, ascuns de celălalt
+ *     până la match, dar pe care TU ți-l vezi aici. `null` = n-ai scris nimic.
+ */
+export interface PendingLikeItem extends FavoriteItem {
+  isSuper: boolean;
+  myMessage: string | null;
+}
+
+/** Forma brută (snake_case) a unui like în așteptare venită din backend. */
+interface PendingLikeResponse extends FavoriteResponse {
+  is_super?: boolean;
+  my_message?: string | null;
+}
+
+/** snake_case → camelCase pentru un rând din lista „în așteptare". */
+function toPendingItem(raw: PendingLikeResponse): PendingLikeItem {
+  return {
+    ...toItem(raw),
+    // Câmpuri opționale în contract: lipsa lor = valori sigure, nu undefined.
+    isSuper: raw.is_super ?? false,
+    myMessage: raw.my_message ?? null,
+  };
+}
+
+/**
+ * Aduce o pagină din like-urile TRIMISE care încă n-au primit răspuns (nu-s
+ * încă match). `/likes/pending` paginează identic cu `/favorites`.
+ */
+export async function fetchPendingLikesPage(
+  params?: PageParams,
+): Promise<Page<PendingLikeItem>> {
+  const res = await api.get<PendingLikeResponse[]>('/social/likes/pending', {
+    params: toQuery(params),
+  });
+  return { items: (res.data ?? []).map(toPendingItem), nextCursor: readNextCursor(res.headers) };
+}
+
+/**
  * Doar PRIMA pagină de favorite, ca listă simplă.
  *
  * Există pentru `useFavorite`, care întreabă „e userul ăsta favorit?" dintr-un

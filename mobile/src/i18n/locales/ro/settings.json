@@ -1,1 +1,84 @@
-{}
+{
+  "title": "Setări",
+  "saveError": "Nu am putut salva setarea. Am resincronizat cu serverul — reîncearcă.",
+  "loadError": "Nu am putut încărca setările.",
+  "retry": "Reîncearcă",
+  "sections": {
+    "account": "Cont",
+    "profileSearch": "Profil & căutare",
+    "appearance": "Aspect",
+    "notifications": "Notificări",
+    "privacy": "Securitate & confidențialitate",
+    "more": "Mai multe",
+    "legal": "Legal și suport"
+  },
+  "account": {
+    "email": "Email",
+    "logout": "Deconectare",
+    "deleteAccount": "Șterge contul"
+  },
+  "theme": {
+    "label": "Temă",
+    "light": "Luminos",
+    "dark": "Întunecat",
+    "system": "Sistem"
+  },
+  "language": {
+    "label": "Limbă"
+  },
+  "preferences": {
+    "label": "Pe cine cauți",
+    "hint": "Așa știm pe cine să-ți arătăm în feed.",
+    "gender": "Gen",
+    "ageMin": "Vârsta minimă",
+    "ageMax": "Vârsta maximă",
+    "ageNote": "FLIRT este o aplicație 18+, deci vârsta minimă nu poate coborî sub {{min}} ani.",
+    "save": "Salvează preferințele"
+  },
+  "radius": {
+    "label": "Rază de căutare",
+    "input": "Distanță maximă (km)"
+  },
+  "notifications": {
+    "match": "Potriviri (match)",
+    "messages": "Mesaje",
+    "aiHints": "Sugestii AI",
+    "events": "Evenimente",
+    "promos": "Promoții"
+  },
+  "privacy": {
+    "hideProfile": "Ascunde profilul",
+    "blocklist": "Utilizatori blocați"
+  },
+  "links": {
+    "profileEdit": "Editează profilul",
+    "verifyFace": "Verificare (selfie)",
+    "paywall": "Abonamente Premium",
+    "humor": "Test de umor",
+    "favorites": "Favorite",
+    "events": "Evenimente",
+    "passport": "Flirt Passport",
+    "ticket": "Biletul meu Flirt Party"
+  },
+  "legal": {
+    "terms": "Termeni și condiții",
+    "privacy": "Politica de confidențialitate",
+    "support": "Suport"
+  },
+  "deletion": {
+    "bannerTitle": "Ștergere programată",
+    "bannerBody": "Contul va fi șters definitiv pe {{date}}. Poți anula până atunci.",
+    "cancel": "Anulează ștergerea",
+    "confirmTitle": "Ștergere cont",
+    "confirmBody": "Ești sigur? Contul și datele tale vor fi șterse definitiv după perioada de grație.",
+    "confirmButton": "Șterge contul",
+    "errorTitle": "Nu am putut șterge contul",
+    "errorBody": "Cererea nu a ajuns la server. Contul tău a rămas neschimbat — încearcă din nou.",
+    "cancelErrorTitle": "Nu am putut anula ștergerea",
+    "cancelErrorBody": "Ștergerea contului rămâne programată. Încearcă din nou."
+  },
+  "openError": {
+    "title": "Ceva n-a mers",
+    "body": "Nu am putut deschide pagina. Încearcă din nou."
+  }
+}

@@ -96,6 +96,29 @@ class LikeSentPage(BaseModel):
     next_cursor: str | None = None
 
 
+class LikePendingOut(LikeSentOut):
+    """Un like TRIMIS care încă NU a devenit match — profil „în așteptare".
+
+    Extinde `LikeSentOut` (aceleași câmpuri de profil, același mapper pe mobil) cu
+    două câmpuri în plus, specifice ecranului „În așteptare":
+      - `is_super`: like-ul a fost un SUPER like → mobilul pune un badge;
+      - `my_message`: mesajul pe care L-AM SCRIS EU la like (`deferred_message`).
+        E mesajul MEU, deci am voie să-l văd. Mesajul rămâne ascuns de destinatar
+        până la match — de aceea îl expunem DOAR aici, autorului, niciodată în
+        listele altcuiva.
+    """
+
+    is_super: bool = False
+    my_message: str | None = None
+
+
+class LikePendingPage(BaseModel):
+    """O pagină de like-uri „în așteptare" + cursorul spre următoarea (`/feed`)."""
+
+    items: list[LikePendingOut] = Field(default_factory=list)
+    next_cursor: str | None = None
+
+
 class BlockOut(BaseModel):
     """O intrare din black list afișată în UI."""
 

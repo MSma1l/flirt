@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import HTTPException, status
 from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.config import settings
 from app.models.account import (
@@ -36,6 +37,8 @@ from app.schemas.account import (
     BlockPage,
     FavoriteOut,
     FavoritePage,
+    LikePendingOut,
+    LikePendingPage,
     LikeSentOut,
     LikeSentPage,
     SettingsIn,
@@ -532,6 +535,124 @@ async def list_likes_sent(
                 age=_calc_age(p.birth_date),
                 city=p.city,
                 photos=list(p.photos or []),
+            )
+            for like, p in rows
+        ],
+        next_cursor=encode_cursor(rows[-1][0].id) if has_more else None,
+    )
+
+
+# --- Like-uri ÎN AȘTEPTARE (trimise, ÎNCĂ fără reciproc) ----------------------
+async def list_likes_pending(
+    db: AsyncSession,
+    user: User,
+    limit: int | None = None,
+    cursor: str | None = None,
+) -> LikePendingPage:
+    """Like-urile MELE care ÎNCĂ nu au primit like înapoi (deci nu-s match).
+
+    DE CE „pending" ≠ „sent": `list_likes_sent` întoarce TOATE like-urile mele
+    (`is_like=True`). „În așteptare" e un SUBSET al lor — cele la care celălalt
+    NU mi-a dat încă like. În clipa în care îmi dă like, perechea devine match și
+    trece în chaturi, deci trebuie să DISPARĂ de aici. Filtrul care face
+    diferența e `NOT EXISTS` pe like-ul RECIPROC (target → eu, `is_like=True`).
+
+    Excluderi moștenite de la `list_likes_sent` (aceleași reguli ca feedul, ca să
+    nu inventăm altele): block în orice direcție, conturi purjate GDPR
+    (`deleted_at`) și `JOIN Profile` (fără profil/poze nu există card).
+
+    În plus, față de `list_likes_sent`, expunem:
+      - `is_super`: badge de super like pe mobil;
+      - `my_message` = `deferred_message`-ul like-ului MEU. E al meu, deci am voie
+        să-l văd; rămâne ascuns de destinatar până la match.
+
+    Paginare: cursor peste `(created_at, id)` al LIKE-ului, ca la surori.
+    """
+    limit = clamp_limit(limit, SOCIAL_PAGE_LIMIT, SOCIAL_MAX_LIMIT)
+
+    # Block în orice direcție, prin NOT EXISTS (semi-join pe index), ca în feed.
+    not_blocked = ~(
+        select(Block.id)
+        .where(
+            or_(
+                and_(
+                    Block.blocker_id == user.id,
+                    Block.blocked_id == Like.to_user_id,
+                ),
+                and_(
+                    Block.blocker_id == Like.to_user_id,
+                    Block.blocked_id == user.id,
+                ),
+            )
+        )
+        .exists()
+    )
+
+    # Like-ul RECIPROC (target → eu). Îl aliasăm (`ReverseLike`) fiindcă e tot
+    # tabelul `likes`, dar alt rând decât cel din SELECT. Semi-join corelat pe
+    # `uq_like_pair` (`from_user_id, to_user_id`), deci lovește indexul, nu un
+    # scan. Dacă EXISTĂ, perechea e deja match → o EXCLUDEM cu `NOT EXISTS`. Aici
+    # stă toată deosebirea față de `list_likes_sent`.
+    ReverseLike = aliased(Like)
+    no_reciprocal_like = ~(
+        select(ReverseLike.id)
+        .where(
+            ReverseLike.from_user_id == Like.to_user_id,
+            ReverseLike.to_user_id == user.id,
+            ReverseLike.is_like.is_(True),
+        )
+        .exists()
+    )
+
+    stmt = (
+        select(Like, Profile)
+        .join(Profile, Profile.user_id == Like.to_user_id)
+        .join(User, User.id == Like.to_user_id)
+        .where(
+            Like.from_user_id == user.id,
+            Like.is_like.is_(True),
+            User.deleted_at.is_(None),
+            not_blocked,
+            no_reciprocal_like,
+        )
+    )
+
+    if cursor:
+        anchor_id = decode_cursor(cursor)
+        # Momentul rândului-ancoră, citit DB-side (vezi pagination.py).
+        anchor_at = (
+            select(Like.created_at)
+            .where(Like.id == anchor_id, Like.from_user_id == user.id)
+            .scalar_subquery()
+        )
+        stmt = stmt.where(
+            or_(
+                Like.created_at < anchor_at,
+                and_(Like.created_at == anchor_at, Like.id < anchor_id),
+            )
+        )
+
+    result = await db.execute(
+        stmt.order_by(Like.created_at.desc(), Like.id.desc()).limit(limit + 1)
+    )
+    rows = list(result.all())
+
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    if not rows:
+        return LikePendingPage(items=[], next_cursor=None)
+
+    return LikePendingPage(
+        items=[
+            LikePendingOut(
+                target_user_id=like.to_user_id,
+                name=p.name,
+                age=_calc_age(p.birth_date),
+                city=p.city,
+                photos=list(p.photos or []),
+                is_super=like.is_super,
+                # Mesajul e AL MEU (autorul like-ului), deci am voie să-l văd.
+                my_message=like.deferred_message,
             )
             for like, p in rows
         ],

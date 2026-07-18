@@ -1,1 +1,23 @@
-{}
+{
+  "title": "Messages",
+  "loadError": "Couldn’t load messages.",
+  "retry": "Try again",
+  "empty": "Messages show up here after a match 💬",
+  "noConversations": "No conversations yet. Matches show up here.",
+  "loadMore": "Load more",
+  "loadMoreError": "Couldn’t load more.",
+  "pending": {
+    "title": "Waiting",
+    "hint": "You liked them, but they haven’t replied yet. It’s not a match yet — they can’t see your message until they reply.",
+    "youWrote": "You wrote: «{{message}}»",
+    "waiting": "Waiting for a reply",
+    "super": "⭐ Super",
+    "empty": "No pending likes.",
+    "loadError": "Couldn’t load the waiting list."
+  },
+  "sections": {
+    "newTitle": "New match",
+    "newHint": "You matched — send the first message.",
+    "activeTitle": "Conversations"
+  }
+}

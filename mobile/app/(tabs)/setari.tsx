@@ -1,10 +1,16 @@
 /**
- * Setări (hub) — TZ secț. 6.2–6.3: temă, rază de căutare, notificări,
+ * Setări (hub) — TZ secț. 6.2–6.3: temă, limbă, rază de căutare, notificări,
  * ascundere profil, linkuri, deconectare și ștergere cont.
+ *
+ * Setările sunt grupate pe SECȚIUNI cu titlu (Cont / Profil & căutare / Aspect /
+ * Notificări / Securitate & confidențialitate / Mai multe / Legal și suport), nu
+ * o listă amestecată. Tot textul ecranului vine din catalogul `settings` (`t()`),
+ * cu limba comutabilă din secțiunea „Aspect" (vezi `LanguagePicker`).
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Linking,
@@ -26,6 +32,7 @@ import {
   validateSearchAgeMax,
   validateSearchAgeMin,
 } from '@/features/anketa/validation';
+import { LanguagePicker } from '@/features/settings/LanguagePicker';
 import {
   AccountDeletion,
   cancelAccountDeletion,
@@ -37,15 +44,22 @@ import {
   ThemeMode,
   updateSettings,
 } from '@/features/settings/settingsApi';
+import { useLanguage } from '@/i18n/useLanguage';
 import { useAuthStore } from '@/store/authStore';
 import { alertMessage, confirmAsync } from '@/utils/dialog';
 import { searchRadiusKm } from '@/utils/validation';
 import { useTheme } from '@theme/index';
 
-const MODE_OPTIONS: { value: ThemeMode; label: string }[] = [
-  { value: 'light', label: 'Luminos' },
-  { value: 'dark', label: 'Întunecat' },
-  { value: 'system', label: 'Sistem' },
+/** Modurile de temă; eticheta afișată vine din catalog (`theme.<value>`). */
+const MODE_VALUES: ThemeMode[] = ['light', 'dark', 'system'];
+
+/** Cheile de notificări; eticheta afișată vine din catalog (`notifications.<key>`). */
+const NOTIFICATION_KEYS: (keyof NotificationSettings)[] = [
+  'match',
+  'messages',
+  'aiHints',
+  'events',
+  'promos',
 ];
 
 /** Erorile de validare ale secțiunii „Pe cine cauți". */
@@ -67,16 +81,10 @@ function parseAge(text: string): number | undefined {
   return Number.isNaN(n) ? undefined : n;
 }
 
-const NOTIFICATION_OPTIONS: { key: keyof NotificationSettings; label: string }[] = [
-  { key: 'match', label: 'Potriviri (match)' },
-  { key: 'messages', label: 'Mesaje' },
-  { key: 'aiHints', label: 'Sugestii AI' },
-  { key: 'events', label: 'Evenimente' },
-  { key: 'promos', label: 'Promoții' },
-];
-
 export default function SetariScreen() {
   const { colors, typography, spacing, radius, mode, setMode } = useTheme();
+  const { t } = useTranslation('settings');
+  const { current: language } = useLanguage();
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -126,10 +134,7 @@ export default function SetariScreen() {
     mutationFn: requestAccountDeletion,
     onSuccess: (res) => setDeletion(res),
     onError: () => {
-      alertMessage(
-        'Nu am putut șterge contul',
-        'Cererea nu a ajuns la server. Contul tău a rămas neschimbat — încearcă din nou.',
-      );
+      alertMessage(t('deletion.errorTitle'), t('deletion.errorBody'));
     },
   });
 
@@ -139,10 +144,7 @@ export default function SetariScreen() {
     // Important: dacă anularea pică, ștergerea rămâne programată. Userul trebuie
     // să afle, altfel crede că a salvat contul și îl pierde la finalul grației.
     onError: () => {
-      alertMessage(
-        'Nu am putut anula ștergerea',
-        'Ștergerea contului rămâne programată. Încearcă din nou.',
-      );
+      alertMessage(t('deletion.cancelErrorTitle'), t('deletion.cancelErrorBody'));
     },
   });
 
@@ -216,8 +218,8 @@ export default function SetariScreen() {
 
   /**
    * Validează și salvează preferințele de căutare într-un singur PUT.
-   * Validăm în UI (18+, `age_min <= age_max`) ca userul să vadă un mesaj clar în
-   * română, nu un 422 de la backend. Refolosim validatoarele anketei.
+   * Validăm în UI (18+, `age_min <= age_max`) ca userul să vadă un mesaj clar,
+   * nu un 422 de la backend. Refolosim validatoarele anketei.
    */
   const commitPreferences = () => {
     const ageMin = parseAge(ageMinText);
@@ -248,11 +250,10 @@ export default function SetariScreen() {
   };
 
   const confirmDelete = async () => {
-    const ok = await confirmAsync(
-      'Ștergere cont',
-      'Ești sigur? Contul și datele tale vor fi șterse definitiv după perioada de grație.',
-      { confirmText: 'Șterge contul', destructive: true },
-    );
+    const ok = await confirmAsync(t('deletion.confirmTitle'), t('deletion.confirmBody'), {
+      confirmText: t('deletion.confirmButton'),
+      destructive: true,
+    });
     if (ok) {
       deleteMutation.mutate();
     }
@@ -270,7 +271,7 @@ export default function SetariScreen() {
     return (
       <ScreenContainer center>
         <Text style={[typography.body, styles.center, { color: colors.danger }]}>
-          Nu am putut încărca setările.
+          {t('loadError')}
         </Text>
         <Text
           accessibilityRole="button"
@@ -281,13 +282,13 @@ export default function SetariScreen() {
             { color: colors.accent, marginTop: spacing.md },
           ]}
         >
-          Reîncearcă
+          {t('retry')}
         </Text>
         {/* Deconectarea rămâne la îndemână și aici: dacă setările nu se încarcă
             din cauza sesiunii, ăsta e singurul drum de ieșire al userului. */}
         <View style={{ alignSelf: 'stretch', marginTop: spacing.xl }}>
           <Button
-            label="Deconectare"
+            label={t('account.logout')}
             variant="outline"
             onPress={onLogout}
             testID="logout"
@@ -300,7 +301,7 @@ export default function SetariScreen() {
   const sectionLabel = (text: string) => (
     <Text
       style={[
-        typography.caption,
+        typography.bodyStrong,
         { color: colors.textSecondary, marginBottom: spacing.sm },
       ]}
     >
@@ -345,7 +346,7 @@ export default function SetariScreen() {
       testID,
       () => {
         Linking.openURL(url).catch(() =>
-          alertMessage('Ceva n-a mers', 'Nu am putut deschide pagina. Încearcă din nou.'),
+          alertMessage(t('openError.title'), t('openError.body')),
         );
       },
       '↗',
@@ -355,7 +356,7 @@ export default function SetariScreen() {
     <ScreenContainer>
       <ScrollView showsVerticalScrollIndicator={false}>
         <Text style={[typography.h1, { color: colors.textPrimary, marginBottom: spacing.xl }]}>
-          Setări
+          {t('title')}
         </Text>
 
         {settingsMutation.isError ? (
@@ -363,67 +364,42 @@ export default function SetariScreen() {
             testID="settings-error"
             style={[typography.caption, { color: colors.danger, marginBottom: spacing.lg }]}
           >
-            Nu am putut salva setarea. Am resincronizat cu serverul — reîncearcă.
+            {t('saveError')}
           </Text>
         ) : null}
 
-        {/* Cont */}
+        {/* ── Cont ── */}
         <View style={{ marginBottom: spacing.xl }}>
-          {sectionLabel('Cont')}
-          <Text style={[typography.caption, { color: colors.textSecondary }]}>Email</Text>
+          {sectionLabel(t('sections.account'))}
+          <Text style={[typography.caption, { color: colors.textSecondary }]}>
+            {t('account.email')}
+          </Text>
           <Text style={[typography.body, { color: colors.textPrimary }]}>
             {user?.email ?? '—'}
           </Text>
         </View>
 
-        {/* Temă */}
-        <View style={{ marginBottom: spacing.xl }}>
-          {sectionLabel('Temă')}
-          <View style={styles.modes}>
-            {MODE_OPTIONS.map((opt) => {
-              const active = mode === opt.value;
-              return (
-                <Pressable
-                  key={opt.value}
-                  testID={`theme-${opt.value}`}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  onPress={() => onSelectTheme(opt.value)}
-                  style={[
-                    styles.modeBtn,
-                    {
-                      borderRadius: radius.pill,
-                      paddingVertical: spacing.sm,
-                      backgroundColor: active ? colors.accent : colors.surface,
-                      borderColor: active ? colors.accent : colors.border,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      typography.caption,
-                      { color: active ? colors.onAccent : colors.textPrimary },
-                    ]}
-                  >
-                    {opt.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* Pe cine cauți — filtre DURE în feed (gen + interval de vârstă) */}
+        {/* ── Profil & căutare ── */}
         <View style={{ marginBottom: spacing.xl, gap: spacing.md }}>
-          {sectionLabel('Pe cine cauți')}
+          {sectionLabel(t('sections.profileSearch'))}
+
+          {linkRow(t('links.profileEdit'), '/profile/edit', 'link-profile-edit')}
+          {linkRow(t('links.verifyFace'), '/verify-face', 'link-verify-face')}
+
+          {/* Pe cine cauți — filtre DURE în feed (gen + interval de vârstă) */}
+          <Text style={[typography.body, { color: colors.textPrimary }]}>
+            {t('preferences.label')}
+          </Text>
           <Text style={[typography.caption, { color: colors.textSecondary }]}>
-            Așa știm pe cine să-ți arătăm în feed.
+            {t('preferences.hint')}
           </Text>
 
           {/* Genurile vin din referința backendului, nu sunt hardcodate aici. */}
           {reference ? (
             <View style={{ gap: spacing.sm }}>
-              <Text style={[typography.caption, { color: colors.textSecondary }]}>Gen</Text>
+              <Text style={[typography.caption, { color: colors.textSecondary }]}>
+                {t('preferences.gender')}
+              </Text>
               <View style={styles.chips}>
                 {reference.genders.map((opt: OptionItem) => {
                   const active = interestedIn.includes(opt.value);
@@ -472,7 +448,7 @@ export default function SetariScreen() {
             <View style={styles.flex}>
               <Input
                 testID="search-age-min"
-                label="Vârsta minimă"
+                label={t('preferences.ageMin')}
                 placeholder={String(SEARCH_AGE_MIN)}
                 keyboardType="number-pad"
                 value={ageMinText}
@@ -483,7 +459,7 @@ export default function SetariScreen() {
             <View style={styles.flex}>
               <Input
                 testID="search-age-max"
-                label="Vârsta maximă"
+                label={t('preferences.ageMax')}
                 placeholder="99"
                 keyboardType="number-pad"
                 value={ageMaxText}
@@ -494,25 +470,21 @@ export default function SetariScreen() {
           </View>
 
           <Text style={[typography.caption, { color: colors.textSecondary }]}>
-            FLIRT este o aplicație 18+, deci vârsta minimă nu poate coborî sub{' '}
-            {SEARCH_AGE_MIN} ani.
+            {t('preferences.ageNote', { min: SEARCH_AGE_MIN })}
           </Text>
 
           <Button
-            label="Salvează preferințele"
+            label={t('preferences.save')}
             variant="outline"
             loading={settingsMutation.isPending}
             onPress={commitPreferences}
             testID="save-search-prefs"
           />
-        </View>
 
-        {/* Rază de căutare */}
-        <View style={{ marginBottom: spacing.xl }}>
-          {sectionLabel('Rază de căutare')}
+          {/* Rază de căutare */}
           <Input
             testID="search-radius"
-            label="Distanță maximă (km)"
+            label={t('radius.input')}
             keyboardType="number-pad"
             value={radiusText}
             error={radiusError}
@@ -521,36 +493,11 @@ export default function SetariScreen() {
             onBlur={commitRadius}
             returnKeyType="done"
           />
-        </View>
 
-        {/* Notificări */}
-        <View style={{ marginBottom: spacing.xl }}>
-          {sectionLabel('Notificări')}
-          {NOTIFICATION_OPTIONS.map((opt) => (
-            <View
-              key={opt.key}
-              style={[styles.toggleRow, { paddingVertical: spacing.sm }]}
-            >
-              <Text style={[typography.body, styles.rowLabel, { color: colors.textPrimary }]}>
-                {opt.label}
-              </Text>
-              <Switch
-                testID={`notif-${opt.key}`}
-                value={data.notifications[opt.key]}
-                onValueChange={(v) => onToggleNotification(opt.key, v)}
-                trackColor={{ true: colors.accent, false: colors.border }}
-                thumbColor={colors.onAccent}
-              />
-            </View>
-          ))}
-        </View>
-
-        {/* Confidențialitate */}
-        <View style={{ marginBottom: spacing.xl }}>
-          {sectionLabel('Confidențialitate')}
+          {/* Ascunde profilul */}
           <View style={[styles.toggleRow, { paddingVertical: spacing.sm }]}>
             <Text style={[typography.body, styles.rowLabel, { color: colors.textPrimary }]}>
-              Ascunde profilul
+              {t('privacy.hideProfile')}
             </Text>
             <Switch
               testID="profile-hidden"
@@ -562,30 +509,94 @@ export default function SetariScreen() {
           </View>
         </View>
 
-        {/* Linkuri */}
-        <View style={{ marginBottom: spacing.xl, gap: spacing.sm }}>
-          {sectionLabel('Mai multe')}
-          {linkRow('Editează profilul', '/profile/edit', 'link-profile-edit')}
-          {linkRow('Verificare (selfie)', '/verify-face', 'link-verify-face')}
-          {linkRow('Abonamente Premium', '/paywall', 'link-paywall')}
-          {linkRow('Test de umor', '/humor', 'link-humor')}
-          {linkRow('Favorite', '/favorites', 'link-favorites')}
-          {linkRow('Evenimente', '/events', 'link-events')}
-          {linkRow('Flirt Passport', '/passport', 'link-passport')}
-          {linkRow('Biletul meu Flirt Party', '/ticket', 'link-ticket')}
-          {linkRow('Utilizatori blocați', '/blocklist', 'link-blocklist')}
+        {/* ── Aspect (temă + limbă) ── */}
+        <View style={{ marginBottom: spacing.xl, gap: spacing.md }}>
+          {sectionLabel(t('sections.appearance'))}
+
+          <Text style={[typography.caption, { color: colors.textSecondary }]}>
+            {t('theme.label')}
+          </Text>
+          <View style={styles.modes}>
+            {MODE_VALUES.map((value) => {
+              const active = mode === value;
+              return (
+                <Pressable
+                  key={value}
+                  testID={`theme-${value}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  onPress={() => onSelectTheme(value)}
+                  style={[
+                    styles.modeBtn,
+                    {
+                      borderRadius: radius.pill,
+                      paddingVertical: spacing.sm,
+                      backgroundColor: active ? colors.accent : colors.surface,
+                      borderColor: active ? colors.accent : colors.border,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      typography.caption,
+                      { color: active ? colors.onAccent : colors.textPrimary },
+                    ]}
+                  >
+                    {t(`theme.${value}`)}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={[typography.caption, { color: colors.textSecondary }]}>
+            {t('language.label')}
+          </Text>
+          <LanguagePicker />
         </View>
 
-        {/* Legal & suport — obligatorii în aplicație (Guideline 1.2 / 5.1.1). */}
+        {/* ── Notificări ── */}
+        <View style={{ marginBottom: spacing.xl }}>
+          {sectionLabel(t('sections.notifications'))}
+          {NOTIFICATION_KEYS.map((key) => (
+            <View key={key} style={[styles.toggleRow, { paddingVertical: spacing.sm }]}>
+              <Text style={[typography.body, styles.rowLabel, { color: colors.textPrimary }]}>
+                {t(`notifications.${key}`)}
+              </Text>
+              <Switch
+                testID={`notif-${key}`}
+                value={data.notifications[key]}
+                onValueChange={(v) => onToggleNotification(key, v)}
+                trackColor={{ true: colors.accent, false: colors.border }}
+                thumbColor={colors.onAccent}
+              />
+            </View>
+          ))}
+        </View>
+
+        {/* ── Securitate & confidențialitate ── */}
         <View style={{ marginBottom: spacing.xl, gap: spacing.sm }}>
-          {sectionLabel('Legal și suport')}
-          {externalRow('Termeni și condiții', config.legal.termsUrl, 'link-terms')}
-          {externalRow(
-            'Politica de confidențialitate',
-            config.legal.privacyUrl,
-            'link-privacy',
-          )}
-          {externalRow('Suport', config.legal.supportUrl, 'link-support')}
+          {sectionLabel(t('sections.privacy'))}
+          {linkRow(t('privacy.blocklist'), '/blocklist', 'link-blocklist')}
+        </View>
+
+        {/* ── Mai multe ── */}
+        <View style={{ marginBottom: spacing.xl, gap: spacing.sm }}>
+          {sectionLabel(t('sections.more'))}
+          {linkRow(t('links.paywall'), '/paywall', 'link-paywall')}
+          {linkRow(t('links.humor'), '/humor', 'link-humor')}
+          {linkRow(t('links.favorites'), '/favorites', 'link-favorites')}
+          {linkRow(t('links.events'), '/events', 'link-events')}
+          {linkRow(t('links.passport'), '/passport', 'link-passport')}
+          {linkRow(t('links.ticket'), '/ticket', 'link-ticket')}
+        </View>
+
+        {/* ── Legal & suport — obligatorii în aplicație (Guideline 1.2 / 5.1.1) ── */}
+        <View style={{ marginBottom: spacing.xl, gap: spacing.sm }}>
+          {sectionLabel(t('sections.legal'))}
+          {externalRow(t('legal.terms'), config.legal.termsUrl, 'link-terms')}
+          {externalRow(t('legal.privacy'), config.legal.privacyUrl, 'link-privacy')}
+          {externalRow(t('legal.support'), config.legal.supportUrl, 'link-support')}
         </View>
 
         {/* Ștergere programată */}
@@ -605,15 +616,15 @@ export default function SetariScreen() {
             ]}
           >
             <Text style={[typography.bodyStrong, { color: colors.danger }]}>
-              Ștergere programată
+              {t('deletion.bannerTitle')}
             </Text>
             <Text style={[typography.caption, { color: colors.textPrimary }]}>
-              Contul va fi șters definitiv pe{' '}
-              {new Date(deletion.purgeAfter).toLocaleDateString('ro-RO')}. Poți anula până
-              atunci.
+              {t('deletion.bannerBody', {
+                date: new Date(deletion.purgeAfter).toLocaleDateString(language),
+              })}
             </Text>
             <Button
-              label="Anulează ștergerea"
+              label={t('deletion.cancel')}
               variant="outline"
               loading={cancelMutation.isPending}
               onPress={() => cancelMutation.mutate()}
@@ -622,10 +633,10 @@ export default function SetariScreen() {
           </View>
         ) : null}
 
-        {/* Acțiuni */}
+        {/* Acțiuni de cont */}
         <View style={{ gap: spacing.md, marginBottom: spacing.xl }}>
           <Button
-            label="Deconectare"
+            label={t('account.logout')}
             variant="outline"
             onPress={onLogout}
             testID="logout"
@@ -649,7 +660,7 @@ export default function SetariScreen() {
               <ActivityIndicator color={colors.danger} />
             ) : (
               <Text style={[typography.bodyStrong, { color: colors.danger }]}>
-                Șterge contul
+                {t('account.deleteAccount')}
               </Text>
             )}
           </Pressable>

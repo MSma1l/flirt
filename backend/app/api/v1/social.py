@@ -8,7 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.account import BlockOut, FavoriteOut, LikeSentOut, TargetIn
+from app.schemas.account import (
+    BlockOut,
+    FavoriteOut,
+    LikePendingOut,
+    LikeSentOut,
+    TargetIn,
+)
 from app.services import account_service
 from app.services.pagination import MAX_CURSOR_LENGTH, SOCIAL_MAX_LIMIT
 
@@ -77,6 +83,33 @@ async def list_likes_sent(
     `/feed`), la fel ca `/favorites` și `/blocks`.
     """
     page = await account_service.list_likes_sent(db, user, limit=limit, cursor=cursor)
+    if page.next_cursor:
+        response.headers["X-Next-Cursor"] = page.next_cursor
+    return page.items
+
+
+@router.get("/likes/pending", response_model=list[LikePendingOut])
+async def list_likes_pending(
+    db: DbDep,
+    user: UserDep,
+    response: Response,
+    limit: LimitQuery = None,
+    cursor: CursorQuery = None,
+) -> list[LikePendingOut]:
+    """Like-urile MELE „în așteptare": trimise, dar ÎNCĂ fără like reciproc.
+
+    Diferă de `/likes/sent` (care întoarce TOATE like-urile mele): aici excludem
+    perechile devenite deja match — când celălalt îmi dă like, conversația trece
+    în chaturi, deci profilul DISPARE din așteptare. Fiecare card poartă în plus
+    `is_super` (badge super like) și `my_message` (mesajul scris de MINE la like,
+    ascuns de destinatar până la match, dar al meu).
+
+    Cursorul paginii următoare vine în header-ul `X-Next-Cursor` (convenția
+    `/feed`), la fel ca `/favorites`, `/likes/sent` și `/blocks`.
+    """
+    page = await account_service.list_likes_pending(
+        db, user, limit=limit, cursor=cursor
+    )
     if page.next_cursor:
         response.headers["X-Next-Cursor"] = page.next_cursor
     return page.items

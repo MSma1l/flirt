@@ -3,6 +3,7 @@ import {
   fetchFavorites,
   fetchFavoritesPage,
   fetchLikesSentPage,
+  fetchPendingLikesPage,
   removeFavorite,
 } from '../socialApi';
 
@@ -118,6 +119,73 @@ describe('fetchLikesSentPage', () => {
   it('tolerează un răspuns gol', async () => {
     (api.get as jest.Mock).mockResolvedValue({ data: undefined, headers: {} });
     expect(await fetchLikesSentPage()).toEqual({ items: [], nextCursor: null });
+  });
+});
+
+describe('fetchPendingLikesPage', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('face GET /social/likes/pending și mapează câmpurile proprii', async () => {
+    (api.get as jest.Mock).mockResolvedValue({
+      data: [
+        {
+          target_user_id: 'u1',
+          name: 'Ana',
+          age: 25,
+          city: 'Chișinău',
+          photos: ['p1.jpg'],
+          is_super: true,
+          my_message: 'Salut',
+        },
+      ],
+      headers: { 'x-next-cursor': 'NEXT' },
+    });
+
+    const page = await fetchPendingLikesPage();
+
+    expect(api.get).toHaveBeenCalledWith('/social/likes/pending', { params: { limit: 20 } });
+    expect(page).toEqual({
+      items: [
+        {
+          targetUserId: 'u1',
+          name: 'Ana',
+          age: 25,
+          city: 'Chișinău',
+          photos: ['p1.jpg'],
+          isSuper: true,
+          myMessage: 'Salut',
+        },
+      ],
+      nextCursor: 'NEXT',
+    });
+  });
+
+  it('câmpurile proprii lipsă → valori sigure (isSuper false, myMessage null)', async () => {
+    (api.get as jest.Mock).mockResolvedValue({
+      data: [{ target_user_id: 'u2', name: 'Ion', age: 30, city: 'Bălți' }],
+      headers: {},
+    });
+
+    const page = await fetchPendingLikesPage({ cursor: 'PREV' });
+
+    expect(api.get).toHaveBeenCalledWith('/social/likes/pending', {
+      params: { limit: 20, cursor: 'PREV' },
+    });
+    expect(page.items[0]).toEqual({
+      targetUserId: 'u2',
+      name: 'Ion',
+      age: 30,
+      city: 'Bălți',
+      photos: [],
+      isSuper: false,
+      myMessage: null,
+    });
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it('tolerează un răspuns gol', async () => {
+    (api.get as jest.Mock).mockResolvedValue({ data: undefined, headers: {} });
+    expect(await fetchPendingLikesPage()).toEqual({ items: [], nextCursor: null });
   });
 });
 

@@ -1,1 +1,84 @@
-{}
+{
+  "title": "Settings",
+  "saveError": "We couldn't save that setting. We've re-synced with the server — please try again.",
+  "loadError": "We couldn't load your settings.",
+  "retry": "Try again",
+  "sections": {
+    "account": "Account",
+    "profileSearch": "Profile & search",
+    "appearance": "Appearance",
+    "notifications": "Notifications",
+    "privacy": "Security & privacy",
+    "more": "More",
+    "legal": "Legal & support"
+  },
+  "account": {
+    "email": "Email",
+    "logout": "Log out",
+    "deleteAccount": "Delete account"
+  },
+  "theme": {
+    "label": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
+  },
+  "language": {
+    "label": "Language"
+  },
+  "preferences": {
+    "label": "Who you're looking for",
+    "hint": "This is how we know who to show you in the feed.",
+    "gender": "Gender",
+    "ageMin": "Minimum age",
+    "ageMax": "Maximum age",
+    "ageNote": "FLIRT is an 18+ app, so the minimum age can't go below {{min}}.",
+    "save": "Save preferences"
+  },
+  "radius": {
+    "label": "Search radius",
+    "input": "Maximum distance (km)"
+  },
+  "notifications": {
+    "match": "Matches",
+    "messages": "Messages",
+    "aiHints": "AI hints",
+    "events": "Events",
+    "promos": "Promotions"
+  },
+  "privacy": {
+    "hideProfile": "Hide profile",
+    "blocklist": "Blocked users"
+  },
+  "links": {
+    "profileEdit": "Edit profile",
+    "verifyFace": "Verification (selfie)",
+    "paywall": "Premium plans",
+    "humor": "Humor test",
+    "favorites": "Favorites",
+    "events": "Events",
+    "passport": "Flirt Passport",
+    "ticket": "My Flirt Party ticket"
+  },
+  "legal": {
+    "terms": "Terms & conditions",
+    "privacy": "Privacy policy",
+    "support": "Support"
+  },
+  "deletion": {
+    "bannerTitle": "Deletion scheduled",
+    "bannerBody": "Your account will be permanently deleted on {{date}}. You can cancel until then.",
+    "cancel": "Cancel deletion",
+    "confirmTitle": "Delete account",
+    "confirmBody": "Are you sure? Your account and data will be permanently deleted after the grace period.",
+    "confirmButton": "Delete account",
+    "errorTitle": "We couldn't delete your account",
+    "errorBody": "The request didn't reach the server. Your account is unchanged — please try again.",
+    "cancelErrorTitle": "We couldn't cancel the deletion",
+    "cancelErrorBody": "Your account deletion is still scheduled. Please try again."
+  },
+  "openError": {
+    "title": "Something went wrong",
+    "body": "We couldn't open the page. Please try again."
+  }
+}
