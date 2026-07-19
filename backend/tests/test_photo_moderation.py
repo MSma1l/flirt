@@ -548,3 +548,61 @@ def test_prod_guard_ignores_photo_moderation_keys_in_development(monkeypatch):
     env = {"ENVIRONMENT": "development", "PHOTO_MODERATION_PROVIDER": "anthropic"}
     settings = _build_settings(monkeypatch, env)
     assert settings.anthropic_api_key == ""
+
+
+# --- OpenRouter: parsare robustă a verdictului (regresie) --------------------
+# Bug real prins la activarea pe server: modelul de pe OpenRouter întoarce JSON
+# valid dar cu câmpul `reason` în loc de `category`. Vechiul parser cădea în
+# FAIL-OPEN (permisiv) la KeyError — adică o poză RESPINSĂ trecea doar fiindcă
+# modelul n-a numit categoria. Testele de mai jos păzesc exact asta.
+import asyncio  # noqa: E402
+
+from app.services import ai as ai_module  # noqa: E402
+
+
+def _openrouter_returning(monkeypatch, text: str):
+    """Forțează `ai.complete_vision` să întoarcă un text dat, fără rețea."""
+    async def fake_vision(*args, **kwargs):
+        return ai_module.AIResult(text=text, error=None)
+
+    monkeypatch.setattr(photo_moderation.ai, "complete_vision", fake_vision)
+    monkeypatch.setattr(photo_moderation.settings, "ai_vision_model", "x")
+    return photo_moderation.OpenRouterPhotoModerator()
+
+
+def test_openrouter_respinge_chiar_daca_modelul_zice_reason_nu_category(monkeypatch):
+    """`allowed=false` + câmp `reason` (nu `category`) → RESPINS, nu fail-open."""
+    mod = _openrouter_returning(
+        monkeypatch, '{"allowed": false, "reason": "nudity"}'
+    )
+    verdict = asyncio.run(mod.check(b"x", "image/png"))
+    assert verdict.allowed is False
+    assert verdict.reason == "nudity"
+    assert not getattr(verdict, "needs_review", False)
+
+
+def test_openrouter_respinge_fara_nicio_categorie(monkeypatch):
+    """`allowed=false` fără nicio categorie → tot RESPINS, cu etichetă 'other'."""
+    mod = _openrouter_returning(monkeypatch, '{"allowed": false}')
+    verdict = asyncio.run(mod.check(b"x", "image/png"))
+    assert verdict.allowed is False
+    assert verdict.raw_label == "other"
+
+
+def test_openrouter_permite_poza_curata_cu_code_fence(monkeypatch):
+    """JSON învelit în ```json ... ``` + `allowed=true` → permis, nu fail-open."""
+    mod = _openrouter_returning(
+        monkeypatch,
+        '```json\n{"allowed": true, "reason": "fundal simplu"}\n```',
+    )
+    verdict = asyncio.run(mod.check(b"x", "image/png"))
+    assert verdict.allowed is True
+    assert not getattr(verdict, "needs_review", False)
+
+
+def test_openrouter_fail_open_doar_daca_lipseste_allowed(monkeypatch):
+    """Fără câmpul `allowed` NU putem decide → FAIL-OPEN (poza trece, review uman)."""
+    mod = _openrouter_returning(monkeypatch, '{"category": "safe"}')
+    verdict = asyncio.run(mod.check(b"x", "image/png"))
+    assert verdict.allowed is True
+    assert getattr(verdict, "needs_review", False) is True

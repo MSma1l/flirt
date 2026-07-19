@@ -64,7 +64,10 @@ ALLOW the photo (allowed=true) for anything else, including:
 When in doubt about an adult photo, ALLOW it. Be strict only about the four \
 rejection categories above.
 
-Answer with the JSON object only."""
+Answer with ONLY a JSON object, no prose, in exactly this shape:
+{"allowed": true or false, "category": one of \
+"safe", "nudity", "sexual_activity", "minor", "violence"}
+Use "safe" as the category whenever allowed is true."""
 
 # Schema pentru structured outputs — garantează un JSON parsabil, fără prompt-
 # engineering fragil („răspunde doar cu JSON, te rog").
@@ -280,13 +283,23 @@ class OpenRouterPhotoModerator:
 
         try:
             payload = json.loads(_strip_code_fence(result.text or ""))
+            if not isinstance(payload, dict) or "allowed" not in payload:
+                raise ValueError("lipsește câmpul 'allowed'")
             allowed = bool(payload["allowed"])
-            category = str(payload["category"])
-        except (KeyError, TypeError, ValueError):
+        except (TypeError, ValueError):
+            # RO: `allowed` e câmpul PORTANT. Fără el nu putem decide → fail-open.
             logger.error(
                 "photo_moderation: răspuns OpenRouter neparsabil — FAIL-OPEN."
             )
             return _fail_open("unparsable_response")
+
+        # RO: `category` e SECUNDARĂ — doar eticheta respingerii. Modelele de pe
+        # OpenRouter uneori o omit sau o numesc altfel (`reason`). NU cădem în
+        # fail-open pentru asta: ar lăsa o poză RESPINSĂ (`allowed=false`) să
+        # treacă doar fiindcă modelul n-a numit categoria. Derivăm o etichetă
+        # sigură când lipsește: poză permisă → 'safe', respinsă → 'other'.
+        raw = payload.get("category") or payload.get("reason")
+        category = str(raw) if raw else (CATEGORY_SAFE if allowed else "other")
 
         if allowed or category == CATEGORY_SAFE:
             return ModerationVerdict(allowed=True, raw_label=category)
