@@ -16,6 +16,7 @@ import pytest
 from app.services import photo_moderation
 from app.services.photo_moderation import (
     AnthropicPhotoModerator,
+    LocalPhotoModerator,
     ModerationVerdict,
     RekognitionPhotoModerator,
     StubPhotoModerator,
@@ -601,8 +602,119 @@ def test_openrouter_permite_poza_curata_cu_code_fence(monkeypatch):
 
 
 def test_openrouter_fail_open_doar_daca_lipseste_allowed(monkeypatch):
-    """Fără câmpul `allowed` NU putem decide → FAIL-OPEN (poza trece, review uman)."""
+    """Fără câmpul `allowed` NU putem decide → rezervă locală; imagine nedecodabilă
+    (`b"x"`) → tot FAIL-OPEN (poza trece, review uman), ca înainte."""
     mod = _openrouter_returning(monkeypatch, '{"category": "safe"}')
     verdict = asyncio.run(mod.check(b"x", "image/png"))
     assert verdict.allowed is True
     assert getattr(verdict, "needs_review", False) is True
+
+
+# --- Rezerva LOCALĂ de moderare (fără rețea) ---------------------------------
+# Intră DOAR când providerul principal e indisponibil, în locul fail-open-ului orb.
+# „Slab dar offline": respinge doar pe raport MARE de ton de piele (semnal clar).
+import io  # noqa: E402
+
+from PIL import Image  # noqa: E402
+
+
+def _png(color: tuple[int, int, int], size: int = 32) -> bytes:
+    """PNG mic umplut cu o singură culoare (generat programatic, fără poze reale)."""
+    buf = io.BytesIO()
+    Image.new("RGB", (size, size), color).save(buf, "PNG")
+    return buf.getvalue()
+
+
+# Culori de test: un ton de piele tipic (cade în dreptunghiul YCbCr al pielii) și un
+# albastru clar care NU e piele. Umplerea integrală → raport de piele 0.0 sau 1.0.
+_SKIN_PNG = _png((233, 194, 166))   # ton de piele deschis
+_BLUE_PNG = _png((60, 120, 220))    # fundal albastru, evident non-piele
+
+
+def test_local_rejects_mostly_skin_image():
+    """(a) Imagine aproape integral „ton de piele" → RESPINSĂ ca posibilă nuditate."""
+    verdict = asyncio.run(LocalPhotoModerator().check(_SKIN_PNG, "image/png"))
+    assert verdict.allowed is False
+    assert verdict.reason == photo_moderation.CATEGORY_NUDITY
+    assert verdict.needs_review is False
+
+
+def test_local_allows_non_skin_image():
+    """(b) Imagine care NU e piele (fundal albastru) → PERMISĂ."""
+    verdict = asyncio.run(LocalPhotoModerator().check(_BLUE_PNG, "image/png"))
+    assert verdict.allowed is True
+    assert verdict.reason is None
+
+
+def test_local_does_not_decide_on_invalid_bytes():
+    """(c) Bytes invalizi → NU crapă, NU decide (echivalent fail-open: allowed=True)."""
+    verdict = asyncio.run(LocalPhotoModerator().check(b"nu sunt o imagine", "image/png"))
+    assert verdict.allowed is True
+    assert verdict.raw_label == "local_undecodable"
+
+
+def test_fallback_local_rejects_skin_when_provider_down(monkeypatch):
+    """(d) Vision cade + imagine „skin" → poza e RESPINSĂ de rezerva locală, NU trece
+    prin fail-open orb."""
+    async def fake_vision(*args, **kwargs):
+        return ai_module.AIResult(text=None, error=ai_module.ERR_NETWORK)
+
+    monkeypatch.setattr(photo_moderation.ai, "complete_vision", fake_vision)
+    monkeypatch.setattr(photo_moderation.settings, "ai_vision_model", "x")
+    monkeypatch.setattr(photo_moderation.settings, "ai_local_fallback", True)
+
+    verdict = asyncio.run(
+        photo_moderation.OpenRouterPhotoModerator().check(_SKIN_PNG, "image/png")
+    )
+    assert verdict.allowed is False
+    assert verdict.reason == photo_moderation.CATEGORY_NUDITY
+    assert getattr(verdict, "needs_review", False) is False
+
+
+def test_fallback_still_fail_open_when_provider_down_and_image_ok(monkeypatch):
+    """(e) Vision cade + imagine OK (non-piele) → tot FAIL-OPEN (needs_review), ca acum."""
+    async def fake_vision(*args, **kwargs):
+        return ai_module.AIResult(text=None, error=ai_module.ERR_NETWORK)
+
+    monkeypatch.setattr(photo_moderation.ai, "complete_vision", fake_vision)
+    monkeypatch.setattr(photo_moderation.settings, "ai_vision_model", "x")
+    monkeypatch.setattr(photo_moderation.settings, "ai_local_fallback", True)
+
+    verdict = asyncio.run(
+        photo_moderation.OpenRouterPhotoModerator().check(_BLUE_PNG, "image/png")
+    )
+    assert verdict.allowed is True
+    assert verdict.needs_review is True
+
+
+def test_normal_flow_never_touches_local(monkeypatch):
+    """(f) Fluxul NORMAL (vision răspunde) NU cheamă deloc rezerva locală."""
+
+    class _SpyLocal:
+        called = False
+
+        async def check(self, image, media_type):  # pragma: no cover — nu trebuie chemat
+            _SpyLocal.called = True
+            return ModerationVerdict(allowed=True)
+
+    monkeypatch.setattr(photo_moderation, "LocalPhotoModerator", _SpyLocal)
+    mod = _openrouter_returning(monkeypatch, '{"allowed": true, "category": "safe"}')
+    verdict = asyncio.run(mod.check(_SKIN_PNG, "image/png"))
+    assert verdict.allowed is True
+    assert _SpyLocal.called is False
+
+
+def test_fallback_kill_switch_off_skips_local(monkeypatch):
+    """Cu `ai_local_fallback=False`, chiar și pe imagine „skin" → fail-open ca înainte."""
+    async def fake_vision(*args, **kwargs):
+        return ai_module.AIResult(text=None, error=ai_module.ERR_NETWORK)
+
+    monkeypatch.setattr(photo_moderation.ai, "complete_vision", fake_vision)
+    monkeypatch.setattr(photo_moderation.settings, "ai_vision_model", "x")
+    monkeypatch.setattr(photo_moderation.settings, "ai_local_fallback", False)
+
+    verdict = asyncio.run(
+        photo_moderation.OpenRouterPhotoModerator().check(_SKIN_PNG, "image/png")
+    )
+    assert verdict.allowed is True
+    assert verdict.needs_review is True

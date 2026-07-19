@@ -185,6 +185,22 @@ class Settings(BaseSettings):
     # Sub el, eticheta e ignorată — Rekognition raportează și „poate că e ceva" la 55%.
     nsfw_confidence_threshold: float = 80.0
 
+    # --- Rezervă LOCALĂ de moderare (fără rețea) -------------------------------
+    # La RESTART de container, primele secunde OpenRouter dă `ConnectError` (rețeaua
+    # nu s-a ridicat încă) → moderarea principală cade în FAIL-OPEN și poza trece
+    # NEverificată. `ai_local_fallback` aprinde un clasificator euristic LOCAL (ton
+    # de piele, zero rețea, decodare la 64px) care intră EXACT pe acea cale, în locul
+    # fail-open-ului orb. E o REZERVĂ, nu un înlocuitor: fluxul normal (OpenRouter
+    # răspunde) NU îl atinge. Poate fi stins fără redeploy dacă dă fals-pozitive.
+    ai_local_fallback: bool = True
+    # Pragul de respingere al rezervei: raportul minim de pixeli „ton de piele" din
+    # imagine peste care poza e RESPINSĂ ca posibilă nuditate. CONSERVATOR intenționat
+    # (0.85, aproape tot cadrul piele): un selfie de față normal include păr, ochi,
+    # sprâncene, buze, fundal — rămâne mult sub prag; doar un cadru aproape integral
+    # piele goală îl depășește. Mai bine ratăm ceva în fereastra scurtă de pană decât
+    # să respingem poza legitimă a userului (app de dating). Vezi photo_moderation.py.
+    ai_local_skin_reject_ratio: float = 0.85
+
     # === AI (hint de chat, Chemistry Score, moderare foto) — vezi services/ai.py ===
     # Provider: 'stub' (implicit) | 'openrouter'
     #  - 'stub': NICIUN apel de rețea. `ai_enabled_for()` întoarce mereu False,

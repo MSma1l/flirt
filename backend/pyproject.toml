@@ -30,6 +30,12 @@ dependencies = [
     # Guideline 1.2. Ca și biblioteca Apple de mai sus, NU e opțională: fără ea
     # providerul `anthropic` (adică producția) nu poate modera nicio poză.
     "anthropic>=0.40",
+    # Rezerva LOCALĂ de moderare (fără rețea) folosită când OpenRouter/Anthropic e
+    # indisponibil — decodează imaginea la ≤64px și măsoară raportul de „ton de piele"
+    # în YCbCr. Wheel ușor (~4 MB), fără dependențe native grele; decodarea la 64px
+    # (cu `draft()` pe JPEG) ține RAM/CPU neglijabile — se încadrează în bugetul
+    # strâns de RAM al serverului. Vezi `services/photo_moderation.py`.
+    "Pillow>=10.0",
 ]
 
 [project.optional-dependencies]
