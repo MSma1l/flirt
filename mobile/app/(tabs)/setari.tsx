@@ -171,8 +171,12 @@ export default function SetariScreen() {
   useEffect(() => {
     if (data) {
       setInterestedIn(data.interestedIn);
-      setAgeMinText(String(data.ageMin));
-      setAgeMaxText(String(data.ageMax));
+      // Aplicația este 18+ ONLY: date vechi de pe server pot avea `age_min` sub 18.
+      // Le afișăm urcate la 18 (fără să blocăm UI-ul), iar `age_max` rămâne ≥ minim.
+      const min = Math.max(data.ageMin, SEARCH_AGE_MIN);
+      const max = Math.max(data.ageMax, min);
+      setAgeMinText(String(min));
+      setAgeMaxText(String(max));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.interestedIn, data?.ageMin, data?.ageMax]);
@@ -207,6 +211,19 @@ export default function SetariScreen() {
         },
       },
     );
+  };
+
+  /**
+   * Ridică vârsta minimă la 18 dacă userul a coborât sub prag (aplicația e 18+ ONLY).
+   * Rulează la ieșirea din câmp: clamp direct în UI, ca backstop peste validarea de la
+   * salvare. Câmpul gol rămâne gol (nu forțăm 18 peste „nimic ales").
+   */
+  const clampAgeMin = () => {
+    const min = parseAge(ageMinText);
+    if (min != null && min < SEARCH_AGE_MIN) {
+      setAgeMinText(String(SEARCH_AGE_MIN));
+      setPrefErrors((e) => ({ ...e, ageMin: null }));
+    }
   };
 
   /** Comută un gen căutat (multi-select, ca în wizardul de anketă). */
@@ -454,6 +471,8 @@ export default function SetariScreen() {
                 value={ageMinText}
                 error={prefErrors.ageMin}
                 onChangeText={setAgeMinText}
+                onEndEditing={clampAgeMin}
+                onBlur={clampAgeMin}
               />
             </View>
             <View style={styles.flex}>

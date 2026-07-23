@@ -14,6 +14,8 @@ import {
 
 import { BackButton, Button, Input, ScreenContainer } from '@/components/ui';
 import { fetchReference, submitAnketa } from '@/features/anketa/anketaApi';
+import { CountryPickerField } from '@/features/anketa/components/CountryPickerField';
+import { DateOfBirthField } from '@/features/anketa/components/DateOfBirthField';
 import { AnketaDraft, InterestOption, OptionItem } from '@/features/anketa/types';
 import {
   FieldErrors,
@@ -366,12 +368,10 @@ export default function ProfileEditScreen() {
           onChangeText={(t) => setField('name', t)}
           error={errors.name}
         />
-        <Input
-          label="Data nașterii (AAAA-LL-ZZ)"
-          placeholder="1998-05-20"
-          autoCapitalize="none"
-          value={draft.birthDate ?? ''}
-          onChangeText={(t) => setField('birthDate', t)}
+        <DateOfBirthField
+          label="Data nașterii"
+          value={draft.birthDate}
+          onChange={(iso) => setField('birthDate', iso)}
           error={errors.birthDate}
         />
         <ChipGroup
@@ -405,11 +405,10 @@ export default function ProfileEditScreen() {
           value={draft.street ?? ''}
           onChangeText={(t) => setField('street', t)}
         />
-        <Input
+        <CountryPickerField
           label="Naționalitate (opțional)"
-          placeholder="Opțional"
-          value={draft.nationality ?? ''}
-          onChangeText={(t) => setField('nationality', t)}
+          value={draft.nationality}
+          onChange={(code) => setField('nationality', code)}
         />
         <ChipGroup
           label="Limbi de comunicare"

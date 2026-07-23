@@ -197,3 +197,54 @@ describe('ProfileEditScreen — poze', () => {
     expect(mockSubmitAnketa).not.toHaveBeenCalled();
   });
 });
+
+describe('ProfileEditScreen — dată naștere & naționalitate', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUploadPhoto.mockResolvedValue([...PHOTOS]);
+    mockDeletePhoto.mockResolvedValue([PHOTOS[1], PHOTOS[2]]);
+    mockReorderPhotos.mockImplementation((urls) => Promise.resolve([...urls]));
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('data nașterii prefill-uită se afișează frumos ca dd.mm.yyyy', async () => {
+    const utils = await renderLoaded();
+    // profilul are birthDate 1998-05-20
+    expect(utils.getByText('20.05.1998')).toBeTruthy();
+  });
+
+  it('alegerea din calendar setează data și o trimite în ISO la salvare', async () => {
+    const utils = await renderLoaded();
+
+    fireEvent.press(utils.getByTestId('birthdate-open'));
+    // Mock-ul de datetimepicker întoarce 15.01.2000 la apăsare.
+    fireEvent.press(utils.getByTestId('birthdate-picker'));
+
+    await waitFor(() => utils.getByText('15.01.2000'));
+
+    fireEvent.press(utils.getByText('Salvează'));
+    await waitFor(() => expect(mockSubmitAnketa).toHaveBeenCalled());
+    expect(mockSubmitAnketa).toHaveBeenCalledWith(
+      expect.objectContaining({ birthDate: '2000-01-15' }),
+    );
+  });
+
+  it('selectorul de țară filtrează după căutare și salvează codul ISO2', async () => {
+    const utils = await renderLoaded();
+
+    fireEvent.press(utils.getByTestId('nationality-open'));
+    fireEvent.changeText(utils.getByTestId('nationality-search'), 'Moldova');
+
+    // După filtrare rămâne doar Moldova (MD); România (RO) dispare.
+    await waitFor(() => utils.getByTestId('country-item-MD'));
+    expect(utils.queryByTestId('country-item-RO')).toBeNull();
+
+    fireEvent.press(utils.getByTestId('country-item-MD'));
+
+    fireEvent.press(utils.getByText('Salvează'));
+    await waitFor(() => expect(mockSubmitAnketa).toHaveBeenCalled());
+    expect(mockSubmitAnketa).toHaveBeenCalledWith(
+      expect.objectContaining({ nationality: 'MD' }),
+    );
+  });
+});

@@ -25,6 +25,42 @@ jest.mock('react-native-qrcode-svg', () => {
   };
 });
 
+// `@react-native-community/datetimepicker` are parte nativă (nu există în jest).
+// Îl înlocuim cu un `Pressable` inert care, la apăsare, simulează alegerea unei
+// date (event `set`) — testele pot astfel exercita fluxul de selecție fără UI
+// nativ. Data simulată e fixă și adultă (15.01.2000), sub pragul maxim de 18+.
+jest.mock('@react-native-community/datetimepicker', () => {
+  const React = require('react');
+  const { Pressable, Text } = require('react-native');
+  return {
+    __esModule: true,
+    default: function MockDateTimePicker(props) {
+      return React.createElement(
+        Pressable,
+        {
+          testID: props.testID || 'birthdate-picker',
+          onPress: () => props.onChange?.({ type: 'set' }, new Date(2000, 0, 15)),
+        },
+        React.createElement(Text, null, 'date-picker'),
+      );
+    },
+  };
+});
+
+// `react-native-country-flag` randează steagul ca imagine remotă (flagcdn.com).
+// În teste nu ne interesează pixelii, doar CE steag se cere — îl înlocuim cu un
+// `Text` ce expune `isoCode`, ca testele să verifice țara aleasă.
+jest.mock('react-native-country-flag', () => {
+  const React = require('react');
+  const { Text } = require('react-native');
+  return {
+    __esModule: true,
+    default: function MockCountryFlag({ isoCode }) {
+      return React.createElement(Text, { testID: `flag-${isoCode}` }, isoCode);
+    },
+  };
+});
+
 // Setup global de teste. Mock pentru SecureStore (nu există nativ în jest).
 jest.mock('expo-secure-store', () => {
   const store = {};

@@ -146,6 +146,19 @@ describe('SetariScreen', () => {
       expect(mockUpdateSettings).not.toHaveBeenCalled();
     });
 
+    it('ridică vârsta minimă la 18 la ieșirea din câmp (clamp 18+)', async () => {
+      const { getByTestId } = renderScreen();
+
+      await waitFor(() => getByTestId('search-age-min'));
+      const input = getByTestId('search-age-min');
+
+      fireEvent.changeText(input, '15');
+      fireEvent(input, 'endEditing');
+
+      // Câmpul se ridică vizibil la 18, fără să blocheze UI-ul.
+      await waitFor(() => expect(getByTestId('search-age-min').props.value).toBe('18'));
+    });
+
     it('respinge intervalul inversat (min > max) cu mesaj clar', async () => {
       const { getByTestId, getByText } = renderScreen();
 
