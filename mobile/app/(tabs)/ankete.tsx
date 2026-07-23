@@ -23,6 +23,10 @@ import {
 } from 'react-native';
 
 import { Button, ScreenContainer } from '@/components/ui';
+import { AdInterstitial } from '@/features/ads/AdInterstitial';
+import { fetchNextAd } from '@/features/ads/adsApi';
+import { Ad } from '@/features/ads/types';
+import { useAdConfig } from '@/features/ads/useAdConfig';
 import { fetchFeed, swipe, undoSwipe } from '@/features/feed/feedApi';
 import { MatchModal } from '@/features/feed/MatchModal';
 import { ProfileCard } from '@/features/feed/ProfileCard';
@@ -55,8 +59,17 @@ export default function AnketeScreen() {
     queryFn: fetchFeed,
   });
 
+  // Config-ul de reclame (o dată, în cache): prag de swipe + limită de secunde.
+  const { data: adConfig } = useAdConfig();
+
   const [index, setIndex] = useState(0);
   const [busy, setBusy] = useState(false);
+  // Reclama interstițială curentă (null = nicio reclamă deschisă).
+  const [activeAd, setActiveAd] = useState<Ad | null>(null);
+  // Contor de swipe-uri DOAR pentru reclame: crește la fiecare swipe reușit și
+  // NU scade la undo (altfel n-am ajunge niciodată la prag). Ref, ca să nu forțeze
+  // re-render la fiecare swipe și să nu fie citit „vechi" din closure.
+  const adSwipeCountRef = useRef(0);
   const [matchName, setMatchName] = useState<string | null>(null);
   const [matchChatId, setMatchChatId] = useState<string | null>(null);
   // Cardul pentru care s-a dat like și așteaptă alegerea din sheet (mesaj / doar like).
@@ -86,6 +99,24 @@ export default function AnketeScreen() {
     }).start();
   };
 
+  /**
+   * După un swipe reușit: dacă s-a atins pragul (`swipes_before_ad`) și reclamele
+   * sunt active, aduce următoarea reclamă și o afișează. Un 204 (fără reclamă) sau
+   * orice eroare de rețea NU blochează feed-ul — reclama e „best effort".
+   */
+  const maybeShowAd = async () => {
+    adSwipeCountRef.current += 1;
+    const threshold = adConfig?.swipesBeforeAd ?? 0;
+    if (!adConfig?.enabled || threshold <= 0) return;
+    if (adSwipeCountRef.current % threshold !== 0) return;
+    try {
+      const ad = await fetchNextAd();
+      if (ad) setActiveAd(ad);
+    } catch {
+      // Reclama nu s-a putut aduce: userul continuă să dea swipe normal.
+    }
+  };
+
   const performSwipe = async (card: FeedCard, action: SwipeAction, message?: string) => {
     if (busy) return;
     setBusy(true);
@@ -99,6 +130,7 @@ export default function AnketeScreen() {
       }
       setSwipeCount((c) => c + 1);
       setIndex((i) => i + 1);
+      await maybeShowAd();
     } catch {
       // Rețea/server picat: nu avansăm indexul, rămânem pe același card și anunțăm userul.
       setActionError('Nu am putut trimite. Încearcă din nou.');
@@ -232,7 +264,8 @@ export default function AnketeScreen() {
   // Cât timp e deschis un modal (sheet-ul de mesaj / match-ul), senzorul tace:
   // degetul e blocat de modal, deci nici înclinarea n-are voie să acționeze
   // pe cardul de dedesubt — altfel userul dă like „pe nevăzute" din spatele lui.
-  const tiltEnabled = !busy && pendingLike === null && matchName === null;
+  const tiltEnabled =
+    !busy && pendingLike === null && matchName === null && activeAd === null;
   useTiltSwipe({
     enabled: tiltEnabled,
     onDirection: (direction) => handleDirectionRef.current(direction),
@@ -260,6 +293,19 @@ export default function AnketeScreen() {
     setMatchName(null);
     setMatchChatId(null);
   };
+
+  const closeAd = () => setActiveAd(null);
+
+  // Reclama interstițială: aceeași instanță în ambele randări (deck plin / gol),
+  // fiindcă un swipe poate goli deck-ul chiar în momentul în care apare reclama.
+  const adModal = (
+    <AdInterstitial
+      visible={activeAd !== null}
+      ad={activeAd}
+      maxSeconds={adConfig?.maxVideoSeconds ?? 10}
+      onClose={closeAd}
+    />
+  );
 
   const onWriteMessage = () => {
     const chatId = matchChatId;
@@ -364,6 +410,8 @@ export default function AnketeScreen() {
           onWriteMessage={onWriteMessage}
           onContinue={closeMatch}
         />
+
+        {adModal}
       </ScreenContainer>
     );
   }
@@ -496,6 +544,8 @@ export default function AnketeScreen() {
         onWriteMessage={onWriteMessage}
         onContinue={closeMatch}
       />
+
+      {adModal}
     </ScreenContainer>
   );
 }
