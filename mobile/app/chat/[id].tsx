@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Button } from '@/components/ui';
+import { BackButton, Button } from '@/components/ui';
 import { fetchChats, fetchMessages, markRead, reactToMessage, sendMessage } from '@/features/chat/chatApi';
 import { MessageBubble } from '@/features/chat/MessageBubble';
 import { ChatMessage, ChatSummary } from '@/features/chat/types';
@@ -142,14 +142,7 @@ export default function ChatScreen() {
           { borderBottomColor: colors.border, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
         ]}
       >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Înapoi"
-          onPress={() => router.back()}
-          hitSlop={8}
-        >
-          <Text style={[typography.h2, { color: colors.accent }]}>‹</Text>
-        </Pressable>
+        <BackButton />
         <Text
           numberOfLines={1}
           style={[typography.h2, styles.headerTitle, { color: colors.textPrimary }]}

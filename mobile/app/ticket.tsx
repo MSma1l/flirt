@@ -1,16 +1,22 @@
 /** Biletul Flirt Party (TZ secț. 6.3): cod one-time de acces + status. */
 import { useQuery } from '@tanstack/react-query';
-import { Stack, useRouter } from 'expo-router';
+import { Stack } from 'expo-router';
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 
-import { ScreenContainer } from '@/components/ui';
+import { BackButton, ScreenContainer } from '@/components/ui';
 import { fetchTicket, Ticket } from '@/features/settings/settingsApi';
 import { useTheme } from '@theme/index';
 
+/** Rupe codul în grupuri de 4 (separate prin spații) ca să se încadreze pe
+ * lățimea cardului și să nu iasă din ecran; spațiile dau și puncte de rupere. */
+function formatCode(code: string): string {
+  return (code.match(/.{1,4}/g) ?? [code]).join(' ');
+}
+
 export default function TicketScreen() {
   const { colors, typography, spacing, radius } = useTheme();
-  const router = useRouter();
 
   const { data, isLoading, isError, refetch } = useQuery<Ticket>({
     queryKey: ['ticket'],
@@ -54,13 +60,7 @@ export default function TicketScreen() {
     <ScreenContainer>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => router.back()}
-        style={{ marginBottom: spacing.lg }}
-      >
-        <Text style={[typography.bodyStrong, { color: colors.accent }]}>‹ Înapoi</Text>
-      </Pressable>
+      <BackButton style={{ alignSelf: 'flex-start', marginBottom: spacing.lg }} />
 
       <Text style={[typography.h1, { color: colors.textPrimary, marginBottom: spacing.xs }]}>
         Biletul meu Flirt Party
@@ -82,35 +82,33 @@ export default function TicketScreen() {
           },
         ]}
       >
-        {/* Codul de acces, afișat mare, într-un cadru — se prezintă la intrare. */}
+        {/* Cod QR real, generat din codul biletului — se scanează la intrare. */}
         <View
           testID="ticket-qr"
           style={[
             styles.qr,
             {
-              backgroundColor: colors.bg,
-              borderColor: colors.textPrimary,
+              backgroundColor: '#ffffff',
+              borderColor: colors.border,
               borderRadius: radius.md,
             },
           ]}
         >
-          <Text style={[typography.badge, { color: colors.textSecondary }]}>
-            Cod de acces
-          </Text>
-          <Text
-            style={[
-              typography.badge,
-              styles.qrCode,
-              { color: colors.textPrimary, marginTop: spacing.sm },
-            ]}
-          >
-            {data.code}
-          </Text>
+          <QRCode
+            value={data.code}
+            size={168}
+            color="#111111"
+            backgroundColor="#ffffff"
+          />
         </View>
 
-        <View style={{ gap: spacing.xs, alignItems: 'center' }}>
+        {/* Codul în clar, sub QR — pentru introducere manuală la intrare.
+            Încadrat pe lățimea cardului și rupt în grupuri ca să nu iasă din ecran. */}
+        <View style={styles.codeBox}>
           <Text style={[typography.caption, { color: colors.textSecondary }]}>Cod bilet</Text>
-          <Text style={[styles.code, { color: colors.textPrimary }]}>{data.code}</Text>
+          <Text style={[styles.code, { color: colors.textPrimary }]}>
+            {formatCode(data.code)}
+          </Text>
         </View>
 
         <View
@@ -139,22 +137,23 @@ const styles = StyleSheet.create({
   center: { textAlign: 'center' },
   card: { alignItems: 'center' },
   qr: {
-    width: 180,
-    height: 180,
-    borderWidth: 2,
+    width: 200,
+    height: 200,
+    borderWidth: 1,
+    padding: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  qrCode: {
-    fontFamily: 'Courier',
-    letterSpacing: 2,
-    textAlign: 'center',
+  codeBox: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    gap: 4,
   },
   code: {
     fontFamily: 'Courier',
-    fontSize: 28,
-    lineHeight: 34,
-    letterSpacing: 4,
+    fontSize: 16,
+    lineHeight: 24,
+    letterSpacing: 1,
     textAlign: 'center',
   },
   status: { alignItems: 'center' },

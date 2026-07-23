@@ -12,19 +12,17 @@
  * comandă și traduce rezultatul în UI.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
 import React from 'react';
 import {
   ActivityIndicator,
   Linking,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
-import { Button, ScreenContainer } from '@/components/ui';
+import { BackButton, Button, ScreenContainer } from '@/components/ui';
 import { config } from '@/config';
 import {
   IapError,
@@ -46,7 +44,6 @@ function productIdOf(plan: Plan): string | undefined {
 }
 
 export default function PaywallScreen() {
-  const router = useRouter();
   const queryClient = useQueryClient();
   const { colors, typography, radius, spacing } = useTheme();
 
@@ -117,15 +114,12 @@ export default function PaywallScreen() {
   const header = (
     <View style={[styles.headerRow, { marginBottom: spacing.lg }]}>
       <Text style={[typography.h1, { color: colors.textPrimary }]}>Abonamente</Text>
-      <Pressable
-        onPress={() => router.back()}
-        accessibilityRole="button"
+      <BackButton
+        icon="close"
+        color={colors.textSecondary}
         accessibilityLabel="Închide"
         testID="paywall-close"
-        hitSlop={12}
-      >
-        <Text style={[typography.h2, { color: colors.textSecondary }]}>✕</Text>
-      </Pressable>
+      />
     </View>
   );
 

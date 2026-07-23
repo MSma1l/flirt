@@ -5,6 +5,7 @@ import React from 'react';
 import PassportScreen from '../passport';
 import { ThemeProvider } from '@theme/index';
 import type { PassportStamp } from '@/features/events/types';
+import type { Subscription } from '@/features/subscription/types';
 
 // Mock router (evită navigarea reală expo-router în teste).
 jest.mock('expo-router', () => ({
@@ -15,6 +16,12 @@ jest.mock('expo-router', () => ({
 const mockFetchPassport = jest.fn<Promise<PassportStamp[]>, []>(() => Promise.resolve([]));
 jest.mock('@/features/events/eventsApi', () => ({
   fetchPassport: () => mockFetchPassport(),
+}));
+
+// Mock la subscriptionApi: abonamentul curent (pentru contorul „Card reduceri").
+const mockFetchMe = jest.fn<Promise<Subscription | null>, []>(() => Promise.resolve(null));
+jest.mock('@/features/subscription/subscriptionApi', () => ({
+  fetchMySubscription: () => mockFetchMe(),
 }));
 
 const stamps: PassportStamp[] = [
@@ -38,6 +45,8 @@ function renderScreen() {
 describe('PassportScreen', () => {
   beforeEach(() => {
     mockFetchPassport.mockReset();
+    mockFetchMe.mockReset();
+    mockFetchMe.mockResolvedValue(null);
   });
 
   it('randează gridul de ștampile', async () => {
@@ -53,5 +62,35 @@ describe('PassportScreen', () => {
     const { getByText } = renderScreen();
 
     await waitFor(() => getByText('Încă nu ai ștampile — participă la un eveniment!'));
+  });
+
+  it('afișează contorul de intrări când userul are un card de reduceri', async () => {
+    mockFetchPassport.mockResolvedValue([]);
+    mockFetchMe.mockResolvedValue({
+      plan: 'card_5',
+      status: 'active',
+      expiresAt: '2026-08-01',
+      entriesTotal: 5,
+      entriesRemaining: 3,
+    });
+    const { getByTestId, getByText } = renderScreen();
+
+    await waitFor(() => getByTestId('passport-discount-card'));
+    expect(getByText('3 din 5 intrări rămase')).toBeTruthy();
+  });
+
+  it('nu afișează contorul când userul nu are card de reduceri', async () => {
+    mockFetchPassport.mockResolvedValue(stamps);
+    mockFetchMe.mockResolvedValue({
+      plan: 'premium',
+      status: 'active',
+      expiresAt: '2026-08-01',
+      entriesTotal: null,
+      entriesRemaining: null,
+    });
+    const { getByText, queryByTestId } = renderScreen();
+
+    await waitFor(() => getByText('Flirt Party'));
+    expect(queryByTestId('passport-discount-card')).toBeNull();
   });
 });

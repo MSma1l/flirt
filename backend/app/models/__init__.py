@@ -26,3 +26,7 @@ from app.models.billing import PurchaseReceipt, Subscription  # noqa: F401
 from app.models.device import PushDevice  # noqa: F401
 from app.models.admin import AdminAuditLog  # noqa: F401
 from app.models.ad import Ad, AdSettings  # noqa: F401
+from app.models.ticket_order import (  # noqa: F401
+    PaymentSettings,
+    TicketOrder,
+)

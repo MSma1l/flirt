@@ -20,7 +20,9 @@ import type {
   EventInput,
   GrantSubscriptionBody,
   Page,
+  PaymentSettings,
   ResolveAction,
+  TicketOrder,
   TimeseriesPoint,
   TokenPair,
   Uuid,
@@ -197,4 +199,38 @@ export function fetchAdSettings(): Promise<AdSettings> {
 
 export function updateAdSettings(body: AdSettings): Promise<AdSettings> {
   return apiFetch<AdSettings>('/admin/ads/settings', { method: 'PUT', body: { ...body } });
+}
+
+/* --------------------------- Comenzi bilete ------------------------- */
+
+/**
+ * Lista comenzilor de bilete. Backend-ul le ordonează cu `payment_declared`
+ * primele (cele care așteaptă verificarea adminului).
+ */
+export function fetchTicketOrders(): Promise<TicketOrder[]> {
+  return apiFetch<TicketOrder[]>('/admin/ticket-orders');
+}
+
+/** Aprobă comanda (generează biletul). Răspunsul e comanda actualizată. */
+export function approveTicketOrder(id: Uuid): Promise<TicketOrder> {
+  return apiFetch<TicketOrder>(`/admin/ticket-orders/${id}/approve`, { method: 'POST' });
+}
+
+/** Respinge comanda; motivul e opțional (ajunge în notificarea userului). */
+export function rejectTicketOrder(id: Uuid, reason?: string): Promise<TicketOrder> {
+  return apiFetch<TicketOrder>(`/admin/ticket-orders/${id}/reject`, {
+    method: 'POST',
+    body: reason === undefined || reason.trim() === '' ? {} : { reason: reason.trim() },
+  });
+}
+
+export function fetchPaymentSettings(): Promise<PaymentSettings> {
+  return apiFetch<PaymentSettings>('/admin/payment-settings');
+}
+
+export function updatePaymentSettings(body: PaymentSettings): Promise<PaymentSettings> {
+  return apiFetch<PaymentSettings>('/admin/payment-settings', {
+    method: 'PUT',
+    body: { ...body },
+  });
 }

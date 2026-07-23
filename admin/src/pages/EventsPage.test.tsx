@@ -18,6 +18,9 @@ const EVENT: AdminEvent = {
   kind: 'party',
   cover_url: null,
   attendee_count: 12,
+  promo_discount_percent: null,
+  promo_code: null,
+  promo_description: null,
 };
 
 describe('EventsPage', () => {

@@ -34,6 +34,10 @@ class SubscriptionOut(BaseModel):
     plan: str
     status: str
     expires_at: datetime | None = None
+    # Doar pentru „cardurile de reduceri" (card_5 / card_10): câte intrări la
+    # evenimente au fost cumpărate și câte mai rămân. NULL pentru celelalte planuri.
+    entries_total: int | None = None
+    entries_remaining: int | None = None
 
 
 class PurchaseIn(BaseModel):
@@ -70,6 +74,11 @@ class EntitlementsOut(BaseModel):
     premium: bool
     no_ads: bool
     ai_bot: bool
+    # Acces la reducerile de la evenimente (cardurile de reduceri, sau all_inclusive).
+    event_discount: bool = False
+    # Intrări rămase pe cardul de reduceri activ (NULL dacă userul nu are card).
+    entries_remaining: int | None = None
+    entries_total: int | None = None
 
 
 class PushRegisterIn(BaseModel):

@@ -36,6 +36,9 @@ interface FormState {
   cover_url: string;
   lat: string;
   lng: string;
+  promo_discount_percent: string;
+  promo_code: string;
+  promo_description: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -48,6 +51,9 @@ const EMPTY_FORM: FormState = {
   cover_url: '',
   lat: '',
   lng: '',
+  promo_discount_percent: '',
+  promo_code: '',
+  promo_description: '',
 };
 
 function toForm(event: AdminEvent): FormState {
@@ -61,12 +67,18 @@ function toForm(event: AdminEvent): FormState {
     cover_url: event.cover_url ?? '',
     lat: event.lat === null ? '' : String(event.lat),
     lng: event.lng === null ? '' : String(event.lng),
+    promo_discount_percent:
+      event.promo_discount_percent === null ? '' : String(event.promo_discount_percent),
+    promo_code: event.promo_code ?? '',
+    promo_description: event.promo_description ?? '',
   };
 }
 
 function toPayload(form: FormState): EventInput {
   const lat = form.lat.trim() === '' ? null : Number(form.lat);
   const lng = form.lng.trim() === '' ? null : Number(form.lng);
+  const percent =
+    form.promo_discount_percent.trim() === '' ? null : Number(form.promo_discount_percent);
   return {
     title: form.title.trim(),
     description: form.description.trim() === '' ? null : form.description.trim(),
@@ -77,6 +89,10 @@ function toPayload(form: FormState): EventInput {
     cover_url: form.cover_url.trim() === '' ? null : form.cover_url.trim(),
     lat: lat === null || Number.isNaN(lat) ? null : lat,
     lng: lng === null || Number.isNaN(lng) ? null : lng,
+    promo_discount_percent: percent === null || Number.isNaN(percent) ? null : percent,
+    promo_code: form.promo_code.trim() === '' ? null : form.promo_code.trim(),
+    promo_description:
+      form.promo_description.trim() === '' ? null : form.promo_description.trim(),
   };
 }
 
@@ -156,7 +172,18 @@ export function EventsPage(): JSX.Element {
               <tbody>
                 {events.map((event) => (
                   <tr key={event.id}>
-                    <td>{event.title}</td>
+                    <td>
+                      {event.title}
+                      {event.promo_discount_percent !== null &&
+                      event.promo_discount_percent > 0 ? (
+                        <span
+                          className="badge badge--promo"
+                          title={event.promo_code ?? 'Reducere la intrare'}
+                        >
+                          {`−${event.promo_discount_percent}%`}
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="muted mono">{formatDateTime(event.starts_at)}</td>
                     <td>{event.city}</td>
                     <td>{event.venue ?? '—'}</td>
@@ -244,10 +271,16 @@ function EventFormModal({
   const set = <K extends keyof FormState>(key: K, value: FormState[K]): void =>
     setForm((current) => ({ ...current, [key]: value }));
 
+  const percentRaw = form.promo_discount_percent.trim();
+  const percentNum = percentRaw === '' ? null : Number(percentRaw);
+  const percentValid =
+    percentNum === null || (Number.isFinite(percentNum) && percentNum >= 0 && percentNum <= 100);
+
   const valid =
     form.title.trim().length > 0 &&
     form.city.trim().length > 0 &&
-    form.starts_at.trim().length > 0;
+    form.starts_at.trim().length > 0 &&
+    percentValid;
 
   const submit = (submitEvent: FormEvent): void => {
     submitEvent.preventDefault();
@@ -342,6 +375,47 @@ function EventFormModal({
             onChange={(e) => set('cover_url', e.target.value)}
           />
         </Field>
+
+        <fieldset className="form-section">
+          <legend>Promo / Reducere la intrare</legend>
+          <div className="form-grid">
+            <Field label="Reducere (%)" htmlFor="event-promo-percent">
+              <TextInput
+                id="event-promo-percent"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={100}
+                step={1}
+                placeholder="ex. 10 — gol = fără reducere"
+                value={form.promo_discount_percent}
+                aria-invalid={percentValid ? undefined : true}
+                onChange={(e) => set('promo_discount_percent', e.target.value)}
+              />
+            </Field>
+            <Field label="Cod promo" htmlFor="event-promo-code">
+              <TextInput
+                id="event-promo-code"
+                value={form.promo_code}
+                maxLength={32}
+                placeholder="ex. FLIRT10"
+                onChange={(e) => set('promo_code', e.target.value)}
+              />
+            </Field>
+          </div>
+          <Field label="Descriere promo" htmlFor="event-promo-description">
+            <TextArea
+              id="event-promo-description"
+              value={form.promo_description}
+              maxLength={500}
+              placeholder="Arată acest cod la intrare pentru 10% reducere la bilet."
+              onChange={(e) => set('promo_description', e.target.value)}
+            />
+          </Field>
+          {percentValid ? null : (
+            <div className="alert">Reducerea trebuie să fie între 0 și 100%.</div>
+          )}
+        </fieldset>
 
         {error ? <div className="alert">{error}</div> : null}
 

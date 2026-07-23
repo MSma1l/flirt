@@ -8,9 +8,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Stack, useRouter } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
 
-import { Button, ScreenContainer } from '@/components/ui';
+import { BackButton, Button, ScreenContainer } from '@/components/ui';
 import { LocalPhoto, openAppSettings } from '@/features/photos';
 import {
   CAMERA_PERMISSION_BLOCKED_MESSAGE,
@@ -99,14 +99,7 @@ export default function VerifyFaceScreen() {
       {/* Header: titlu + buton de închidere. */}
       <View style={[styles.header, { marginBottom: spacing.xl }]}>
         <Text style={[typography.h1, { color: colors.textPrimary }]}>Verificare</Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Închide"
-          onPress={() => router.back()}
-          hitSlop={12}
-        >
-          <Text style={[typography.h2, { color: colors.textSecondary }]}>✕</Text>
-        </Pressable>
+        <BackButton icon="close" color={colors.textSecondary} accessibilityLabel="Închide" />
       </View>
 
       <Text style={[typography.body, { color: colors.textSecondary, marginBottom: spacing.xl }]}>

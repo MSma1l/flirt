@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -40,6 +40,11 @@ class Subscription(Base):
     expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # „Card de reduceri": numărul de intrări (check-in-uri cu reducere) cumpărate și
+    # câte au mai rămas. Setate DOAR pentru planurile card ('card_5'|'card_10');
+    # NULL pentru celelalte planuri → retrocompatibil, fără sens de „0 intrări".
+    entries_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    entries_remaining: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class PurchaseReceipt(Base):

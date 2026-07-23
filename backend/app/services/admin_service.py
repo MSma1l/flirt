@@ -57,6 +57,7 @@ from app.models.moderation import Report
 from app.models.profile import Profile
 from app.models.session import RefreshSession
 from app.models.swipe import Like, Match
+from app.models.ticket_order import STATUS_PAYMENT_DECLARED, TicketOrder
 from app.models.user import ROLE_ADMIN, User
 from app.schemas.admin import (
     AdminEventIn,
@@ -489,6 +490,13 @@ async def get_stats(db: AsyncSession) -> AdminStats:
         attendances=attendances or 0,
     )
 
+    # --- 8. Comenzi de bilet în așteptare de verificare (coada de admin) -------
+    pending_ticket_orders = await db.scalar(
+        select(func.count())
+        .select_from(TicketOrder)
+        .where(TicketOrder.status == STATUS_PAYMENT_DECLARED)
+    )
+
     return AdminStats(
         # Stratul PLAT — contractul cu panoul React (aceleași agregate, zero
         # query-uri în plus).
@@ -501,6 +509,7 @@ async def get_stats(db: AsyncSession) -> AdminStats:
         reports_pending=reports.pending,
         subscriptions_active=subscriptions.active,
         revenue_estimated_eur=subscriptions.estimated_revenue_eur,
+        pending_ticket_orders=pending_ticket_orders or 0,
         # Stratul DETALIAT — specificația backendului.
         users=users,
         profiles=profiles,
@@ -1385,6 +1394,11 @@ def _to_event_out(event: Event, attendees: int) -> AdminEventOut:
         lng=event.lng,
         kind=event.kind,
         cover_url=event.cover_url,
+        promo_discount_percent=event.promo_discount_percent,
+        promo_code=event.promo_code,
+        promo_description=event.promo_description,
+        ticket_price=event.ticket_price,
+        ticket_currency=event.ticket_currency,
         attendee_count=attendees,
         created_at=event.created_at,
     )
@@ -1451,6 +1465,11 @@ async def create_event(
         lng=data.lng,
         kind=data.kind,
         cover_url=data.cover_url,
+        promo_discount_percent=data.promo_discount_percent,
+        promo_code=data.promo_code,
+        promo_description=data.promo_description,
+        ticket_price=data.ticket_price,
+        ticket_currency=data.ticket_currency,
     )
     db.add(event)
     await db.flush()  # obținem event.id înainte de a scrie auditul
@@ -1578,6 +1597,8 @@ def _to_subscription_out(
         created_at=sub.created_at,
         expires_at=sub.expires_at,
         is_active=_is_active_sub(sub, now),
+        entries_total=sub.entries_total,
+        entries_remaining=sub.entries_remaining,
     )
 
 
@@ -1685,6 +1706,11 @@ async def grant_subscription(
     sub.status = "active"
     sub.provider = PROVIDER_MANUAL
     sub.expires_at = expires_at
+    # Card de reduceri acordat manual: (re)încarcă intrările; orice alt plan le
+    # șterge (NULL). Aceeași semantică ca `billing._activate`.
+    entries = billing.card_entries_for_plan(data.plan)
+    sub.entries_total = entries
+    sub.entries_remaining = entries
 
     audit(
         db,

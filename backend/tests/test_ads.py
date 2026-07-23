@@ -21,6 +21,59 @@ from sqlalchemy import func, select
 from app.models.admin import AdminAuditLog
 from app.models.profile import Profile
 from app.models.user import ROLE_ADMIN, User
+from app.services import ad_service
+
+
+# --------------------------------------------------------------------------- #
+# Dublu de Redis in-memory (async) pentru testul de rotație „shuffle bag".
+#
+# În teste `REDIS_URL` e gol (vezi conftest) → `_get_redis()` întoarce None și
+# rotația cade pe fallback (weighted random, care POATE repeta). Ca să testăm
+# proprietatea de NO-REPEAT trebuie un Redis; fakeredis NU e în dependențe, deci
+# injectăm acest dublu minimal care implementează exact operațiile folosite de
+# `_pick_rotating`: smembers / delete / pipeline(sadd, expire).
+# --------------------------------------------------------------------------- #
+class _FakePipeline:
+    def __init__(self, redis: "FakeRedis") -> None:
+        self._redis = redis
+        self._ops: list = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    def sadd(self, key, *values):  # queue (sync, ca redis-py)
+        self._ops.append(("sadd", key, values))
+
+    def expire(self, key, ttl):
+        self._ops.append(("expire", key, ttl))
+
+    async def execute(self):
+        for op in self._ops:
+            if op[0] == "sadd":
+                self._redis.sets.setdefault(op[1], set()).update(
+                    str(v) for v in op[2]
+                )
+            # `expire` e no-op în dublu (nu simulăm TTL în teste).
+        self._ops.clear()
+
+
+class FakeRedis:
+    """Dublu async minimal de Redis: SET-uri în memorie, fără TTL real."""
+
+    def __init__(self) -> None:
+        self.sets: dict[str, set[str]] = {}
+
+    async def smembers(self, key):
+        return set(self.sets.get(key, set()))
+
+    async def delete(self, key):
+        self.sets.pop(key, None)
+
+    def pipeline(self, transaction=True):
+        return _FakePipeline(self)
 
 API = "/api/v1"
 ADMIN = f"{API}/admin"
@@ -560,3 +613,120 @@ async def test_invalid_target_rejected(client, db_session):
         headers=admin,
     )
     assert resp.status_code == 422
+
+
+# --------------------------------------------------------------------------- #
+# Rotație „shuffle bag" — fără repetare până la acoperirea completă
+# --------------------------------------------------------------------------- #
+class _FakeAd:
+    """Ad minimal pentru testele la nivel de funcție ale `_pick_rotating`."""
+
+    def __init__(self, ad_id: int) -> None:
+        self.id = ad_id
+
+
+@pytest.mark.asyncio
+async def test_pick_rotating_no_repeat_full_cycle():
+    """N reclame → N alegeri DISTINCTE înainte de orice repetare; apoi ciclu nou."""
+    redis = FakeRedis()
+    ads = [_FakeAd(i) for i in (10, 20, 30)]
+
+    first_cycle = []
+    for _ in range(3):
+        chosen = await ad_service._pick_rotating(redis, user_id=1, ads=ads)
+        first_cycle.append(chosen.id)
+
+    # Acoperire completă: toate cele 3 ID-uri, fără duplicate.
+    assert sorted(first_cycle) == [10, 20, 30]
+    assert len(set(first_cycle)) == 3
+
+    # Al 4-lea apel începe un ciclu nou (starea s-a resetat) → alege iar din toate 3.
+    chosen4 = await ad_service._pick_rotating(redis, user_id=1, ads=ads)
+    assert chosen4.id in {10, 20, 30}
+    # Set-ul conține acum doar reclama proaspăt aleasă (după reset).
+    assert redis.sets["ads:rotation:1"] == {str(chosen4.id)}
+
+
+@pytest.mark.asyncio
+async def test_pick_rotating_new_ad_enters_mid_cycle():
+    """O reclamă adăugată la mijloc de ciclu (nearătată) intră automat în rotație."""
+    redis = FakeRedis()
+    ads = [_FakeAd(1), _FakeAd(2)]
+
+    a = await ad_service._pick_rotating(redis, user_id=7, ads=ads)
+    # Adăugăm o reclamă nouă înainte de a doua alegere.
+    ads.append(_FakeAd(3))
+    b = await ad_service._pick_rotating(redis, user_id=7, ads=ads)
+    c = await ad_service._pick_rotating(redis, user_id=7, ads=ads)
+
+    # Cele 3 alegeri acoperă {1,2,3} fără repetare (reclama nouă a intrat).
+    assert sorted([a.id, b.id, c.id]) == [1, 2, 3]
+
+
+@pytest.mark.asyncio
+async def test_pick_rotating_ignores_stale_shown_ids():
+    """ID-uri arătate care nu mai sunt eligibile (șterse) nu blochează rotația."""
+    redis = FakeRedis()
+    # Preîncărcăm starea cu un ID care nu mai există printre eligibile (99).
+    redis.sets["ads:rotation:5"] = {"99"}
+    ads = [_FakeAd(1), _FakeAd(2)]
+
+    picks = {
+        (await ad_service._pick_rotating(redis, user_id=5, ads=ads)).id
+        for _ in range(2)
+    }
+    # Ambele reclame eligibile sunt alese; ID-ul mort e ignorat, nu blochează.
+    assert picks == {1, 2}
+
+
+@pytest.mark.asyncio
+async def test_public_next_no_repeat_over_http(client, db_session, monkeypatch):
+    """/ads/next: N apeluri consecutive → N reclame DISTINCTE (rotație cu Redis injectat)."""
+    admin = await _make_admin(client, db_session, "admin_rot@example.com")
+    user = await _register(client, "user_rot@example.com")
+
+    n = 4
+    for i in range(n):
+        await client.post(
+            f"{ADMIN}/ads", json=_ad_payload(title=f"Ad {i}"), headers=admin
+        )
+
+    # Injectăm un Redis fals partajat (REDIS_URL e gol în teste).
+    fake = FakeRedis()
+
+    async def _fake_get_redis():
+        return fake
+
+    monkeypatch.setattr(ad_service, "_get_redis", _fake_get_redis)
+
+    seen = []
+    for _ in range(n):
+        resp = await client.get(f"{API}/ads/next", headers=user)
+        assert resp.status_code == 200, resp.text
+        seen.append(resp.json()["id"])
+
+    # N apeluri → N ID-uri distincte (fără repetare în ciclu).
+    assert len(set(seen)) == n
+
+    # Al (N+1)-lea apel începe un ciclu nou (poate repeta un ID din setul complet).
+    resp = await client.get(f"{API}/ads/next", headers=user)
+    assert resp.status_code == 200
+    assert resp.json()["id"] in set(seen)
+
+
+@pytest.mark.asyncio
+async def test_public_next_fallback_without_redis_does_not_crash(client, db_session):
+    """Fără Redis (REDIS_URL gol în teste) `/ads/next` NU crapă — fallback weighted."""
+    admin = await _make_admin(client, db_session, "admin_nofb@example.com")
+    user = await _register(client, "user_nofb@example.com")
+
+    for i in range(3):
+        await client.post(
+            f"{ADMIN}/ads", json=_ad_payload(title=f"NoRedis {i}"), headers=admin
+        )
+
+    # `_get_redis` întoarce None (REDIS_URL gol) → fallback. Fiecare apel dă 200.
+    for _ in range(5):
+        resp = await client.get(f"{API}/ads/next", headers=user)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["id"] in {1, 2, 3}

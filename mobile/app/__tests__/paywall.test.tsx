@@ -65,7 +65,7 @@ const mockPurchase = jest.fn((_plan: string) =>
   Promise.resolve({ plan: 'free', status: 'active', expiresAt: '2026-08-01' }),
 );
 const mockFetchEntitlements = jest.fn<Promise<Entitlements>, []>(() =>
-  Promise.resolve({ premium: true, noAds: true, aiBot: true }),
+  Promise.resolve({ premium: true, noAds: true, aiBot: true, eventDiscount: false }),
 );
 jest.mock('@/features/subscription/subscriptionApi', () => ({
   fetchPlans: () => mockFetchPlans(),
@@ -78,6 +78,8 @@ const SUBSCRIPTION: Subscription = {
   plan: 'premium',
   status: 'active',
   expiresAt: '2026-08-01',
+  entriesTotal: null,
+  entriesRemaining: null,
 };
 
 const plans: Plan[] = [
@@ -119,7 +121,12 @@ describe('PaywallScreen', () => {
     mockFetchPlans.mockResolvedValue(plans);
     mockFetchMe.mockResolvedValue(null);
     mockPurchase.mockResolvedValue({ plan: 'free', status: 'active', expiresAt: '2026-08-01' });
-    mockFetchEntitlements.mockResolvedValue({ premium: true, noAds: true, aiBot: true });
+    mockFetchEntitlements.mockResolvedValue({
+      premium: true,
+      noAds: true,
+      aiBot: true,
+      eventDiscount: false,
+    });
     mockFetchCatalog.mockResolvedValue(catalog);
     mockPurchasePlan.mockResolvedValue({
       status: 'active',

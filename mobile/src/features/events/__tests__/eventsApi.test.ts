@@ -48,6 +48,11 @@ describe('fetchEvents', () => {
         coverUrl: 'https://x/cover.jpg',
         attendeeCount: 42,
         iAmGoing: true,
+        promoDiscountPercent: null,
+        promoCode: null,
+        promoDescription: null,
+        ticketPrice: null,
+        ticketCurrency: null,
       },
     ]);
   });
@@ -74,6 +79,27 @@ describe('fetchEvents', () => {
     expect(events[0].lng).toBeUndefined();
     expect(events[0].coverUrl).toBeUndefined();
     expect(events[0].iAmGoing).toBe(false);
+    expect(events[0].promoDiscountPercent).toBeNull();
+    expect(events[0].promoCode).toBeNull();
+    expect(events[0].promoDescription).toBeNull();
+  });
+
+  it('mapează câmpurile de promo când sunt prezente', async () => {
+    (api.get as jest.Mock).mockResolvedValue({
+      data: [
+        {
+          ...RAW_EVENT,
+          promo_discount_percent: 15,
+          promo_code: 'LOVE15',
+          promo_description: 'Reducere la intrare.',
+        },
+      ],
+    });
+
+    const events = await fetchEvents();
+    expect(events[0].promoDiscountPercent).toBe(15);
+    expect(events[0].promoCode).toBe('LOVE15');
+    expect(events[0].promoDescription).toBe('Reducere la intrare.');
   });
 });
 

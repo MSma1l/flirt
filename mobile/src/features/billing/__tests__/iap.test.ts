@@ -82,6 +82,8 @@ const SUBSCRIPTION: Subscription = {
   plan: 'premium',
   status: 'active',
   expiresAt: '2026-08-14T00:00:00Z',
+  entriesTotal: null,
+  entriesRemaining: null,
 };
 
 const PREMIUM_PRODUCT = {

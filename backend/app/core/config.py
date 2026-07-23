@@ -152,6 +152,11 @@ class Settings(BaseSettings):
     price_no_ads: float = 3.99
     price_ai_bot: float = 4.99
     price_all_inclusive: float = 14.99
+    # Carduri de reduceri la evenimente (acces la promo-ul evenimentelor, consumat
+    # cu fiecare check-in). Preț unic, nu abonament recurent — dar folosim aceeași
+    # infrastructură de planuri/IAP pentru consecvență.
+    price_card_5: float = 19.99
+    price_card_10: float = 34.99
 
     # --- Produse IAP (App Store / Google Play) --------------------------------
     # Id-urile produselor din App Store Connect / Play Console. Serviciul de billing
@@ -163,6 +168,9 @@ class Settings(BaseSettings):
     iap_product_no_ads: str = "eu.flirt.app.noads.monthly"
     iap_product_ai_bot: str = "eu.flirt.app.aibot.monthly"
     iap_product_all_inclusive: str = "eu.flirt.app.allinclusive.monthly"
+    # Carduri de reduceri — produse non-consumabile (cumpărare unică).
+    iap_product_card_5: str = "eu.flirt.app.card5"
+    iap_product_card_10: str = "eu.flirt.app.card10"
 
     # --- App Store — StoreKit 2 (verificare LOCALĂ a JWS-ului) -----------------
     # Bundle-ul aplicației: orice tranzacție semnată pentru ALT bundle e a altei
@@ -350,6 +358,8 @@ class Settings(BaseSettings):
             self.iap_product_no_ads: "no_ads",
             self.iap_product_ai_bot: "ai_bot",
             self.iap_product_all_inclusive: "all_inclusive",
+            self.iap_product_card_5: "card_5",
+            self.iap_product_card_10: "card_10",
         }
 
     @property

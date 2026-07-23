@@ -29,6 +29,11 @@ const events: EventItem[] = [
     kind: 'flirt_party',
     attendeeCount: 42,
     iAmGoing: false,
+    promoDiscountPercent: null,
+    promoCode: null,
+    promoDescription: null,
+    ticketPrice: null,
+    ticketCurrency: null,
   },
   {
     id: 'e2',
@@ -40,6 +45,11 @@ const events: EventItem[] = [
     kind: 'concert',
     attendeeCount: 10,
     iAmGoing: true,
+    promoDiscountPercent: null,
+    promoCode: null,
+    promoDescription: null,
+    ticketPrice: null,
+    ticketCurrency: null,
   },
 ];
 

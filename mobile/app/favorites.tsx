@@ -13,7 +13,6 @@
  * deodată, cu antetul care explică de ce apare fiecare persoană acolo.
  */
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -25,7 +24,7 @@ import {
   View,
 } from 'react-native';
 
-import { Button, ScreenContainer } from '@/components/ui';
+import { BackButton, Button, ScreenContainer } from '@/components/ui';
 import {
   FavoriteItem,
   fetchFavoritesPage,
@@ -219,7 +218,6 @@ function SectionFooter({ section }: { section: Section }) {
 }
 
 export default function FavoritesScreen() {
-  const router = useRouter();
   const queryClient = useQueryClient();
   const { colors, typography, spacing } = useTheme();
 
@@ -324,14 +322,7 @@ export default function FavoritesScreen() {
   return (
     <ScreenContainer>
       <View style={styles.header}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Înapoi"
-          onPress={() => router.back()}
-          hitSlop={spacing.sm}
-        >
-          <Text style={[typography.h2, { color: colors.accent }]}>‹</Text>
-        </Pressable>
+        <BackButton />
         <Text style={[typography.h1, { color: colors.textPrimary }]}>Favorite</Text>
       </View>
 

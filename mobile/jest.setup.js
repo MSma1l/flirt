@@ -1,3 +1,30 @@
+// Iconițe vectoriale: `@expo/vector-icons` trage după el `expo-font` →
+// `expo-asset`, care nu e instalat și nu poate fi rezolvat în jest. Nu ne
+// interesează glyph-ul real în teste — doar că iconița se randează — așa că o
+// înlocuim cu un `Text` care păstrează props-urile (name/testID/accessibility).
+// Fără asta, ORICE test care importă bara de taburi sau `@/components/ui`
+// (unde stă `BackButton`) ar pica la import.
+jest.mock('@expo/vector-icons', () => {
+  const React = require('react');
+  const { Text } = require('react-native');
+  const makeIcon = () => (props) =>
+    React.createElement(Text, { ...props }, props.name);
+  return {
+    Ionicons: makeIcon(),
+  };
+});
+
+// `react-native-qrcode-svg` trage după el `react-native-svg` (nativ), care
+// încetinește/atârnă jest. Nu ne interesează SVG-ul real în teste — doar că
+// QR-ul primește codul — așa că îl înlocuim cu un `Text` ce expune `value`.
+jest.mock('react-native-qrcode-svg', () => {
+  const React = require('react');
+  const { Text } = require('react-native');
+  return function MockQRCode({ value }) {
+    return React.createElement(Text, { testID: 'qr-value' }, value);
+  };
+});
+
 // Setup global de teste. Mock pentru SecureStore (nu există nativ în jest).
 jest.mock('expo-secure-store', () => {
   const store = {};

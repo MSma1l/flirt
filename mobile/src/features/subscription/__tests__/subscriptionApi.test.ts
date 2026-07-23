@@ -67,6 +67,30 @@ describe('fetchMySubscription', () => {
       plan: 'premium',
       status: 'active',
       expiresAt: '2026-08-01T00:00:00Z',
+      entriesTotal: null,
+      entriesRemaining: null,
+    });
+  });
+
+  it('mapează entries_total/entries_remaining pentru cardul de reduceri', async () => {
+    (api.get as jest.Mock).mockResolvedValue({
+      data: {
+        plan: 'card_5',
+        status: 'active',
+        expires_at: '2026-08-01T00:00:00Z',
+        entries_total: 5,
+        entries_remaining: 3,
+      },
+    });
+
+    const sub = await fetchMySubscription();
+
+    expect(sub).toEqual({
+      plan: 'card_5',
+      status: 'active',
+      expiresAt: '2026-08-01T00:00:00Z',
+      entriesTotal: 5,
+      entriesRemaining: 3,
     });
   });
 
@@ -92,6 +116,8 @@ describe('purchase', () => {
       plan: 'premium',
       status: 'active',
       expiresAt: '2026-08-01T00:00:00Z',
+      entriesTotal: null,
+      entriesRemaining: null,
     });
   });
 });
@@ -107,6 +133,6 @@ describe('fetchEntitlements', () => {
     const ent = await fetchEntitlements();
 
     expect(api.get).toHaveBeenCalledWith('/subscriptions/entitlements');
-    expect(ent).toEqual({ premium: true, noAds: true, aiBot: false });
+    expect(ent).toEqual({ premium: true, noAds: true, aiBot: false, eventDiscount: false });
   });
 });

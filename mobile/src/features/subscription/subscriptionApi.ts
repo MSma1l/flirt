@@ -19,12 +19,15 @@ interface SubscriptionResponse {
   plan: string;
   status: string;
   expires_at: string;
+  entries_total?: number | null;
+  entries_remaining?: number | null;
 }
 
 interface EntitlementsResponse {
   premium: boolean;
   no_ads: boolean;
   ai_bot: boolean;
+  event_discount?: boolean;
 }
 
 /* ------------------------------- Mapare -------------------------------- */
@@ -43,6 +46,8 @@ function mapSubscription(s: SubscriptionResponse): Subscription {
     plan: s.plan,
     status: s.status,
     expiresAt: s.expires_at,
+    entriesTotal: s.entries_total ?? null,
+    entriesRemaining: s.entries_remaining ?? null,
   };
 }
 
@@ -51,6 +56,7 @@ function mapEntitlements(e: EntitlementsResponse): Entitlements {
     premium: !!e.premium,
     noAds: !!e.no_ads,
     aiBot: !!e.ai_bot,
+    eventDiscount: !!e.event_discount,
   };
 }
 

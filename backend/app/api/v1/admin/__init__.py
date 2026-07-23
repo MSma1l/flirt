@@ -33,6 +33,7 @@ from app.api.v1.admin import (
     moderation,
     stats,
     subscriptions,
+    ticket_orders,
     users,
 )
 from app.core.deps import require_admin
@@ -53,3 +54,4 @@ router.include_router(events.router, dependencies=_admin_only)
 router.include_router(subscriptions.router, dependencies=_admin_only)
 router.include_router(audit.router, dependencies=_admin_only)
 router.include_router(ads.router, dependencies=_admin_only)
+router.include_router(ticket_orders.router, dependencies=_admin_only)

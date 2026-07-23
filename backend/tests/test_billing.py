@@ -21,14 +21,20 @@ async def _register(client, email: str, password: str = "Str0ng-Passw0rd!") -> d
 
 
 @pytest.mark.asyncio
-async def test_plans_public_returns_four(client):
-    """GET /subscriptions/plans e public și întoarce cele 4 planuri (TZ 9)."""
+async def test_plans_public_returns_catalog(client):
+    """GET /subscriptions/plans e public și întoarce catalogul complet (TZ 9)."""
     resp = await client.get(f"{API}/subscriptions/plans")
     assert resp.status_code == 200, resp.text
     plans = resp.json()
-    assert len(plans) == 4
     codes = {p["code"] for p in plans}
-    assert codes == {"premium", "no_ads", "ai_bot", "all_inclusive"}
+    assert codes == {
+        "premium",
+        "no_ads",
+        "ai_bot",
+        "all_inclusive",
+        "card_5",
+        "card_10",
+    }
     # Fiecare plan expune câmpurile așteptate.
     for p in plans:
         assert isinstance(p["title"], str) and p["title"]
@@ -73,7 +79,11 @@ async def test_entitlements_after_premium(client):
     # Înainte de cumpărare: toate false.
     before = await client.get(f"{API}/subscriptions/entitlements", headers=headers)
     assert before.status_code == 200
-    assert before.json() == {"premium": False, "no_ads": False, "ai_bot": False}
+    ent_before = before.json()
+    assert ent_before["premium"] is False
+    assert ent_before["no_ads"] is False
+    assert ent_before["ai_bot"] is False
+    assert ent_before["event_discount"] is False
 
     await client.post(
         f"{API}/subscriptions/purchase", json={"plan": "premium"}, headers=headers
@@ -85,6 +95,7 @@ async def test_entitlements_after_premium(client):
     assert ent["premium"] is True
     assert ent["no_ads"] is True
     assert ent["ai_bot"] is False
+    assert ent["event_discount"] is False
 
 
 @pytest.mark.asyncio
@@ -97,7 +108,102 @@ async def test_entitlements_all_inclusive(client):
         headers=headers,
     )
     resp = await client.get(f"{API}/subscriptions/entitlements", headers=headers)
-    assert resp.json() == {"premium": True, "no_ads": True, "ai_bot": True}
+    ent = resp.json()
+    assert ent["premium"] is True
+    assert ent["no_ads"] is True
+    assert ent["ai_bot"] is True
+    assert ent["event_discount"] is True
+
+
+@pytest.mark.asyncio
+async def test_purchase_card_5_sets_entries_and_event_discount(client):
+    """Cardul de reduceri 'card_5' → event_discount True și 5 intrări rămase."""
+    headers = await _register(client, "card5@example.com")
+
+    resp = await client.post(
+        f"{API}/subscriptions/purchase", json={"plan": "card_5"}, headers=headers
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["plan"] == "card_5"
+    assert body["status"] == "active"
+    assert body["entries_total"] == 5
+    assert body["entries_remaining"] == 5
+
+    ent = await client.get(f"{API}/subscriptions/entitlements", headers=headers)
+    assert ent.status_code == 200
+    data = ent.json()
+    assert data["event_discount"] is True
+    assert data["premium"] is False
+    assert data["entries_remaining"] == 5
+    assert data["entries_total"] == 5
+
+    me = await client.get(f"{API}/subscriptions/me", headers=headers)
+    assert me.json()["entries_remaining"] == 5
+
+
+@pytest.mark.asyncio
+async def test_card_10_sets_ten_entries(client):
+    """Cardul 'card_10' încarcă 10 intrări."""
+    headers = await _register(client, "card10@example.com")
+    resp = await client.post(
+        f"{API}/subscriptions/purchase", json={"plan": "card_10"}, headers=headers
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["entries_total"] == 10
+    assert body["entries_remaining"] == 10
+
+
+@pytest.mark.asyncio
+async def test_non_card_plan_has_null_entries(client):
+    """Un plan non-card nu ține evidența intrărilor (null)."""
+    headers = await _register(client, "prem@example.com")
+    resp = await client.post(
+        f"{API}/subscriptions/purchase", json={"plan": "premium"}, headers=headers
+    )
+    body = resp.json()
+    assert body["entries_total"] is None
+    assert body["entries_remaining"] is None
+
+
+@pytest.mark.asyncio
+async def test_checkin_consumes_card_entry(client):
+    """Check-in la un eveniment decrementează intrările cardului (5 → 4)."""
+    headers = await _register(client, "consume@example.com")
+    await client.post(
+        f"{API}/subscriptions/purchase", json={"plan": "card_5"}, headers=headers
+    )
+
+    events = await client.get(f"{API}/events/", headers=headers)
+    assert events.status_code == 200, events.text
+    event_id = events.json()[0]["id"]
+
+    resp = await client.post(f"{API}/events/{event_id}/checkin", headers=headers)
+    assert resp.status_code == 201, resp.text
+
+    me = await client.get(f"{API}/subscriptions/me", headers=headers)
+    assert me.json()["entries_remaining"] == 4
+    assert me.json()["entries_total"] == 5
+
+    # Al doilea check-in la ACELAȘI eveniment (ștampilă idempotentă) nu mai scade.
+    resp = await client.post(f"{API}/events/{event_id}/checkin", headers=headers)
+    assert resp.status_code == 201, resp.text
+    me = await client.get(f"{API}/subscriptions/me", headers=headers)
+    assert me.json()["entries_remaining"] == 4
+
+
+@pytest.mark.asyncio
+async def test_checkin_without_card_does_not_crash(client):
+    """Check-in fără card activ funcționează normal (cardul e un bonus, nu condiție)."""
+    headers = await _register(client, "nocard@example.com")
+
+    events = await client.get(f"{API}/events/", headers=headers)
+    assert events.status_code == 200, events.text
+    event_id = events.json()[0]["id"]
+
+    resp = await client.post(f"{API}/events/{event_id}/checkin", headers=headers)
+    assert resp.status_code == 201, resp.text
 
 
 @pytest.mark.asyncio

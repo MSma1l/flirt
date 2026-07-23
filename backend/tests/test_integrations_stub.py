@@ -105,7 +105,14 @@ async def test_entitlements_reflect_purchased_plan_and_expiry(client):
 
     # Înainte de cumpărare: fără drepturi.
     before = await client.get(f"{API}/subscriptions/entitlements", headers=headers)
-    assert before.json() == {"premium": False, "no_ads": False, "ai_bot": False}
+    assert before.json() == {
+        "premium": False,
+        "no_ads": False,
+        "ai_bot": False,
+        "event_discount": False,
+        "entries_remaining": None,
+        "entries_total": None,
+    }
 
     resp = await client.post(
         f"{API}/subscriptions/purchase", json={"plan": "ai_bot"}, headers=headers
@@ -122,7 +129,14 @@ async def test_entitlements_reflect_purchased_plan_and_expiry(client):
 
     # Entitlements reflectă exact planul ai_bot.
     after = await client.get(f"{API}/subscriptions/entitlements", headers=headers)
-    assert after.json() == {"premium": False, "no_ads": False, "ai_bot": True}
+    assert after.json() == {
+        "premium": False,
+        "no_ads": False,
+        "ai_bot": True,
+        "event_discount": False,
+        "entries_remaining": None,
+        "entries_total": None,
+    }
 
 
 # --- Push --------------------------------------------------------------------

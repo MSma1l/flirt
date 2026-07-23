@@ -354,6 +354,30 @@ a {
   color: #ffffff;
 }
 
+.badge--promo {
+  margin-left: var(--space-2);
+  background: rgba(46, 204, 113, 0.14);
+  color: var(--color-success);
+}
+
+/* --------------------------- Secțiune formular --------------------------- */
+
+.form-section {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-input);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.form-section > legend {
+  padding: 0 var(--space-2);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
 /* -------------------------------- Tabel ---------------------------------- */
 
 .table-wrap {

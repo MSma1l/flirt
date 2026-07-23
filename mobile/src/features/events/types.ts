@@ -20,6 +20,16 @@ export interface EventItem {
   attendeeCount: number;
   /** Dacă utilizatorul curent a confirmat participarea. */
   iAmGoing: boolean;
+  /** Procentul de reducere la intrare, arătat cu codul promo. `null` dacă nu are promo. */
+  promoDiscountPercent: number | null;
+  /** Codul promo de arătat la intrare. `null` dacă nu are promo. */
+  promoCode: string | null;
+  /** Descrierea reducerii (condiții etc.). `null` dacă nu are promo. */
+  promoDescription: string | null;
+  /** Prețul biletului online. `null` dacă evenimentul nu vinde bilete online. */
+  ticketPrice: number | null;
+  /** Moneda prețului de bilet (ex. „lei"). `null` dacă nu are preț. */
+  ticketCurrency: string | null;
 }
 
 /** O ștampilă din Flirt Passport, primită la check-in-ul unui eveniment. */

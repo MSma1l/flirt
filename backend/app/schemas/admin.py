@@ -37,6 +37,11 @@ EVENT_COVER_URL_MAX_LENGTH = 500
 # Event.description e `Text` (nemărginit în DB). Îl plafonăm oricum în schemă:
 # un câmp fără limită e un vector de umflare a bazei și a răspunsurilor.
 EVENT_DESCRIPTION_MAX_LENGTH = 2000
+# Promo/reducere de marketing (aliniate cu coloanele Event.promo_*).
+EVENT_PROMO_CODE_MAX_LENGTH = 32
+EVENT_PROMO_DESCRIPTION_MAX_LENGTH = 500
+# Moneda biletului online (aliniată cu Event.ticket_currency = String(8)).
+EVENT_TICKET_CURRENCY_MAX_LENGTH = 8
 # Motivul banului / al deciziei de moderare (aliniat cu User.ban_reason).
 REASON_MAX_LENGTH = 500
 # Textul de căutare din `GET /admin/users?q=` — plafonat (anti-DoS pe LIKE).
@@ -229,6 +234,20 @@ class AdminEventIn(BaseModel):
     lat: float | None = Field(default=None, ge=-90.0, le=90.0)
     lng: float | None = Field(default=None, ge=-180.0, le=180.0)
     cover_url: str | None = Field(default=None, max_length=EVENT_COVER_URL_MAX_LENGTH)
+    # Promo/reducere de marketing — ACELAȘI pentru toți userii care merg (nu se
+    # generează coduri per user). Percent 0..100; textul trece prin validatorii
+    # anti-XSS ai proiectului ca orice câmp liber.
+    promo_discount_percent: int | None = Field(default=None, ge=0, le=100)
+    promo_code: optional_safe_str(EVENT_PROMO_CODE_MAX_LENGTH) | None = None
+    promo_description: (
+        optional_safe_str(EVENT_PROMO_DESCRIPTION_MAX_LENGTH) | None
+    ) = None
+    # Preț al biletului ONLINE (transfer bancar). NULL = biletul online indisponibil.
+    # `ticket_currency` are sens doar când `ticket_price` e setat (implicit „lei").
+    ticket_price: float | None = Field(default=None, ge=0)
+    ticket_currency: (
+        optional_safe_str(EVENT_TICKET_CURRENCY_MAX_LENGTH) | None
+    ) = None
 
 
 class AdminEventUpdate(BaseModel):
@@ -248,6 +267,15 @@ class AdminEventUpdate(BaseModel):
     lat: float | None = Field(default=None, ge=-90.0, le=90.0)
     lng: float | None = Field(default=None, ge=-180.0, le=180.0)
     cover_url: str | None = Field(default=None, max_length=EVENT_COVER_URL_MAX_LENGTH)
+    promo_discount_percent: int | None = Field(default=None, ge=0, le=100)
+    promo_code: optional_safe_str(EVENT_PROMO_CODE_MAX_LENGTH) | None = None
+    promo_description: (
+        optional_safe_str(EVENT_PROMO_DESCRIPTION_MAX_LENGTH) | None
+    ) = None
+    ticket_price: float | None = Field(default=None, ge=0)
+    ticket_currency: (
+        optional_safe_str(EVENT_TICKET_CURRENCY_MAX_LENGTH) | None
+    ) = None
 
 
 class AdminEventOut(BaseModel):
@@ -264,6 +292,11 @@ class AdminEventOut(BaseModel):
     lng: float | None = None
     kind: str
     cover_url: str | None = None
+    promo_discount_percent: int | None = None
+    promo_code: str | None = None
+    promo_description: str | None = None
+    ticket_price: float | None = None
+    ticket_currency: str | None = None
     attendee_count: int = 0
     created_at: datetime
 
@@ -286,6 +319,9 @@ class AdminSubscriptionOut(BaseModel):
     expires_at: datetime | None = None
     # True dacă e 'active' ȘI nu a expirat (calculat, ca să nu-l recalculeze UI-ul).
     is_active: bool = False
+    # Card de reduceri: intrări cumpărate / rămase (NULL pentru celelalte planuri).
+    entries_total: int | None = None
+    entries_remaining: int | None = None
 
 
 class GrantSubscriptionIn(BaseModel):
@@ -398,6 +434,9 @@ class AdminStats(BaseModel):
     reports_pending: int = 0
     subscriptions_active: int = 0
     revenue_estimated_eur: float = 0.0
+    # Comenzi de bilet cu plata DECLARATĂ — coada care așteaptă verificarea manuală
+    # a adminului (echivalentul unei „notificări": nu există push real).
+    pending_ticket_orders: int = 0
 
     # Stratul DETALIAT (specificația backendului).
     users: UserStats

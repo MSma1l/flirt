@@ -17,6 +17,11 @@ interface EventResponse {
   cover_url?: string | null;
   attendee_count: number;
   i_am_going: boolean;
+  promo_discount_percent?: number | null;
+  promo_code?: string | null;
+  promo_description?: string | null;
+  ticket_price?: number | null;
+  ticket_currency?: string | null;
 }
 
 /** Forma brută (snake_case) a unei ștampile de passport din backend. */
@@ -42,6 +47,11 @@ function mapEvent(e: EventResponse): EventItem {
     coverUrl: e.cover_url ?? undefined,
     attendeeCount: e.attendee_count,
     iAmGoing: !!e.i_am_going,
+    promoDiscountPercent: e.promo_discount_percent ?? null,
+    promoCode: e.promo_code ?? null,
+    promoDescription: e.promo_description ?? null,
+    ticketPrice: e.ticket_price ?? null,
+    ticketCurrency: e.ticket_currency ?? null,
   };
 }
 

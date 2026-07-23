@@ -18,6 +18,11 @@ function makeEvent(over: Partial<EventItem> = {}): EventItem {
     kind: 'flirt_party',
     attendeeCount: 42,
     iAmGoing: false,
+    promoDiscountPercent: null,
+    promoCode: null,
+    promoDescription: null,
+    ticketPrice: null,
+    ticketCurrency: null,
     ...over,
   };
 }

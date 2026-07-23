@@ -17,13 +17,12 @@ import { Stack, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
-import { Button, Input, ScreenContainer } from '@/components/ui';
+import { BackButton, Button, Input, ScreenContainer } from '@/components/ui';
 import { StoryCameraScreen } from '@/features/stories/StoryCameraScreen';
 import { StoryMedia } from '@/features/stories/StoryMedia';
 import {
@@ -141,14 +140,7 @@ export default function NewStoryScreen() {
 
       <View style={styles.header}>
         <Text style={[typography.h1, { color: colors.textPrimary }]}>Story nou</Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Închide"
-          onPress={() => router.back()}
-          hitSlop={spacing.sm}
-        >
-          <Text style={[typography.h2, { color: colors.textPrimary }]}>✕</Text>
-        </Pressable>
+        <BackButton icon="close" color={colors.textPrimary} accessibilityLabel="Închide" />
       </View>
 
       <Text style={[typography.caption, { color: colors.textSecondary, marginTop: spacing.sm, marginBottom: spacing.lg }]}>

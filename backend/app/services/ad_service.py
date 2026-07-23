@@ -12,13 +12,16 @@ seed n-a rulat încă.
 """
 from __future__ import annotations
 
+import logging
 import secrets
+import threading
 from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.ad import Ad, AdSettings
 from app.models.admin import (
     ACTION_AD_CREATE,
@@ -39,11 +42,102 @@ from app.schemas.ad import (
 )
 from app.services.admin_service import audit
 
+log = logging.getLogger("app.ads")
+
 # Cheia fixă a rândului singleton de setări.
 SETTINGS_ID = 1
 # Valorile implicite ale singleton-ului (aceleași ca în migrarea de seed).
 DEFAULT_SWIPES_BEFORE_AD = 15
 DEFAULT_MAX_VIDEO_SECONDS = 10
+
+# --------------------------------------------------------------------------- #
+# Rotație „shuffle bag" per-user (fără repetare până la acoperire completă)
+# --------------------------------------------------------------------------- #
+# Cheia Redis care ține ID-urile reclamelor deja arătate userului în ciclul curent.
+ROTATION_KEY_PREFIX = "ads:rotation:"
+# TTL pe starea de rotație: 24h. Fără el, cheia ar rămâne pe veci pentru userii
+# inactivi. Se împrospătează la fiecare afișare, deci un user activ nu-l pierde.
+ROTATION_TTL_SECONDS = 24 * 60 * 60
+# Timeout-uri scurte: un Redis lent nu are voie să încetinească `/ads/next`.
+REDIS_TIMEOUT_SECONDS = 1.0
+
+# Client Redis partajat (cache la nivel de modul, recreat dacă URL-ul se schimbă —
+# ex. monkeypatch în teste). Refolosim conexiunea între cereri, ca `ratelimit`.
+_redis_client = None
+_redis_client_url: str | None = None
+_redis_lock = threading.Lock()
+
+
+async def _get_redis():
+    """Clientul Redis partajat, sau `None` dacă `REDIS_URL` nu e configurat.
+
+    Import LAZY al lui `redis.asyncio` (dependență opțională `[live]`/`[test]`):
+    dev-ul/testul fără Redis nu trebuie s-o ceară. Când `REDIS_URL` e gol (vezi
+    `tests/conftest.py`), întoarce `None` → apelantul cade grațios pe rotația
+    fără stare (weighted random).
+    """
+    global _redis_client, _redis_client_url
+
+    url = settings.redis_url
+    if not url:
+        return None
+    if _redis_client is None or _redis_client_url != url:
+        import redis.asyncio as aioredis  # import lazy (doar pe ramura live)
+
+        with _redis_lock:
+            if _redis_client is None or _redis_client_url != url:
+                _redis_client = aioredis.from_url(
+                    url,
+                    decode_responses=True,
+                    socket_connect_timeout=REDIS_TIMEOUT_SECONDS,
+                    socket_timeout=REDIS_TIMEOUT_SECONDS,
+                )
+                _redis_client_url = url
+    return _redis_client
+
+
+def reset_redis() -> None:
+    """Uită clientul Redis memorat (teste / reconectare după eroare)."""
+    global _redis_client, _redis_client_url
+    _redis_client = None
+    _redis_client_url = None
+
+
+async def _pick_rotating(redis, user_id: int, ads: list[Ad]) -> Ad:
+    """Alege o reclamă din „shuffle bag"-ul userului: uniform dintre cele NEarătate
+    în ciclul curent; când toate au fost arătate, resetează ciclul și reia.
+
+    Starea (ID-urile arătate) e un SET Redis per-user cu TTL. Garantează acoperire
+    completă a mulțimii eligibile înainte de orice repetare.
+
+    ROBUSTEȚE:
+      * Reclame noi (nearătate) intră automat în `candidați`.
+      * ID-uri arătate care nu mai sunt eligibile (șterse/dezactivate/expirate) NU
+        apar printre `ads`, deci se ignoră singure — nu blochează rotația.
+    """
+    key = f"{ROTATION_KEY_PREFIX}{user_id}"
+    shown_raw = await redis.smembers(key)
+    shown_ids: set[int] = set()
+    for member in shown_raw:
+        try:
+            shown_ids.add(int(member))
+        except (TypeError, ValueError):
+            continue  # membru corupt → îl ignorăm
+
+    candidates = [a for a in ads if a.id not in shown_ids]
+    if not candidates:
+        # Userul a văzut toate reclamele eligibile → ciclu nou.
+        await redis.delete(key)
+        candidates = list(ads)
+
+    chosen = candidates[secrets.randbelow(len(candidates))]
+
+    # Marcăm ca „arătat" + reînnoim TTL, atomic (o singură rundă la server).
+    async with redis.pipeline(transaction=True) as pipe:
+        pipe.sadd(key, chosen.id)
+        pipe.expire(key, ROTATION_TTL_SECONDS)
+        await pipe.execute()
+    return chosen
 
 
 # --------------------------------------------------------------------------- #
@@ -304,12 +398,20 @@ def _matches_target(ad: Ad, gender: str | None, age: int | None) -> bool:
 
 
 async def get_next(db: AsyncSession, user: User | None = None) -> AdNextOut | None:
-    """Alege o reclamă eligibilă la întâmplare (ponderată), cu durata plafonată.
+    """Alege o reclamă eligibilă cu ROTAȚIE fără repetare per-user, cu durata plafonată.
 
     Eligibilitatea = activă + în fereastra de programare + targetată corect pe
     userul care cere (gen + vârstă din `Profile`). Întoarce `None` dacă sistemul e
     dezactivat global sau dacă după filtrare nu rămâne nicio reclamă — ruta traduce
     asta în `204 No Content`.
+
+    ROTAȚIE („shuffle bag"): o reclamă nu se repetă până când userul nu a văzut TOATE
+    reclamele eligibile; apoi ciclul se reia. Starea per-user stă în Redis (vezi
+    `_pick_rotating`).
+
+    FALLBACK GRAȚIOS: fără Redis (`REDIS_URL` gol — dev/teste) SAU dacă Redis cade,
+    SAU pentru cereri fără user, cădem pe alegerea weighted-random FĂRĂ stare
+    (comportamentul vechi). Nu crăpăm niciodată din cauza rotației.
     """
     s = await _get_or_create_settings(db)
     if not s.enabled:
@@ -338,7 +440,23 @@ async def get_next(db: AsyncSession, user: User | None = None) -> AdNextOut | No
     if not ads:
         return None
 
-    ad = _pick_weighted(ads)
+    # Rotație fără repetare, dacă avem user + Redis. Orice problemă → fallback weighted.
+    ad: Ad | None = None
+    if user is not None:
+        redis = await _get_redis()
+        if redis is not None:
+            try:
+                ad = await _pick_rotating(redis, user.id, ads)
+            except Exception as exc:  # Redis căzut/lent → degradăm, nu crăpăm.
+                log.warning(
+                    "ads rotation: Redis indisponibil, cad pe weighted random",
+                    extra={"error_type": type(exc).__name__},
+                )
+                reset_redis()  # forțăm reconectarea la următoarea cerere
+                ad = None
+    if ad is None:
+        ad = _pick_weighted(ads)
+
     return AdNextOut(
         id=ad.id,
         title=ad.title,

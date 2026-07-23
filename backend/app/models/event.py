@@ -14,6 +14,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -44,6 +45,23 @@ class Event(Base):
     # Tipul evenimentului: 'flirt_party' | 'concert' | 'other'.
     kind: Mapped[str] = mapped_column(String(32), nullable=False, default="other")
     cover_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Promo/reducere de marketing setată de admin — ACELAȘI pentru toți userii care
+    # merg la eveniment (nu se generează coduri per user). Toate opționale =
+    # retrocompatibil: un eveniment fără promo rămâne valid.
+    #   * procentul reducerii (0..100) afișat în Flirt Passport / detaliul evenimentului;
+    #   * codul scurt arătat la intrare (ex. „FLIRT10");
+    #   * descrierea a ce se întâmplă când arăți codul la intrare.
+    promo_discount_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    promo_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    promo_description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Preț al BILETULUI ONLINE (transfer bancar + verificare manuală de admin).
+    # NULL = biletul online NU e disponibil pentru acest eveniment (retrocompatibil:
+    # evenimentele existente rămân fără vânzare de bilete). `ticket_currency` are
+    # sens doar când `ticket_price` e setat.
+    ticket_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ticket_currency: Mapped[str | None] = mapped_column(
+        String(8), nullable=True, server_default="lei"
+    )
 
 
 class EventAttendance(Base):

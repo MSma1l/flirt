@@ -6,7 +6,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
-import { fetchStats } from '../api/admin';
+import { fetchStats, fetchTicketOrders } from '../api/admin';
 import { useAuth } from '../auth/AuthContext';
 import { useTheme } from '../theme/ThemeContext';
 import { Badge, Button } from './ui';
@@ -23,6 +23,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { to: '/events', label: 'Evenimente' },
   { to: '/subscriptions', label: 'Abonamente' },
   { to: '/ads', label: 'Reclame' },
+  { to: '/ticket-orders', label: 'Comenzi bilete' },
 ] as const;
 
 function titleFor(pathname: string): string {
@@ -44,6 +45,17 @@ export function Layout(): JSX.Element {
   });
   const pending = statsQuery.data?.reports_pending ?? 0;
 
+  // Câte comenzi de bilete așteaptă verificarea (status `payment_declared`).
+  // Eșecul acestei cereri nu are voie să rupă navigarea.
+  const ticketOrdersQuery = useQuery({
+    queryKey: ['ticket-orders'],
+    queryFn: fetchTicketOrders,
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+  const ticketsToReview =
+    ticketOrdersQuery.data?.filter((order) => order.status === 'payment_declared').length ?? 0;
+
   return (
     <div className="layout">
       <aside className="sidebar">
@@ -62,6 +74,9 @@ export function Layout(): JSX.Element {
               <span>{item.label}</span>
               {item.to === '/moderation' && pending > 0 ? (
                 <Badge tone="count">{pending}</Badge>
+              ) : null}
+              {item.to === '/ticket-orders' && ticketsToReview > 0 ? (
+                <Badge tone="count">{ticketsToReview}</Badge>
               ) : null}
             </NavLink>
           ))}

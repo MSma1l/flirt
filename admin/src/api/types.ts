@@ -139,6 +139,12 @@ export interface AdminEvent {
   kind: string;
   cover_url: string | null;
   attendee_count: number;
+  /** Promo la intrare: procentul reducerii (0..100). `null` = fără reducere. */
+  promo_discount_percent: number | null;
+  /** Codul pe care participantul îl arată la intrare. `null` = fără cod. */
+  promo_code: string | null;
+  /** Ce se întâmplă când arăți codul la intrare. `null` = fără descriere. */
+  promo_description: string | null;
 }
 
 /** Payload de creare/editare — exact câmpurile scriibile ale modelului `Event`. */
@@ -152,6 +158,12 @@ export interface EventInput {
   lng: number | null;
   kind: string;
   cover_url: string | null;
+  /** Promo la intrare: procentul reducerii (0..100). Gol → `null`. */
+  promo_discount_percent: number | null;
+  /** Codul promo (max 32). Gol → `null`. */
+  promo_code: string | null;
+  /** Descrierea promoției (max 500). Gol → `null`. */
+  promo_description: string | null;
 }
 
 export const EVENT_KINDS = [
@@ -264,6 +276,60 @@ export interface AdSettings {
   swipes_before_ad: number;
   max_video_seconds: number;
   enabled: boolean;
+}
+
+/* ---------------- Comenzi bilete ---------------- */
+
+/**
+ * Statusul unei comenzi de bilet plătită prin transfer bancar:
+ *  - `awaiting_payment`  — comanda e creată, userul încă nu a declarat plata.
+ *  - `payment_declared`  — userul a marcat „am plătit"; adminul TREBUIE să verifice
+ *                          transferul în bancă (după `reference`) și să aprobe/respingă.
+ *  - `approved`          — plata confirmată, biletul a fost generat (`ticket_code`).
+ *  - `rejected`          — plata n-a fost găsită / comanda a fost refuzată.
+ */
+export type TicketOrderStatus =
+  | 'awaiting_payment'
+  | 'payment_declared'
+  | 'approved'
+  | 'rejected';
+
+/** Cine a făcut comanda. `payment_ref` = referința personală de plată a userului. */
+export interface TicketOrderUser {
+  email: string;
+  payment_ref: string | null;
+}
+
+/** Evenimentul pentru care s-a cumpărat biletul. */
+export interface TicketOrderEvent {
+  title: string;
+  starts_at: IsoDateTime;
+}
+
+/**
+ * O comandă de bilet. `reference` e cheia după care adminul caută plata în extrasul
+ * bancar — se evidențiază în UI. `user_note` e text NETRUSTED (se afișează ca text).
+ * `ticket_code` apare doar după aprobare.
+ */
+export interface TicketOrder {
+  id: Uuid;
+  status: TicketOrderStatus;
+  price: number;
+  currency: string;
+  reference: string;
+  user_note: string | null;
+  created_at: IsoDateTime;
+  user: TicketOrderUser;
+  event: TicketOrderEvent;
+  ticket_code?: string | null;
+}
+
+/** Datele bancare globale pe care userii fac transferul. */
+export interface PaymentSettings {
+  bank_beneficiary: string;
+  bank_iban: string;
+  bank_name: string;
+  instructions: string;
 }
 
 /* ---------------- Paginare ---------------- */

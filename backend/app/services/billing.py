@@ -123,9 +123,35 @@ PLANS: dict[str, dict] = {
             "Premium complet",
             "Fără reclamă",
             "AI-bot în chat",
+            "Reduceri la evenimente",
             "Preț redus față de cumpărarea separată",
         ],
     },
+    "card_5": {
+        "code": "card_5",
+        "title": "Card reduceri — 5 intrări",
+        "features": [
+            "Acces la reducerile de la evenimente",
+            "5 intrări (check-in-uri) cu reducere",
+            "Se consumă câte o intrare la fiecare check-in",
+        ],
+    },
+    "card_10": {
+        "code": "card_10",
+        "title": "Card reduceri — 10 intrări",
+        "features": [
+            "Acces la reducerile de la evenimente",
+            "10 intrări (check-in-uri) cu reducere",
+            "Se consumă câte o intrare la fiecare check-in",
+        ],
+    },
+}
+
+# Câte intrări (check-in-uri cu reducere) dă fiecare card. Un plan care NU e aici
+# nu e un card ⇒ nu ține evidența intrărilor (entries_* rămân NULL).
+_CARD_PLAN_ENTRIES: dict[str, int] = {
+    "card_5": 5,
+    "card_10": 10,
 }
 
 # Maparea plan -> câmpul de preț din `settings` (o singură sursă de adevăr).
@@ -134,15 +160,33 @@ _PLAN_PRICE_ATTRS: dict[str, str] = {
     "no_ads": "price_no_ads",
     "ai_bot": "price_ai_bot",
     "all_inclusive": "price_all_inclusive",
+    "card_5": "price_card_5",
+    "card_10": "price_card_10",
 }
 
-# Maparea plan -> drepturi. `all_inclusive` cumulează toate flag-urile.
-_PLAN_ENTITLEMENTS: dict[str, dict[str, bool]] = {
-    "premium": {"premium": True, "no_ads": True, "ai_bot": False},
-    "no_ads": {"premium": False, "no_ads": True, "ai_bot": False},
-    "ai_bot": {"premium": False, "no_ads": False, "ai_bot": True},
-    "all_inclusive": {"premium": True, "no_ads": True, "ai_bot": True},
+# Absența oricărui drept (fără abonament activ, sau plan necunoscut).
+_NO_ENTITLEMENTS: dict[str, bool] = {
+    "premium": False,
+    "no_ads": False,
+    "ai_bot": False,
+    "event_discount": False,
 }
+
+# Maparea plan -> drepturi. `all_inclusive` cumulează toate flag-urile; cardurile de
+# reduceri dau DOAR `event_discount` (accesul la promo-ul evenimentelor).
+_PLAN_ENTITLEMENTS: dict[str, dict[str, bool]] = {
+    "premium": {"premium": True, "no_ads": True, "ai_bot": False, "event_discount": False},
+    "no_ads": {"premium": False, "no_ads": True, "ai_bot": False, "event_discount": False},
+    "ai_bot": {"premium": False, "no_ads": False, "ai_bot": True, "event_discount": False},
+    "all_inclusive": {"premium": True, "no_ads": True, "ai_bot": True, "event_discount": True},
+    "card_5": {"premium": False, "no_ads": False, "ai_bot": False, "event_discount": True},
+    "card_10": {"premium": False, "no_ads": False, "ai_bot": False, "event_discount": True},
+}
+
+
+def card_entries_for_plan(plan: str) -> int | None:
+    """Numărul de intrări pe care le dă un plan card, sau None dacă nu e card."""
+    return _CARD_PLAN_ENTRIES.get(plan)
 
 
 @dataclass(frozen=True)
@@ -195,7 +239,13 @@ async def get_subscription(db: AsyncSession, user: User) -> SubscriptionOut | No
     sub = result.scalars().first()
     if sub is None:
         return None
-    return SubscriptionOut(plan=sub.plan, status=sub.status, expires_at=sub.expires_at)
+    return SubscriptionOut(
+        plan=sub.plan,
+        status=sub.status,
+        expires_at=sub.expires_at,
+        entries_total=sub.entries_total,
+        entries_remaining=sub.entries_remaining,
+    )
 
 
 def _payment_required(detail: str) -> HTTPException:
@@ -722,10 +772,21 @@ async def _activate(
     sub.status = "active"
     sub.provider = provider
     sub.expires_at = expires_at
+    # Cardurile de reduceri își (re)încarcă intrările la activare; orice alt plan
+    # șterge evidența (NULL) — un abonament „premium" nu are intrări de eveniment.
+    entries = card_entries_for_plan(plan)
+    sub.entries_total = entries
+    sub.entries_remaining = entries
 
     await db.commit()
     await db.refresh(sub)
-    return SubscriptionOut(plan=sub.plan, status=sub.status, expires_at=sub.expires_at)
+    return SubscriptionOut(
+        plan=sub.plan,
+        status=sub.status,
+        expires_at=sub.expires_at,
+        entries_total=sub.entries_total,
+        entries_remaining=sub.entries_remaining,
+    )
 
 
 async def purchase(
@@ -769,11 +830,34 @@ async def entitlements(db: AsyncSession, user: User) -> EntitlementsOut:
     )
     sub = result.scalars().first()
 
-    # Fără abonament activ → toate flag-urile false.
+    # Fără abonament activ → toate flag-urile false, fără intrări.
     if not _is_active(sub):
-        return EntitlementsOut(premium=False, no_ads=False, ai_bot=False)
+        return EntitlementsOut(**_NO_ENTITLEMENTS)
 
-    flags = _PLAN_ENTITLEMENTS.get(
-        sub.plan, {"premium": False, "no_ads": False, "ai_bot": False}
+    flags = _PLAN_ENTITLEMENTS.get(sub.plan, _NO_ENTITLEMENTS)
+    return EntitlementsOut(
+        **flags,
+        entries_remaining=sub.entries_remaining,
+        entries_total=sub.entries_total,
     )
-    return EntitlementsOut(**flags)
+
+
+async def consume_event_entry(db: AsyncSession, user: User) -> None:
+    """Consumă o intrare din cardul de reduceri activ la un check-in (defensiv).
+
+    Cardul e un BONUS de reducere, nu o condiție de check-in: dacă userul n-are
+    card activ, ori a rămas fără intrări, funcția nu face nimic (check-in-ul merge
+    mai departe). Nu decrementează niciodată sub 0. NU face commit — lasă caller-ul
+    (fluxul de check-in) să persiste totul într-o singură tranzacție.
+    """
+    result = await db.execute(
+        select(Subscription)
+        .where(Subscription.user_id == user.id)
+        .order_by(Subscription.created_at.desc())
+    )
+    sub = result.scalars().first()
+    if not _is_active(sub):
+        return
+    if sub.entries_remaining is None or sub.entries_remaining <= 0:
+        return
+    sub.entries_remaining -= 1

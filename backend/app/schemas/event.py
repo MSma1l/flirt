@@ -20,6 +20,13 @@ class EventOut(BaseModel):
     lng: float | None = None
     kind: str
     cover_url: str | None = None
+    # Promo/reducere de marketing setată de admin (același pentru toți).
+    promo_discount_percent: int | None = None
+    promo_code: str | None = None
+    promo_description: str | None = None
+    # Preț al biletului ONLINE (transfer bancar). NULL = biletul online indisponibil.
+    ticket_price: float | None = None
+    ticket_currency: str | None = None
     # Câți useri au going=True + dacă userul curent merge.
     attendee_count: int
     i_am_going: bool

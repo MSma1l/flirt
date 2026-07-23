@@ -1,17 +1,16 @@
 /** Utilizatori blocați (TZ secț. 6.2): listă paginată pe cursor + deblocare. */
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Stack, useRouter } from 'expo-router';
+import { Stack } from 'expo-router';
 import React from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 
-import { Button, ScreenContainer } from '@/components/ui';
+import { BackButton, Button, ScreenContainer } from '@/components/ui';
 import { fetchBlocks, unblock } from '@/features/settings/settingsApi';
 import { alertMessage } from '@/utils/dialog';
 import { useTheme } from '@theme/index';
 
 export default function BlocklistScreen() {
   const { colors, typography, spacing, radius } = useTheme();
-  const router = useRouter();
   const queryClient = useQueryClient();
 
   // Backendul paginează pe cursor (`X-Next-Cursor`), deci `useInfiniteQuery`:
@@ -83,13 +82,7 @@ export default function BlocklistScreen() {
     <ScreenContainer>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => router.back()}
-        style={{ marginBottom: spacing.lg }}
-      >
-        <Text style={[typography.bodyStrong, { color: colors.accent }]}>‹ Înapoi</Text>
-      </Pressable>
+      <BackButton style={{ alignSelf: 'flex-start', marginBottom: spacing.lg }} />
 
       <Text style={[typography.h1, { color: colors.textPrimary, marginBottom: spacing.lg }]}>
         Utilizatori blocați

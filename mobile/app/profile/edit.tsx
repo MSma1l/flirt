@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 
-import { Button, Input, ScreenContainer } from '@/components/ui';
+import { BackButton, Button, Input, ScreenContainer } from '@/components/ui';
 import { fetchReference, submitAnketa } from '@/features/anketa/anketaApi';
 import { AnketaDraft, InterestOption, OptionItem } from '@/features/anketa/types';
 import {
@@ -339,14 +339,7 @@ export default function ProfileEditScreen() {
   return (
     <ScreenContainer>
       <View style={styles.header}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Înapoi"
-          onPress={() => router.back()}
-          hitSlop={spacing.sm}
-        >
-          <Text style={[typography.h2, { color: colors.accent }]}>‹</Text>
-        </Pressable>
+        <BackButton />
         <Text style={[typography.h1, { color: colors.textPrimary }]}>Editează profilul</Text>
       </View>
 

@@ -16,6 +16,7 @@ from app.core.config import settings
 from app.models.event import Event, EventAttendance, FlirtPassportStamp
 from app.models.user import User
 from app.schemas.event import EventOut, EventPage, PassportStampOut
+from app.services import billing
 from app.services.pagination import (
     EVENTS_MAX_LIMIT,
     EVENTS_PAGE_LIMIT,
@@ -212,6 +213,11 @@ async def checkin(
             stamped_at=datetime.now(timezone.utc),
         )
         db.add(stamp)
+        # Prima intrare la ACEST eveniment consumă o intrare din cardul de reduceri,
+        # dacă userul are unul activ cu intrări rămase. Defensiv: fără card = no-op,
+        # nu blochează check-in-ul. Legat de crearea ștampilei (idempotentă) ⇒ un
+        # al doilea check-in la același eveniment nu mai scade nimic.
+        await billing.consume_event_entry(db, user)
         await db.commit()
         await db.refresh(stamp)
 
@@ -288,6 +294,11 @@ def _to_event_out(event: Event, attendee_count: int, i_am_going: bool) -> EventO
         lng=event.lng,
         kind=event.kind,
         cover_url=event.cover_url,
+        promo_discount_percent=event.promo_discount_percent,
+        promo_code=event.promo_code,
+        promo_description=event.promo_description,
+        ticket_price=event.ticket_price,
+        ticket_currency=event.ticket_currency,
         attendee_count=attendee_count,
         i_am_going=i_am_going,
     )

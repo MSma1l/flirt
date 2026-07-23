@@ -17,6 +17,7 @@ from app.api.v1 import (
     stories,
     subscriptions,
     ticket,
+    ticket_orders,
 )
 
 api_router = APIRouter()
@@ -28,6 +29,9 @@ api_router.include_router(settings.router, prefix="/settings", tags=["settings"]
 api_router.include_router(social.router, prefix="/social", tags=["social"])
 api_router.include_router(ticket.router, prefix="/ticket", tags=["ticket"])
 api_router.include_router(events.router, prefix="/events", tags=["events"])
+# Bilete online (transfer bancar + verificare manuală). Rutele își declară căile
+# absolute (`/events/{id}/ticket-orders`, `/ticket-orders/*`) → fără prefix.
+api_router.include_router(ticket_orders.router, tags=["ticket-orders"])
 api_router.include_router(stories.router, prefix="/stories", tags=["stories"])
 api_router.include_router(humor.router, prefix="/humor", tags=["humor"])
 api_router.include_router(reports.router, prefix="/reports", tags=["moderation"])

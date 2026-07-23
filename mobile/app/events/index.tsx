@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Button, ScreenContainer } from '@/components/ui';
+import { BackButton, Button, ScreenContainer } from '@/components/ui';
 import { EventCard } from '@/features/events/EventCard';
 import { fetchEvents } from '@/features/events/eventsApi';
 import { EventItem } from '@/features/events/types';
@@ -21,7 +21,10 @@ export default function EventsScreen() {
 
   const header = (
     <View style={styles.header}>
-      <Text style={[typography.h1, { color: colors.textPrimary }]}>Evenimente</Text>
+      <View style={styles.headerLeft}>
+        <BackButton />
+        <Text style={[typography.h1, { color: colors.textPrimary }]}>Evenimente</Text>
+      </View>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Deschide Flirt Passport"
@@ -96,6 +99,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 1,
   },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   center: { textAlign: 'center' },

@@ -16,6 +16,10 @@ export interface Subscription {
   status: string;
   /** Data expirării în format ISO. */
   expiresAt: string;
+  /** Numărul total de intrări al cardului de reduceri. `null` pentru planurile non-card. */
+  entriesTotal: number | null;
+  /** Câte intrări au mai rămas pe cardul de reduceri. `null` pentru planurile non-card. */
+  entriesRemaining: number | null;
 }
 
 /** Drepturile (entitlements) deblocate de abonamentul activ. */
@@ -23,4 +27,6 @@ export interface Entitlements {
   premium: boolean;
   noAds: boolean;
   aiBot: boolean;
+  /** Dacă userul beneficiază de reducere la intrarea în evenimente. */
+  eventDiscount: boolean;
 }

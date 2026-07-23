@@ -786,6 +786,92 @@ async def test_update_event_404_and_empty_payload(client, db_session):
     assert resp.status_code == 404, resp.text
 
 
+@pytest.mark.asyncio
+async def test_event_promo_visible_in_public_api(client, db_session):
+    """Promo-ul setat de admin apare în lista + detaliul public al evenimentului."""
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
+    user_headers = await _register(client, "u@example.com")
+
+    starts_at = (datetime.now(timezone.utc) + timedelta(days=4)).isoformat()
+    resp = await client.post(
+        f"{ADMIN}/events",
+        json={
+            "title": "Flirt Party Promo",
+            "starts_at": starts_at,
+            "city": "Chișinău",
+            "promo_discount_percent": 10,
+            "promo_code": "FLIRT10",
+            "promo_description": (
+                "Arată acest cod la intrare pentru 10% reducere și o băutură."
+            ),
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    event_id = resp.json()["id"]
+    # Ieșirea de admin expune promo-ul.
+    assert resp.json()["promo_discount_percent"] == 10
+    assert resp.json()["promo_code"] == "FLIRT10"
+
+    # Detaliul public.
+    resp = await client.get(f"{API}/events/{event_id}", headers=user_headers)
+    assert resp.status_code == 200, resp.text
+    detail = resp.json()
+    assert detail["promo_discount_percent"] == 10
+    assert detail["promo_code"] == "FLIRT10"
+    assert "reducere" in detail["promo_description"]
+
+    # Lista publică.
+    resp = await client.get(f"{API}/events/", headers=user_headers)
+    match = [e for e in resp.json() if e["id"] == event_id]
+    assert match and match[0]["promo_code"] == "FLIRT10"
+
+
+@pytest.mark.asyncio
+async def test_event_promo_percent_over_100_rejected(client, db_session):
+    """Un procent de reducere > 100 e respins cu 422 (nu ajunge date corupte în DB)."""
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
+    starts_at = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+
+    resp = await client.post(
+        f"{ADMIN}/events",
+        json={
+            "title": "Bad Promo",
+            "starts_at": starts_at,
+            "city": "C",
+            "promo_discount_percent": 150,
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 422, resp.text
+
+
+@pytest.mark.asyncio
+async def test_event_promo_partial_update(client, db_session):
+    """PUT parțial poate seta promo-ul pe un eveniment existent fără a-l recrea."""
+    headers, _ = await _make_admin(client, db_session, "admin@flrt.md")
+    starts_at = (datetime.now(timezone.utc) + timedelta(days=6)).isoformat()
+
+    resp = await client.post(
+        f"{ADMIN}/events",
+        json={"title": "No Promo Yet", "starts_at": starts_at, "city": "Chișinău"},
+        headers=headers,
+    )
+    event_id = resp.json()["id"]
+    assert resp.json()["promo_discount_percent"] is None
+
+    resp = await client.put(
+        f"{ADMIN}/events/{event_id}",
+        json={"promo_discount_percent": 25, "promo_code": "SUMMER25"},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["promo_discount_percent"] == 25
+    assert resp.json()["promo_code"] == "SUMMER25"
+    # Titlul netrimis nu s-a șters.
+    assert resp.json()["title"] == "No Promo Yet"
+
+
 # --------------------------------------------------------------------------- #
 # 5. Abonamente
 # --------------------------------------------------------------------------- #

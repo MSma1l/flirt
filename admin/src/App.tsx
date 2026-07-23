@@ -27,6 +27,9 @@ const SubscriptionsPage = lazy(() =>
   import('./pages/SubscriptionsPage').then((m) => ({ default: m.SubscriptionsPage })),
 );
 const AdsPage = lazy(() => import('./pages/AdsPage').then((m) => ({ default: m.AdsPage })));
+const TicketOrdersPage = lazy(() =>
+  import('./pages/TicketOrdersPage').then((m) => ({ default: m.TicketOrdersPage })),
+);
 
 export function App(): JSX.Element {
   return (
@@ -46,6 +49,7 @@ export function App(): JSX.Element {
           <Route path="/events" element={<EventsPage />} />
           <Route path="/subscriptions" element={<SubscriptionsPage />} />
           <Route path="/ads" element={<AdsPage />} />
+          <Route path="/ticket-orders" element={<TicketOrdersPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
