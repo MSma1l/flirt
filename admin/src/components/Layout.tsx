@@ -22,6 +22,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { to: '/users', label: 'Utilizatori' },
   { to: '/events', label: 'Evenimente' },
   { to: '/subscriptions', label: 'Abonamente' },
+  { to: '/ads', label: 'Reclame' },
 ] as const;
 
 function titleFor(pathname: string): string {

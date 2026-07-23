@@ -6,6 +6,9 @@
  */
 import { ApiError, apiFetch, apiPage, apiVoid } from './client';
 import type {
+  Ad,
+  AdInput,
+  AdSettings,
   AdminEvent,
   AdminMe,
   AdminReport,
@@ -168,4 +171,30 @@ export function grantSubscription(body: GrantSubscriptionBody): Promise<AdminSub
     method: 'POST',
     body: { ...body },
   });
+}
+
+/* ------------------------------ Reclame ----------------------------- */
+
+export function fetchAds(): Promise<Ad[]> {
+  return apiFetch<Ad[]>('/admin/ads');
+}
+
+export function createAd(input: AdInput): Promise<Ad> {
+  return apiFetch<Ad>('/admin/ads', { method: 'POST', body: { ...input } });
+}
+
+export function updateAd(id: number, input: AdInput): Promise<Ad> {
+  return apiFetch<Ad>(`/admin/ads/${id}`, { method: 'PATCH', body: { ...input } });
+}
+
+export function deleteAd(id: number): Promise<void> {
+  return apiVoid(`/admin/ads/${id}`, { method: 'DELETE' });
+}
+
+export function fetchAdSettings(): Promise<AdSettings> {
+  return apiFetch<AdSettings>('/admin/ads/settings');
+}
+
+export function updateAdSettings(body: AdSettings): Promise<AdSettings> {
+  return apiFetch<AdSettings>('/admin/ads/settings', { method: 'PUT', body: { ...body } });
 }

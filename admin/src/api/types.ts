@@ -202,6 +202,70 @@ export interface GrantSubscriptionBody {
   days: number;
 }
 
+/* ---------------- Reclame (Ads) ---------------- */
+
+/** Genul-țintă al unei reclame. `null` = oricine (fără filtrare pe gen). */
+export type AdTargetGender = 'male' | 'female';
+
+/**
+ * O reclamă video servită între swipe-uri. `video_url` e sursa principală;
+ * `image_url` e un poster/fallback opțional. `weight` reglează frecvența relativă
+ * față de celelalte reclame active, `duration_seconds` cât ține clipul.
+ *
+ * TARGETARE (`target_*`): restrânge cui i se arată reclama (gen + interval de
+ * vârstă). `null` peste tot = fără filtru. PROGRAMARE (`starts_at`/`ends_at`):
+ * fereastra în care reclama e eligibilă; `null` = fără limită pe capătul respectiv.
+ * STATISTICI (`impressions`/`clicks`): contoare read-only calculate de backend.
+ *
+ * ATENȚIE: `title`, `video_url`, `image_url` se afișează exclusiv ca text
+ * (React escapează implicit); `dangerouslySetInnerHTML` rămâne interzis.
+ */
+export interface Ad {
+  id: number;
+  title: string;
+  video_url: string | null;
+  image_url: string | null;
+  duration_seconds: number;
+  active: boolean;
+  weight: number;
+  target_gender: AdTargetGender | null;
+  target_age_min: number | null;
+  target_age_max: number | null;
+  starts_at: IsoDateTime | null;
+  ends_at: IsoDateTime | null;
+  /** Read-only: câte afișări a strâns reclama (din backend). */
+  impressions: number;
+  /** Read-only: câte click-uri a strâns reclama (din backend). */
+  clicks: number;
+  created_at: IsoDateTime;
+  updated_at: IsoDateTime;
+}
+
+/**
+ * Payload de creare/editare — câmpurile scriibile ale unei reclame.
+ * `impressions`/`clicks` NU sunt aici: sunt read-only, le calculează backend-ul.
+ */
+export interface AdInput {
+  title: string;
+  video_url: string | null;
+  image_url: string | null;
+  duration_seconds: number;
+  active: boolean;
+  weight: number;
+  target_gender: AdTargetGender | null;
+  target_age_min: number | null;
+  target_age_max: number | null;
+  starts_at: IsoDateTime | null;
+  ends_at: IsoDateTime | null;
+}
+
+/** Setările globale ale reclamelor (după câte swipe-uri, limită video, on/off). */
+export interface AdSettings {
+  swipes_before_ad: number;
+  max_video_seconds: number;
+  enabled: boolean;
+}
+
 /* ---------------- Paginare ---------------- */
 
 /**
