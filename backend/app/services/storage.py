@@ -41,6 +41,19 @@ def allowed_hosts() -> set[str]:
     return hosts
 
 
+def allowed_schemes() -> set[str]:
+    """Schemele URL permise pentru poze.
+
+    Producție: DOAR `https` (anti mixed-content / SSRF pe scheme exotice —
+    comportament NESCHIMBAT). În dev/staging permitem și `http`, fiindcă
+    storage-ul local pe LAN (`STORAGE_PUBLIC_BASE_URL=http://192.168.x.x:8008`)
+    e servit fără TLS — altfel pozele de test ar pica la validarea `PUT /profiles/me`.
+    """
+    if settings.environment == "production":
+        return {"https"}
+    return {"https", "http"}
+
+
 def photo_prefix(profile_id) -> str:
     """Prefixul de cheie S3 rezervat pozelor unui profil."""
     return f"photos/{profile_id}/"
@@ -68,7 +81,7 @@ def _relative_key(url: str) -> str | None:
     pe providerul local.
     """
     parsed = urlparse(url)
-    if parsed.scheme != "https" or parsed.netloc not in allowed_hosts():
+    if parsed.scheme not in allowed_schemes() or parsed.netloc not in allowed_hosts():
         return None
     base_path = urlparse(settings.storage_base_url).path.rstrip("/")  # '' sau '/media'
     path = parsed.path

@@ -41,3 +41,6 @@ mobile/play-service-account.json
 # Admin panel
 admin/node_modules/
 admin/dist/
+
+# Poze de test stocate local de scripts/create_test_users.py (dev)
+backend/media/

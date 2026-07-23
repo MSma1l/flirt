@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.config import settings
-from app.core.validators import is_https_url, optional_safe_str, safe_str
+from app.core.validators import optional_safe_str, safe_str
 
 # Limite anti-DoS pe listele scurte (bounded input). Nu sunt reguli de business.
 _MAX_LIST_ITEMS = 50
@@ -48,13 +48,21 @@ class AnketaIn(BaseModel):
     @field_validator("photos")
     @classmethod
     def _validate_photo_urls(cls, v: list[str]) -> list[str]:
-        """Fiecare URL de poză: doar https + domeniu din allowlist-ul storage."""
-        from app.services.storage import allowed_hosts  # import lazy (anti-ciclu)
+        """Fiecare URL de poză: schemă permisă + domeniu din allowlist-ul storage.
+
+        Schema permisă e `https` în producție (neschimbat) și, în plus, `http`
+        în dev/staging pentru storage-ul local pe LAN — vezi `allowed_schemes()`.
+        """
+        # import lazy (anti-ciclu)
+        from app.services.storage import allowed_hosts, allowed_schemes
 
         hosts = allowed_hosts()
+        schemes = allowed_schemes()
         for url in v:
-            is_https_url(url)  # ridică ValueError → 422 dacă nu e https
-            if urlparse(url).netloc not in hosts:
+            parsed = urlparse(url)
+            if parsed.scheme not in schemes or not parsed.netloc:
+                raise ValueError("URL de poză cu schemă neacceptată.")
+            if parsed.netloc not in hosts:
                 raise ValueError("URL de poză în afara domeniului permis.")
         return v
 

@@ -1,14 +1,22 @@
 """Configurare centralizată — totul din mediu, zero valori hardcodate în cod."""
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlparse
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        # `storage_provider`/`storage_base_url` au `validation_alias` (acceptă și
+        # numele din env-ul de dev pe LAN: STORAGE_BACKEND / STORAGE_PUBLIC_BASE_URL).
+        # Fără asta, aliasul ar bloca popularea prin numele câmpului — adică
+        # `Settings(storage_provider="s3")` (folosit în teste / cod) n-ar mai merge.
+        populate_by_name=True,
     )
 
     # App
@@ -88,8 +96,21 @@ class Settings(BaseSettings):
     #    fișierele de pe domeniul propriu. GRATUIT, fără AWS. Pune
     #    STORAGE_BASE_URL=https://<domeniu>/media și STORAGE_LOCAL_DIR=/data/media.
     #  - 's3': AWS S3 (cere chei).
-    storage_provider: str = "stub"
-    storage_base_url: str = "https://cdn.flirt.local"   # bază URL pentru stub
+    # Acceptăm și aliasul `STORAGE_BACKEND` (folosit de env-ul de dezvoltare pe
+    # LAN), pe lângă numele canonic `STORAGE_PROVIDER`. Fără alias, env-ul de dev
+    # setează `STORAGE_BACKEND=local`, dar pydantic îl ignoră (`extra="ignore"`)
+    # și providerul rămâne pe default-ul `stub` — exact bug-ul „poze care nu se
+    # editează". Producția folosește tot `STORAGE_PROVIDER`, neschimbat.
+    storage_provider: str = Field(
+        default="stub",
+        validation_alias=AliasChoices("STORAGE_PROVIDER", "STORAGE_BACKEND"),
+    )
+    # Idem: aliasul `STORAGE_PUBLIC_BASE_URL` (env-ul de dev pe LAN dă host-ul
+    # public al backendului, ex. http://192.168.x.x:8008) pe lângă `STORAGE_BASE_URL`.
+    storage_base_url: str = Field(  # bază URL pentru stub / local / S3
+        default="https://cdn.flirt.local",
+        validation_alias=AliasChoices("STORAGE_BASE_URL", "STORAGE_PUBLIC_BASE_URL"),
+    )
     # Directorul pe disc unde scrie providerul 'local' (montat ca volum Docker,
     # ca fișierele să supraviețuiască restartului/rebuild-ului containerului).
     storage_local_dir: str = "/data/media"
@@ -361,6 +382,23 @@ class Settings(BaseSettings):
             )
         if self.search_age_min_default < self.adult_age:
             self.search_age_min_default = self.adult_age
+        return self
+
+    @model_validator(mode="after")
+    def _local_storage_base_path(self) -> "Settings":
+        """Providerul 'local' servește fișierele static sub un sub-path (ex. /media).
+
+        `LocalStorage.save` întoarce `{storage_base_url}/{key}`, iar aplicația
+        montează fișierele static exact pe path-ul din `storage_base_url`. Dacă
+        base URL-ul nu conține niciun path (cazul dev pe LAN:
+        `http://192.168.x.x:8008`), adăugăm `/media`, ca URL-urile întoarse să
+        corespundă cu ce se servește static. Un base cu path (ex.
+        `https://api.flrt.md/media`) rămâne neatins. Nu afectează stub/S3.
+        """
+        if self.storage_provider == "local":
+            parsed = urlparse(self.storage_base_url)
+            if not parsed.path.strip("/"):
+                self.storage_base_url = self.storage_base_url.rstrip("/") + "/media"
         return self
 
     @model_validator(mode="after")

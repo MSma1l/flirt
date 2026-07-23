@@ -110,12 +110,17 @@ app.include_router(legal.router)
 # aici. Public, fără auth (media publică de profil), în afara /api/v1.
 if settings.storage_provider == "local":
     import os
+    from urllib.parse import urlparse
 
     from fastapi.staticfiles import StaticFiles
 
+    # Path-ul de montare = path-ul din `storage_base_url` (ex. `/media`), ca
+    # `GET {storage_base_url}/{key}` să lovească exact acest mount. Config-ul
+    # garantează un path non-gol pentru provider=local (fallback `/media`).
+    _mount_path = urlparse(settings.storage_base_url).path.rstrip("/") or "/media"
     os.makedirs(settings.storage_local_dir, exist_ok=True)
     app.mount(
-        "/media",
+        _mount_path,
         StaticFiles(directory=settings.storage_local_dir),
         name="media",
     )

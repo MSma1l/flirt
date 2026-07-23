@@ -1,5 +1,6 @@
 """Logica de business pentru anketă/profil: referință, seed catalog, upsert."""
 from datetime import date
+from urllib.parse import urlparse
 
 from fastapi import HTTPException, status
 from sqlalchemy import delete, select
@@ -19,11 +20,11 @@ from app.schemas.profile import (
 from app.services import account_service, geo
 from app.services.face_verify import get_face_verifier
 from app.services.storage import (
+    allowed_schemes,
     build_photo_key,
     get_storage,
     key_from_own_url,
 )
-from app.core.validators import is_https_url
 
 # --- Cataloage de referință (derivate din TZ, nu hardcodate ca reguli) ---------
 
@@ -426,14 +427,15 @@ async def upsert_anketa(db: AsyncSession, user, data: AnketaIn) -> ProfileOut:
     profile = result.scalar_one_or_none()
     own_profile_id = profile.id if profile is not None else None
     for photo_url in photos:
-        try:
-            is_https_url(photo_url)
-        except ValueError:
+        # Schemă permisă (https în producție; +http în dev pentru storage local
+        # pe LAN — vezi `allowed_schemes()`). Restul (host + prefix) e verificat
+        # de `key_from_own_url` mai jos.
+        if urlparse(photo_url).scheme not in allowed_schemes():
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="URL de poză invalid (se acceptă doar https).",
+                detail="URL de poză cu schemă neacceptată.",
             )
-        # https + host permis + prefix `photos/{own_profile_id}/`. None → respins.
+        # host permis + prefix `photos/{own_profile_id}/`. None → respins.
         if key_from_own_url(photo_url, own_profile_id) is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
