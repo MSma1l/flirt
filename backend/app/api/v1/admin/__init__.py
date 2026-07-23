@@ -26,6 +26,7 @@ Contract, garantat de `require_admin` (`core/deps.py`) și verificat în
 from fastapi import APIRouter, Depends
 
 from app.api.v1.admin import (
+    ads,
     audit,
     auth,
     events,
@@ -51,3 +52,4 @@ router.include_router(moderation.router, dependencies=_admin_only)
 router.include_router(events.router, dependencies=_admin_only)
 router.include_router(subscriptions.router, dependencies=_admin_only)
 router.include_router(audit.router, dependencies=_admin_only)
+router.include_router(ads.router, dependencies=_admin_only)

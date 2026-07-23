@@ -38,6 +38,10 @@ ACTION_EVENT_UPDATE = "event.update"
 ACTION_EVENT_DELETE = "event.delete"
 ACTION_SUBSCRIPTION_GRANT = "subscription.grant"
 ACTION_SUBSCRIPTION_REVOKE = "subscription.revoke"
+ACTION_AD_CREATE = "ad.create"
+ACTION_AD_UPDATE = "ad.update"
+ACTION_AD_DELETE = "ad.delete"
+ACTION_AD_SETTINGS_UPDATE = "ad.settings.update"
 
 
 class AdminAuditLog(Base):
