@@ -44,3 +44,8 @@ admin/dist/
 
 # Poze de test stocate local de scripts/create_test_users.py (dev)
 backend/media/
+
+# Backup local de asset-uri + surse de logo
+mobile/assets/_backup_logo_vechi/
+/IMG_*.JPG
+/IMG_*.PNG

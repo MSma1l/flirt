@@ -88,8 +88,8 @@ describe('Welcome', () => {
   });
 
   it('randează brandul și acțiunile de bază', async () => {
-    const { getByText } = renderScreen();
-    expect(getByText('FLIRT')).toBeTruthy();
+    const { getByText, getByLabelText } = renderScreen();
+    expect(getByLabelText('FLIRT')).toBeTruthy();
     expect(getByText('No Regrets')).toBeTruthy();
     expect(getByText('Creează cont')).toBeTruthy();
     expect(getByText('Am deja cont')).toBeTruthy();

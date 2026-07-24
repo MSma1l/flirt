@@ -9,7 +9,7 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import { useRouter } from 'expo-router';
 import { isAxiosError } from 'axios';
 import React, { useEffect, useState } from 'react';
-import { Linking, StyleSheet, Text, View } from 'react-native';
+import { Image, Linking, StyleSheet, Text, View } from 'react-native';
 
 import { Button, ScreenContainer } from '@/components/ui';
 import { config } from '@/config';
@@ -108,9 +108,13 @@ export default function Welcome() {
   return (
     <ScreenContainer>
       <View style={styles.hero}>
-        <Text style={[typography.display, { color: colors.accent, letterSpacing: 2 }]}>
-          FLIRT
-        </Text>
+        <Image
+          testID="brand-logo"
+          accessibilityLabel="FLIRT"
+          source={require('../../assets/logo.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
         <Text
           style={[
             typography.bodyStrong,
@@ -201,6 +205,8 @@ export default function Welcome() {
 
 const styles = StyleSheet.create({
   hero: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  // Raport 1183:735 ≈ 1.61 → lățime 240, înălțime 150.
+  logo: { width: 240, height: 150 },
   legal: { textAlign: 'center' },
   // Înălțime egală cu a butoanelor noastre (paddingVertical 15 + text) ca stiva
   // de acțiuni să rămână aliniată vizual.

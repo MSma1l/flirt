@@ -27,6 +27,7 @@ import { config } from '@/config';
 import { fetchReference } from '@/features/anketa/anketaApi';
 import { OptionItem } from '@/features/anketa/types';
 import {
+  SEARCH_AGE_MAX_LIMIT,
   SEARCH_AGE_MIN,
   validateInterestedIn,
   validateSearchAgeMax,
@@ -99,6 +100,9 @@ export default function SetariScreen() {
   const [interestedIn, setInterestedIn] = useState<string[]>([]);
   const [ageMinText, setAgeMinText] = useState('');
   const [ageMaxText, setAgeMaxText] = useState('');
+  // „Fără interval de vârstă": userul vrea să vadă ORICE vârstă (18+). Când e
+  // activ, trimitem 18..MAX (toți adulții) și dezactivăm câmpurile de vârstă.
+  const [anyAge, setAnyAge] = useState(false);
   const [prefErrors, setPrefErrors] = useState<PrefErrors>({});
 
   const { data, isLoading, isError, refetch } = useQuery<Settings>({
@@ -118,7 +122,13 @@ export default function SetariScreen() {
 
   const settingsMutation = useMutation({
     mutationFn: (patch: SettingsUpdate) => updateSettings(patch),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      // Preferințele (gen, interval de vârstă, rază) sunt FILTRE DURE în feed.
+      // Fără invalidarea feed-ului, schimbarea vârstei nu se reflecta pe telefon
+      // (rămânea cache-ul vechi și apăreau persoane în afara intervalului).
+      queryClient.invalidateQueries({ queryKey: ['feed'] });
+    },
     onError: () => {
       // Resincronizează cu serverul ca UI-ul să reflecte valorile reale.
       queryClient.invalidateQueries({ queryKey: ['settings'] });
@@ -177,6 +187,8 @@ export default function SetariScreen() {
       const max = Math.max(data.ageMax, min);
       setAgeMinText(String(min));
       setAgeMaxText(String(max));
+      // Interval cât tot spectrul (18..MAX) = „fără limită de vârstă".
+      setAnyAge(max >= SEARCH_AGE_MAX_LIMIT);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.interestedIn, data?.ageMin, data?.ageMax]);
@@ -239,6 +251,22 @@ export default function SetariScreen() {
    * nu un 422 de la backend. Refolosim validatoarele anketei.
    */
   const commitPreferences = () => {
+    // „Fără interval de vârstă": trimitem tot spectrul adult (18..MAX), fără să
+    // validăm câmpurile (sunt dezactivate/ascunse).
+    if (anyAge) {
+      const errInterested = validateInterestedIn(interestedIn);
+      if (errInterested) {
+        setPrefErrors({ interestedIn: errInterested });
+        return;
+      }
+      setPrefErrors({});
+      settingsMutation.mutate({
+        interestedIn,
+        ageMin: SEARCH_AGE_MIN,
+        ageMax: SEARCH_AGE_MAX_LIMIT,
+      });
+      return;
+    }
     const ageMin = parseAge(ageMinText);
     const ageMax = parseAge(ageMaxText);
     const errs: PrefErrors = {
@@ -461,36 +489,59 @@ export default function SetariScreen() {
             </View>
           ) : null}
 
-          <View style={styles.ageRow}>
-            <View style={styles.flex}>
-              <Input
-                testID="search-age-min"
-                label={t('preferences.ageMin')}
-                placeholder={String(SEARCH_AGE_MIN)}
-                keyboardType="number-pad"
-                value={ageMinText}
-                error={prefErrors.ageMin}
-                onChangeText={setAgeMinText}
-                onEndEditing={clampAgeMin}
-                onBlur={clampAgeMin}
-              />
-            </View>
-            <View style={styles.flex}>
-              <Input
-                testID="search-age-max"
-                label={t('preferences.ageMax')}
-                placeholder="99"
-                keyboardType="number-pad"
-                value={ageMaxText}
-                error={prefErrors.ageMax}
-                onChangeText={setAgeMaxText}
-              />
-            </View>
+          {/* Comutator „fără interval de vârstă": arată orice vârstă (18+). */}
+          <View style={styles.anyAgeRow}>
+            <Text style={[typography.body, { color: colors.textPrimary, flex: 1 }]}>
+              Fără interval de vârstă (orice vârstă, 18+)
+            </Text>
+            <Switch
+              testID="search-any-age"
+              value={anyAge}
+              onValueChange={(v) => {
+                setAnyAge(v);
+                if (v) setPrefErrors((e) => ({ ...e, ageMin: null, ageMax: null }));
+              }}
+            />
           </View>
 
-          <Text style={[typography.caption, { color: colors.textSecondary }]}>
-            {t('preferences.ageNote', { min: SEARCH_AGE_MIN })}
-          </Text>
+          {anyAge ? (
+            <Text style={[typography.caption, { color: colors.textSecondary }]}>
+              Se arată toate vârstele (de la 18 în sus). Oprește comutatorul ca să alegi un interval.
+            </Text>
+          ) : (
+            <>
+              <View style={styles.ageRow}>
+                <View style={styles.flex}>
+                  <Input
+                    testID="search-age-min"
+                    label={t('preferences.ageMin')}
+                    placeholder={String(SEARCH_AGE_MIN)}
+                    keyboardType="number-pad"
+                    value={ageMinText}
+                    error={prefErrors.ageMin}
+                    onChangeText={setAgeMinText}
+                    onEndEditing={clampAgeMin}
+                    onBlur={clampAgeMin}
+                  />
+                </View>
+                <View style={styles.flex}>
+                  <Input
+                    testID="search-age-max"
+                    label={t('preferences.ageMax')}
+                    placeholder="99"
+                    keyboardType="number-pad"
+                    value={ageMaxText}
+                    error={prefErrors.ageMax}
+                    onChangeText={setAgeMaxText}
+                  />
+                </View>
+              </View>
+
+              <Text style={[typography.caption, { color: colors.textSecondary }]}>
+                {t('preferences.ageNote', { min: SEARCH_AGE_MIN })}
+              </Text>
+            </>
+          )}
 
           <Button
             label={t('preferences.save')}
@@ -696,6 +747,7 @@ const styles = StyleSheet.create({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { borderWidth: 1.5 },
   ageRow: { flexDirection: 'row', gap: 12 },
+  anyAgeRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   flex: { flex: 1 },
   row: {
     flexDirection: 'row',

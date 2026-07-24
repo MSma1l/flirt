@@ -40,8 +40,8 @@ describe('Index (redirect gate)', () => {
 
   it('status loading → arată splash-ul (fără redirect)', () => {
     mockAuthState.status = 'loading';
-    const { getByText } = renderScreen();
-    expect(getByText('FLIRT')).toBeTruthy();
+    const { getByLabelText } = renderScreen();
+    expect(getByLabelText('FLIRT')).toBeTruthy();
     expect(mockRedirect).not.toHaveBeenCalled();
   });
 
