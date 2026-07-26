@@ -138,5 +138,7 @@ describe('UsersPage', () => {
     await waitFor(() => {
       expect(api.callsTo('DELETE /admin/users/u-1')).toHaveLength(1);
     });
+    // Motivul ștergerii ajunge în body (jurnalul de audit GDPR).
+    expect(api.callsTo('DELETE /admin/users/u-1')[0]?.body).toEqual({ reason: 'Cerere GDPR' });
   });
 });

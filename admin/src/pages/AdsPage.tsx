@@ -343,7 +343,12 @@ function AdFormModal({
     startIso != null && endIso != null && startIso > endIso
       ? 'Data de început trebuie să fie înaintea datei de sfârșit.'
       : null;
-  const rangeError = ageRangeError ?? dateRangeError;
+  // O reclamă are nevoie de o sursă vizuală: cel puțin `video_url` sau `image_url`.
+  const hasSource = form.video_url.trim() !== '' || form.image_url.trim() !== '';
+  const sourceError = hasSource
+    ? null
+    : 'Completează cel puțin un URL video sau un URL imagine.';
+  const rangeError = ageRangeError ?? dateRangeError ?? sourceError;
 
   const valid =
     form.title.trim().length > 0 &&
@@ -351,7 +356,9 @@ function AdFormModal({
     duration > 0 &&
     Number.isFinite(weight) &&
     weight >= 0 &&
-    rangeError === null;
+    hasSource &&
+    ageRangeError === null &&
+    dateRangeError === null;
 
   const submit = (submitEvent: FormEvent): void => {
     submitEvent.preventDefault();

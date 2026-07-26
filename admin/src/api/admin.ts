@@ -134,9 +134,16 @@ export function unbanUser(id: Uuid): Promise<void> {
   return apiVoid(`/admin/users/${id}/unban`, { method: 'POST' });
 }
 
-/** Ștergere GDPR — IREVERSIBILĂ. UI-ul cere confirmare dublă. */
-export function deleteUser(id: Uuid): Promise<void> {
-  return apiVoid(`/admin/users/${id}`, { method: 'DELETE' });
+/**
+ * Ștergere GDPR — IREVERSIBILĂ. UI-ul cere confirmare dublă.
+ * `reason` (opțional) ajunge în jurnalul de audit (`DeleteUserIn.reason` pe backend).
+ */
+export function deleteUser(id: Uuid, reason?: string): Promise<void> {
+  const trimmed = reason?.trim();
+  return apiVoid(`/admin/users/${id}`, {
+    method: 'DELETE',
+    body: trimmed ? { reason: trimmed } : undefined,
+  });
 }
 
 /* ---------------------------- Evenimente ---------------------------- */

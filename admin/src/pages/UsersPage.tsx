@@ -100,7 +100,7 @@ export function UsersPage(): JSX.Element {
   });
 
   const remove = useMutation({
-    mutationFn: (id: string) => deleteUser(id),
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => deleteUser(id, reason),
     onSuccess: async () => {
       closeDialog();
       await invalidate();
@@ -294,7 +294,7 @@ export function UsersPage(): JSX.Element {
           busy={remove.isPending}
           errorMessage={actionError}
           onCancel={closeDialog}
-          onConfirm={() => remove.mutate(dialog.user.id)}
+          onConfirm={(reason) => remove.mutate({ id: dialog.user.id, reason: reason ?? '' })}
         />
       ) : null}
     </>

@@ -39,6 +39,8 @@ interface FormState {
   promo_discount_percent: string;
   promo_code: string;
   promo_description: string;
+  ticket_price: string;
+  ticket_currency: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -47,13 +49,15 @@ const EMPTY_FORM: FormState = {
   starts_at: '',
   city: '',
   venue: '',
-  kind: 'party',
+  kind: 'flirt_party',
   cover_url: '',
   lat: '',
   lng: '',
   promo_discount_percent: '',
   promo_code: '',
   promo_description: '',
+  ticket_price: '',
+  ticket_currency: 'lei',
 };
 
 function toForm(event: AdminEvent): FormState {
@@ -71,7 +75,28 @@ function toForm(event: AdminEvent): FormState {
       event.promo_discount_percent === null ? '' : String(event.promo_discount_percent),
     promo_code: event.promo_code ?? '',
     promo_description: event.promo_description ?? '',
+    ticket_price: event.ticket_price === null ? '' : String(event.ticket_price),
+    ticket_currency: event.ticket_currency ?? 'lei',
   };
+}
+
+/** Etichete lizibile pentru tipurile de eveniment din selector și tabel. */
+const KIND_LABELS: Record<string, string> = {
+  flirt_party: 'Flirt Party',
+  party: 'Petrecere',
+  concert: 'Concert',
+  bar: 'Bar',
+  sport: 'Sport',
+  culture: 'Cultură',
+  other: 'Altele',
+};
+
+const kindLabel = (kind: string): string => KIND_LABELS[kind] ?? kind;
+
+/** Prețul biletului pentru tabel: „50 lei" sau „—" când biletul online lipsește. */
+function ticketPriceLabel(event: AdminEvent): string {
+  if (event.ticket_price === null) return '—';
+  return `${event.ticket_price} ${event.ticket_currency ?? 'lei'}`;
 }
 
 function toPayload(form: FormState): EventInput {
@@ -79,6 +104,8 @@ function toPayload(form: FormState): EventInput {
   const lng = form.lng.trim() === '' ? null : Number(form.lng);
   const percent =
     form.promo_discount_percent.trim() === '' ? null : Number(form.promo_discount_percent);
+  const price = form.ticket_price.trim() === '' ? null : Number(form.ticket_price);
+  const currency = form.ticket_currency.trim() === '' ? null : form.ticket_currency.trim();
   return {
     title: form.title.trim(),
     description: form.description.trim() === '' ? null : form.description.trim(),
@@ -93,6 +120,9 @@ function toPayload(form: FormState): EventInput {
     promo_code: form.promo_code.trim() === '' ? null : form.promo_code.trim(),
     promo_description:
       form.promo_description.trim() === '' ? null : form.promo_description.trim(),
+    ticket_price: price === null || Number.isNaN(price) ? null : price,
+    // Moneda are sens doar când există preț; fără preț → null (bilet indisponibil).
+    ticket_currency: price === null || Number.isNaN(price) ? null : currency,
   };
 }
 
@@ -165,6 +195,7 @@ export function EventsPage(): JSX.Element {
                   <th>Oraș</th>
                   <th>Locație</th>
                   <th>Tip</th>
+                  <th>Preț bilet</th>
                   <th>Participanți</th>
                   <th aria-label="Acțiuni" />
                 </tr>
@@ -187,7 +218,8 @@ export function EventsPage(): JSX.Element {
                     <td className="muted mono">{formatDateTime(event.starts_at)}</td>
                     <td>{event.city}</td>
                     <td>{event.venue ?? '—'}</td>
-                    <td>{event.kind}</td>
+                    <td>{kindLabel(event.kind)}</td>
+                    <td className="mono">{ticketPriceLabel(event)}</td>
                     <td className="mono">{event.attendee_count}</td>
                     <td>
                       <div className="table__actions">
@@ -276,11 +308,16 @@ function EventFormModal({
   const percentValid =
     percentNum === null || (Number.isFinite(percentNum) && percentNum >= 0 && percentNum <= 100);
 
+  const priceRaw = form.ticket_price.trim();
+  const priceNum = priceRaw === '' ? null : Number(priceRaw);
+  const priceValid = priceNum === null || (Number.isFinite(priceNum) && priceNum >= 0);
+
   const valid =
     form.title.trim().length > 0 &&
     form.city.trim().length > 0 &&
     form.starts_at.trim().length > 0 &&
-    percentValid;
+    percentValid &&
+    priceValid;
 
   const submit = (submitEvent: FormEvent): void => {
     submitEvent.preventDefault();
@@ -327,7 +364,7 @@ function EventFormModal({
             >
               {EVENT_KINDS.map((kind) => (
                 <option key={kind} value={kind}>
-                  {kind}
+                  {kindLabel(kind)}
                 </option>
               ))}
             </Select>
@@ -375,6 +412,37 @@ function EventFormModal({
             onChange={(e) => set('cover_url', e.target.value)}
           />
         </Field>
+
+        <fieldset className="form-section">
+          <legend>Bilet online</legend>
+          <div className="form-grid">
+            <Field label="Preț bilet" htmlFor="event-ticket-price">
+              <TextInput
+                id="event-ticket-price"
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="0.01"
+                placeholder="gol = bilet online indisponibil"
+                value={form.ticket_price}
+                aria-invalid={priceValid ? undefined : true}
+                onChange={(e) => set('ticket_price', e.target.value)}
+              />
+            </Field>
+            <Field label="Monedă" htmlFor="event-ticket-currency">
+              <TextInput
+                id="event-ticket-currency"
+                value={form.ticket_currency}
+                maxLength={8}
+                placeholder="lei"
+                onChange={(e) => set('ticket_currency', e.target.value)}
+              />
+            </Field>
+          </div>
+          {priceValid ? null : (
+            <div className="alert">Prețul biletului nu poate fi negativ.</div>
+          )}
+        </fieldset>
 
         <fieldset className="form-section">
           <legend>Promo / Reducere la intrare</legend>

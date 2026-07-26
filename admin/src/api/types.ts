@@ -145,6 +145,10 @@ export interface AdminEvent {
   promo_code: string | null;
   /** Ce se întâmplă când arăți codul la intrare. `null` = fără descriere. */
   promo_description: string | null;
+  /** Prețul biletului online (transfer bancar). `null` = bilet online indisponibil. */
+  ticket_price: number | null;
+  /** Moneda biletului (implicit „lei"). Are sens doar când `ticket_price` e setat. */
+  ticket_currency: string | null;
 }
 
 /** Payload de creare/editare — exact câmpurile scriibile ale modelului `Event`. */
@@ -164,9 +168,14 @@ export interface EventInput {
   promo_code: string | null;
   /** Descrierea promoției (max 500). Gol → `null`. */
   promo_description: string | null;
+  /** Prețul biletului online. Gol → `null` (bilet online indisponibil). */
+  ticket_price: number | null;
+  /** Moneda biletului (max 8). Gol → `null` (backend implicit „lei"). */
+  ticket_currency: string | null;
 }
 
 export const EVENT_KINDS = [
+  'flirt_party',
   'party',
   'concert',
   'bar',
@@ -204,6 +213,8 @@ export const SUBSCRIPTION_PLANS = [
   'no_ads',
   'ai_bot',
   'all_inclusive',
+  'card_5',
+  'card_10',
 ] as const;
 export type SubscriptionPlan = (typeof SUBSCRIPTION_PLANS)[number];
 

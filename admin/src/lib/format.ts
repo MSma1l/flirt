@@ -10,7 +10,8 @@ export function formatEur(value: number): string {
   return new Intl.NumberFormat(LOCALE, {
     style: 'currency',
     currency: 'EUR',
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
 }
 
