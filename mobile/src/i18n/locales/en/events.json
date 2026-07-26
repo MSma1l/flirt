@@ -1,1 +1,33 @@
-{}
+{
+  "detail": {
+    "loadError": "We couldn't load the event.",
+    "retry": "Try again",
+    "errorTitle": "Something went wrong",
+    "createOrderError": "We couldn't create the order. Please try again.",
+    "goingError": "We couldn't update your attendance. Please try again.",
+    "checkinErrorTitle": "Check-in failed",
+    "checkinError": "We couldn't check you in. Please try again.",
+    "stamp": "You earned a Flirt Passport stamp 🎉",
+    "attendees": "{{n}} attendees",
+    "going": "I'm going",
+    "notGoing": "No longer going",
+    "checkin": "Check-in (QR)",
+    "buyTicket": "Buy ticket online — {{price}} {{currency}}",
+    "ticketStatus": {
+      "approved": "Ticket approved",
+      "declared": "Ticket: under review",
+      "awaiting": "Ticket: complete payment"
+    },
+    "ticketCta": {
+      "approved": "View ticket",
+      "declared": "View details",
+      "awaiting": "Continue payment"
+    },
+    "promo": {
+      "discount": "Entrance discount −{{percent}}%",
+      "showAtEntrance": "Show this code at the entrance.",
+      "a11yLabel": "Entrance discount minus {{percent}}%, code {{code}}",
+      "a11yCode": "Promo code {{code}}"
+    }
+  }
+}

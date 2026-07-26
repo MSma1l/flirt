@@ -29,6 +29,12 @@ jest.mock('@/features/social/socialApi', () => ({
   fetchPendingLikesPage: () => mockFetchPending(),
 }));
 
+// Mock la lista „Ți-au dat like": secțiunea are testul ei separat.
+const mockFetchReceived = jest.fn(() => Promise.resolve({ items: [], nextCursor: null }));
+jest.mock('@/features/social/receivedApi', () => ({
+  fetchReceivedLikesPage: () => mockFetchReceived(),
+}));
+
 const chats: ChatSummary[] = [
   // Citit, cu mesaj → „Conversații".
   {
@@ -68,6 +74,8 @@ describe('MesajeScreen', () => {
     mockFetchChats.mockReset();
     mockFetchPending.mockReset();
     mockFetchPending.mockResolvedValue({ items: [], nextCursor: null });
+    mockFetchReceived.mockReset();
+    mockFetchReceived.mockResolvedValue({ items: [], nextCursor: null });
     mockPush.mockClear();
   });
 

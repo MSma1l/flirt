@@ -1,1 +1,39 @@
-{}
+{
+  "ticket": {
+    "errorTitle": "Something went wrong",
+    "declareError": "We couldn't register the transfer. Please try again.",
+    "retryError": "We couldn't create a new order. Please try again.",
+    "loadError": "We couldn't load the order.",
+    "retry": "Try again",
+    "instructionsUnavailable": "Payment instructions are not available. Please try again later.",
+    "review": {
+      "title": "Under review",
+      "body": "Your payment is under review. You'll get your ticket once an admin confirms it."
+    },
+    "rejected": {
+      "title": "Payment not confirmed",
+      "body": "The admin did not confirm the transfer. You can try again with a new order.",
+      "retry": "Try again"
+    },
+    "pay": {
+      "title": "Pay for your ticket",
+      "intro": "Make a bank transfer with the details below. After you send the money, tap “I made the transfer” and we'll verify your payment.",
+      "beneficiary": "Beneficiary",
+      "iban": "IBAN",
+      "bank": "Bank",
+      "amount": "Amount",
+      "reference": "Reference (account)",
+      "comment": "Transfer comment",
+      "declare": "I made the transfer",
+      "step1": "Open your bank's app (maib, MICB, etc.).",
+      "step2": "Send {{amount}} to {{beneficiary}} (IBAN {{iban}}).",
+      "step3": "In the comment write exactly: {{comment}}",
+      "step4": "Tap “I made the transfer” below."
+    },
+    "approved": {
+      "title": "Your ticket",
+      "body": "Your payment has been confirmed. Show this ticket at the entrance.",
+      "code": "Ticket code"
+    }
+  }
+}

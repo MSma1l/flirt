@@ -2,6 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -24,6 +25,7 @@ const ORDER_RANK: Record<TicketOrder['status'], number> = {
 };
 
 export default function EventDetailScreen() {
+  const { t } = useTranslation('events');
   const { colors, typography, spacing, radius } = useTheme();
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -56,7 +58,7 @@ export default function EventDetailScreen() {
       router.push(`/tickets/${result.order.id}`);
     },
     onError: () => {
-      alertMessage('Ceva n-a mers', 'Nu am putut crea comanda. Reîncearcă.');
+      alertMessage(t('detail.errorTitle'), t('detail.createOrderError'));
     },
   });
 
@@ -67,18 +69,18 @@ export default function EventDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ['events'] });
     },
     onError: () => {
-      alertMessage('Ceva n-a mers', 'Nu am putut actualiza participarea. Reîncearcă.');
+      alertMessage(t('detail.errorTitle'), t('detail.goingError'));
     },
   });
 
   const checkinMutation = useMutation({
     mutationFn: () => checkin(eventId),
     onSuccess: () => {
-      setStampMessage('Ai primit o ștampilă Flirt Passport 🎉');
+      setStampMessage(t('detail.stamp'));
       queryClient.invalidateQueries({ queryKey: ['passport'] });
     },
     onError: () => {
-      alertMessage('Check-in eșuat', 'Nu am putut face check-in-ul. Reîncearcă.');
+      alertMessage(t('detail.checkinErrorTitle'), t('detail.checkinError'));
     },
   });
 
@@ -94,16 +96,16 @@ export default function EventDetailScreen() {
     if (myOrder && myOrder.status !== 'rejected') {
       const label =
         myOrder.status === 'approved'
-          ? 'Bilet aprobat'
+          ? t('detail.ticketStatus.approved')
           : myOrder.status === 'payment_declared'
-            ? 'Bilet: în verificare'
-            : 'Bilet: finalizează plata';
+            ? t('detail.ticketStatus.declared')
+            : t('detail.ticketStatus.awaiting');
       const cta =
         myOrder.status === 'approved'
-          ? 'Vezi biletul'
+          ? t('detail.ticketCta.approved')
           : myOrder.status === 'payment_declared'
-            ? 'Vezi detalii'
-            : 'Continuă plata';
+            ? t('detail.ticketCta.declared')
+            : t('detail.ticketCta.awaiting');
       const color = myOrder.status === 'approved' ? colors.success : colors.warning;
       return (
         <View
@@ -131,7 +133,7 @@ export default function EventDetailScreen() {
       const currency = event.ticketCurrency ?? 'lei';
       return (
         <Button
-          label={`Cumpără bilet online — ${event.ticketPrice} ${currency}`}
+          label={t('detail.buyTicket', { price: event.ticketPrice, currency })}
           testID="buy-ticket-btn"
           loading={buyMutation.isPending}
           onPress={() => buyMutation.mutate()}
@@ -162,9 +164,9 @@ export default function EventDetailScreen() {
               { color: colors.textSecondary, marginBottom: spacing.lg },
             ]}
           >
-            Nu am putut încărca evenimentul.
+            {t('detail.loadError')}
           </Text>
-          <Button label="Reîncearcă" variant="outline" onPress={() => refetch()} />
+          <Button label={t('detail.retry')} variant="outline" onPress={() => refetch()} />
         </View>
       );
     }
@@ -209,7 +211,10 @@ export default function EventDetailScreen() {
           <View
             testID="event-promo"
             accessibilityRole="text"
-            accessibilityLabel={`Reducere la intrare minus ${data.promoDiscountPercent}%, cod ${data.promoCode}`}
+            accessibilityLabel={t('detail.promo.a11yLabel', {
+              percent: data.promoDiscountPercent,
+              code: data.promoCode,
+            })}
             style={[
               styles.promo,
               {
@@ -222,11 +227,11 @@ export default function EventDetailScreen() {
             ]}
           >
             <Text style={[typography.bodyStrong, { color: colors.onAccent }]}>
-              Reducere la intrare −{data.promoDiscountPercent}%
+              {t('detail.promo.discount', { percent: data.promoDiscountPercent })}
             </Text>
             <Text
               testID="event-promo-code"
-              accessibilityLabel={`Cod promo ${data.promoCode}`}
+              accessibilityLabel={t('detail.promo.a11yCode', { code: data.promoCode })}
               style={[typography.display, { color: colors.onAccent }]}
             >
               {data.promoCode}
@@ -238,7 +243,7 @@ export default function EventDetailScreen() {
             ) : null}
             {data.iAmGoing ? (
               <Text style={[typography.caption, { color: colors.onAccent }]}>
-                Arată acest cod la intrare.
+                {t('detail.promo.showAtEntrance')}
               </Text>
             ) : null}
           </View>
@@ -252,11 +257,11 @@ export default function EventDetailScreen() {
         </View>
 
         <Text style={[typography.body, { color: colors.link, marginTop: spacing.sm }]}>
-          {data.attendeeCount} participanți
+          {t('detail.attendees', { n: data.attendeeCount })}
         </Text>
 
         <Button
-          label={data.iAmGoing ? 'Nu mai merg' : 'Merg'}
+          label={data.iAmGoing ? t('detail.notGoing') : t('detail.going')}
           variant={data.iAmGoing ? 'outline' : 'primary'}
           loading={goingMutation.isPending}
           onPress={() => goingMutation.mutate(!data.iAmGoing)}
@@ -264,7 +269,7 @@ export default function EventDetailScreen() {
         />
 
         <Button
-          label="Check-in (QR)"
+          label={t('detail.checkin')}
           variant="outline"
           loading={checkinMutation.isPending}
           onPress={() => checkinMutation.mutate()}

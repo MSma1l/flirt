@@ -1,1 +1,33 @@
-{}
+{
+  "detail": {
+    "loadError": "Не вдалося завантажити подію.",
+    "retry": "Повторити",
+    "errorTitle": "Щось пішло не так",
+    "createOrderError": "Не вдалося створити замовлення. Спробуйте ще раз.",
+    "goingError": "Не вдалося оновити участь. Спробуйте ще раз.",
+    "checkinErrorTitle": "Не вдалося відмітитися",
+    "checkinError": "Не вдалося виконати check-in. Спробуйте ще раз.",
+    "stamp": "Ви отримали штамп Flirt Passport 🎉",
+    "attendees": "Учасників: {{n}}",
+    "going": "Іду",
+    "notGoing": "Більше не йду",
+    "checkin": "Check-in (QR)",
+    "buyTicket": "Купити квиток онлайн — {{price}} {{currency}}",
+    "ticketStatus": {
+      "approved": "Квиток схвалено",
+      "declared": "Квиток: на перевірці",
+      "awaiting": "Квиток: завершіть оплату"
+    },
+    "ticketCta": {
+      "approved": "Переглянути квиток",
+      "declared": "Переглянути деталі",
+      "awaiting": "Продовжити оплату"
+    },
+    "promo": {
+      "discount": "Знижка на вхід −{{percent}}%",
+      "showAtEntrance": "Покажіть цей код на вході.",
+      "a11yLabel": "Знижка на вхід мінус {{percent}}%, код {{code}}",
+      "a11yCode": "Промокод {{code}}"
+    }
+  }
+}

@@ -10,7 +10,9 @@ import { ChatSummary } from './types';
 
 interface Props {
   chat: ChatSummary;
-  onPress: () => void;
+  /** Primește `chatId` ca să poată fi o funcție stabilă (memoizată) în părinte,
+   *  fără a recrea un closure per rând la fiecare poll. */
+  onPress: (chatId: string) => void;
 }
 
 /** Timp scurt relativ: „acum", „5 min", „3 h", „2 z" sau data. */
@@ -32,14 +34,14 @@ function initial(name: string): string {
   return name.trim().charAt(0).toUpperCase() || '?';
 }
 
-export function ChatListItem({ chat, onPress }: Props) {
+function ChatListItemBase({ chat, onPress }: Props) {
   const { colors, typography, spacing, radius } = useTheme();
   const hasUnread = chat.unreadCount > 0;
 
   return (
     <Pressable
       accessibilityRole="button"
-      onPress={onPress}
+      onPress={() => onPress(chat.chatId)}
       style={({ pressed }) => [
         styles.row,
         {
@@ -109,6 +111,10 @@ export function ChatListItem({ chat, onPress }: Props) {
     </Pressable>
   );
 }
+
+/** Memoizat: la fiecare poll al listei, un rând nemodificat nu se re-randează
+ *  (props stabile — `onPress` vine memoizat din părinte). */
+export const ChatListItem = React.memo(ChatListItemBase);
 
 const styles = StyleSheet.create({
   row: {

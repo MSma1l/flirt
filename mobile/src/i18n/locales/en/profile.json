@@ -1,1 +1,29 @@
-{}
+{
+  "edit": {
+    "loading": "Loading...",
+    "loadError": "Something went wrong while loading your profile.",
+    "retry": "Try again",
+    "title": "Edit profile",
+    "name": "Name",
+    "namePlaceholder": "Your name",
+    "birthDate": "Date of birth",
+    "gender": "Gender",
+    "height": "Height (cm)",
+    "heightPlaceholder": "175",
+    "city": "City",
+    "cityPlaceholder": "Your city",
+    "street": "Street / neighborhood (optional)",
+    "streetPlaceholder": "Optional",
+    "nationality": "Nationality (optional)",
+    "languages": "Languages you speak",
+    "about": "About you ({{current}}/{{max}})",
+    "aboutPlaceholder": "Say a few words about yourself",
+    "datingStatus": "Relationship status",
+    "interests": "Interests",
+    "save": "Save",
+    "uploadError": "We couldn't upload the photo. Please try again.",
+    "deleteError": "We couldn't delete the photo. Please try again.",
+    "reorderError": "We couldn't save the photo order. Please try again.",
+    "saveError": "We couldn't save your profile. Please try again."
+  }
+}

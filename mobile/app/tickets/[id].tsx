@@ -11,6 +11,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
@@ -30,6 +31,7 @@ function formatCode(code: string): string {
 }
 
 export default function TicketOrderScreen() {
+  const { t } = useTranslation('social');
   const { colors, typography, spacing } = useTheme();
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -49,7 +51,7 @@ export default function TicketOrderScreen() {
       queryClient.invalidateQueries({ queryKey: ['ticket-order', orderId] });
     },
     onError: () => {
-      alertMessage('Ceva n-a mers', 'Nu am putut înregistra transferul. Reîncearcă.');
+      alertMessage(t('ticket.errorTitle'), t('ticket.declareError'));
     },
   });
 
@@ -64,7 +66,7 @@ export default function TicketOrderScreen() {
       router.replace(`/tickets/${result.order.id}`);
     },
     onError: () => {
-      alertMessage('Ceva n-a mers', 'Nu am putut crea o comandă nouă. Reîncearcă.');
+      alertMessage(t('ticket.errorTitle'), t('ticket.retryError'));
     },
   });
 
@@ -93,9 +95,9 @@ export default function TicketOrderScreen() {
               { color: colors.textSecondary, marginBottom: spacing.lg },
             ]}
           >
-            Nu am putut încărca comanda.
+            {t('ticket.loadError')}
           </Text>
-          <Button label="Reîncearcă" variant="outline" onPress={() => refetch()} />
+          <Button label={t('ticket.retry')} variant="outline" onPress={() => refetch()} />
         </View>
       );
     }
@@ -114,15 +116,15 @@ export default function TicketOrderScreen() {
 
         {order.status === 'awaiting_payment' && !payment ? (
           <Text style={[typography.body, { color: colors.textSecondary }]}>
-            Instrucțiunile de plată nu sunt disponibile. Reîncearcă mai târziu.
+            {t('ticket.instructionsUnavailable')}
           </Text>
         ) : null}
 
         {order.status === 'payment_declared' ? (
           <View testID="order-in-review" style={{ gap: spacing.sm }}>
-            <Text style={[typography.h1, { color: colors.textPrimary }]}>În verificare</Text>
+            <Text style={[typography.h1, { color: colors.textPrimary }]}>{t('ticket.review.title')}</Text>
             <Text style={[typography.body, { color: colors.textSecondary }]}>
-              Plata e în verificare. Vei primi biletul după confirmarea adminului.
+              {t('ticket.review.body')}
             </Text>
           </View>
         ) : null}
@@ -133,12 +135,12 @@ export default function TicketOrderScreen() {
 
         {order.status === 'rejected' ? (
           <View testID="order-rejected" style={{ gap: spacing.md }}>
-            <Text style={[typography.h1, { color: colors.danger }]}>Plata n-a fost confirmată</Text>
+            <Text style={[typography.h1, { color: colors.danger }]}>{t('ticket.rejected.title')}</Text>
             <Text style={[typography.body, { color: colors.textSecondary }]}>
-              Adminul nu a confirmat transferul. Poți încerca din nou cu o comandă nouă.
+              {t('ticket.rejected.body')}
             </Text>
             <Button
-              label="Încearcă din nou"
+              label={t('ticket.rejected.retry')}
               loading={retryMutation.isPending}
               disabled={!order.eventId}
               onPress={() => retryMutation.mutate()}
@@ -168,22 +170,26 @@ function AwaitingPayment({
   declaring: boolean;
   onDeclare: () => void;
 }) {
+  const { t } = useTranslation('social');
   const { colors, typography, spacing, radius } = useTheme();
   const amountLabel = `${payment.amount} ${payment.currency}`;
 
   const steps = [
-    'Deschide aplicația băncii tale (maib, MICB etc.).',
-    `Trimite ${amountLabel} către ${payment.beneficiary} (IBAN ${payment.iban}).`,
-    `La comentariu scrie exact: ${payment.commentTemplate}`,
-    'Apasă mai jos „Am făcut transferul".',
+    t('ticket.pay.step1'),
+    t('ticket.pay.step2', {
+      amount: amountLabel,
+      beneficiary: payment.beneficiary,
+      iban: payment.iban,
+    }),
+    t('ticket.pay.step3', { comment: payment.commentTemplate }),
+    t('ticket.pay.step4'),
   ];
 
   return (
     <View testID="order-instructions" style={{ gap: spacing.md }}>
-      <Text style={[typography.h1, { color: colors.textPrimary }]}>Plătește biletul</Text>
+      <Text style={[typography.h1, { color: colors.textPrimary }]}>{t('ticket.pay.title')}</Text>
       <Text style={[typography.body, { color: colors.textSecondary }]}>
-        Fă un transfer bancar cu datele de mai jos. După ce trimiți banii, apasă „Am făcut
-        transferul" și îți verificăm plata.
+        {t('ticket.pay.intro')}
       </Text>
 
       {/* Datele de plată — text selectabil (expo-clipboard nu e instalat, deci fără buton de copiere). */}
@@ -199,12 +205,12 @@ function AwaitingPayment({
           },
         ]}
       >
-        <PayRow label="Beneficiar" value={payment.beneficiary} />
-        <PayRow label="IBAN" value={payment.iban} mono />
-        <PayRow label="Bancă" value={payment.bankName} />
-        <PayRow label="Sumă" value={amountLabel} testID="pay-amount" />
-        <PayRow label="Referință (cont)" value={payment.reference} mono />
-        <PayRow label="Comentariu la transfer" value={payment.commentTemplate} testID="pay-comment" />
+        <PayRow label={t('ticket.pay.beneficiary')} value={payment.beneficiary} />
+        <PayRow label={t('ticket.pay.iban')} value={payment.iban} mono />
+        <PayRow label={t('ticket.pay.bank')} value={payment.bankName} />
+        <PayRow label={t('ticket.pay.amount')} value={amountLabel} testID="pay-amount" />
+        <PayRow label={t('ticket.pay.reference')} value={payment.reference} mono />
+        <PayRow label={t('ticket.pay.comment')} value={payment.commentTemplate} testID="pay-comment" />
       </View>
 
       {payment.instructions ? (
@@ -233,7 +239,7 @@ function AwaitingPayment({
       </View>
 
       <Button
-        label="Am făcut transferul"
+        label={t('ticket.pay.declare')}
         loading={declaring}
         onPress={onDeclare}
         testID="declare-btn"
@@ -275,12 +281,13 @@ function PayRow({
 
 /** Biletul ca QR + codul în clar dedesubt (vezi app/ticket.tsx). */
 function Approved({ code }: { code: string }) {
+  const { t } = useTranslation('social');
   const { colors, typography, spacing, radius } = useTheme();
   return (
     <View testID="order-approved" style={{ gap: spacing.md }}>
-      <Text style={[typography.h1, { color: colors.textPrimary }]}>Biletul tău</Text>
+      <Text style={[typography.h1, { color: colors.textPrimary }]}>{t('ticket.approved.title')}</Text>
       <Text style={[typography.body, { color: colors.textSecondary }]}>
-        Plata a fost confirmată. Prezintă acest bilet la intrare.
+        {t('ticket.approved.body')}
       </Text>
 
       <View
@@ -306,7 +313,7 @@ function Approved({ code }: { code: string }) {
         </View>
 
         <View style={styles.codeBox}>
-          <Text style={[typography.caption, { color: colors.textSecondary }]}>Cod bilet</Text>
+          <Text style={[typography.caption, { color: colors.textSecondary }]}>{t('ticket.approved.code')}</Text>
           <Text style={[styles.code, { color: colors.textPrimary }]}>{formatCode(code)}</Text>
         </View>
       </View>

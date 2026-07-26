@@ -1,1 +1,39 @@
-{}
+{
+  "ticket": {
+    "errorTitle": "Ceva n-a mers",
+    "declareError": "Nu am putut înregistra transferul. Reîncearcă.",
+    "retryError": "Nu am putut crea o comandă nouă. Reîncearcă.",
+    "loadError": "Nu am putut încărca comanda.",
+    "retry": "Reîncearcă",
+    "instructionsUnavailable": "Instrucțiunile de plată nu sunt disponibile. Reîncearcă mai târziu.",
+    "review": {
+      "title": "În verificare",
+      "body": "Plata e în verificare. Vei primi biletul după confirmarea adminului."
+    },
+    "rejected": {
+      "title": "Plata n-a fost confirmată",
+      "body": "Adminul nu a confirmat transferul. Poți încerca din nou cu o comandă nouă.",
+      "retry": "Încearcă din nou"
+    },
+    "pay": {
+      "title": "Plătește biletul",
+      "intro": "Fă un transfer bancar cu datele de mai jos. După ce trimiți banii, apasă „Am făcut transferul” și îți verificăm plata.",
+      "beneficiary": "Beneficiar",
+      "iban": "IBAN",
+      "bank": "Bancă",
+      "amount": "Sumă",
+      "reference": "Referință (cont)",
+      "comment": "Comentariu la transfer",
+      "declare": "Am făcut transferul",
+      "step1": "Deschide aplicația băncii tale (maib, MICB etc.).",
+      "step2": "Trimite {{amount}} către {{beneficiary}} (IBAN {{iban}}).",
+      "step3": "La comentariu scrie exact: {{comment}}",
+      "step4": "Apasă mai jos „Am făcut transferul”."
+    },
+    "approved": {
+      "title": "Biletul tău",
+      "body": "Plata a fost confirmată. Prezintă acest bilet la intrare.",
+      "code": "Cod bilet"
+    }
+  }
+}

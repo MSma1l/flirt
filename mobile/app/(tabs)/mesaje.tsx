@@ -18,7 +18,7 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import React from 'react';
+import React, { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, SectionList, StyleSheet, Text, View } from 'react-native';
 
@@ -28,9 +28,12 @@ import { fetchChats } from '@/features/chat/chatApi';
 import { ChatSummary } from '@/features/chat/types';
 import { usePushPermissionPrompt } from '@/features/push/usePushPermissionPrompt';
 import { PendingLikesSection } from '@/features/social/PendingLikesSection';
+import { ReceivedLikesSection } from '@/features/social/ReceivedLikesSection';
 import { useTheme } from '@theme/index';
 
-const REFETCH_MS = 5000;
+// Chat-ul e polling, nu realtime. 12s e un compromis: tot se actualizează
+// singur, dar cu mult mai puțin trafic decât la 5s.
+const REFETCH_MS = 12000;
 
 /** O secțiune de chat-uri reale (match-uri): titlu, explicație, rândurile ei. */
 interface ChatSection {
@@ -64,6 +67,14 @@ export default function MesajeScreen() {
   // conversații, deci așteaptă răspunsuri — notificarea îi este de folos ACUM.
   // (Hook-ul trebuie apelat înaintea return-urilor timpurii de mai jos.)
   usePushPermissionPrompt((data ?? []).length > 0);
+
+  // Navigare stabilă: nu recreăm un closure per rând la fiecare poll, ca
+  // `React.memo` de pe `ChatListItem` să-și facă efectul.
+  const openChat = useCallback((chatId: string) => router.push(`/chat/${chatId}`), [router]);
+  const renderChatItem = useCallback(
+    ({ item }: { item: ChatSummary }) => <ChatListItem chat={item} onPress={openChat} />,
+    [openChat],
+  );
 
   const chats = data ?? [];
   // Ecranul e complet gol doar când chat-urile s-au încărcat și nu-s: abia atunci
@@ -123,9 +134,16 @@ export default function MesajeScreen() {
         keyExtractor={(item) => item.chatId}
         stickySectionHeadersEnabled={false}
         contentContainerStyle={{ paddingBottom: spacing.xl }}
-        // „În așteptare" stă mereu deasupra chat-urilor, cu stările ei proprii.
-        // `showEmpty` doar când ecranul ar fi altfel gol de tot.
-        ListHeaderComponent={<PendingLikesSection showEmpty={chatsEmpty} />}
+        // „Ți-au dat like" (cereri de comunicare) stă SUS de tot — e cea mai
+        // importantă zonă. Sub ea, „În așteptare" (like-uri trimise de mine).
+        // Ambele au stările lor proprii; `showEmpty` doar când ecranul ar fi
+        // altfel gol de tot.
+        ListHeaderComponent={
+          <>
+            <ReceivedLikesSection showEmpty={chatsEmpty} />
+            <PendingLikesSection showEmpty={chatsEmpty} />
+          </>
+        }
         // Când nu există nicio secțiune de chat-uri (loading/eroare/gol), corpul
         // de mai jos preia — nu lăsăm zona goală fără explicație.
         ListEmptyComponent={chatsBody}
@@ -140,9 +158,7 @@ export default function MesajeScreen() {
             ) : null}
           </View>
         )}
-        renderItem={({ item }) => (
-          <ChatListItem chat={item} onPress={() => router.push(`/chat/${item.chatId}`)} />
-        )}
+        renderItem={renderChatItem}
       />
     </ScreenContainer>
   );

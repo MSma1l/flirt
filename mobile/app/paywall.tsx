@@ -13,6 +13,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Linking,
@@ -45,6 +46,7 @@ function productIdOf(plan: Plan): string | undefined {
 
 export default function PaywallScreen() {
   const queryClient = useQueryClient();
+  const { t } = useTranslation('billing');
   const { colors, typography, radius, spacing } = useTheme();
 
   const refreshSubscription = React.useCallback(() => {
@@ -113,11 +115,11 @@ export default function PaywallScreen() {
 
   const header = (
     <View style={[styles.headerRow, { marginBottom: spacing.lg }]}>
-      <Text style={[typography.h1, { color: colors.textPrimary }]}>Abonamente</Text>
+      <Text style={[typography.h1, { color: colors.textPrimary }]}>{t('paywall.title')}</Text>
       <BackButton
         icon="close"
         color={colors.textSecondary}
-        accessibilityLabel="Închide"
+        accessibilityLabel={t('paywall.close')}
         testID="paywall-close"
       />
     </View>
@@ -141,9 +143,9 @@ export default function PaywallScreen() {
             { color: colors.textSecondary, marginBottom: spacing.lg },
           ]}
         >
-          Nu am putut încărca abonamentele.
+          {t('paywall.loadError')}
         </Text>
-        <Button label="Reîncearcă" variant="outline" onPress={() => plansQuery.refetch()} />
+        <Button label={t('paywall.retry')} variant="outline" onPress={() => plansQuery.refetch()} />
       </ScreenContainer>
     );
   }
@@ -166,7 +168,7 @@ export default function PaywallScreen() {
         ? null
         : purchaseError.message
       : purchaseError
-        ? 'Nu am putut activa abonamentul. Reîncearcă.'
+        ? t('paywall.purchaseError')
         : null;
 
   return (
@@ -190,7 +192,7 @@ export default function PaywallScreen() {
             style={[typography.bodyStrong, { color: colors.textPrimary }]}
             testID="paywall-success"
           >
-            Abonament activat 🎉
+            {t('paywall.activated')}
           </Text>
         </View>
       ) : outcome?.status === 'pending' ? (
@@ -207,8 +209,7 @@ export default function PaywallScreen() {
           ]}
         >
           <Text style={[typography.body, { color: colors.textPrimary }]} testID="paywall-pending">
-            Achiziția este în așteptarea aprobării. Abonamentul se activează singur imediat ce
-            plata e confirmată.
+            {t('paywall.pending')}
           </Text>
         </View>
       ) : errorMessage ? (
@@ -248,8 +249,8 @@ export default function PaywallScreen() {
             testID="paywall-store-warning"
           >
             {storeUnavailable
-              ? 'Nu am putut contacta magazinul, așa că abonamentele nu pot fi cumpărate acum. Verifică-ți conexiunea și reîncearcă.'
-              : 'Unele planuri nu sunt disponibile în magazin momentan. Reîncearcă mai târziu.'}
+              ? t('paywall.storeUnavailable')
+              : t('paywall.missingPlans')}
           </Text>
         </View>
       ) : null}
@@ -271,8 +272,8 @@ export default function PaywallScreen() {
           // backend rămâne doar ca ultimă soluție, când magazinul e mut — caz în
           // care butonul e oricum dezactivat, deci nimeni nu cumpără la el.
           const priceLabel = product
-            ? `${product.displayPrice} / lună`
-            : `${plan.priceEur} € / lună`;
+            ? t('paywall.priceStore', { price: product.displayPrice })
+            : t('paywall.priceFallback', { price: plan.priceEur });
 
           return (
             <View
@@ -306,7 +307,7 @@ export default function PaywallScreen() {
                       },
                     ]}
                   >
-                    <Text style={[typography.badge, { color: colors.onAccent }]}>Activ</Text>
+                    <Text style={[typography.badge, { color: colors.onAccent }]}>{t('paywall.active')}</Text>
                   </View>
                 ) : null}
               </View>
@@ -334,12 +335,18 @@ export default function PaywallScreen() {
                   testID={`plan-${plan.code}-unavailable`}
                   style={[typography.caption, { color: colors.danger }]}
                 >
-                  Indisponibil în magazin momentan.
+                  {t('paywall.unavailableNote')}
                 </Text>
               ) : null}
 
               <Button
-                label={isActive ? 'Plan activ' : unavailable ? 'Indisponibil' : 'Alege'}
+                label={
+                  isActive
+                    ? t('paywall.planActive')
+                    : unavailable
+                      ? t('paywall.unavailable')
+                      : t('paywall.choose')
+                }
                 variant={isActive || unavailable ? 'outline' : 'primary'}
                 disabled={isActive || unavailable || purchaseMutation.isPending}
                 loading={isPending}
@@ -352,7 +359,7 @@ export default function PaywallScreen() {
 
         {/* Restaurarea achizițiilor — obligatorie pentru abonamente. */}
         <Button
-          label="Restaurează achizițiile"
+          label={t('paywall.restore')}
           variant="ghost"
           loading={restoreMutation.isPending}
           onPress={() => restoreMutation.mutate()}
@@ -365,14 +372,14 @@ export default function PaywallScreen() {
               testID="paywall-restore-done"
               style={[typography.caption, styles.center, { color: colors.success }]}
             >
-              Achizițiile au fost restaurate.
+              {t('paywall.restoreDone')}
             </Text>
           ) : (
             <Text
               testID="paywall-restore-empty"
               style={[typography.caption, styles.center, { color: colors.textSecondary }]}
             >
-              Nu am găsit achiziții de restaurat pe acest cont.
+              {t('paywall.restoreEmpty')}
             </Text>
           )
         ) : restoreMutation.isError ? (
@@ -382,7 +389,7 @@ export default function PaywallScreen() {
           >
             {restoreMutation.error instanceof IapError
               ? restoreMutation.error.message
-              : 'Nu am putut restaura achizițiile. Reîncearcă.'}
+              : t('paywall.restoreError')}
           </Text>
         ) : null}
 
@@ -394,9 +401,7 @@ export default function PaywallScreen() {
             { color: colors.textDisabled, marginTop: spacing.sm },
           ]}
         >
-          Abonamentul se reînnoiește automat lunar, la prețul afișat, dacă nu îl anulezi
-          cu cel puțin 24 de ore înainte de finalul perioadei curente. Îl poți gestiona
-          sau anula oricând din setările contului tău.
+          {t('paywall.renewNote')}
         </Text>
 
         <View style={[styles.legalRow, { gap: spacing.lg }]}>
@@ -405,14 +410,14 @@ export default function PaywallScreen() {
             style={[typography.caption, { color: colors.link }]}
             onPress={() => openLink(config.legal.termsUrl)}
           >
-            Termeni și condiții
+            {t('paywall.terms')}
           </Text>
           <Text
             testID="paywall-privacy-link"
             style={[typography.caption, { color: colors.link }]}
             onPress={() => openLink(config.legal.privacyUrl)}
           >
-            Politica de confidențialitate
+            {t('paywall.privacy')}
           </Text>
         </View>
       </ScrollView>

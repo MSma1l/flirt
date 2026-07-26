@@ -3,6 +3,8 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
 import { Alert, Linking } from 'react-native';
 
+import { SEARCH_AGE_MAX_LIMIT, SEARCH_AGE_MIN } from '@/features/anketa/validation';
+
 import SetariScreen from '../setari';
 import { config } from '@/config';
 import { ThemeProvider } from '@theme/index';
@@ -183,6 +185,84 @@ describe('SetariScreen', () => {
 
       await waitFor(() => getByText('Alege cel puțin un gen.'));
       expect(mockUpdateSettings).not.toHaveBeenCalled();
+    });
+  });
+
+  /* --- Comutatorul „fără interval de vârstă" (search-any-age) --- */
+
+  describe('comutatorul „fără interval de vârstă"', () => {
+    it('la baza (18..99) comutatorul e OPRIT și câmpurile de vârstă sunt vizibile', async () => {
+      const { getByTestId } = renderScreen();
+
+      await waitFor(() => getByTestId('search-any-age'));
+      expect(getByTestId('search-any-age').props.value).toBe(false);
+      expect(getByTestId('search-age-min')).toBeTruthy();
+      expect(getByTestId('search-age-max')).toBeTruthy();
+    });
+
+    it('activarea comutatorului ASCUNDE câmpurile de interval de vârstă', async () => {
+      const { getByTestId, queryByTestId } = renderScreen();
+
+      await waitFor(() => getByTestId('search-any-age'));
+      fireEvent(getByTestId('search-any-age'), 'valueChange', true);
+
+      await waitFor(() => expect(queryByTestId('search-age-min')).toBeNull());
+      expect(queryByTestId('search-age-max')).toBeNull();
+    });
+
+    it('cu comutatorul activ, salvarea trimite 18..MAX (toți adulții)', async () => {
+      const { getByTestId } = renderScreen();
+
+      await waitFor(() => getByTestId('search-any-age'));
+      fireEvent(getByTestId('search-any-age'), 'valueChange', true);
+      fireEvent.press(getByTestId('save-search-prefs'));
+
+      await waitFor(() => {
+        expect(mockUpdateSettings).toHaveBeenCalledWith({
+          interestedIn: ['female'],
+          ageMin: SEARCH_AGE_MIN,
+          ageMax: SEARCH_AGE_MAX_LIMIT,
+        });
+      });
+    });
+
+    it('cu comutatorul activ cere totuși cel puțin un gen ales', async () => {
+      const { getByTestId, getByText } = renderScreen();
+
+      await waitFor(() => getByTestId('interested-in-female'));
+      fireEvent.press(getByTestId('interested-in-female')); // deselectează „female"
+      fireEvent(getByTestId('search-any-age'), 'valueChange', true);
+      fireEvent.press(getByTestId('save-search-prefs'));
+
+      await waitFor(() => getByText('Alege cel puțin un gen.'));
+      expect(mockUpdateSettings).not.toHaveBeenCalled();
+    });
+
+    it('dacă serverul întoarce deja tot spectrul, comutatorul e PRE-PORNIT', async () => {
+      mockFetchSettings.mockReturnValueOnce(
+        Promise.resolve({ ...baseSettings, ageMin: 18, ageMax: SEARCH_AGE_MAX_LIMIT }),
+      );
+      const { getByTestId, queryByTestId } = renderScreen();
+
+      await waitFor(() => getByTestId('search-any-age'));
+      expect(getByTestId('search-any-age').props.value).toBe(true);
+      // Câmpurile de interval nu se afișează când e „orice vârstă".
+      expect(queryByTestId('search-age-min')).toBeNull();
+    });
+
+    it('salvarea preferințelor invalidează feed-ul (filtre dure)', async () => {
+      const invalidateSpy = jest.spyOn(QueryClient.prototype, 'invalidateQueries');
+      const { getByTestId } = renderScreen();
+
+      await waitFor(() => getByTestId('search-any-age'));
+      fireEvent(getByTestId('search-any-age'), 'valueChange', true);
+      fireEvent.press(getByTestId('save-search-prefs'));
+
+      await waitFor(() => expect(mockUpdateSettings).toHaveBeenCalled());
+      await waitFor(() =>
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['feed'] }),
+      );
+      invalidateSpy.mockRestore();
     });
   });
 

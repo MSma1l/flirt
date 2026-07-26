@@ -19,7 +19,18 @@ import { initI18n } from '@/i18n';
 import { useAuthStore } from '@/store/authStore';
 import { ThemeProvider } from '@theme/index';
 
-const queryClient = new QueryClient();
+// Implicit: datele rămân „proaspete" 30s, deci navigarea între ecrane nu declanșează
+// un refetch la fiecare montare. Query-urile care au nevoie de date mai proaspete
+// (chat/mesaje) își suprascriu local prin `refetchInterval`, care rulează oricum.
+// `retry: 1` taie retry-urile multiple pe rețea moartă.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30000,
+      retry: 1,
+    },
+  },
+});
 
 /**
  * Guard reactiv de autentificare. Reacționează la schimbările din store
@@ -126,6 +137,7 @@ export default function RootLayout() {
             <Stack.Screen name="(onboarding)" />
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="chat/[id]" />
+            <Stack.Screen name="requests/[userId]" />
             <Stack.Screen name="profile/edit" />
             <Stack.Screen name="favorites" />
             <Stack.Screen name="ticket" />

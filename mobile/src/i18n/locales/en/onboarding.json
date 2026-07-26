@@ -1,1 +1,54 @@
-{}
+{
+  "loading": "Loading...",
+  "loadError": "Something went wrong while loading the data.",
+  "retry": "Try again",
+  "back": "Back",
+  "continue": "Continue",
+  "finish": "Finish",
+  "step0": {
+    "title": "About you",
+    "name": "Name",
+    "namePlaceholder": "Your name",
+    "birthDate": "Date of birth",
+    "gender": "Gender",
+    "height": "Height (cm)",
+    "heightPlaceholder": "175"
+  },
+  "step1": {
+    "title": "Location",
+    "city": "City",
+    "cityPlaceholder": "Your city",
+    "street": "Street / neighborhood (optional)",
+    "streetPlaceholder": "Optional",
+    "nationality": "Nationality (optional)",
+    "languages": "Languages you speak"
+  },
+  "step2": {
+    "title": "Introduction",
+    "about": "About you ({{current}}/{{max}})",
+    "aboutPlaceholder": "Say a few words about yourself",
+    "datingStatus": "Relationship status"
+  },
+  "step3": {
+    "title": "Interests",
+    "pick": "Choose what represents you"
+  },
+  "searchPrefs": {
+    "title": "Who are you looking for?",
+    "hint": "This is how we know who to show you in the feed. You can change it anytime from Settings.",
+    "gender": "Gender",
+    "ageMin": "Minimum age",
+    "ageMax": "Maximum age",
+    "ageNote": "FLIRT is an 18+ app, so the minimum age cannot go below {{min}}."
+  },
+  "photos": {
+    "title": "Your photos",
+    "hint": "You need at least {{min}} photos so we can publish your profile. We resize and compress them automatically before upload."
+  },
+  "errors": {
+    "deletePhoto": "The photo was removed from the list, but we couldn't delete it from the server.",
+    "saveAnketa": "We couldn't save your profile. Please try again.",
+    "uploadPhotos": "We couldn't upload the photos.",
+    "uploadRetry": "{{reason}} Tap “Finish” again to resume the upload."
+  }
+}

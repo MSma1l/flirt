@@ -1,1 +1,33 @@
-{}
+{
+  "detail": {
+    "loadError": "Не удалось загрузить событие.",
+    "retry": "Повторить",
+    "errorTitle": "Что-то пошло не так",
+    "createOrderError": "Не удалось создать заказ. Попробуйте снова.",
+    "goingError": "Не удалось обновить участие. Попробуйте снова.",
+    "checkinErrorTitle": "Не удалось отметиться",
+    "checkinError": "Не удалось выполнить check-in. Попробуйте снова.",
+    "stamp": "Вы получили штамп Flirt Passport 🎉",
+    "attendees": "Участников: {{n}}",
+    "going": "Иду",
+    "notGoing": "Больше не иду",
+    "checkin": "Check-in (QR)",
+    "buyTicket": "Купить билет онлайн — {{price}} {{currency}}",
+    "ticketStatus": {
+      "approved": "Билет одобрен",
+      "declared": "Билет: на проверке",
+      "awaiting": "Билет: завершите оплату"
+    },
+    "ticketCta": {
+      "approved": "Посмотреть билет",
+      "declared": "Посмотреть детали",
+      "awaiting": "Продолжить оплату"
+    },
+    "promo": {
+      "discount": "Скидка на вход −{{percent}}%",
+      "showAtEntrance": "Покажите этот код на входе.",
+      "a11yLabel": "Скидка на вход минус {{percent}}%, код {{code}}",
+      "a11yCode": "Промокод {{code}}"
+    }
+  }
+}

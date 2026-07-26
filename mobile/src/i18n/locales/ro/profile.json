@@ -1,1 +1,29 @@
-{}
+{
+  "edit": {
+    "loading": "Se încarcă...",
+    "loadError": "A apărut o eroare la încărcarea profilului.",
+    "retry": "Reîncearcă",
+    "title": "Editează profilul",
+    "name": "Nume",
+    "namePlaceholder": "Numele tău",
+    "birthDate": "Data nașterii",
+    "gender": "Gen",
+    "height": "Înălțime (cm)",
+    "heightPlaceholder": "175",
+    "city": "Oraș",
+    "cityPlaceholder": "Orașul tău",
+    "street": "Stradă / cartier (opțional)",
+    "streetPlaceholder": "Opțional",
+    "nationality": "Naționalitate (opțional)",
+    "languages": "Limbi de comunicare",
+    "about": "Despre tine ({{current}}/{{max}})",
+    "aboutPlaceholder": "Spune câteva cuvinte despre tine",
+    "datingStatus": "Statusul cunoștinței",
+    "interests": "Interese",
+    "save": "Salvează",
+    "uploadError": "Nu am putut încărca poza. Încearcă din nou.",
+    "deleteError": "Nu am putut șterge poza. Încearcă din nou.",
+    "reorderError": "Nu am putut salva ordinea pozelor. Încearcă din nou.",
+    "saveError": "Nu am putut salva profilul. Încearcă din nou."
+  }
+}

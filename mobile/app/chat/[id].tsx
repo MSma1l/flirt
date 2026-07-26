@@ -1,7 +1,7 @@
 /** Conversație (TZ secț. 5): mesaje cu poll ~3s, trimitere, marcare citit la intrare. */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -131,6 +131,19 @@ export default function ChatScreen() {
     sendMutation.mutate(trimmed);
   };
 
+  // renderItem stabil: la fiecare tastare în composer (`draft` setState) nu se
+  // reconstruiește funcția, iar `MessageBubble` memoizat nu re-randează bulele.
+  const renderMessage = useCallback(
+    ({ item }: { item: ChatMessage }) => (
+      <MessageBubble
+        message={item}
+        currentUserId={currentUserId}
+        onReact={(reaction) => reactMutation.mutate({ messageId: item.id, reaction })}
+      />
+    ),
+    [currentUserId, reactMutation],
+  );
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]} edges={['top', 'bottom']}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -216,13 +229,14 @@ export default function ChatScreen() {
               }
               keyExtractor={(m) => m.id}
               contentContainerStyle={{ padding: spacing.lg }}
-              renderItem={({ item }) => (
-                <MessageBubble
-                  message={item}
-                  currentUserId={currentUserId}
-                  onReact={(reaction) => reactMutation.mutate({ messageId: item.id, reaction })}
-                />
-              )}
+              renderItem={renderMessage}
+              // Virtualizare: randăm doar ferestrea vizibilă + puțin buffer, ca
+              // firele lungi de conversație să nu monteze toate bulele deodată.
+              // Fără `getItemLayout` — bulele au înălțime variabilă.
+              initialNumToRender={12}
+              maxToRenderPerBatch={10}
+              windowSize={7}
+              removeClippedSubviews
             />
           )}
         </View>

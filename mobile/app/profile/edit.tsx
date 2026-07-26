@@ -2,6 +2,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Pressable,
@@ -130,6 +131,7 @@ function validateAll(draft: Partial<AnketaDraft>): FieldErrors {
 export default function ProfileEditScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { t } = useTranslation('profile');
   const { colors, typography, spacing, radius } = useTheme();
 
   const [draft, setDraft] = useState<Partial<AnketaDraft>>({});
@@ -211,7 +213,7 @@ export default function ProfileEditScreen() {
       setPhotosError(
         error instanceof Error && error.message
           ? error.message
-          : 'Nu am putut încărca poza. Încearcă din nou.',
+          : t('edit.uploadError'),
       );
     } finally {
       setPendingPhotoUri(null);
@@ -231,7 +233,7 @@ export default function ProfileEditScreen() {
       setPhotos(urls);
       await queryClient.invalidateQueries({ queryKey: ['my-profile'] });
     } catch {
-      setPhotosError('Nu am putut șterge poza. Încearcă din nou.');
+      setPhotosError(t('edit.deleteError'));
     } finally {
       setPhotosBusy(false);
     }
@@ -251,7 +253,7 @@ export default function ProfileEditScreen() {
       await queryClient.invalidateQueries({ queryKey: ['my-profile'] });
     } catch {
       setPhotos(previous); // revenim la ordinea reală de pe server
-      setPhotosError('Nu am putut salva ordinea pozelor. Încearcă din nou.');
+      setPhotosError(t('edit.reorderError'));
     } finally {
       setPhotosBusy(false);
     }
@@ -275,7 +277,7 @@ export default function ProfileEditScreen() {
       await queryClient.invalidateQueries({ queryKey: ['my-profile'] });
       router.back();
     } catch {
-      setSubmitError('Nu am putut salva profilul. Încearcă din nou.');
+      setSubmitError(t('edit.saveError'));
     } finally {
       setSubmitting(false);
     }
@@ -294,7 +296,7 @@ export default function ProfileEditScreen() {
             { color: colors.textSecondary, marginTop: spacing.md, textAlign: 'center' },
           ]}
         >
-          Se încarcă...
+          {t('edit.loading')}
         </Text>
       </ScreenContainer>
     );
@@ -309,10 +311,10 @@ export default function ProfileEditScreen() {
             { color: colors.textPrimary, textAlign: 'center', marginBottom: spacing.lg },
           ]}
         >
-          A apărut o eroare la încărcarea profilului.
+          {t('edit.loadError')}
         </Text>
         <Button
-          label="Reîncearcă"
+          label={t('edit.retry')}
           variant="outline"
           onPress={() => {
             profileQuery.refetch();
@@ -342,7 +344,7 @@ export default function ProfileEditScreen() {
     <ScreenContainer>
       <View style={styles.header}>
         <BackButton />
-        <Text style={[typography.h1, { color: colors.textPrimary }]}>Editează profilul</Text>
+        <Text style={[typography.h1, { color: colors.textPrimary }]}>{t('edit.title')}</Text>
       </View>
 
       <ScrollView
@@ -362,56 +364,56 @@ export default function ProfileEditScreen() {
         />
 
         <Input
-          label="Nume"
-          placeholder="Numele tău"
+          label={t('edit.name')}
+          placeholder={t('edit.namePlaceholder')}
           value={draft.name ?? ''}
-          onChangeText={(t) => setField('name', t)}
+          onChangeText={(text) => setField('name', text)}
           error={errors.name}
         />
         <DateOfBirthField
-          label="Data nașterii"
+          label={t('edit.birthDate')}
           value={draft.birthDate}
           onChange={(iso) => setField('birthDate', iso)}
           error={errors.birthDate}
         />
         <ChipGroup
-          label="Gen"
+          label={t('edit.gender')}
           options={optionChips(reference.genders)}
           values={draft.gender ? [draft.gender] : []}
           onToggle={(key) => setField('gender', key)}
           error={errors.gender}
         />
         <Input
-          label="Înălțime (cm)"
-          placeholder="175"
+          label={t('edit.height')}
+          placeholder={t('edit.heightPlaceholder')}
           keyboardType="number-pad"
           value={draft.heightCm != null ? String(draft.heightCm) : ''}
-          onChangeText={(t) => {
-            const n = parseInt(t.replace(/[^0-9]/g, ''), 10);
+          onChangeText={(text) => {
+            const n = parseInt(text.replace(/[^0-9]/g, ''), 10);
             setField('heightCm', Number.isNaN(n) ? (undefined as never) : n);
           }}
           error={errors.heightCm}
         />
         <Input
-          label="Oraș"
-          placeholder="Orașul tău"
+          label={t('edit.city')}
+          placeholder={t('edit.cityPlaceholder')}
           value={draft.city ?? ''}
-          onChangeText={(t) => setField('city', t)}
+          onChangeText={(text) => setField('city', text)}
           error={errors.city}
         />
         <Input
-          label="Stradă / cartier (opțional)"
-          placeholder="Opțional"
+          label={t('edit.street')}
+          placeholder={t('edit.streetPlaceholder')}
           value={draft.street ?? ''}
-          onChangeText={(t) => setField('street', t)}
+          onChangeText={(text) => setField('street', text)}
         />
         <CountryPickerField
-          label="Naționalitate (opțional)"
+          label={t('edit.nationality')}
           value={draft.nationality}
           onChange={(code) => setField('nationality', code)}
         />
         <ChipGroup
-          label="Limbi de comunicare"
+          label={t('edit.languages')}
           options={optionChips(reference.languages)}
           values={draft.languages ?? []}
           onToggle={(key) => toggleMulti('languages', key)}
@@ -420,16 +422,19 @@ export default function ProfileEditScreen() {
 
         <View style={{ gap: spacing.xs, width: '100%' }}>
           <Text style={[typography.caption, { color: colors.textSecondary }]}>
-            Despre tine ({(draft.about ?? '').length}/{MAX_ABOUT_LENGTH})
+            {t('edit.about', {
+              current: (draft.about ?? '').length,
+              max: MAX_ABOUT_LENGTH,
+            })}
           </Text>
           <TextInput
             multiline
             textAlignVertical="top"
             maxLength={MAX_ABOUT_LENGTH}
-            placeholder="Spune câteva cuvinte despre tine"
+            placeholder={t('edit.aboutPlaceholder')}
             placeholderTextColor={colors.textDisabled}
             value={draft.about ?? ''}
-            onChangeText={(t) => setField('about', t)}
+            onChangeText={(text) => setField('about', text)}
             style={[
               typography.body,
               {
@@ -450,14 +455,14 @@ export default function ProfileEditScreen() {
         </View>
 
         <ChipGroup
-          label="Statusul cunoștinței"
+          label={t('edit.datingStatus')}
           options={optionChips(reference.datingStatuses)}
           values={draft.datingStatuses ?? []}
           onToggle={(key) => toggleMulti('datingStatuses', key)}
         />
 
         <ChipGroup
-          label="Interese"
+          label={t('edit.interests')}
           options={reference.interests.map((i: InterestOption) => ({
             key: i.slug,
             label: i.label,
@@ -473,7 +478,7 @@ export default function ProfileEditScreen() {
       </ScrollView>
 
       <View style={styles.footer}>
-        <Button label="Salvează" onPress={handleSave} loading={submitting} style={styles.flex} />
+        <Button label={t('edit.save')} onPress={handleSave} loading={submitting} style={styles.flex} />
       </View>
     </ScreenContainer>
   );

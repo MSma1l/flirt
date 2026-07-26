@@ -33,6 +33,8 @@
     "ageMin": "Minimum age",
     "ageMax": "Maximum age",
     "ageNote": "FLIRT is an 18+ app, so the minimum age can't go below {{min}}.",
+    "anyAgeLabel": "No age range (any age, 18+)",
+    "anyAgeHint": "All ages are shown (18 and up). Turn the switch off to pick a range.",
     "save": "Save preferences"
   },
   "radius": {

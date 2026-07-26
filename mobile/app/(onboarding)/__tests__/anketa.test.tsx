@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
 import { Alert, AlertButton } from 'react-native';
 
@@ -113,14 +113,16 @@ function renderWizard() {
   );
 }
 
-/** Completează valid pasul 0 (Despre tine). */
-function fillStep0(
-  utils: ReturnType<typeof renderWizard>,
-  birthDate = '1998-05-20',
-) {
-  const { getByPlaceholderText, getByText } = utils;
+/**
+ * Completează valid pasul 0 (Despre tine). Data nașterii se alege din CALENDAR
+ * (`DateOfBirthField`) — mock-ul global de datetimepicker „alege" 15.01.2000
+ * (adult), iar componenta enforce-ază 18+, deci nu mai există input text liber.
+ */
+function fillStep0(utils: ReturnType<typeof renderWizard>) {
+  const { getByPlaceholderText, getByText, getByTestId } = utils;
   fireEvent.changeText(getByPlaceholderText('Numele tău'), 'Ana');
-  fireEvent.changeText(getByPlaceholderText('1998-05-20'), birthDate);
+  fireEvent.press(getByTestId('birthdate-open'));
+  fireEvent.press(getByTestId('birthdate-picker')); // mock → 2000-01-15
   fireEvent.press(getByText('Femeie'));
   fireEvent.changeText(getByPlaceholderText('175'), '175');
 }
@@ -183,8 +185,10 @@ describe('AnketaWizard (onboarding)', () => {
     const utils = renderWizard();
     await waitFor(() => utils.getByText('Despre tine'));
 
-    // Data nașterii implică o vârstă sub prag → blocat.
-    fillStep0(utils, '2015-01-01');
+    fillStep0(utils);
+    // `DateOfBirthField` face imposibilă alegerea unei date sub 18 din calendar,
+    // dar validarea rămâne plasa de siguranță pentru date injectate/vechi în draft.
+    act(() => useAnketaStore.getState().setField('birthDate', '2015-01-01'));
     fireEvent.press(utils.getByText('Continuă'));
 
     // Mesajul de eroare apare și rămânem pe primul pas.
@@ -345,7 +349,7 @@ describe('AnketaWizard (onboarding)', () => {
       expect(mockSubmitAnketa).toHaveBeenCalledWith(
         expect.objectContaining({
           name: 'Ana',
-          birthDate: '1998-05-20',
+          birthDate: '2000-01-15',
           gender: 'Femeie',
           heightCm: 175,
           city: 'Chișinău',

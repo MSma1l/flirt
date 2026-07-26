@@ -33,6 +33,8 @@
     "ageMin": "Vârsta minimă",
     "ageMax": "Vârsta maximă",
     "ageNote": "FLIRT este o aplicație 18+, deci vârsta minimă nu poate coborî sub {{min}} ani.",
+    "anyAgeLabel": "Fără interval de vârstă (orice vârstă, 18+)",
+    "anyAgeHint": "Se arată toate vârstele (de la 18 în sus). Oprește comutatorul ca să alegi un interval.",
     "save": "Salvează preferințele"
   },
   "radius": {

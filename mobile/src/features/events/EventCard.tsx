@@ -51,7 +51,7 @@ interface Props {
   event: EventItem;
 }
 
-export function EventCard({ event }: Props) {
+function EventCardBase({ event }: Props) {
   const { colors, typography, radius, spacing } = useTheme();
   const cover = kindColor(event.kind, colors);
   const label = kindLabel(event.kind);
@@ -152,6 +152,10 @@ export function EventCard({ event }: Props) {
     </View>
   );
 }
+
+/** Memoizat: rândurile din lista de evenimente nu se re-randează la re-render-uri
+ *  care nu le schimbă datele. */
+export const EventCard = React.memo(EventCardBase);
 
 const styles = StyleSheet.create({
   card: {

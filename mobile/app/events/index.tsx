@@ -1,7 +1,7 @@
 /** Listă de evenimente (TZ secț. 8): feed via React Query, card → detaliu, link către Flirt Passport. */
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import React from 'react';
+import React, { useCallback } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { BackButton, Button, ScreenContainer } from '@/components/ui';
@@ -13,6 +13,21 @@ import { useTheme } from '@theme/index';
 export default function EventsScreen() {
   const router = useRouter();
   const { colors, typography, spacing } = useTheme();
+
+  // renderItem stabil: `EventCard` memoizat nu re-randează rândurile la
+  // re-render-urile ecranului.
+  const renderEvent = useCallback(
+    ({ item }: { item: EventItem }) => (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Deschide ${item.title}`}
+        onPress={() => router.push(`/events/${item.id}`)}
+      >
+        <EventCard event={item} />
+      </Pressable>
+    ),
+    [router],
+  );
 
   const { data, isLoading, isError, refetch } = useQuery<EventItem[]>({
     queryKey: ['events'],
@@ -79,15 +94,7 @@ export default function EventsScreen() {
           data={events}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ gap: spacing.lg, paddingBottom: spacing.xl }}
-          renderItem={({ item }) => (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Deschide ${item.title}`}
-              onPress={() => router.push(`/events/${item.id}`)}
-            >
-              <EventCard event={item} />
-            </Pressable>
-          )}
+          renderItem={renderEvent}
         />
       )}
     </ScreenContainer>

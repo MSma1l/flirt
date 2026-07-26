@@ -18,7 +18,7 @@ interface Props {
   onReact?: (reaction: string | null) => void;
 }
 
-export function MessageBubble({ message, currentUserId, onReact }: Props) {
+function MessageBubbleBase({ message, currentUserId, onReact }: Props) {
   const { colors, typography, spacing, radius } = useTheme();
   const isOwn = message.senderId === currentUserId;
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -117,6 +117,10 @@ export function MessageBubble({ message, currentUserId, onReact }: Props) {
     </View>
   );
 }
+
+/** Memoizat: la scroll / la fiecare tastare în composer, bulele nemodificate
+ *  nu se re-randează. */
+export const MessageBubble = React.memo(MessageBubbleBase);
 
 const styles = StyleSheet.create({
   wrap: {

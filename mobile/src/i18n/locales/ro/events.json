@@ -1,1 +1,33 @@
-{}
+{
+  "detail": {
+    "loadError": "Nu am putut încărca evenimentul.",
+    "retry": "Reîncearcă",
+    "errorTitle": "Ceva n-a mers",
+    "createOrderError": "Nu am putut crea comanda. Reîncearcă.",
+    "goingError": "Nu am putut actualiza participarea. Reîncearcă.",
+    "checkinErrorTitle": "Check-in eșuat",
+    "checkinError": "Nu am putut face check-in-ul. Reîncearcă.",
+    "stamp": "Ai primit o ștampilă Flirt Passport 🎉",
+    "attendees": "{{n}} participanți",
+    "going": "Merg",
+    "notGoing": "Nu mai merg",
+    "checkin": "Check-in (QR)",
+    "buyTicket": "Cumpără bilet online — {{price}} {{currency}}",
+    "ticketStatus": {
+      "approved": "Bilet aprobat",
+      "declared": "Bilet: în verificare",
+      "awaiting": "Bilet: finalizează plata"
+    },
+    "ticketCta": {
+      "approved": "Vezi biletul",
+      "declared": "Vezi detalii",
+      "awaiting": "Continuă plata"
+    },
+    "promo": {
+      "discount": "Reducere la intrare −{{percent}}%",
+      "showAtEntrance": "Arată acest cod la intrare.",
+      "a11yLabel": "Reducere la intrare minus {{percent}}%, cod {{code}}",
+      "a11yCode": "Cod promo {{code}}"
+    }
+  }
+}

@@ -14,7 +14,7 @@ interface Props {
   card: FeedCard;
 }
 
-export function ProfileCard({ card }: Props) {
+function ProfileCardBase({ card }: Props) {
   const { colors, typography, radius, spacing } = useTheme();
   const hasPhoto = card.photos.length > 0;
   const initial = card.name.trim().charAt(0).toUpperCase() || '?';
@@ -175,6 +175,10 @@ export function ProfileCard({ card }: Props) {
     </View>
   );
 }
+
+/** Memoizat: deck-ul face mai multe setState per swipe (`busy`, `actionError`);
+ *  cardul depinde doar de `card`, deci nu trebuie re-randat între ele. */
+export const ProfileCard = React.memo(ProfileCardBase);
 
 const styles = StyleSheet.create({
   card: {

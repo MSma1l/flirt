@@ -492,7 +492,7 @@ export default function SetariScreen() {
           {/* Comutator „fără interval de vârstă": arată orice vârstă (18+). */}
           <View style={styles.anyAgeRow}>
             <Text style={[typography.body, { color: colors.textPrimary, flex: 1 }]}>
-              Fără interval de vârstă (orice vârstă, 18+)
+              {t('preferences.anyAgeLabel')}
             </Text>
             <Switch
               testID="search-any-age"
@@ -506,7 +506,7 @@ export default function SetariScreen() {
 
           {anyAge ? (
             <Text style={[typography.caption, { color: colors.textSecondary }]}>
-              Se arată toate vârstele (de la 18 în sus). Oprește comutatorul ca să alegi un interval.
+              {t('preferences.anyAgeHint')}
             </Text>
           ) : (
             <>

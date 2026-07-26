@@ -2,6 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import React, { useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Pressable,
@@ -14,6 +15,8 @@ import {
 
 import { Button, Input, ProgressDots, ScreenContainer } from '@/components/ui';
 import { fetchReference, submitAnketa } from '@/features/anketa/anketaApi';
+import { CountryPickerField } from '@/features/anketa/components/CountryPickerField';
+import { DateOfBirthField } from '@/features/anketa/components/DateOfBirthField';
 import {
   ANKETA_STEPS,
   PHOTOS_STEP,
@@ -136,6 +139,7 @@ function ChipGroup({
 
 export default function AnketaWizard() {
   const router = useRouter();
+  const { t } = useTranslation('onboarding');
   const { colors, typography, spacing, radius } = useTheme();
   const setProfileCompleted = useAuthStore((s) => s.setProfileCompleted);
 
@@ -214,7 +218,7 @@ export default function AnketaWizard() {
     if (!uploadedUrl) return;
     uploadedRef.current.delete(photo.uri);
     void deletePhoto(uploadedUrl).catch(() =>
-      setPhotosError('Poza a fost scoasă din listă, dar nu am putut-o șterge de pe server.'),
+      setPhotosError(t('errors.deletePhoto')),
     );
   };
 
@@ -238,7 +242,7 @@ export default function AnketaWizard() {
         anketaSavedRef.current = true;
       }
     } catch {
-      setSubmitError('Nu am putut salva anketa. Încearcă din nou.');
+      setSubmitError(t('errors.saveAnketa'));
       setSubmitting(false);
       return;
     }
@@ -285,8 +289,8 @@ export default function AnketaWizard() {
       const reason =
         error instanceof Error && error.message
           ? error.message
-          : 'Nu am putut încărca pozele.';
-      setPhotosError(`${reason} Apasă din nou pe „Finalizează" ca să reiei încărcarea.`);
+          : t('errors.uploadPhotos');
+      setPhotosError(t('errors.uploadRetry', { reason }));
     } finally {
       setSubmitting(false);
     }
@@ -315,7 +319,7 @@ export default function AnketaWizard() {
             { color: colors.textSecondary, marginTop: spacing.md, textAlign: 'center' },
           ]}
         >
-          Se încarcă...
+          {t('loading')}
         </Text>
       </ScreenContainer>
     );
@@ -330,9 +334,9 @@ export default function AnketaWizard() {
             { color: colors.textPrimary, textAlign: 'center', marginBottom: spacing.lg },
           ]}
         >
-          A apărut o eroare la încărcarea datelor.
+          {t('loadError')}
         </Text>
-        <Button label="Reîncearcă" variant="outline" onPress={() => refetch()} />
+        <Button label={t('retry')} variant="outline" onPress={() => refetch()} />
       </ScreenContainer>
     );
   }
@@ -358,36 +362,34 @@ export default function AnketaWizard() {
       >
         {step === 0 && (
           <>
-            <Text style={[typography.h1, { color: colors.textPrimary }]}>Despre tine</Text>
+            <Text style={[typography.h1, { color: colors.textPrimary }]}>{t('step0.title')}</Text>
             <Input
-              label="Nume"
-              placeholder="Numele tău"
+              label={t('step0.name')}
+              placeholder={t('step0.namePlaceholder')}
               value={draft.name ?? ''}
-              onChangeText={(t) => setField('name', t)}
+              onChangeText={(text) => setField('name', text)}
               error={errors.name}
             />
-            <Input
-              label="Data nașterii (AAAA-LL-ZZ)"
-              placeholder="1998-05-20"
-              autoCapitalize="none"
-              value={draft.birthDate ?? ''}
-              onChangeText={(t) => setField('birthDate', t)}
+            <DateOfBirthField
+              label={t('step0.birthDate')}
+              value={draft.birthDate}
+              onChange={(iso) => setField('birthDate', iso)}
               error={errors.birthDate}
             />
             <ChipGroup
-              label="Gen"
+              label={t('step0.gender')}
               options={optionChips(reference.genders)}
               values={draft.gender ? [draft.gender] : []}
               onToggle={(key) => setField('gender', key)}
               error={errors.gender}
             />
             <Input
-              label="Înălțime (cm)"
-              placeholder="175"
+              label={t('step0.height')}
+              placeholder={t('step0.heightPlaceholder')}
               keyboardType="number-pad"
               value={draft.heightCm != null ? String(draft.heightCm) : ''}
-              onChangeText={(t) => {
-                const n = parseInt(t.replace(/[^0-9]/g, ''), 10);
+              onChangeText={(text) => {
+                const n = parseInt(text.replace(/[^0-9]/g, ''), 10);
                 setField('heightCm', Number.isNaN(n) ? (undefined as never) : n);
               }}
               error={errors.heightCm}
@@ -397,28 +399,27 @@ export default function AnketaWizard() {
 
         {step === 1 && (
           <>
-            <Text style={[typography.h1, { color: colors.textPrimary }]}>Localizare</Text>
+            <Text style={[typography.h1, { color: colors.textPrimary }]}>{t('step1.title')}</Text>
             <Input
-              label="Oraș"
-              placeholder="Orașul tău"
+              label={t('step1.city')}
+              placeholder={t('step1.cityPlaceholder')}
               value={draft.city ?? ''}
-              onChangeText={(t) => setField('city', t)}
+              onChangeText={(text) => setField('city', text)}
               error={errors.city}
             />
             <Input
-              label="Stradă / cartier (opțional)"
-              placeholder="Opțional"
+              label={t('step1.street')}
+              placeholder={t('step1.streetPlaceholder')}
               value={draft.street ?? ''}
-              onChangeText={(t) => setField('street', t)}
+              onChangeText={(text) => setField('street', text)}
             />
-            <Input
-              label="Naționalitate (opțional)"
-              placeholder="Opțional"
-              value={draft.nationality ?? ''}
-              onChangeText={(t) => setField('nationality', t)}
+            <CountryPickerField
+              label={t('step1.nationality')}
+              value={draft.nationality}
+              onChange={(code) => setField('nationality', code)}
             />
             <ChipGroup
-              label="Limbi de comunicare"
+              label={t('step1.languages')}
               options={optionChips(reference.languages)}
               values={draft.languages ?? []}
               onToggle={(key) => toggleMulti('languages', key)}
@@ -429,19 +430,22 @@ export default function AnketaWizard() {
 
         {step === 2 && (
           <>
-            <Text style={[typography.h1, { color: colors.textPrimary }]}>Prezentare</Text>
+            <Text style={[typography.h1, { color: colors.textPrimary }]}>{t('step2.title')}</Text>
             <View style={{ gap: spacing.xs, width: '100%' }}>
               <Text style={[typography.caption, { color: colors.textSecondary }]}>
-                Despre tine ({(draft.about ?? '').length}/{MAX_ABOUT_LENGTH})
+                {t('step2.about', {
+                  current: (draft.about ?? '').length,
+                  max: MAX_ABOUT_LENGTH,
+                })}
               </Text>
               <TextInput
                 multiline
                 textAlignVertical="top"
                 maxLength={MAX_ABOUT_LENGTH}
-                placeholder="Spune câteva cuvinte despre tine"
+                placeholder={t('step2.aboutPlaceholder')}
                 placeholderTextColor={colors.textDisabled}
                 value={draft.about ?? ''}
-                onChangeText={(t) => setField('about', t)}
+                onChangeText={(text) => setField('about', text)}
                 style={[
                   typography.body,
                   {
@@ -463,7 +467,7 @@ export default function AnketaWizard() {
               ) : null}
             </View>
             <ChipGroup
-              label="Statusul cunoștinței"
+              label={t('step2.datingStatus')}
               options={optionChips(reference.datingStatuses)}
               values={draft.datingStatuses ?? []}
               onToggle={(key) => toggleMulti('datingStatuses', key)}
@@ -473,9 +477,9 @@ export default function AnketaWizard() {
 
         {step === 3 && (
           <>
-            <Text style={[typography.h1, { color: colors.textPrimary }]}>Interese</Text>
+            <Text style={[typography.h1, { color: colors.textPrimary }]}>{t('step3.title')}</Text>
             <ChipGroup
-              label="Alege ce te reprezintă"
+              label={t('step3.pick')}
               options={reference.interests.map((i: InterestOption) => ({
                 key: i.slug,
                 label: i.label,
@@ -490,13 +494,13 @@ export default function AnketaWizard() {
         {step === SEARCH_PREFS_STEP && (
           <>
             <Text style={[typography.h1, { color: colors.textPrimary }]}>
-              Pe cine cauți?
+              {t('searchPrefs.title')}
             </Text>
             <Text style={[typography.caption, { color: colors.textSecondary }]}>
-              Așa știm pe cine să-ți arătăm în feed. Poți schimba oricând din Setări.
+              {t('searchPrefs.hint')}
             </Text>
             <ChipGroup
-              label="Gen"
+              label={t('searchPrefs.gender')}
               options={optionChips(reference.genders)}
               values={draft.interestedIn ?? []}
               onToggle={(key) => toggleMulti('interestedIn', key)}
@@ -506,39 +510,37 @@ export default function AnketaWizard() {
               <View style={styles.flex}>
                 <Input
                   testID="search-age-min"
-                  label="Vârsta minimă"
+                  label={t('searchPrefs.ageMin')}
                   placeholder={String(SEARCH_AGE_MIN)}
                   keyboardType="number-pad"
                   value={draft.ageMin != null ? String(draft.ageMin) : ''}
-                  onChangeText={(t) => setField('ageMin', parseAge(t))}
+                  onChangeText={(text) => setField('ageMin', parseAge(text))}
                   error={errors.ageMin}
                 />
               </View>
               <View style={styles.flex}>
                 <Input
                   testID="search-age-max"
-                  label="Vârsta maximă"
+                  label={t('searchPrefs.ageMax')}
                   placeholder="99"
                   keyboardType="number-pad"
                   value={draft.ageMax != null ? String(draft.ageMax) : ''}
-                  onChangeText={(t) => setField('ageMax', parseAge(t))}
+                  onChangeText={(text) => setField('ageMax', parseAge(text))}
                   error={errors.ageMax}
                 />
               </View>
             </View>
             <Text style={[typography.caption, { color: colors.textSecondary }]}>
-              FLIRT este o aplicație 18+, deci vârsta minimă nu poate coborî sub{' '}
-              {SEARCH_AGE_MIN} ani.
+              {t('searchPrefs.ageNote', { min: SEARCH_AGE_MIN })}
             </Text>
           </>
         )}
 
         {step === PHOTOS_STEP && (
           <>
-            <Text style={[typography.h1, { color: colors.textPrimary }]}>Pozele tale</Text>
+            <Text style={[typography.h1, { color: colors.textPrimary }]}>{t('photos.title')}</Text>
             <Text style={[typography.caption, { color: colors.textSecondary }]}>
-              Ai nevoie de cel puțin {PHOTO_LIMITS.min} poze ca să-ți publicăm anketa.
-              Le redimensionăm și le comprimăm automat înainte de încărcare.
+              {t('photos.hint', { min: PHOTO_LIMITS.min })}
             </Text>
             <PhotoGrid
               photos={photoTiles}
@@ -561,14 +563,14 @@ export default function AnketaWizard() {
       <View style={styles.footer}>
         {step > 0 ? (
           <Button
-            label="Înapoi"
+            label={t('back')}
             variant="outline"
             onPress={prev}
             style={styles.flex}
           />
         ) : null}
         <Button
-          label={isLastStep ? 'Finalizează' : 'Continuă'}
+          label={isLastStep ? t('finish') : t('continue')}
           onPress={handleNext}
           loading={submitting}
           style={styles.flex}

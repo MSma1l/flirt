@@ -1,1 +1,27 @@
-{}
+{
+  "paywall": {
+    "title": "Subscriptions",
+    "close": "Close",
+    "loadError": "We couldn't load the subscriptions.",
+    "retry": "Try again",
+    "activated": "Subscription activated 🎉",
+    "pending": "The purchase is awaiting approval. The subscription activates on its own as soon as the payment is confirmed.",
+    "purchaseError": "We couldn't activate the subscription. Please try again.",
+    "storeUnavailable": "We couldn't reach the store, so subscriptions can't be purchased right now. Check your connection and try again.",
+    "missingPlans": "Some plans are not available in the store at the moment. Please try again later.",
+    "priceStore": "{{price}} / month",
+    "priceFallback": "{{price}} € / month",
+    "active": "Active",
+    "unavailableNote": "Unavailable in the store at the moment.",
+    "planActive": "Active plan",
+    "unavailable": "Unavailable",
+    "choose": "Choose",
+    "restore": "Restore purchases",
+    "restoreDone": "Your purchases have been restored.",
+    "restoreEmpty": "We found no purchases to restore on this account.",
+    "restoreError": "We couldn't restore your purchases. Please try again.",
+    "renewNote": "The subscription renews automatically each month at the displayed price, unless you cancel it at least 24 hours before the end of the current period. You can manage or cancel it anytime from your account settings.",
+    "terms": "Terms and conditions",
+    "privacy": "Privacy policy"
+  }
+}
