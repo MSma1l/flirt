@@ -15,7 +15,8 @@ from app.schemas.account import (
     LikeSentOut,
     TargetIn,
 )
-from app.services import account_service
+from app.schemas.social import LikeReceivedOut
+from app.services import account_service, social_service
 from app.services.pagination import MAX_CURSOR_LENGTH, SOCIAL_MAX_LIMIT
 
 router = APIRouter()
@@ -108,6 +109,35 @@ async def list_likes_pending(
     `/feed`), la fel ca `/favorites`, `/likes/sent` și `/blocks`.
     """
     page = await account_service.list_likes_pending(
+        db, user, limit=limit, cursor=cursor
+    )
+    if page.next_cursor:
+        response.headers["X-Next-Cursor"] = page.next_cursor
+    return page.items
+
+
+# --- Like-uri PRIMITE (cine mi-a dat MIE like) -------------------------------
+@router.get("/likes/received", response_model=list[LikeReceivedOut])
+async def list_likes_received(
+    db: DbDep,
+    user: UserDep,
+    response: Response,
+    limit: LimitQuery = None,
+    cursor: CursorQuery = None,
+) -> list[LikeReceivedOut]:
+    """Like-urile PRIMITE la care ÎNCĂ NU am răspuns — inbox-ul de „cereri".
+
+    Simetricul lui `/likes/sent` (direcția e explicită în URL): aici sunt userii
+    care MI-AU DAT MIE like (normal sau super) și la care eu nu am reacționat încă
+    (nici like reciproc — ar fi deja match, în chaturi —, nici dislike). Fiecare
+    element poartă `is_super`, `message` (mesajul autorului, mascat de contacte),
+    `created_at` și `profile` (cardul de anketă), ca userul să deschidă ancheta și
+    să răspundă cu `POST /feed/swipe` → match + chat, ambele mesaje livrate.
+
+    Cursorul paginii următoare vine în header-ul `X-Next-Cursor` (convenția
+    `/feed`), la fel ca `/likes/sent`, `/likes/pending`, `/favorites` și `/blocks`.
+    """
+    page = await social_service.list_likes_received(
         db, user, limit=limit, cursor=cursor
     )
     if page.next_cursor:

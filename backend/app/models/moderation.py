@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint, Uuid
+from sqlalchemy import ForeignKey, Index, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -21,6 +21,11 @@ class Report(Base):
         UniqueConstraint(
             "reporter_id", "reported_id", "category", name="uq_report_triplet"
         ),
+        # Coada de moderare (`admin_service.list_reports`, endpoint POLLED) filtrează
+        # `WHERE status IN (...)` și ordonează `created_at DESC`; `get_stats` numără
+        # rapoartele în așteptare pe `status`. Index compus → un singur scan pentru
+        # filtru + sortare (leftmost prefix acoperă și un filtru pe `status` singur).
+        Index("ix_reports_status_created", "status", "created_at"),
     )
 
     # Cine raportează (indexat pentru lookup rapid).

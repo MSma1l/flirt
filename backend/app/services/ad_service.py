@@ -467,8 +467,31 @@ async def get_next(db: AsyncSession, user: User | None = None) -> AdNextOut | No
 
 
 # --------------------------------------------------------------------------- #
-# Tracking — contoare brute (non-idempotente) de afișări / click-uri
+# Tracking — contoare de afișări / click-uri, DE-DUPLICATE per (user, ad)
 # --------------------------------------------------------------------------- #
+# Fereastra anti-fraudă: numărăm cel mult O impresie și UN click per (user, ad)
+# la fiecare 12h. Fără asta, orice user putea incrementa la nesfârșit orice id,
+# falsificând metricile de reclamă (facturarea/rapoartele agenției).
+AD_DEDUP_TTL_SECONDS = 12 * 60 * 60
+IMPRESSION_KEY_PREFIX = "ads:imp:"
+CLICK_KEY_PREFIX = "ads:clk:"
+
+
+async def _dedup_first_hit(redis, key: str) -> bool:
+    """True dacă e PRIMUL hit pentru `key` în fereastră, False la o repetare.
+
+    `SET key 1 NX EX=ttl` e atomic pe server: reușește (întoarce truthy) DOAR când
+    cheia nu exista, punând simultan și TTL-ul — fără fereastra dintre `SETNX` și
+    `EXPIRE` care ar lăsa o cheie fără expirare. Orice eroare de Redis se propagă;
+    apelantul degradează grațios (permite numărarea).
+    """
+    return bool(await redis.set(key, "1", nx=True, ex=AD_DEDUP_TTL_SECONDS))
+
+
+async def _ad_exists(db: AsyncSession, ad_id: int) -> bool:
+    return (await db.scalar(select(Ad.id).where(Ad.id == ad_id))) is not None
+
+
 async def _bump_counter(db: AsyncSession, ad_id: int, column) -> None:
     """Incrementează ATOMIC un contor (`SET col = col + 1`), 404 dacă ad-ul lipsește.
 
@@ -485,11 +508,53 @@ async def _bump_counter(db: AsyncSession, ad_id: int, column) -> None:
     await db.commit()
 
 
-async def track_impression(db: AsyncSession, ad_id: int) -> None:
-    """Incrementează `impressions` (afișare). 404 dacă ad-ul nu există."""
-    await _bump_counter(db, ad_id, Ad.impressions)
+async def _track(
+    db: AsyncSession, ad_id: int, user_id, column, key_prefix: str
+) -> None:
+    """Incrementează un contor cu DEDUP per (user, ad) pe fereastra `AD_DEDUP_TTL`.
+
+    ANTI-FRAUDĂ: cu Redis configurat, numărăm o singură dată per (user, ad) în
+    fereastră (`SET NX + EXPIRE`); repetările în fereastră NU mai incrementează.
+
+    DEGRADARE GRAȚIOASĂ: fără Redis (`REDIS_URL` gol — dev/teste), fără user, sau
+    dacă Redis cade, permitem numărarea (comportamentul brut vechi) — nu crăpăm
+    niciodată din cauza dedup-ului.
+
+    404 pe id inexistent rămâne garantat pe AMBELE ramuri (numărat sau dedup-uit):
+    o repetare pe un id care nu (mai) există tot întoarce 404, nu 204.
+    """
+    allow = True
+    if user_id is not None:
+        redis = await _get_redis()
+        if redis is not None:
+            key = f"{key_prefix}{ad_id}:{user_id}"
+            try:
+                allow = await _dedup_first_hit(redis, key)
+            except Exception as exc:  # Redis căzut/lent → degradăm, nu crăpăm.
+                log.warning(
+                    "ads tracking: Redis indisponibil, numărăm fără dedup",
+                    extra={"error_type": type(exc).__name__},
+                )
+                reset_redis()  # forțăm reconectarea la următoarea cerere
+                allow = True
+
+    if allow:
+        await _bump_counter(db, ad_id, column)  # incrementează + 404 dacă lipsește
+        return
+
+    # Deduplicat (repetare în fereastră): NU incrementăm, dar păstrăm 404 pe un id
+    # inexistent — contractul rutei nu se schimbă doar pentru că am mai văzut userul.
+    if not await _ad_exists(db, ad_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Ad not found"
+        )
 
 
-async def track_click(db: AsyncSession, ad_id: int) -> None:
-    """Incrementează `clicks` (click). 404 dacă ad-ul nu există."""
-    await _bump_counter(db, ad_id, Ad.clicks)
+async def track_impression(db: AsyncSession, ad_id: int, user_id=None) -> None:
+    """Numără o AFIȘARE, cel mult una per (user, ad)/fereastră. 404 dacă ad-ul nu există."""
+    await _track(db, ad_id, user_id, Ad.impressions, IMPRESSION_KEY_PREFIX)
+
+
+async def track_click(db: AsyncSession, ad_id: int, user_id=None) -> None:
+    """Numără un CLICK, cel mult unul per (user, ad)/fereastră. 404 dacă ad-ul nu există."""
+    await _track(db, ad_id, user_id, Ad.clicks, CLICK_KEY_PREFIX)

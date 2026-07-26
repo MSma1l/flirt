@@ -132,3 +132,16 @@ def test_development_defaults_ok():
     """Dev cu default-uri → guard-ul nu blochează."""
     s = Settings(environment="development")
     assert s.environment == "development"
+
+
+def test_operator_legal_name_default_empty():
+    """Implicit numele operatorului e gol → paginile legale afișează „DE COMPLETAT"."""
+    s = Settings(environment="development")
+    assert s.operator_legal_name == ""
+
+
+def test_operator_legal_name_from_env(monkeypatch):
+    """`OPERATOR_LEGAL_NAME` din env populează `settings.operator_legal_name`."""
+    monkeypatch.setenv("OPERATOR_LEGAL_NAME", "Ion Popescu PFA")
+    s = Settings(environment="development")
+    assert s.operator_legal_name == "Ion Popescu PFA"

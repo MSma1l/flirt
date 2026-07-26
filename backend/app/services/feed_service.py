@@ -23,7 +23,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import String, and_, cast, func, nullslast, or_, select
+from sqlalchemy import and_, func, nullslast, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -35,16 +35,13 @@ from app.models.swipe import Like, Match
 from app.models.user import User
 from app.schemas.feed import FeedCard, FeedPage, MatchOut, SwipeResult, UndoResult
 from app.services import account_service, billing, chat_service, geo, push
-from app.services.compatibility import compute_compatibility
+from app.services.compatibility import behavior_score, compute_compatibility
 from app.services.contact_masker import mask_contacts
 
 logger = logging.getLogger("app.feed")
 
 # --- Reguli de business (din config, nu hardcodate în mijlocul logicii) ------
 MAX_TOP_INTERESTS = 3   # câte interese afișăm pe cartelă (TZ 4.1)
-# Caracterul de escape pentru LIKE (pre-filtrul pe limbi): neutralizează `%`/`_`
-# dintr-o valoare venită de la user.
-_LIKE_ESCAPE = "\\"
 
 
 def _calc_age(birth_date: date, today: date | None = None) -> int:
@@ -147,6 +144,28 @@ def _has_min_photos(profile: Profile) -> bool:
     return len(profile.photos or []) >= settings.min_photos
 
 
+# Mesaj DISTINCT de „profil incomplet", ca mobilul să poată deosebi cazul și să
+# redirecționeze exact spre ecranul `/humor` (testul de umor), nu spre anketă.
+HUMOR_REQUIRED_DETAIL = "Completează testul de umor."
+
+
+def _has_humor(profile: Profile) -> bool:
+    """True dacă profilul are un vector de umor NON-gol (testul de umor dat).
+
+    Testul de umor (TZ 2.7) e obligatoriu, dar până acum era impus DOAR de client
+    (onboarding-ul mobil), nu și server-side: un user cu anketă+poze dar cu
+    `humor_vector` gol/None trecea de toate gate-urile și putea da swipe, iar
+    umorul influența doar SCORUL. Aici verificăm exact ca mobilul (`hasHumorData`):
+    `humor_vector` trebuie să fie un dict cu cel puțin o intrare.
+
+    DECIZIE (deliberată): umorul NU intră în `users.profile_completed` (care rămâne
+    anketă + poze) — e un gate SEPARAT, pe ACȚIUNE. Astfel nu rescriem semantica
+    existentă a flag-ului și nici migrațiile/oglinda `_sync_profile_completed`.
+    """
+    vector = profile.humor_vector
+    return isinstance(vector, dict) and len(vector) > 0
+
+
 def _min_photos_clause():
     """Filtru SQL: profilul are cel puțin `settings.min_photos` poze (TZ / principiu).
 
@@ -162,22 +181,14 @@ def _min_photos_clause():
 
     FĂRĂ N+1: `photos` e o coloană JSON pe `profiles` (nu o relație), deci numărarea
     se face în același scan ca restul predicatelor — zero query-uri suplimentare.
-    `json_array_length` există și în Postgres, și în SQLite (JSON1), ca `LIKE`-ul din
-    `_language_prefilter`. Un `photos` NULL (rând legacy) dă NULL ⇒ rândul e exclus,
-    exact comportamentul dorit.
+    `json_array_length` există și în Postgres, și în SQLite (JSON1). Un `photos`
+    NULL (rând legacy) dă NULL ⇒ rândul e exclus, exact comportamentul dorit.
 
     `min_photos <= 0` (config) = poartă dezactivată → None (fără predicat).
     """
     if settings.min_photos <= 0:
         return None
     return func.json_array_length(Profile.photos) >= settings.min_photos
-
-
-def _has_common_language(a: Profile, b: Profile) -> bool:
-    """True dacă cele două profiluri au cel puțin o limbă comună (gate TZ 4.6)."""
-    la = {str(x) for x in (a.languages or []) if x}
-    lb = {str(x) for x in (b.languages or []) if x}
-    return bool(la & lb)
 
 
 def _distance_between(a: Profile, b: Profile) -> float | None:
@@ -190,31 +201,6 @@ def _distance_between(a: Profile, b: Profile) -> float | None:
     if a.lat is None or a.lng is None or b.lat is None or b.lng is None:
         return None
     return geo.haversine_km(float(a.lat), float(a.lng), float(b.lat), float(b.lng))
-
-
-def _language_prefilter(my_languages: list[str]):
-    """PRE-filtru SQL pentru gate-ul pe limbă (I3 / TZ 4.6).
-
-    `Profile.languages` e o listă JSON; intersecția de liste nu are un operator
-    PORTABIL între SQLite și Postgres, așa că prefiltrăm cu un `LIKE` pe forma
-    textuală a JSON-ului (`… "ro" …`) — suficient de selectiv ca fereastra de
-    candidați să nu se irosească pe profiluri fără limbă comună. Gate-ul EXACT
-    rămâne `_has_common_language`, aplicat după retrieval: un eventual fals
-    pozitiv al LIKE-ului nu poate trece de el.
-
-    `%` și `_` din valoarea userului sunt escape-uite (o limbă „custom" nu poate
-    lărgi predicatul).
-    """
-    clauses = []
-    for lang in my_languages:
-        literal = str(lang).replace(_LIKE_ESCAPE, _LIKE_ESCAPE * 2)
-        literal = literal.replace("%", f"{_LIKE_ESCAPE}%").replace(
-            "_", f"{_LIKE_ESCAPE}_"
-        )
-        clauses.append(
-            cast(Profile.languages, String).like(f'%"{literal}"%', escape=_LIKE_ESCAPE)
-        )
-    return or_(*clauses) if clauses else None
 
 
 async def get_feed(
@@ -234,10 +220,14 @@ async def get_feed(
         haversine EXACT în Python (setarea nu mai e decorativă);
       - excluderi prin `NOT EXISTS` (nu prin `NOT IN` cu liste materializate):
         deja swipe-uiți, blocați în orice direcție (I1), profil ascuns (I2);
-      - conturi inactive de peste `feed_max_inactive_days`;
-      - limbă comună (I3): pre-filtru în SQL + gate exact în Python.
+      - conturi inactive de peste `feed_max_inactive_days`.
 
-    Ranking: `compute_compatibility` (pur), cu distanța reală injectată.
+    Limba NU mai e un gate DUR (pool mai larg): profilurile fără limbă comună
+    RĂMÂN în feed, dar factorul de limbă (10% din scor) le clasează mai jos.
+    Vezi `compatibility._languages_score`.
+
+    Ranking: `compute_compatibility` (pur), cu distanța reală + semnalul
+    comportamental (recența activității + verificare) injectate.
     Paginare: cursor pe (scor, user_id) — fără duplicate între pagini.
     """
     # Limita implicită + plafonul vin din config (fără hardcodare).
@@ -341,12 +331,12 @@ async def get_feed(
             )
         )
 
-    # Limbă comună — pre-filtru SQL (gate-ul exact vine mai jos, în Python).
-    lang_clause = _language_prefilter(
-        [str(x) for x in (my_profile.languages or []) if x]
-    )
-    if lang_clause is not None:
-        conditions.append(lang_clause)
+    # LIMBA — DELIBERAT FĂRĂ gate dur aici (decizie: pool mai larg). Înainte,
+    # un pre-filtru SQL + un gate exact în Python EXCLUDEAU complet profilurile
+    # fără nicio limbă comună, îngustând mult fereastra de candidați. Acum limba
+    # e o PREFERINȚĂ soft: candidații fără limbă comună rămân în retrieval și
+    # sunt clasați mai jos prin factorul de limbă (10%) din scor. Gate-urile care
+    # au sens (18+, gen, vârstă, poze, rază, block/hidden/ban, self) rămân dure.
 
     # Raza de căutare: bounding-box pe coordonatele persistate (index lat/lng).
     # Candidații FĂRĂ coordonate (oraș negeocodabil) NU sunt eliminați aici —
@@ -371,16 +361,18 @@ async def get_feed(
     # Fereastra nu mai e un eșantion arbitrar din heap: e „cei mai recent activi"
     # candidați ELIGIBILI (candidate generation), peste care se aplică ranking-ul.
     stmt = (
-        select(Profile)
+        select(Profile, User)
         .join(User, User.id == Profile.user_id)
         .where(*conditions)
         .order_by(nullslast(User.last_active_at.desc()), Profile.user_id)
         .limit(max(0, settings.feed_scan_limit))
     )
-    candidates = list((await db.execute(stmt)).scalars().all())
-
-    # Gate EXACT pe limbă (I3): pre-filtrul SQL e o aproximare, aici e adevărul.
-    candidates = [p for p in candidates if _has_common_language(my_profile, p)]
+    rows = (await db.execute(stmt)).all()
+    candidates = [row[0] for row in rows]
+    # User-ul e deja în ACELAȘI rând (join-ul exista deja pentru ORDER BY), deci
+    # semnalul comportamental (recența activității) nu costă niciun query în plus
+    # — fără N+1. Indexat pe `profile.id` pentru lookup în bucla de scoring.
+    users_by_profile: dict[uuid.UUID, User] = {row[0].id: row[1] for row in rows}
 
     # --- 2. RANKING: scor pur, cu distanța reală injectată --------------------
     if not candidates:
@@ -398,8 +390,16 @@ async def get_feed(
         if apply_radius and distance_km is not None and distance_km > prefs.radius_km:
             continue
         p_interests = interests_map.get(p.id, set())
+        # Semnal comportamental: recența activității țintei + profil verificat.
+        # Datele vin din rândul deja retrievat (fără query în plus). Cazul fără
+        # `last_active_at` (rând legacy) cade elegant pe neutru în `behavior_score`.
+        cand_user = users_by_profile.get(p.id)
+        behavior = behavior_score(
+            cand_user.last_active_at if cand_user is not None else None,
+            verified=bool(getattr(p, "verified", False)),
+        )
         score = compute_compatibility(
-            my_profile, p, my_interests, p_interests, distance_km
+            my_profile, p, my_interests, p_interests, distance_km, behavior
         )
         scored.append((score, p, p_interests, distance_km))
 
@@ -504,6 +504,23 @@ async def _authorize_swipe(
     if not _has_min_photos(target_profile):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Utilizator indisponibil."
+        )
+
+    # UMOR (TZ 2.7) — gate SERVER-SIDE pe ACȚIUNE, DOAR pe userul care acționează.
+    #
+    # DE CE DOAR PE MINE, NU PE ȚINTĂ: verificarea umorului țintei ar ascunde din
+    # feed / ar face „indisponibili" userii legacy fără vector de umor, deși ei pot
+    # fi swipe-uiți fără probleme — umorul lor contează doar la SCOR. Blocăm strict
+    # ACȚIUNEA celui fără umor, nu prezența altora. De asta NU e niciun predicat de
+    # umor în retrieval-ul din `get_feed` și nici o verificare pe `target_profile`.
+    #
+    # DE CE 403 CU MESAJ DISTINCT: separat de „profil incomplet" (anketă/poze), ca
+    # mobilul să redirecționeze la `/humor`, nu la anketă. Feed-ul (browsing) rămâne
+    # permis — gate-ul e pe acțiune, exact unde umorul devine obligatoriu.
+    if not _has_humor(my_profile):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=HUMOR_REQUIRED_DETAIL,
         )
 
     # I1 — block în ORICE direcție (eu → el sau el → eu).

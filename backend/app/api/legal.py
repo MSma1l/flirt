@@ -39,6 +39,8 @@ from string import Template
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
+from app.core.config import settings
+
 router = APIRouter(prefix="/legal", tags=["legal"])
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates" / "legal"
@@ -47,13 +49,20 @@ TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates" / "legal"
 # monitorizată: Apple îi scrie de acolo, iar utilizatorii raportează abuzuri.
 CONTACT_EMAIL = "support@flrt.md"
 
-# ┌─ DE COMPLETAT ───────────────────────────────────────────────────────────────┐
-# │ Numele complet al PERSOANEI FIZICE care operează aplicația (nu există încă o  │
-# │ firmă înregistrată — NU inventăm SRL, IDNO sau sediu). Cât timp e gol, în     │
-# │ pagini apare un marcaj vizibil „DE COMPLETAT". Când numele e decis, se scrie  │
-# │ AICI, o singură dată, și apare automat în Termeni + Confidențialitate.        │
+# ┌─ NUMELE OPERATORULUI LEGAL ───────────────────────────────────────────────────┐
+# │ Numele complet al PERSOANEI FIZICE / firmei care operează aplicația. NU e      │
+# │ hardcodat aici (nu inventăm SRL, IDNO sau sediu): se citește din settings /    │
+# │ env `OPERATOR_LEGAL_NAME` (vezi `Settings.operator_legal_name`). Cât timp e    │
+# │ gol, în pagini apare un marcaj vizibil „DE COMPLETAT". Când numele e decis, se │
+# │ pune în env, o singură dată, și apare automat în Termeni + Confidențialitate.  │
+# │                                                                                │
+# │ Citit ca funcție (nu ca CONSTANTĂ la import) fiindcă `render_page` e memorat   │
+# │ cu `lru_cache`: dacă am „înghețat" valoarea la momentul importului, o schimbare │
+# │ de env în teste/redeploy n-ar mai avea efect. `_operator()` citește settings   │
+# │ la fiecare randare NON-cache-uită.                                             │
 # └──────────────────────────────────────────────────────────────────────────────┘
-OPERATOR_LEGAL_NAME = ""
+def _operator_legal_name() -> str:
+    return settings.operator_legal_name
 
 # Data ultimei actualizări a documentelor (se modifică MANUAL, la orice schimbare de
 # conținut — nu `date.today()`: o politică datată „azi" la fiecare încărcare arată
@@ -75,7 +84,7 @@ _TITLES = {
 
 def _operator(lang: str) -> str:
     """Numele operatorului sau marcajul „de completat", dacă încă nu e decis."""
-    name = OPERATOR_LEGAL_NAME.strip()
+    name = _operator_legal_name().strip()
     if name:
         # Escapăm: numele e o constantă a noastră, dar nu injectăm niciodată text
         # neescapat în HTML — regula nu are excepții „de încredere".

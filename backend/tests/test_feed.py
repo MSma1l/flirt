@@ -6,7 +6,8 @@ import pytest
 from sqlalchemy import select, update
 
 from app.models.profile import Profile
-from app.services import geo, push
+from app.services import feed_service, geo, push
+from tests import conftest
 from tests.conftest import upload_photo
 
 API = "/api/v1"
@@ -311,20 +312,25 @@ async def test_feed_respects_profile_hidden(client):
 
 
 @pytest.mark.asyncio
-async def test_feed_language_hard_gate(client):
-    """I3: candidat fără nicio limbă comună cu userul curent → exclus (TZ 4.6)."""
+async def test_feed_language_is_soft_preference_not_hard_gate(client):
+    """Limba e SOFT: fără limbă comună candidatul RĂMÂNE în feed, dar clasat mai jos.
+
+    Schimbare deliberată de contract (pool mai larg): înainte, un candidat fără
+    nicio limbă comună era EXCLUS dur din retrieval. Acum apare, dar factorul de
+    limbă (10% din scor) îl coboară sub cei cu limbă comună (restul egal).
+    """
     a_headers, _ = await _make_user(
         client,
         "a@example.com",
         _anketa(name="A", birth_year=_ADULT_YEAR, languages=["ru", "ro"]),
     )
-    # B nu are nicio limbă comună cu A.
+    # B nu are nicio limbă comună cu A — dar NU mai e exclus, doar clasat mai jos.
     _, b_id = await _make_user(
         client,
         "b@example.com",
         _anketa(name="B", birth_year=_ADULT_YEAR, languages=["en"]),
     )
-    # C are o limbă comună (ro) → rămâne vizibil, ca sanity check.
+    # C are o limbă comună (ro) → prioritizat prin scor.
     _, c_id = await _make_user(
         client,
         "c@example.com",
@@ -332,9 +338,14 @@ async def test_feed_language_hard_gate(client):
     )
 
     resp = await client.get(f"{API}/feed/", headers=a_headers)
-    ids = {c["user_id"] for c in resp.json()}
-    assert b_id not in ids, "Fără limbă comună → exclus din feed."
-    assert c_id in ids, "Cu limbă comună → rămâne în feed."
+    cards = resp.json()
+    by_id = {c["user_id"]: c for c in cards}
+    assert b_id in by_id, "Fără limbă comună NU mai e exclus — pool mai larg."
+    assert c_id in by_id, "Cu limbă comună → rămâne în feed."
+    # Prioritizare prin scor: cel cu limbă comună e clasat cel puțin la fel de sus.
+    assert by_id[c_id]["compatibility"] >= by_id[b_id]["compatibility"], (
+        "Candidatul cu limbă comună trebuie clasat >= decât cel fără."
+    )
 
 
 @pytest.mark.asyncio
@@ -1039,3 +1050,108 @@ async def test_unknown_swipe_action_still_rejected(client):
             headers=a_headers,
         )
         assert resp.status_code == 422, f"{bad} → {resp.status_code}"
+
+
+# ============================================================================
+# UMOR — testul de umor (TZ 2.7) e obligatoriu SERVER-SIDE la SWIPE.
+# Gate pe ACȚIUNE, DOAR pe userul care acționează (nu pe țintă): un user cu
+# anketă + poze dar cu `humor_vector` gol NU poate da swipe → 403 cu mesaj
+# DISTINCT de „profil incomplet", ca mobilul să redirecționeze la `/humor`.
+# ============================================================================
+
+
+async def _make_user_without_humor(
+    client, email: str, anketa: dict
+) -> tuple[dict, str]:
+    """User complet (anketă + poză) DAR fără testul de umor dat.
+
+    Postează poza direct pe `POST /profiles/photos` (nu prin helperul `upload_photo`,
+    care ar completa și umorul). Reproduce exact userul legacy: `profile_completed`
+    e true (anketă + poze), dar `humor_vector` e gol → swipe-ul trebuie respins.
+    """
+    headers = await _register(client, email)
+    resp = await client.put(f"{API}/profiles/me", json=anketa, headers=headers)
+    assert resp.status_code == 200, resp.text
+    resp = await client.post(
+        f"{API}/profiles/photos",
+        files={"file": ("p.png", conftest.PNG_1X1, "image/png")},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    return headers, await _me_id(client, headers)
+
+
+@pytest.mark.asyncio
+async def test_swipe_rejected_without_humor(client):
+    """User fără vector de umor → swipe respins cu 403 și mesajul specific de umor."""
+    a_headers, _ = await _make_user_without_humor(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    _, b_id = await _make_user(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "like"},
+        headers=a_headers,
+    )
+    assert resp.status_code == 403, resp.text
+    detail = resp.json()["detail"]
+    # Mesaj DISTINCT de „profil incomplet" — mobilul îl folosește ca să ducă la /humor.
+    assert detail == feed_service.HUMOR_REQUIRED_DETAIL
+    assert "umor" in detail.lower()
+    assert "complet" not in detail.lower() or "umor" in detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_swipe_target_without_humor_still_allowed(client):
+    """Ținta FĂRĂ umor NU e blocată: gate-ul e doar pe cel care acționează.
+
+    A (cu umor) dă like lui B (fără umor). B rămâne o țintă validă — umorul lui
+    contează doar la scor, nu la disponibilitate. Confirmă că nu am exclus din
+    feed / din swipe userii legacy fără umor.
+    """
+    a_headers, _ = await _make_user(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    _, b_id = await _make_user_without_humor(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "like"},
+        headers=a_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["matched"] is False
+
+
+@pytest.mark.asyncio
+async def test_swipe_allowed_after_humor_submitted(client):
+    """Același user, după ce dă testul de umor, poate da swipe (gate-ul se ridică)."""
+    a_headers, _ = await _make_user_without_humor(
+        client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
+    )
+    _, b_id = await _make_user(
+        client, "b@example.com", _anketa(name="B", birth_year=_ADULT_YEAR)
+    )
+
+    # Fără umor → blocat.
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "like"},
+        headers=a_headers,
+    )
+    assert resp.status_code == 403, resp.text
+
+    # Dă testul de umor, apoi swipe-ul trece.
+    await conftest.complete_humor(client, a_headers)
+    resp = await client.post(
+        f"{API}/feed/swipe",
+        json={"target_user_id": b_id, "action": "like"},
+        headers=a_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["matched"] is False

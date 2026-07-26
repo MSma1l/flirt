@@ -356,11 +356,47 @@ def _to_settings_out(record: UserSettings) -> SettingsOut:
     )
 
 
+# --- Validare țintă socială --------------------------------------------------
+async def _validate_social_target(
+    db: AsyncSession, user: User, target_user_id: uuid.UUID
+) -> None:
+    """Reguli comune pentru acțiunile sociale țintite (favorite / block).
+
+    Aliniat cu `feed.swipe` / `reports.create`:
+      * nu te poți viza pe TINE însuți → 400 (ca `feed.swipe`, dar cu codul cerut
+        de audit; `reports.create` folosește 422 pentru același caz);
+      * ținta trebuie să EXISTE → 404 neutru (ca verificarea de user din
+        `reports.create` — un cont purjat GDPR e `deleted_at`, deci „inexistent"
+        din punctul de vedere al oricărei liste sociale).
+
+    Fără asta, un user putea să-și adauge favorit/block pe SINE (perechi absurde,
+    self-block ce l-ar fi tăiat singur din propriile liste) sau pe id-uri
+    inexistente (rânduri-fantomă, abuz).
+    """
+    if target_user_id == user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nu te poți viza pe tine însuți.",
+        )
+    # Ținta trebuie să existe ȘI să nu fie un cont purjat GDPR (`deleted_at`):
+    # un cont anonimizat nu are ce căuta într-o listă socială nouă.
+    exists = await db.scalar(
+        select(User.id).where(
+            User.id == target_user_id, User.deleted_at.is_(None)
+        )
+    )
+    if exists is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Utilizator indisponibil."
+        )
+
+
 # --- Favorite ----------------------------------------------------------------
 async def add_favorite(
     db: AsyncSession, user: User, target_user_id: uuid.UUID
 ) -> None:
     """Adaugă un favorit (idempotent — nu dublează perechea)."""
+    await _validate_social_target(db, user, target_user_id)
     result = await db.execute(
         select(Favorite).where(
             Favorite.user_id == user.id,
@@ -665,6 +701,7 @@ async def add_block(
     db: AsyncSession, user: User, target_user_id: uuid.UUID
 ) -> None:
     """Blochează un user (idempotent)."""
+    await _validate_social_target(db, user, target_user_id)
     result = await db.execute(
         select(Block).where(
             Block.blocker_id == user.id,

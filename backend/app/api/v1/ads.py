@@ -54,8 +54,8 @@ async def ads_next(db: DbDep, user: UserDep):
     responses={404: {"description": "Reclamă inexistentă."}},
 )
 async def ads_impression(ad_id: int, db: DbDep, user: UserDep) -> Response:
-    """Marchează o AFIȘARE a reclamei (contor brut, +1 atomic). 404 dacă nu există."""
-    await ad_service.track_impression(db, ad_id)
+    """Marchează o AFIȘARE a reclamei (cel mult una per user/reclamă/fereastră). 404 dacă nu există."""
+    await ad_service.track_impression(db, ad_id, user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -65,6 +65,6 @@ async def ads_impression(ad_id: int, db: DbDep, user: UserDep) -> Response:
     responses={404: {"description": "Reclamă inexistentă."}},
 )
 async def ads_click(ad_id: int, db: DbDep, user: UserDep) -> Response:
-    """Marchează un CLICK pe reclamă (contor brut, +1 atomic). 404 dacă nu există."""
-    await ad_service.track_click(db, ad_id)
+    """Marchează un CLICK pe reclamă (cel mult unul per user/reclamă/fereastră). 404 dacă nu există."""
+    await ad_service.track_click(db, ad_id, user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

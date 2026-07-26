@@ -183,18 +183,67 @@ async def _get_event_or_404(db: AsyncSession, event_id: uuid.UUID) -> Event:
     return event
 
 
+def _as_utc(value: datetime) -> datetime:
+    """Normalizează un datetime la UTC (naive → atașează UTC), pentru comparații sigure.
+
+    Coloana `Event.starts_at` e `DateTime(timezone=True)` (Postgres întoarce
+    tz-aware), dar un motor fără timezone (SQLite) ar întoarce naive — atunci
+    `naive < aware` ar arunca `TypeError`. Atașăm UTC ca să comparăm mereu apples-to-apples.
+    """
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
 async def create_order(
     db: AsyncSession, user: User, event_id: uuid.UUID
 ) -> TicketOrderCreateOut:
     """Creează o comandă `awaiting_payment` + întoarce instrucțiunile de plată.
 
-    400 dacă evenimentul nu are `ticket_price` setat (biletul online nu e disponibil).
+    IDEMPOTENT (anti-spam): dacă userul are deja o comandă ACTIVĂ pentru același
+    eveniment (`awaiting_payment` sau `payment_declared`), o întoarce pe aceea în
+    loc să creeze una nouă — exact ca `account_service.get_or_issue_ticket`. O
+    comandă `rejected` anterioară NU blochează crearea uneia noi (userul are voie
+    să reîncerce după un refuz).
+
+    400 dacă evenimentul nu are `ticket_price` setat (biletul online nu e
+    disponibil) sau dacă evenimentul e deja TRECUT (`starts_at < now`).
     """
     event = await _get_event_or_404(db, event_id)
     if event.ticket_price is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Biletul online nu este disponibil pentru acest eveniment.",
+        )
+    if _as_utc(event.starts_at) < _now():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Evenimentul a trecut deja — nu mai poți comanda bilet.",
+        )
+
+    # Idempotență: reutilizăm o comandă activă (neterminată) a aceluiași user pt
+    # același eveniment. Cea mai recentă câștigă (deși, în practică, tot fixul
+    # garantează că e cel mult una).
+    existing = (
+        await db.execute(
+            select(TicketOrder)
+            .where(
+                TicketOrder.user_id == user.id,
+                TicketOrder.event_id == event.id,
+                TicketOrder.status.in_(_DECIDABLE_STATUSES),
+            )
+            .order_by(TicketOrder.created_at.desc(), TicketOrder.id.desc())
+        )
+    ).scalars().first()
+    if existing is not None:
+        # Instrucțiunile de plată doar cât timp mai e ceva de plătit (awaiting) —
+        # aceeași semantică precum `get_mine`; o comandă deja declarată nu le mai are.
+        payment: PaymentInstructions | None = None
+        if existing.status == STATUS_AWAITING_PAYMENT:
+            settings = await _get_or_create_settings(db)
+            payment = _payment_instructions(existing, event, settings)
+        return TicketOrderCreateOut(
+            order=_to_order_out(existing, event), payment=payment
         )
 
     reference = user_payment_ref(user)

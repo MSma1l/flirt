@@ -49,3 +49,7 @@ backend/media/
 mobile/assets/_backup_logo_vechi/
 /IMG_*.JPG
 /IMG_*.PNG
+
+# artefacte de test
+backend/.coverage
+backend/htmlcov/

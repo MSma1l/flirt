@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     debug: bool = False
 
+    # Numele complet al operatorului legal (persoană fizică / firmă) afișat în
+    # paginile Termeni + Confidențialitate (`app/api/legal.py`). Configurabil prin
+    # env `OPERATOR_LEGAL_NAME`; cât timp e gol, paginile afișează un marcaj vizibil
+    # „DE COMPLETAT" în loc de un nume juridic inventat. NU pune aici un nume real —
+    # se setează prin env la deploy, o singură dată, când e decis.
+    operator_legal_name: str = "FLIRT"
+
     # Database
     postgres_user: str = "flirt"
     postgres_password: str = "change_me"

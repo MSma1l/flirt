@@ -1,12 +1,12 @@
 """Unit teste pentru algoritmul de compatibilitate (funcție pură, fără DB)."""
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
 from app.core.config import settings
 from app.models.profile import Profile
 from app.services import compatibility as C
-from app.services.compatibility import compute_compatibility
+from app.services.compatibility import behavior_score, compute_compatibility
 
 
 def _profile(**kw) -> Profile:
@@ -167,3 +167,78 @@ def test_language_gate_lowers_score():
         _profile(languages=["ru"]), _profile(languages=["en"]), {"sport"}, {"sport"}
     )
     assert no_common < common
+
+
+# --- Semnal comportamental (recența activității + verificare) -----------------
+_NOW = datetime(2026, 7, 24, 12, 0, tzinfo=timezone.utc)
+
+
+def test_behavior_none_last_active_is_neutral():
+    """Fără date de activitate (rând legacy) → cădem elegant pe neutru 0.5."""
+    assert behavior_score(None, now=_NOW) == C.BEHAVIOR_NEUTRAL
+
+
+def test_behavior_recent_beats_stale():
+    """Monoton în recență: activ acum > activ acum o săptămână > la limita decay."""
+    fresh = behavior_score(_NOW, now=_NOW)
+    week = behavior_score(_NOW - timedelta(days=7), now=_NOW)
+    stale = behavior_score(
+        _NOW - timedelta(days=C.BEHAVIOR_ACTIVITY_DECAY_DAYS), now=_NOW
+    )
+    assert fresh > week > stale
+    assert fresh == pytest.approx(1.0)
+    assert stale == pytest.approx(0.0)
+
+
+def test_behavior_in_unit_interval_beyond_decay():
+    """Peste orizontul de decay recența e 0, nu negativă (clamp)."""
+    val = behavior_score(
+        _NOW - timedelta(days=C.BEHAVIOR_ACTIVITY_DECAY_DAYS * 3), now=_NOW
+    )
+    assert val == pytest.approx(0.0)
+
+
+def test_behavior_verified_pushes_up_without_exceeding_one():
+    """Profil verificat împinge scorul spre 1, monoton și mărginit."""
+    base = behavior_score(_NOW - timedelta(days=10), now=_NOW, verified=False)
+    boosted = behavior_score(_NOW - timedelta(days=10), now=_NOW, verified=True)
+    assert boosted > base
+    assert boosted <= 1.0
+    # Verificat pe un cont deja activ acum nu poate depăși 1.0.
+    assert behavior_score(_NOW, now=_NOW, verified=True) == pytest.approx(1.0)
+
+
+def test_behavior_naive_datetime_treated_as_utc():
+    """Un `last_active_at` naiv (fără tz) nu aruncă, e interpretat ca UTC."""
+    naive = _NOW.replace(tzinfo=None)
+    assert behavior_score(naive, now=_NOW) == pytest.approx(1.0)
+
+
+def test_compute_score_behavior_varies_with_activity():
+    """Scorul final crește când ținta e activă recent (restul factorilor egal)."""
+    a = _profile()
+    b = _profile()
+    active = compute_compatibility(
+        a, b, {"sport"}, {"sport"}, behavior=behavior_score(_NOW, now=_NOW)
+    )
+    inactive = compute_compatibility(
+        a,
+        b,
+        {"sport"},
+        {"sport"},
+        behavior=behavior_score(
+            _NOW - timedelta(days=C.BEHAVIOR_ACTIVITY_DECAY_DAYS), now=_NOW
+        ),
+    )
+    assert active > inactive
+
+
+def test_compute_score_behavior_none_is_neutral_default():
+    """`behavior=None` păstrează comportamentul numeric istoric (neutru 0.5)."""
+    a = _profile()
+    b = _profile()
+    default = compute_compatibility(a, b, {"sport"}, {"sport"})
+    explicit_neutral = compute_compatibility(
+        a, b, {"sport"}, {"sport"}, behavior=C.BEHAVIOR_NEUTRAL
+    )
+    assert default == explicit_neutral

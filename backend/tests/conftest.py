@@ -99,8 +99,30 @@ PNG_1X1 = base64.b64decode(
 )
 
 
+async def complete_humor(client, headers: dict, api: str = "/api/v1") -> None:
+    """Completează testul de umor (TZ 2.7) prin API-ul REAL.
+
+    DE CE EXISTĂ: testul de umor e obligatoriu și acum e impus SERVER-SIDE — un
+    user fără `humor_vector` non-gol nu poate da swipe (`_authorize_swipe` ridică
+    403 cu mesaj distinct). Fixturile care construiesc un user ACȚIONABIL (care dă
+    swipe / face match) trebuie să dea și acest test, exact ca onboarding-ul real:
+    anketă → poze → umor.
+
+    Trimite răspuns `funny=True` pentru fiecare card din quiz-ul real, deci
+    vectorul rezultat e non-gol (uniform pe cele 7 tipuri) — suficient ca să treacă
+    gate-ul, fără să depindem de textul cardurilor.
+    """
+    quiz = await client.get(f"{api}/humor/quiz", headers=headers)
+    assert quiz.status_code == 200, quiz.text
+    answers = [{"card_id": card["id"], "funny": True} for card in quiz.json()]
+    resp = await client.post(
+        f"{api}/humor/submit", json={"answers": answers}, headers=headers
+    )
+    assert resp.status_code == 200, resp.text
+
+
 async def upload_photo(client, headers: dict, api: str = "/api/v1") -> str:
-    """Încarcă o poză prin API-ul REAL și întoarce URL-ul ei.
+    """Încarcă o poză prin API-ul REAL, completează umorul, și întoarce URL-ul pozei.
 
     DE CE EXISTĂ: un profil fără poze nu e complet (principiu al aplicației) și nu
     apare în feedul nimănui — `feed_service._min_photos_clause`. Anketa NU poate
@@ -108,6 +130,13 @@ async def upload_photo(client, headers: dict, api: str = "/api/v1") -> str:
     `photos/{profile_id}/`, iar un profil nou n-are încă id), deci fixturile care
     au nevoie de un user VIZIBIL în feed trebuie să facă acest pas al doilea —
     exact ca aplicația reală: PUT /profiles/me, apoi POST /profiles/photos.
+
+    DE CE ȘI UMORUL AICI: acest helper e poarta prin care TOATE fixturile
+    construiesc un user complet și acționabil. Odată ce swipe-ul cere server-side
+    un `humor_vector` non-gol, un user „gata de swipe" trebuie să aibă și umorul
+    dat. Îl completăm în același pas ca să nu fie nevoie de un al treilea apel
+    repetat în ~14 fișiere de test. Testele care vor EXPLICIT un user fără umor
+    postează poza direct pe `POST /profiles/photos`, nu prin acest helper.
 
     Merge pe stub-urile implicite (storage + moderare NSFW), fără configurare.
     """
@@ -117,6 +146,7 @@ async def upload_photo(client, headers: dict, api: str = "/api/v1") -> str:
         headers=headers,
     )
     assert resp.status_code == 200, resp.text
+    await complete_humor(client, headers, api)
     return resp.json()[-1]
 
 

@@ -3,6 +3,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.core.config import settings
@@ -120,6 +121,39 @@ async def test_favorite_remove(db_session):
     await A.remove_favorite(db_session, user, target)
     await A.remove_favorite(db_session, user, target)  # no-op a doua oară
     assert (await A.list_favorites(db_session, user)).items == []
+
+
+# --- Validare țintă socială (self / inexistent) ------------------------------
+@pytest.mark.asyncio
+async def test_favorite_self_is_400(db_session):
+    user = await _make_user(db_session, "fav_self@example.com")
+    with pytest.raises(HTTPException) as exc:
+        await A.add_favorite(db_session, user, user.id)
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_favorite_nonexistent_target_404(db_session):
+    user = await _make_user(db_session, "fav_ghost@example.com")
+    with pytest.raises(HTTPException) as exc:
+        await A.add_favorite(db_session, user, uuid.uuid4())
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_block_self_is_400(db_session):
+    user = await _make_user(db_session, "blk_self@example.com")
+    with pytest.raises(HTTPException) as exc:
+        await A.add_block(db_session, user, user.id)
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_block_nonexistent_target_404(db_session):
+    user = await _make_user(db_session, "blk_ghost@example.com")
+    with pytest.raises(HTTPException) as exc:
+        await A.add_block(db_session, user, uuid.uuid4())
+    assert exc.value.status_code == 404
 
 
 # --- Block -------------------------------------------------------------------

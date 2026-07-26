@@ -9,6 +9,7 @@ config / remote-config mai târziu, fără release (TZ 4.6).
 from __future__ import annotations
 
 import math
+from datetime import datetime, timezone
 
 from app.core.config import settings
 from app.models.profile import Profile
@@ -19,10 +20,31 @@ from app.models.profile import Profile
 
 # --- Valori neutre / placeholder pentru factori încă neimplementați ----------
 NEUTRAL_HUMOR = 0.5      # când lipsește vectorul de umor la cel puțin unul
-BEHAVIOR_NEUTRAL = 0.5   # istoricul comportamental nu e încă disponibil
+
+# --- Semnal comportamental (comportament, 10% din scor) ----------------------
+# Înlocuiește vechea constantă neutră cu un scor REAL, calculat din semnale deja
+# disponibile fără migrație nouă: recența activității (`users.last_active_at`) și
+# statutul de profil verificat (`profiles.verified`). Monoton și mărginit în
+# [0, 1]:
+#   - mai recent activ ⇒ scor mai mare (userii „vii" merită expunere);
+#   - profil verificat ⇒ mic bonus de încredere (împinge scorul spre 1).
+# Fără date de activitate cădem elegant pe neutru (0.5): nici premiu, nici
+# penalizare pentru un cont despre care nu știm nimic.
+BEHAVIOR_NEUTRAL = 0.5   # fallback când nu avem semnale (rând legacy, apelant fără date)
+# Peste acest orizont recența nu mai contribuie (scor de recență 0). Ales în
+# același ordin de mărime ca `feed_max_inactive_days` (30): un cont la limita de
+# inactivitate are recență ~0, unul activ azi ~1.
+BEHAVIOR_ACTIVITY_DECAY_DAYS = 30.0
+# Bonus de încredere pentru profil verificat: împinge proporțional spre 1 fără
+# să depășească plafonul (un cont verificat NU poate „sări" peste 1.0).
+BEHAVIOR_VERIFIED_BONUS = 0.15
 
 # --- Placeholder limbi -------------------------------------------------------
-# GATE dur: fără nicio limbă comună, factorul limbă e puternic penalizat.
+# Limba NU mai e un gate DUR la retrieval (feed_service nu mai exclude profilurile
+# fără limbă comună — pool mai larg). A rămas un semnal SOFT de ranking: fără nicio
+# limbă comună factorul limbă e 0.0, deci acei candidați sunt clasați mai jos, dar
+# rămân vizibili. Cei cu limbă comună sunt astfel prioritizați prin scor, nu prin
+# excludere.
 LANGUAGES_NO_COMMON = 0.0
 
 
@@ -128,12 +150,49 @@ def _languages_score(a: Profile, b: Profile) -> float:
     return min(1.0, len(common) / smaller)
 
 
+def behavior_score(
+    last_active_at: datetime | None,
+    verified: bool = False,
+    now: datetime | None = None,
+) -> float:
+    """Semnal comportamental în [0, 1] din recența activității + verificare.
+
+    Funcție PURĂ (fără I/O): apelantul (`feed_service`) injectează
+    `last_active_at` (`users.last_active_at`) și `verified` (`profiles.verified`),
+    ambele deja citite în retrieval — zero query-uri în plus, fără N+1. Fără
+    migrație/coloane noi.
+
+    - `last_active_at is None` (rând legacy, fără date) ⇒ pornim de la neutru 0.5;
+    - altfel recența = `max(0, 1 − zile_de_la_activitate / DECAY)`, strict
+      descrescătoare în timp (activ azi ⇒ ~1, la limita de inactivitate ⇒ ~0);
+    - `verified` împinge scorul proporțional spre 1 (`s + bonus·(1−s)`), monoton
+      și mărginit — un profil verificat nu poate depăși 1.0.
+    """
+    if last_active_at is None:
+        score = BEHAVIOR_NEUTRAL
+    else:
+        now = now or datetime.now(timezone.utc)
+        la = last_active_at
+        if la.tzinfo is None:  # rânduri persistate naiv → interpretate ca UTC
+            la = la.replace(tzinfo=timezone.utc)
+        days = max(0.0, (now - la).total_seconds() / 86400.0)
+        if BEHAVIOR_ACTIVITY_DECAY_DAYS <= 0:
+            # Config degenerată: doar „activ chiar acum" mai punctează.
+            score = 1.0 if days <= 0 else 0.0
+        else:
+            score = _clamp01(1.0 - days / BEHAVIOR_ACTIVITY_DECAY_DAYS)
+    if verified:
+        score = score + BEHAVIOR_VERIFIED_BONUS * (1.0 - score)
+    return _clamp01(score)
+
+
 def compute_compatibility(
     a: Profile,
     b: Profile,
     a_interests: set[str],
     b_interests: set[str],
     distance_km: float | None = None,
+    behavior: float | None = None,
 ) -> int:
     """Scorul de compatibilitate 0–100 între profilurile `a` și `b` (TZ 4.6).
 
@@ -141,6 +200,11 @@ def compute_compatibility(
     (`feed_service`, prin geocoding cache-uit) și se injectează aici ca
     `distance_km`. `None` ⇒ factorul de distanță ia valoarea neutră din config,
     deci apelanții care nu au geocoding (ex. lista de chat-uri) rămân valizi.
+
+    `behavior` (∈ [0, 1]) e semnalul comportamental deja calculat de apelant cu
+    `behavior_score` (recența activității + verificare). `None` ⇒ neutru 0.5,
+    deci apelanții care nu au datele de activitate la îndemână (ex. lista de
+    match-uri) rămân valizi și neschimbați numeric.
 
     Robust la câmpuri lipsă/None: fiecare factor se degradează la o valoare
     neutră sau placeholder documentat.
@@ -150,7 +214,7 @@ def compute_compatibility(
     humor = _humor_similarity(a, b)
     distance = _distance_score(distance_km)
     languages = _languages_score(a, b)
-    behavior = BEHAVIOR_NEUTRAL
+    behavior = BEHAVIOR_NEUTRAL if behavior is None else _clamp01(behavior)
 
     score = (
         settings.compat_w_interests * interests

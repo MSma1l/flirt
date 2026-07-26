@@ -20,6 +20,7 @@ import pytest
 from fastapi.security.base import SecurityBase
 
 from app.api import legal
+from app.core.config import settings
 from app.main import app
 
 _aio = pytest.mark.asyncio
@@ -222,8 +223,9 @@ async def test_pagina_e_responsive(client, path):
 @_aio
 async def test_marcajul_operatorului_e_vizibil_cat_timp_numele_lipseste(client):
     """Nu inventăm un SRL. Cât timp numele nu e decis, marcajul TREBUIE să se vadă."""
-    if legal.OPERATOR_LEGAL_NAME.strip():
+    if settings.operator_legal_name.strip():
         pytest.skip("numele operatorului a fost completat — marcajul nu mai are sens")
+    legal.render_page.cache_clear()  # randare proaspătă (nu cache din alt test)
     text = (await client.get("/legal/terms")).text
     assert "DE COMPLETAT" in text
     assert "TO BE COMPLETED" in text
@@ -231,8 +233,8 @@ async def test_marcajul_operatorului_e_vizibil_cat_timp_numele_lipseste(client):
 
 
 def test_numele_operatorului_apare_in_pagini_cand_e_completat(monkeypatch):
-    """Când se scrie numele în `OPERATOR_LEGAL_NAME`, apare în AMBELE documente."""
-    monkeypatch.setattr(legal, "OPERATOR_LEGAL_NAME", "Ion Popescu")
+    """Când se setează numele (env/`settings.operator_legal_name`), apare în AMBELE documente."""
+    monkeypatch.setattr(settings, "operator_legal_name", "Ion Popescu")
     legal.render_page.cache_clear()
     try:
         for pagina in ("terms", "privacy"):
@@ -246,8 +248,8 @@ def test_numele_operatorului_apare_in_pagini_cand_e_completat(monkeypatch):
 
 
 def test_numele_operatorului_e_escapat(monkeypatch):
-    """Chiar și o constantă a noastră trece prin escape — fără excepții „de încredere"."""
-    monkeypatch.setattr(legal, "OPERATOR_LEGAL_NAME", '<img src=x onerror="alert(1)">')
+    """Chiar și un nume din config trece prin escape — fără excepții „de încredere"."""
+    monkeypatch.setattr(settings, "operator_legal_name", '<img src=x onerror="alert(1)">')
     legal.render_page.cache_clear()
     try:
         html_text = legal.render_page("terms")
