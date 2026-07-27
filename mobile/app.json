@@ -191,7 +191,8 @@
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.POST_NOTIFICATIONS",
-        "android.permission.VIBRATE"
+        "android.permission.VIBRATE",
+        "android.permission.RECORD_AUDIO"
       ],
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO",
@@ -211,26 +212,30 @@
       "photoAllowedTypes": [
         "image/jpeg",
         "image/png",
+        "image/webp",
+        "image/jpeg",
+        "image/png",
         "image/webp"
       ],
       "photoMaxDimension": 1920,
       "photoCompressQuality": 0.8,
       "photoMinCompressQuality": 0.4,
-
       "termsUrl": "https://api.flrt.md/legal/terms",
       "privacyUrl": "https://api.flrt.md/legal/privacy",
       "supportUrl": "https://api.flrt.md/legal/support",
-
       "iapProductIds": {
         "premium": "eu.flirt.app.premium.monthly",
         "no_ads": "eu.flirt.app.noads.monthly",
         "ai_bot": "eu.flirt.app.aibot.monthly",
         "all_inclusive": "eu.flirt.app.allinclusive.monthly"
       },
-
       "googleAuthClientIdIos": "",
       "googleAuthClientIdAndroid": "",
-      "googleAuthClientIdWeb": ""
-    }
+      "googleAuthClientIdWeb": "",
+      "eas": {
+        "projectId": "0e85567b-526b-4b97-8bfd-df6338718af2"
+      }
+    },
+    "owner": "turcanplay"
   }
 }
