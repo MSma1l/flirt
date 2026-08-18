@@ -1,0 +1,22 @@
+# FLIRT — локальный оверрайд. Положить в backend/docker-compose.override.yml
+#
+# docker compose подхватывает этот файл АВТОМАТИЧЕСКИ рядом с docker-compose.yml.
+# Основной compose — продакшн-формы: наружу торчит только nginx (443, самоподписанный
+# сертификат на localhost). Для локальной разработки и для телефона в той же Wi-Fi
+# удобнее иметь чистый HTTP на :8000 — это всё, что делает файл.
+#
+# В продакшн его НЕ копировать.
+
+services:
+  api:
+    ports:
+      - "8000:8000"      # http://<IP-ноутбука>:8000/docs — Swagger, и туда же ходит Expo
+
+  # certbot на localhost и так уходит в сон (см. scripts/certbot_entrypoint.sh),
+  # но локально он просто не нужен. Профиль, которого нет в `up`, = сервис не стартует.
+  certbot:
+    profiles: ["prod"]
+
+  # Ежедневный pg_dump локально тоже ни к чему.
+  backup:
+    profiles: ["prod"]
