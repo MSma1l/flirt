@@ -12,6 +12,8 @@ import { Button, Input, LanguageSwitcher, ScreenContainer } from '@/components/u
 import { config } from '@/config';
 import { useAuthStore } from '@/store/authStore';
 import {
+  AuthValidationKey,
+  MIN_PASSWORD_LENGTH,
   validateEmail,
   validatePassword,
   validatePasswordMatch,
@@ -34,9 +36,9 @@ export default function Register() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [accepted, setAccepted] = useState(false);
-  const [emailError, setEmailError] = useState<string | null>(null);
-  const [passwordError, setPasswordError] = useState<string | null>(null);
-  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<AuthValidationKey | null>(null);
+  const [passwordError, setPasswordError] = useState<AuthValidationKey | null>(null);
+  const [confirmError, setConfirmError] = useState<AuthValidationKey | null>(null);
   // Ținem CHEIA erorii, nu textul: dacă userul comută limba cu eroarea pe ecran,
   // mesajul se re-traduce la randare în loc să rămână în limba veche.
   const [formErrorKey, setFormErrorKey] = useState<RegisterErrorKey | null>(null);
@@ -50,14 +52,17 @@ export default function Register() {
   };
 
 
+  /**
+   * Traduce o cheie de eroare de validare. `min` e dat mereu: cheile care nu-l
+   * folosesc îl ignoră, iar pragul rămâne într-un singur loc, în cod.
+   */
+  const tValidation = (key: AuthValidationKey | null) =>
+    key ? t(key, { min: MIN_PASSWORD_LENGTH }) : null;
+
   const onSubmit = async () => {
     // Fără acceptarea termenilor nu se creează cont (butonul e oricum blocat).
     if (!accepted) return;
 
-    // NOTĂ: `validateEmail` / `validatePassword` / `validatePasswordMatch` întorc
-    // încă mesaje fixe, în română. Stau în `src/features/auth/validation.ts`,
-    // partajat cu login și phone, deci migrarea lor e o sarcină separată
-    // (vezi `src/i18n/README.md`, „Ce a rămas").
     const eErr = validateEmail(email);
     const pErr = validatePassword(password);
     const cErr = validatePasswordMatch(password, confirm);
@@ -102,7 +107,7 @@ export default function Register() {
           label={t('register.emailLabel')}
           value={email}
           onChangeText={setEmail}
-          error={emailError}
+          error={tValidation(emailError)}
           placeholder={t('register.emailPlaceholder')}
           autoCapitalize="none"
           keyboardType="email-address"
@@ -113,7 +118,7 @@ export default function Register() {
           label={t('register.passwordLabel')}
           value={password}
           onChangeText={setPassword}
-          error={passwordError}
+          error={tValidation(passwordError)}
           placeholder={t('register.passwordPlaceholder')}
           secureTextEntry
           autoCapitalize="none"
@@ -123,7 +128,7 @@ export default function Register() {
           label={t('register.confirmLabel')}
           value={confirm}
           onChangeText={setConfirm}
-          error={confirmError}
+          error={tValidation(confirmError)}
           placeholder={t('register.confirmPlaceholder')}
           secureTextEntry
           autoCapitalize="none"
