@@ -2,7 +2,7 @@
  * Alegerea textului unui card de umor după limba activă.
  *
  * Serverul trimite gluma în toate cele 4 limbi (`text_ro/ru/uk/en`); noi alegem
- * varianta limbii curente. Regula de aur: NICIODATĂ text gol pe ecran — dacă
+ * varianta limbii curente — interfața are doar 3, deci `text_uk` rămâne neatins. Regula de aur: NICIODATĂ text gol pe ecran — dacă
  * varianta cerută lipsește (server mai vechi, traducere neintrodusă încă), cădem
  * pe română, apoi pe aliasul `text`. Un card fără niciun text ar fi date stricate
  * de la server, nu o stare pe care userul s-o poată provoca.

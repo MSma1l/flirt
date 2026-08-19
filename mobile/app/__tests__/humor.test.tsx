@@ -30,7 +30,10 @@ jest.mock('@/features/humor/humorApi', () => ({
   fetchHumor: jest.fn(),
 }));
 
-/** Cardurile așa cum le trimite serverul: gluma în toate cele 4 limbi. */
+/**
+ * Cardurile așa cum le trimite serverul. El trimite în continuare și `text_uk`,
+ * deși interfața nu mai are ucraineana — varianta e pur și simplu ignorată.
+ */
 const cards: HumorCard[] = [
   {
     id: 'h1',
@@ -138,12 +141,12 @@ describe('HumorScreen', () => {
 
   describe('limba: gluma (text de la server)', () => {
     it('afișează gluma în limba activă, nu în română', async () => {
-      await i18n.changeLanguage('uk');
+      await i18n.changeLanguage('en');
       mockFetchQuiz.mockResolvedValue(cards);
       const { getByTestId } = renderScreen();
 
       await waitFor(() =>
-        expect(getByTestId('humor-card-text').props.children).toBe('Перший жарт'),
+        expect(getByTestId('humor-card-text').props.children).toBe('First joke'),
       );
     });
 
@@ -173,12 +176,6 @@ describe('HumorScreen', () => {
         notFunny: '😐 Не очень',
         progress: 'Шутка 1 из 2',
       },
-      uk: {
-        title: 'Почуття гумору',
-        funny: '😂 Смішно',
-        notFunny: '😐 Не дуже',
-        progress: 'Жарт 1 з 2',
-      },
       en: {
         title: 'Sense of humor',
         funny: '😂 Funny',
@@ -187,7 +184,7 @@ describe('HumorScreen', () => {
       },
     } as const;
 
-    it.each(['ro', 'ru', 'uk', 'en'] as const)(
+    it.each(['ro', 'ru', 'en'] as const)(
       'în „%s" titlul, butoanele și progresul sunt în limba activă',
       async (lang) => {
         await i18n.changeLanguage(lang);
@@ -203,13 +200,13 @@ describe('HumorScreen', () => {
     );
 
     it('mesajele de eroare + reîncercarea sunt în limba activă', async () => {
-      await i18n.changeLanguage('uk');
+      await i18n.changeLanguage('en');
       mockFetchQuiz.mockRejectedValue(new Error('500'));
       const { getByText } = renderScreen();
 
-      await waitFor(() => getByText('Не вдалося завантажити тест на почуття гумору.'));
-      expect(getByText('Спробувати ще раз')).toBeTruthy();
-      expect(getByText('Перейти до застосунку')).toBeTruthy();
+      await waitFor(() => getByText("We couldn't load the humor test."));
+      expect(getByText('Try again')).toBeTruthy();
+      expect(getByText('Continue to the app')).toBeTruthy();
     });
 
     it('confirmarea de la final e în limba activă', async () => {

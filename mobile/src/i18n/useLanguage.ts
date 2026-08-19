@@ -23,7 +23,7 @@ export interface UseLanguage {
   current: Language;
   /** Toate limbile suportate, în ordinea de afișare. */
   available: readonly Language[];
-  /** Numele limbilor, fiecare în limba ei (ro → „Română", uk → „Українська"). */
+  /** Numele limbilor, fiecare în limba ei (ro → „Română", ru → „Русский"). */
   labels: Record<Language, string>;
   /** Schimbă limba ȘI persistă alegerea. */
   setLanguage: (language: Language) => Promise<void>;
@@ -40,7 +40,7 @@ export function useLanguage(): UseLanguage {
   const { i18n } = useTranslation();
 
   // `i18n.language` poate fi „ro-MD" (după o comutare) sau nedefinit înainte de
-  // init; îl aducem mereu la una dintre cele 4 limbi.
+  // init; îl aducem mereu la una dintre cele 3 limbi.
   const current: Language = isSupportedLanguage(i18n.language)
     ? i18n.language
     : DEFAULT_LANGUAGE;

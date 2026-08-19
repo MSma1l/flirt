@@ -3,12 +3,12 @@
  *
  * Fișier PARTAJAT — se schimbă rar (doar la adăugarea unei limbi sau a unui
  * namespace nou). Namespace-urile de mai jos sunt DEJA create pentru toate cele
- * 4 limbi, tocmai ca agenții care migrează ecrane să NU aibă nevoie să atingă
+ * 3 limbi, tocmai ca agenții care migrează ecrane să NU aibă nevoie să atingă
  * acest fișier: fiecare lucrează exclusiv în JSON-ul namespace-ului lui.
  */
 
 /** Limbile suportate de interfață. `ro` este implicită și fallback. */
-export const SUPPORTED_LANGUAGES = ['ro', 'ru', 'uk', 'en'] as const;
+export const SUPPORTED_LANGUAGES = ['ro', 'ru', 'en'] as const;
 
 export type Language = (typeof SUPPORTED_LANGUAGES)[number];
 
@@ -44,14 +44,13 @@ export const DEFAULT_NAMESPACE: Namespace = 'common';
 
 /**
  * Numele limbilor, fiecare SCRIS ÎN LIMBA EI (endonim) — nu se traduc.
- * Într-un selector de limbă, un vorbitor de ucraineană caută „Українська", nu
- * „Ucraineană"; de asta lista arată la fel indiferent de limba activă și stă
- * aici, ca o constantă, nu duplicată în cele 4 cataloage.
+ * Într-un selector de limbă, un vorbitor de rusă caută „Русский", nu „Rusă";
+ * de asta lista arată la fel indiferent de limba activă și stă aici, ca o
+ * constantă, nu duplicată în cele 3 cataloage.
  */
 export const LANGUAGE_LABELS: Record<Language, string> = {
   ro: 'Română',
   ru: 'Русский',
-  uk: 'Українська',
   en: 'English',
 };
 
@@ -65,10 +64,12 @@ export function isSupportedLanguage(value: unknown): value is Language {
 /**
  * Aduce o etichetă BCP-47 de dispozitiv la una dintre limbile noastre.
  *
- * Acceptă `ro-MD`, `ru_RU`, `uk-UA`, `en-GB` etc. — luăm doar subeticheta de
- * limbă. `mo` (cod ISO învechit pentru „moldovenească") îl tratăm ca `ro`:
- * e aceeași limbă, iar dispozitivele vechi din RM încă îl pot raporta.
+ * Acceptă `ro-MD`, `ru_RU`, `en-GB` etc. — luăm doar subeticheta de limbă.
+ * `mo` (cod ISO învechit pentru „moldovenească") îl tratăm ca `ro`: e aceeași
+ * limbă, iar dispozitivele vechi din RM încă îl pot raporta.
  * Întoarce `null` dacă limba nu e suportată — apelantul decide fallback-ul.
+ * Ucraineana NU mai e în interfață, deci `uk-UA` întoarce `null` și dispozitivul
+ * ucrainean cade pe `ro` (cataloagele `locales/uk` rămân pe disc, nefolosite).
  */
 export function normalizeLanguage(tag: string | null | undefined): Language | null {
   if (!tag) return null;

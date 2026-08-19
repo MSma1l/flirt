@@ -19,26 +19,26 @@ describe('LanguagePicker', () => {
     await i18n.changeLanguage('ro');
   });
 
-  it('arată cele 4 limbi cu numele lor (endonime)', () => {
-    const { getByText } = renderPicker();
+  it('arată cele 3 limbi cu numele lor (endonime)', () => {
+    const { getByText, queryByText } = renderPicker();
     expect(getByText('Română')).toBeTruthy();
     expect(getByText('Русский')).toBeTruthy();
-    expect(getByText('Українська')).toBeTruthy();
     expect(getByText('English')).toBeTruthy();
+    expect(queryByText('Українська')).toBeNull();
   });
 
   it('marchează vizual limba activă', () => {
     const { getByTestId } = renderPicker();
     expect(getByTestId('language-ro').props.accessibilityState.selected).toBe(true);
-    expect(getByTestId('language-uk').props.accessibilityState.selected).toBe(false);
+    expect(getByTestId('language-en').props.accessibilityState.selected).toBe(false);
   });
 
   it('tap pe o limbă o comută (i18next se schimbă)', async () => {
     const { getByTestId } = renderPicker();
 
-    fireEvent.press(getByTestId('language-uk'));
+    fireEvent.press(getByTestId('language-en'));
 
-    await waitFor(() => expect(i18n.language).toBe('uk'));
-    expect(getByTestId('language-uk').props.accessibilityState.selected).toBe(true);
+    await waitFor(() => expect(i18n.language).toBe('en'));
+    expect(getByTestId('language-en').props.accessibilityState.selected).toBe(true);
   });
 });

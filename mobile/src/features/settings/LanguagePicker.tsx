@@ -1,10 +1,10 @@
 /**
  * Selector de limbă pentru ecranul Setări.
  *
- * Cele 4 limbi apar cu numele lor ÎN LIMBA LOR (endonime: „Română",
- * „Русский", „Українська", „English") — un vorbitor de ucraineană își recunoaște
- * limba chiar dacă interfața e acum în alta. Etichetele vin din `useLanguage()`
- * (constanta `LANGUAGE_LABELS`), nu se traduc și nu se duplică aici.
+ * Cele 3 limbi apar cu numele lor ÎN LIMBA LOR (endonime: „Română", „Русский",
+ * „English") — un vorbitor de rusă își recunoaște limba chiar dacă interfața e
+ * acum în alta. Etichetele vin din `useLanguage()` (constanta `LANGUAGE_LABELS`),
+ * nu se traduc și nu se duplică aici.
  *
  * Tap → `setLanguage(code)`: schimbă i18next (UI-ul migrat se re-randează imediat)
  * ȘI persistă alegerea. Ecranul Setări e migrat, deci se vede pe loc în limba nouă.
