@@ -32,6 +32,35 @@ os.environ.setdefault("ENVIRONMENT", "development")
 # legătură cu codul. Un `.env` prezent nu are voie să schimbe rezultatul testelor.
 os.environ["REDIS_URL"] = ""  # rate-limit in-memory + readiness fără Redis, în teste
 
+# Chei RSA efemere de test, generate în proces (nu se comită chei reale).
+#
+# TREBUIE să stea AICI, înaintea oricărui import din `app.*`. `app/core/config.py`
+# creează singleton-ul `settings` LA IMPORT (`settings = get_settings()`), deci
+# cheile puse în mediu după acel import nu mai ajung niciodată în el.
+#
+# Pe o mașină de dezvoltare asta nu se vedea: `Settings` citește și `.env`, iar
+# `.env`-ul local (gitignorat) are chei reale, deci singleton-ul ieșea valid din
+# prima. În CI nu există `.env` și nimeni nu setează `JWT_*` — cheia rămânea "",
+# iar testele care semnează un token direct cu `settings.jwt_private_key` cădeau
+# cu `JWSError: MalformedFraming`. Exact cazul pe care îl descrie antetul acestui
+# fișier: un `.env` prezent nu are voie să schimbe rezultatul testelor.
+from cryptography.hazmat.primitives import serialization  # noqa: E402
+from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: E402
+
+_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+_priv = _key.private_bytes(
+    serialization.Encoding.PEM,
+    serialization.PrivateFormat.PKCS8,
+    serialization.NoEncryption(),
+).decode()
+_pub = (
+    _key.public_key()
+    .public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+    .decode()
+)
+os.environ["JWT_PRIVATE_KEY"] = _priv
+os.environ["JWT_PUBLIC_KEY"] = _pub
+
 # --- Provizionăm PostgreSQL ÎNAINTE de a importa aplicația -------------------------
 # (engine-ul aplicației se creează la import din DATABASE_URL — trebuie să existe deja.)
 _PG_CONTAINER = None
@@ -69,24 +98,6 @@ from sqlalchemy import text  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app.db.session import AsyncSessionLocal, engine as app_engine, get_db  # noqa: E402
 from app.main import app  # noqa: E402
-
-# Chei RSA efemere de test, generate în proces (nu se comită chei reale).
-from cryptography.hazmat.primitives import serialization  # noqa: E402
-from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: E402
-
-_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-_priv = _key.private_bytes(
-    serialization.Encoding.PEM,
-    serialization.PrivateFormat.PKCS8,
-    serialization.NoEncryption(),
-).decode()
-_pub = (
-    _key.public_key()
-    .public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
-    .decode()
-)
-os.environ["JWT_PRIVATE_KEY"] = _priv
-os.environ["JWT_PUBLIC_KEY"] = _pub
 
 _schema_ready = False
 
