@@ -7,7 +7,8 @@
     "back": "Înapoi",
     "next": "Continuă",
     "delete": "Șterge",
-    "confirm": "Confirmă"
+    "confirm": "Confirmă",
+    "done": "Gata"
   },
   "errors": {
     "generic": "Ceva n-a mers. Încearcă din nou.",
