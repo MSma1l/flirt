@@ -8,8 +8,9 @@ export interface InterestOption {
 
 /**
  * O opțiune de referință: valoarea internă trimisă înapoi la backend + eticheta
- * localizată deja afișabilă. Backend-ul întoarce `{value, label_ru, label_ro}`;
- * stratul de API alege eticheta potrivită limbii (vezi `anketaApi.ts`).
+ * localizată deja afișabilă. Backend-ul întoarce toate variantele
+ * (`{value, label_ro, label_ru, label_uk, label_en}`); stratul de API alege
+ * eticheta limbii active, cu fallback pe română (vezi `anketaApi.ts`).
  */
 export interface OptionItem {
   value: string;

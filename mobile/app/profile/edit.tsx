@@ -18,6 +18,7 @@ import { fetchReference, submitAnketa } from '@/features/anketa/anketaApi';
 import { CountryPickerField } from '@/features/anketa/components/CountryPickerField';
 import { DateOfBirthField } from '@/features/anketa/components/DateOfBirthField';
 import { AnketaDraft, InterestOption, OptionItem } from '@/features/anketa/types';
+import { useLanguage } from '@/i18n/useLanguage';
 import {
   FieldErrors,
   isValid,
@@ -132,6 +133,7 @@ export default function ProfileEditScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { t } = useTranslation('profile');
+  const { current: language } = useLanguage();
   const { colors, typography, spacing, radius } = useTheme();
 
   const [draft, setDraft] = useState<Partial<AnketaDraft>>({});
@@ -149,7 +151,13 @@ export default function ProfileEditScreen() {
   const picker = usePhotoPicker();
 
   const profileQuery = useQuery({ queryKey: ['my-profile'], queryFn: fetchMyProfile });
-  const referenceQuery = useQuery({ queryKey: ['anketa-reference'], queryFn: fetchReference });
+  const referenceQuery = useQuery({
+    // Limba intră în cheie: etichetele referinței vin DEJA localizate de la
+    // server, deci un cache comun tuturor limbilor ar servi etichetele vechi
+    // după comutare.
+    queryKey: ['anketa-reference', language],
+    queryFn: () => fetchReference(language),
+  });
 
   const profile = profileQuery.data;
   const reference = referenceQuery.data;
