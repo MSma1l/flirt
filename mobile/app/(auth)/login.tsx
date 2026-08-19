@@ -12,7 +12,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Text, View } from 'react-native';
 
-import { Button, Input, ScreenContainer } from '@/components/ui';
+import { Button, Input, LanguageSwitcher, ScreenContainer } from '@/components/ui';
 import { useAuthStore } from '@/store/authStore';
 import { validateEmail, validatePassword } from '@/features/auth/validation';
 import { useTheme } from '@theme/index';
@@ -56,6 +56,8 @@ export default function Login() {
 
   return (
     <ScreenContainer>
+      <LanguageSwitcher style={{ marginBottom: spacing.lg }} />
+
       <View style={{ marginBottom: spacing.xxl }}>
         <Text style={[typography.h1, { color: colors.textPrimary }]}>{t('login.title')}</Text>
         <Text

@@ -12,7 +12,7 @@ import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Image, Linking, StyleSheet, Text, View } from 'react-native';
 
-import { Button, ScreenContainer } from '@/components/ui';
+import { Button, LanguageSwitcher, ScreenContainer } from '@/components/ui';
 import { config } from '@/config';
 import {
   getAppleIdToken,
@@ -127,6 +127,11 @@ export default function Welcome() {
 
   return (
     <ScreenContainer>
+      {/* Primul ecran al aplicației: dacă limba dispozitivului nu e una dintre
+          cele trei, userul aterizează în română și trebuie să poată comuta AICI,
+          înainte de a citi orice buton. */}
+      <LanguageSwitcher />
+
       <View style={styles.hero}>
         <Image
           testID="brand-logo"

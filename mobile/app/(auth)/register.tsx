@@ -8,7 +8,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Button, Input, ScreenContainer } from '@/components/ui';
+import { Button, Input, LanguageSwitcher, ScreenContainer } from '@/components/ui';
 import { config } from '@/config';
 import { useAuthStore } from '@/store/authStore';
 import {
@@ -81,6 +81,8 @@ export default function Register() {
 
   return (
     <ScreenContainer>
+      <LanguageSwitcher style={{ marginBottom: spacing.lg }} />
+
       <View style={{ marginBottom: spacing.xxl }}>
         <Text style={[typography.h1, { color: colors.textPrimary }]}>
           {t('register.title')}
