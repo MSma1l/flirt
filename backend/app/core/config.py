@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     # env `OPERATOR_LEGAL_NAME`; cât timp e gol, paginile afișează un marcaj vizibil
     # „DE COMPLETAT" în loc de un nume juridic inventat. NU pune aici un nume real —
     # se setează prin env la deploy, o singură dată, când e decis.
-    operator_legal_name: str = "FLIRT"
+    operator_legal_name: str = ""
 
     # Database
     postgres_user: str = "flirt"
