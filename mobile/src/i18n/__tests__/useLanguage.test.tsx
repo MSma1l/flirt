@@ -20,19 +20,19 @@ describe('useLanguage', () => {
     const { result } = renderHook(() => useLanguage());
 
     expect(result.current.current).toBe('ro');
-    expect(result.current.available).toEqual(['ro', 'ru', 'uk', 'en']);
-    expect(result.current.labels.uk).toBe('Українська');
+    expect(result.current.available).toEqual(['ro', 'ru', 'en']);
+    expect(result.current.labels.ru).toBe('Русский');
   });
 
   it('schimbă limba și re-randează consumatorul', async () => {
     const { result } = renderHook(() => useLanguage());
 
     await act(async () => {
-      await result.current.setLanguage('uk');
+      await result.current.setLanguage('en');
     });
 
-    await waitFor(() => expect(result.current.current).toBe('uk'));
-    expect(i18n.language).toBe('uk');
+    await waitFor(() => expect(result.current.current).toBe('en'));
+    expect(i18n.language).toBe('en');
   });
 
   it('persistă alegerea, ca să supraviețuiască repornirii', async () => {

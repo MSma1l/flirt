@@ -39,6 +39,7 @@ import {
   validateCanAddPhoto,
   validatePhotoCount,
 } from '@/features/photos/validation';
+import { useLanguage } from '@/i18n/useLanguage';
 import { useAuthStore } from '@/store/authStore';
 import { useTheme } from '@theme/index';
 
@@ -140,6 +141,7 @@ function ChipGroup({
 export default function AnketaWizard() {
   const router = useRouter();
   const { t } = useTranslation('onboarding');
+  const { current: language } = useLanguage();
   const { colors, typography, spacing, radius } = useTheme();
   const setProfileCompleted = useAuthStore((s) => s.setProfileCompleted);
 
@@ -178,7 +180,13 @@ export default function AnketaWizard() {
     isLoading,
     isError,
     refetch,
-  } = useQuery({ queryKey: ['anketa-reference'], queryFn: fetchReference });
+  } = useQuery({
+    // Limba intră în cheie: etichetele referinței vin DEJA localizate de la
+    // server, deci un cache comun tuturor limbilor ar servi etichetele vechi
+    // după comutare.
+    queryKey: ['anketa-reference', language],
+    queryFn: () => fetchReference(language),
+  });
 
   /** Comută o valoare într-un câmp multi-select (array de string-uri). */
   const toggleMulti = (

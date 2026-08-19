@@ -13,6 +13,7 @@ import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useTheme } from '@theme/index';
@@ -63,6 +64,10 @@ interface Props {
 
 export function DateOfBirthField({ label, value, onChange, error }: Props) {
   const { colors, typography, radius, spacing } = useTheme();
+  // Componenta e folosită din trei ecrane (wizard, editare profil, setări), deci
+  // textele ei stau în namespace-ul zonei (`feed` acoperă `features/anketa`), iar
+  // „Gata" — acțiune generică — în `common`, lângă celelalte butoane.
+  const { t } = useTranslation(['feed', 'common']);
   const [show, setShow] = useState(false);
 
   const maxDate = maxBirthDate();
@@ -107,7 +112,7 @@ export function DateOfBirthField({ label, value, onChange, error }: Props) {
             { color: display ? colors.textPrimary : colors.textDisabled },
           ]}
         >
-          {display ?? 'Alege data din calendar'}
+          {display ?? t('dateOfBirth.placeholder')}
         </Text>
       </Pressable>
 
@@ -151,7 +156,7 @@ export function DateOfBirthField({ label, value, onChange, error }: Props) {
                 style={[styles.doneBtn, { backgroundColor: colors.accent }]}
               >
                 <Text style={[typography.bodyStrong, { color: colors.onAccent }]}>
-                  Gata
+                  {t('common:actions.done')}
                 </Text>
               </Pressable>
             </Pressable>

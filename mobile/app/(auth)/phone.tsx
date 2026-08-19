@@ -1,6 +1,7 @@
 /** Autentificare prin telefon în 2 pași: (1) telefon → OTP, (2) cod OTP → sesiune. */
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Text, View } from 'react-native';
 
 import { Button, Input, ScreenContainer } from '@/components/ui';
@@ -10,19 +11,34 @@ import { useTheme } from '@theme/index';
 // Telefon: cifre, opțional prefix „+", spații / cratime / paranteze permise.
 const PHONE_RE = /^\+?[\d\s().-]{6,20}$/;
 
-/** Mesaj de eroare sau `null` dacă telefonul este non-gol și are un format plauzibil. */
-function validatePhone(value: string): string | null {
+/**
+ * Cheile de eroare, ca uniuni literale, nu ca `string`: `t()` e tipizat pe
+ * cataloagele reale (vezi `i18n-types.d.ts`), deci o cheie scrisă greșit sau
+ * ștearsă din JSON pică la `tsc`, nu pe ecran.
+ */
+type PhoneFieldErrorKey = 'phone.errors.phoneRequired' | 'phone.errors.phoneInvalid';
+type CodeFieldErrorKey = 'phone.errors.codeRequired' | 'phone.errors.codeInvalid';
+type PhoneFormErrorKey = 'phone.errors.sendFailed' | 'phone.errors.wrongCode';
+
+/**
+ * CHEIA mesajului de eroare sau `null` dacă telefonul e non-gol și plauzibil.
+ *
+ * Validatoarele întorc chei, nu texte: sunt funcții pure, în afara componentei,
+ * unde `t` nu există — iar eroarea ținută în state se re-traduce singură dacă
+ * userul comută limba cu ea pe ecran.
+ */
+function validatePhone(value: string): PhoneFieldErrorKey | null {
   const v = value.trim();
-  if (!v) return 'Introdu numărul de telefon.';
-  if (!PHONE_RE.test(v)) return 'Numărul de telefon nu este valid.';
+  if (!v) return 'phone.errors.phoneRequired';
+  if (!PHONE_RE.test(v)) return 'phone.errors.phoneInvalid';
   return null;
 }
 
-/** Mesaj de eroare sau `null` dacă codul are exact 6 cifre. */
-function validateCode(value: string): string | null {
+/** CHEIA mesajului de eroare sau `null` dacă codul are exact 6 cifre. */
+function validateCode(value: string): CodeFieldErrorKey | null {
   const v = value.trim();
-  if (!v) return 'Introdu codul primit.';
-  if (!/^\d{6}$/.test(v)) return 'Codul trebuie să aibă 6 cifre.';
+  if (!v) return 'phone.errors.codeRequired';
+  if (!/^\d{6}$/.test(v)) return 'phone.errors.codeInvalid';
   return null;
 }
 
@@ -33,29 +49,32 @@ export default function Phone() {
   const requestPhoneOtp = useAuthStore((s) => s.requestPhoneOtp);
   const verifyPhoneOtp = useAuthStore((s) => s.verifyPhoneOtp);
   const { colors, typography, spacing } = useTheme();
+  // Namespace-ul zonei + `common` pentru butoanele generice („Confirmă", „Înapoi"),
+  // pe care nu le duplicăm în `auth`.
+  const { t } = useTranslation(['auth', 'common']);
 
   const [step, setStep] = useState<Step>('phone');
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
-  const [phoneError, setPhoneError] = useState<string | null>(null);
-  const [codeError, setCodeError] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [phoneErrorKey, setPhoneErrorKey] = useState<PhoneFieldErrorKey | null>(null);
+  const [codeErrorKey, setCodeErrorKey] = useState<CodeFieldErrorKey | null>(null);
+  const [formErrorKey, setFormErrorKey] = useState<PhoneFormErrorKey | null>(null);
   const [loading, setLoading] = useState(false);
 
   const onRequest = async () => {
     const err = validatePhone(phone);
-    setPhoneError(err);
-    setFormError(null);
+    setPhoneErrorKey(err);
+    setFormErrorKey(null);
     if (err) return;
 
     setLoading(true);
     try {
       await requestPhoneOtp(phone.trim());
       setCode('');
-      setCodeError(null);
+      setCodeErrorKey(null);
       setStep('code');
     } catch {
-      setFormError('Nu am putut trimite codul. Încearcă din nou.');
+      setFormErrorKey('phone.errors.sendFailed');
     } finally {
       setLoading(false);
     }
@@ -63,8 +82,8 @@ export default function Phone() {
 
   const onVerify = async () => {
     const err = validateCode(code);
-    setCodeError(err);
-    setFormError(null);
+    setCodeErrorKey(err);
+    setFormErrorKey(null);
     if (err) return;
 
     setLoading(true);
@@ -72,7 +91,7 @@ export default function Phone() {
       await verifyPhoneOtp(phone.trim(), code.trim());
       // La succes, guard-ul de auth din _layout redirecționează.
     } catch {
-      setFormError('Cod incorect. Verifică și încearcă din nou.');
+      setFormErrorKey('phone.errors.wrongCode');
     } finally {
       setLoading(false);
     }
@@ -82,36 +101,38 @@ export default function Phone() {
     <ScreenContainer>
       <View style={{ marginBottom: spacing.xxl }}>
         <Text style={[typography.h1, { color: colors.textPrimary }]}>
-          {step === 'phone' ? 'Intră cu telefonul' : 'Verifică numărul'}
+          {step === 'phone' ? t('phone.requestTitle') : t('phone.verifyTitle')}
         </Text>
         <Text
           style={[typography.body, { color: colors.textSecondary, marginTop: spacing.xs }]}
         >
           {step === 'phone'
-            ? 'Îți trimitem un cod de verificare prin SMS.'
-            : `Am trimis un cod la ${phone.trim()}.`}
+            ? t('phone.requestSubtitle')
+            : t('phone.verifySubtitle', { phone: phone.trim() })}
         </Text>
       </View>
 
       {step === 'phone' ? (
         <View style={{ gap: spacing.lg }}>
           <Input
-            label="Număr de telefon"
+            label={t('phone.phoneLabel')}
             value={phone}
             onChangeText={setPhone}
-            error={phoneError}
-            placeholder="+40 700 000 000"
+            error={phoneErrorKey ? t(phoneErrorKey) : null}
+            placeholder={t('phone.phonePlaceholder')}
             keyboardType="phone-pad"
             autoComplete="tel"
             testID="phone-input"
           />
 
-          {formError ? (
-            <Text style={[typography.caption, { color: colors.danger }]}>{formError}</Text>
+          {formErrorKey ? (
+            <Text style={[typography.caption, { color: colors.danger }]}>
+              {t(formErrorKey)}
+            </Text>
           ) : null}
 
           <Button
-            label="Trimite codul"
+            label={t('phone.send')}
             onPress={onRequest}
             loading={loading}
             testID="phone-request"
@@ -120,40 +141,42 @@ export default function Phone() {
       ) : (
         <View style={{ gap: spacing.lg }}>
           <Input
-            label="Cod de verificare"
+            label={t('phone.codeLabel')}
             value={code}
             onChangeText={setCode}
-            error={codeError}
-            placeholder="000000"
+            error={codeErrorKey ? t(codeErrorKey) : null}
+            placeholder={t('phone.codePlaceholder')}
             keyboardType="number-pad"
             autoComplete="sms-otp"
             maxLength={6}
             testID="phone-code"
           />
 
-          {formError ? (
-            <Text style={[typography.caption, { color: colors.danger }]}>{formError}</Text>
+          {formErrorKey ? (
+            <Text style={[typography.caption, { color: colors.danger }]}>
+              {t(formErrorKey)}
+            </Text>
           ) : null}
 
           <Button
-            label="Confirmă"
+            label={t('common:actions.confirm')}
             onPress={onVerify}
             loading={loading}
             testID="phone-verify"
           />
           <Button
-            label="Retrimite cod"
+            label={t('phone.resend')}
             variant="ghost"
             onPress={onRequest}
             disabled={loading}
             testID="phone-resend"
           />
           <Button
-            label="Înapoi"
+            label={t('common:actions.back')}
             variant="ghost"
             onPress={() => {
               setStep('phone');
-              setFormError(null);
+              setFormErrorKey(null);
             }}
             disabled={loading}
             testID="phone-back"
@@ -166,7 +189,7 @@ export default function Phone() {
               testID="phone-dev-hint"
               style={[typography.caption, { color: colors.textDisabled }]}
             >
-              Cod de test: 000000
+              {t('phone.devHint')}
             </Text>
           ) : null}
         </View>

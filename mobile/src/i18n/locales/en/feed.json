@@ -1,1 +1,5 @@
-{}
+{
+  "dateOfBirth": {
+    "placeholder": "Pick a date from the calendar"
+  }
+}

@@ -9,9 +9,10 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import { useRouter } from 'expo-router';
 import { isAxiosError } from 'axios';
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Image, Linking, StyleSheet, Text, View } from 'react-native';
 
-import { Button, ScreenContainer } from '@/components/ui';
+import { Button, LanguageSwitcher, ScreenContainer } from '@/components/ui';
 import { config } from '@/config';
 import {
   getAppleIdToken,
@@ -24,18 +25,36 @@ import {
 import { useAuthStore } from '@/store/authStore';
 import { useTheme } from '@theme/index';
 
-/** Traduce orice eșec al fluxului social într-un mesaj pe care userul îl înțelege. */
-function socialErrorMessage(error: unknown): string {
+/**
+ * Cheile de eroare ale ecranului, ca uniune literală: `t()` e tipizat pe
+ * cataloagele reale, deci o cheie greșită pică la `tsc`, nu pe ecran.
+ */
+type WelcomeErrorKey =
+  | 'welcome.errors.openDocument'
+  | 'welcome.errors.appleUnavailable'
+  | 'welcome.errors.notConfigured'
+  | 'welcome.errors.noToken'
+  | 'welcome.errors.network'
+  | 'welcome.errors.unverified'
+  | 'welcome.errors.generic';
+
+/**
+ * Traduce orice eșec al fluxului social într-o CHEIE de mesaj, nu în text.
+ *
+ * Întoarcem cheia, nu textul deja tradus, ca mesajul din state să rămână corect
+ * dacă userul comută limba cu eroarea pe ecran: traducerea se face la randare.
+ */
+function socialErrorKey(error: unknown): WelcomeErrorKey {
   if (error instanceof SocialAuthError) {
     switch (error.code) {
       case 'unavailable':
-        return 'Autentificarea Apple nu e disponibilă pe acest dispozitiv.';
+        return 'welcome.errors.appleUnavailable';
       case 'not_configured':
-        return 'Autentificarea socială nu e disponibilă în această versiune.';
+        return 'welcome.errors.notConfigured';
       case 'no_token':
-        return 'Providerul nu a întors un token valid. Încearcă din nou.';
+        return 'welcome.errors.noToken';
       default:
-        return 'Autentificarea nu a reușit. Încearcă din nou.';
+        return 'welcome.errors.generic';
     }
   }
 
@@ -44,23 +63,24 @@ function socialErrorMessage(error: unknown): string {
   // are rost să reîncerce.
   if (isAxiosError(error)) {
     if (!error.response) {
-      return 'Nu am putut contacta serverul. Verifică conexiunea la internet.';
+      return 'welcome.errors.network';
     }
     if (error.response.status === 401) {
-      return 'Contul nu a putut fi verificat. Încearcă din nou.';
+      return 'welcome.errors.unverified';
     }
   }
 
-  return 'Autentificarea nu a reușit. Încearcă din nou.';
+  return 'welcome.errors.generic';
 }
 
 export default function Welcome() {
   const router = useRouter();
   const loginWithProvider = useAuthStore((s) => s.loginWithProvider);
   const { colors, typography, spacing, radius } = useTheme();
+  const { t } = useTranslation('auth');
 
   const [loadingProvider, setLoadingProvider] = useState<'google' | 'apple' | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [errorKey, setErrorKey] = useState<WelcomeErrorKey | null>(null);
   // Pornim cu ambele ascunse: disponibilitatea Apple se află abia după un apel
   // asincron, iar un buton care apare și dispare ar fi mai rău decât unul întârziat.
   const [providers, setProviders] = useState<SocialProviders>({
@@ -85,12 +105,12 @@ export default function Welcome() {
   /** Deschide un document legal în browser (URL-uri din config, nu hardcodate). */
   const openLink = (url: string) => {
     Linking.openURL(url).catch(() => {
-      setError('Nu am putut deschide documentul. Încearcă din nou.');
+      setErrorKey('welcome.errors.openDocument');
     });
   };
 
   const onSocial = async (provider: 'google' | 'apple') => {
-    setError(null);
+    setErrorKey(null);
     setLoadingProvider(provider);
     try {
       const idToken =
@@ -99,7 +119,7 @@ export default function Welcome() {
       // La succes, guard-ul de auth din _layout redirecționează.
     } catch (err) {
       // Anularea e o alegere a userului, nu o eroare: nu-i arătăm nimic roșu.
-      if (!isCanceled(err)) setError(socialErrorMessage(err));
+      if (!isCanceled(err)) setErrorKey(socialErrorKey(err));
     } finally {
       setLoadingProvider(null);
     }
@@ -107,6 +127,11 @@ export default function Welcome() {
 
   return (
     <ScreenContainer>
+      {/* Primul ecran al aplicației: dacă limba dispozitivului nu e una dintre
+          cele trei, userul aterizează în română și trebuie să poată comuta AICI,
+          înainte de a citi orice buton. */}
+      <LanguageSwitcher />
+
       <View style={styles.hero}>
         <Image
           testID="brand-logo"
@@ -115,6 +140,8 @@ export default function Welcome() {
           style={styles.logo}
           resizeMode="contain"
         />
+        {/* „No Regrets" e semnătura mărcii, parte din logo-lockup — nu copy de
+            interfață. Nu se traduce, exact ca numele „FLIRT". */}
         <Text
           style={[
             typography.bodyStrong,
@@ -126,16 +153,19 @@ export default function Welcome() {
       </View>
 
       <View style={{ gap: spacing.md }}>
-        <Button label="Creează cont" onPress={() => router.push('/(auth)/register')} />
         <Button
-          label="Am deja cont"
+          label={t('welcome.createAccount')}
+          onPress={() => router.push('/(auth)/register')}
+        />
+        <Button
+          label={t('welcome.haveAccount')}
           variant="outline"
           onPress={() => router.push('/(auth)/login')}
         />
 
         {providers.google ? (
           <Button
-            label="Continuă cu Google"
+            label={t('welcome.google')}
             variant="outline"
             onPress={() => onSocial('google')}
             loading={loadingProvider === 'google'}
@@ -161,17 +191,21 @@ export default function Welcome() {
           />
         ) : null}
 
-        {error ? (
+        {errorKey ? (
           <Text
             testID="welcome-social-error"
             style={[typography.caption, { color: colors.danger }]}
           >
-            {error}
+            {t(errorKey)}
           </Text>
         ) : null}
 
         {/* Autentificarea socială creează cont fără a trece prin ecranul de
-            înregistrare — acordul trebuie prezentat și aici. */}
+            înregistrare — acordul trebuie prezentat și aici.
+
+            Textul e spart în bucăți (prefix / link / „și" / link / rest) pentru că
+            două dintre ele sunt apăsabile. Fiecare bucată e o cheie separată, deci
+            traducătorul poate schimba topica frazei fără să atingă JSX-ul. */}
         <Text
           testID="welcome-legal"
           style={[
@@ -180,23 +214,23 @@ export default function Welcome() {
             { color: colors.textSecondary, marginTop: spacing.sm },
           ]}
         >
-          Continuând, accepți{' '}
+          {t('welcome.legal.prefix')}{' '}
           <Text
             testID="welcome-terms-link"
             style={{ color: colors.link }}
             onPress={() => openLink(config.legal.termsUrl)}
           >
-            Termenii și condițiile
+            {t('welcome.legal.terms')}
           </Text>{' '}
-          și{' '}
+          {t('welcome.legal.and')}{' '}
           <Text
             testID="welcome-privacy-link"
             style={{ color: colors.link }}
             onPress={() => openLink(config.legal.privacyUrl)}
           >
-            Politica de confidențialitate
+            {t('welcome.legal.privacy')}
           </Text>
-          . FLIRT are toleranță zero față de conținutul abuziv.
+          {t('welcome.legal.suffix')}
         </Text>
       </View>
     </ScreenContainer>
