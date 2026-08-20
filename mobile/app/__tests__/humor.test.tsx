@@ -3,7 +3,7 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
 import HumorScreen from '../humor';
-import { HUMOR_ME_QUERY_KEY, useHumorGateStore } from '@/features/humor/humorGate';
+import { humorMeQueryKey, useHumorGateStore } from '@/features/humor/humorGate';
 import type { HumorCard } from '@/features/humor/types';
 import i18n from '@/i18n';
 import ruHumor from '@/i18n/locales/ru/humor.json';
@@ -116,10 +116,10 @@ describe('HumorScreen', () => {
     await waitFor(() => getByTestId('humor-done'));
     // Poarta citește aceeași cheie: vede imediat vectorul plin, deci nu mai
     // trimite userul înapoi la quiz.
-    expect(client.getQueryData(HUMOR_ME_QUERY_KEY)).toEqual({ vector: { pun: 1 } });
+    expect(client.getQueryData(humorMeQueryKey('u1'))).toEqual({ vector: { pun: 1 } });
 
     fireEvent.press(getByTestId('humor-done'));
-    expect(mockReplace).toHaveBeenCalledWith('/(tabs)/ankete');
+    expect(mockReplace).toHaveBeenCalledWith('/');
   });
 
   it('onError afișează mesaj și buton de reîncercare', async () => {
@@ -257,7 +257,7 @@ describe('HumorScreen', () => {
       // altfel userul ar rămâne prins: poarta îl trimite la quiz, iar quiz-ul
       // nu se încarcă.
       expect(useHumorGateStore.getState().unavailableForUserId).toBe('u1');
-      expect(mockReplace).toHaveBeenCalledWith('/(tabs)/ankete');
+      expect(mockReplace).toHaveBeenCalledWith('/');
     });
 
     it('quiz gol de la server → userul nu rămâne pe un ecran fără ieșire', async () => {
@@ -268,7 +268,7 @@ describe('HumorScreen', () => {
 
       fireEvent.press(getByTestId('humor-continue-anyway'));
       expect(useHumorGateStore.getState().unavailableForUserId).toBe('u1');
-      expect(mockReplace).toHaveBeenCalledWith('/(tabs)/ankete');
+      expect(mockReplace).toHaveBeenCalledWith('/');
     });
   });
 });

@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { AxiosError, AxiosHeaders } from 'axios';
 import React from 'react';
 
 import AnketeScreen from '../ankete';
+import { useServerGateStore } from '@/features/navigation/serverGate';
 import { ThemeProvider } from '@theme/index';
 
 // Mock router (evită navigarea reală expo-router în teste).
@@ -61,6 +63,33 @@ function card(userId: string, name: string) {
 
 const mockFetchFeed = jest.fn(() => Promise.resolve([card('u1', 'Ana')]));
 
+// Store de auth fals, dar zustand REAL: raportarea refuzurilor citește userul
+// curent prin selectori și recitește `/auth/me` când serverul e ambiguu.
+const mockRefreshUser = jest.fn();
+jest.mock('@/store/authStore', () => {
+  const { create } = jest.requireActual('zustand');
+  return {
+    useAuthStore: create(() => ({
+      status: 'authenticated',
+      user: { id: 'u1', email: 'ana@flirt.md', profile_completed: true },
+      refreshUser: () => mockRefreshUser(),
+    })),
+  };
+});
+
+/** Un 403 de la `POST /feed/swipe`, exact cum ajunge la ecran prin axios. */
+function forbidden(detail: string): AxiosError {
+  const error = new AxiosError('Request failed with status code 403');
+  error.response = {
+    status: 403,
+    statusText: 'Forbidden',
+    data: { detail },
+    headers: new AxiosHeaders(),
+    config: { headers: new AxiosHeaders() },
+  };
+  return error;
+}
+
 jest.mock('@/features/feed/feedApi', () => ({
   fetchFeed: () => mockFetchFeed(),
   swipe: (targetUserId: string, action: string, message?: string) =>
@@ -95,6 +124,8 @@ describe('AnketeScreen', () => {
     mockUndoSwipe.mockClear();
     mockFetchFeed.mockClear();
     mockPush.mockClear();
+    mockRefreshUser.mockReset();
+    useServerGateStore.getState().clear();
   });
 
   it('nu mai afișează butoane de acțiune — doar cardul și indiciile de gest', async () => {
@@ -259,6 +290,87 @@ describe('AnketeScreen', () => {
     accessibilityAction(getByTestId('deck-gestures'), 'dislike');
     await waitFor(() => getByTestId('deck-reload'));
     expect(queryByTestId('deck-action-error')).toBeNull();
+  });
+
+  describe('porțile serverului (403), nu erori de rețea', () => {
+    /**
+     * `POST /feed/swipe` răspunde 403 cu texte distincte tocmai ca aplicația să
+     * poată duce omul unde trebuie. Până acum ecranul nu citea `detail` deloc și
+     * afișa „Nu am putut trimite. Încearcă din nou." — un îndemn la reîncercare
+     * pentru ceva ce reîncercarea nu rezolvă. Omul rămânea blocat în feed.
+     */
+    it('lipsește testul de umor → spune exact asta, nu „încearcă din nou"', async () => {
+      mockSwipe.mockRejectedValueOnce(forbidden('Completează testul de umor.'));
+      const { getByTestId, getByText, queryByText } = renderScreen();
+
+      await waitFor(() => getByTestId('deck-gestures'));
+      accessibilityAction(getByTestId('deck-gestures'), 'dislike');
+
+      await waitFor(() => getByTestId('deck-action-error'));
+      expect(getByText('Întâi testul de umor, apoi poți da swipe.')).toBeTruthy();
+      expect(queryByText('Nu am putut trimite. Încearcă din nou.')).toBeNull();
+      // Navigarea o face poarta (`AuthGuard`), nu ecranul: aici nu se cheamă
+      // niciun `router.replace`.
+    });
+
+    it('prea puține poze → mesaj cu numărul minim, plus precizarea pentru poartă', async () => {
+      // Serverul are un text DISTINCT pentru poze (`PHOTOS_REQUIRED_DETAIL`),
+      // altfel n-am ști dacă userul trebuie dus în editor sau în wizard.
+      mockRefreshUser.mockResolvedValue({
+        id: 'u1',
+        email: 'ana@flirt.md',
+        profile_completed: false,
+      });
+      mockSwipe.mockRejectedValueOnce(forbidden('Profilul tău nu are destule poze.'));
+      const { getByTestId, getByText } = renderScreen();
+
+      await waitFor(() => getByTestId('deck-gestures'));
+      accessibilityAction(getByTestId('deck-gestures'), 'dislike');
+
+      await waitFor(() => getByTestId('deck-action-error'));
+      expect(getByText('Ai nevoie de cel puțin 2 poze ca să poți da swipe.')).toBeTruthy();
+      expect(useServerGateStore.getState().needsPhotosForUserId).toBe('u1');
+    });
+
+    it('anketa incompletă pe server → mesajul anketei, fără semnal de poze', async () => {
+      mockRefreshUser.mockResolvedValue({
+        id: 'u1',
+        email: 'ana@flirt.md',
+        profile_completed: false,
+      });
+      mockSwipe.mockRejectedValueOnce(forbidden('Profilul tău nu este complet.'));
+      const { getByTestId, getByText } = renderScreen();
+
+      await waitFor(() => getByTestId('deck-gestures'));
+      accessibilityAction(getByTestId('deck-gestures'), 'dislike');
+
+      await waitFor(() => getByTestId('deck-action-error'));
+      expect(getByText('Termină-ți anketa ca să poți da swipe.')).toBeTruthy();
+      // Anketa are deja poarta ei: nicio precizare de poze.
+      expect(useServerGateStore.getState().needsPhotosForUserId).toBeNull();
+    });
+
+    it('403 fără legătură cu porțile → rămâne mesajul generic', async () => {
+      mockSwipe.mockRejectedValueOnce(forbidden('Nu poți face swipe pe propriul profil.'));
+      const { getByTestId, getByText } = renderScreen();
+
+      await waitFor(() => getByTestId('deck-gestures'));
+      accessibilityAction(getByTestId('deck-gestures'), 'dislike');
+
+      await waitFor(() => getByTestId('deck-action-error'));
+      expect(getByText('Nu am putut trimite. Încearcă din nou.')).toBeTruthy();
+    });
+
+    it('cardul rămâne pe ecran: userul nu pierde profilul pe care era', async () => {
+      mockSwipe.mockRejectedValueOnce(forbidden('Completează testul de umor.'));
+      const { getByTestId, getByText } = renderScreen();
+
+      await waitFor(() => getByTestId('deck-gestures'));
+      accessibilityAction(getByTestId('deck-gestures'), 'dislike');
+
+      await waitFor(() => getByTestId('deck-action-error'));
+      expect(getByText(/Ana/)).toBeTruthy();
+    });
   });
 
   it('undo revine la cardul anterior, nu la primul card din deck', async () => {

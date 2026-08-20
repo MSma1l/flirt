@@ -29,7 +29,7 @@ interface AuthState {
   logout: () => Promise<void>;
   forceLogout: () => Promise<void>;
   hydrate: () => Promise<void>;
-  setProfileCompleted: (v: boolean) => void;
+  refreshUser: () => Promise<AuthUser | null>;
 }
 
 async function fetchMe(): Promise<AuthUser> {
@@ -117,8 +117,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  setProfileCompleted: (v) =>
-    set((s) => (s.user ? { user: { ...s.user, profile_completed: v } } : s)),
+  /**
+   * Recitește userul de pe server (`GET /auth/me`) și îl pune în store.
+   *
+   * ÎNLOCUIEȘTE vechiul `setProfileCompleted(true)`, prin care clientul își
+   * desena singur starea la finalul anketei, fără să aștepte serverul: dacă
+   * salvarea nu ajungea până la capăt (poze prea puține, scriere eșuată),
+   * aplicația credea profilul complet, îl trimitea în feed, iar serverul îi
+   * refuza fiecare acțiune. `profile_completed` are UN singur proprietar —
+   * serverul (`profile_service._sync_profile_completed`).
+   *
+   * NU aruncă și NU atinge `status`: o rețea moartă la momentul ăsta nu e motiv
+   * să scoatem userul din aplicație (401-ul, dacă e cazul, e tratat de `api`).
+   */
+  refreshUser: async () => {
+    try {
+      const user = await fetchMe();
+      set({ user });
+      return user;
+    } catch {
+      return null;
+    }
+  },
 }));
 
 // Sesiune expirată în timpul folosirii aplicației: clientul HTTP ne anunță, noi

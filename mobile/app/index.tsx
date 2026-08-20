@@ -1,29 +1,25 @@
-/** Ecran splash + logică de redirect în funcție de starea de autentificare. */
-import { Redirect } from 'expo-router';
+/**
+ * Splash-ul aplicației — și „punctul de întoarcere" al navigării.
+ *
+ * NU mai decide nimic. Ecranul ăsta avea propriul redirect (auth → welcome,
+ * profil incomplet → onboarding, altfel → feed), care știa doar de
+ * `profile_completed`. `AuthGuard` știa în plus de testul de umor, dar ieșea
+ * devreme tocmai pe ruta asta, ca să nu se calce cu ea. Rezultat: la cold-start
+ * decidea cel neinformat, iar userul fără test de umor ajungea în feed, unde
+ * serverul îi refuza fiecare swipe cu 403.
+ *
+ * Acum aici se AȘTEAPTĂ: login, register și quiz-ul trimit userul la `/`, iar
+ * `AuthGuard` îl duce mai departe de îndată ce starea e cunoscută.
+ */
 import React from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
-import { useAuthStore } from '@/store/authStore';
 import { ScreenContainer } from '@/components/ui';
 import { useTheme } from '@theme/index';
 
 export default function Index() {
-  const status = useAuthStore((s) => s.status);
-  const user = useAuthStore((s) => s.user);
   const { colors, typography, spacing } = useTheme();
 
-  if (status === 'unauthenticated') {
-    return <Redirect href="/(auth)/welcome" />;
-  }
-
-  if (status === 'authenticated') {
-    if (user && !user.profile_completed) {
-      return <Redirect href="/(onboarding)" />;
-    }
-    return <Redirect href="/(tabs)/ankete" />;
-  }
-
-  // status === 'loading' → splash
   return (
     <ScreenContainer center>
       <View style={styles.brand}>

@@ -10,6 +10,11 @@
     "undo": "↩ Înapoi",
     "sendError": "Nu am putut trimite. Încearcă din nou.",
     "undoError": "Nu am putut anula. Încearcă din nou.",
+    "gate": {
+      "anketa": "Termină-ți anketa ca să poți da swipe.",
+      "photos": "Ai nevoie de cel puțin {{min}} poze ca să poți da swipe.",
+      "humor": "Întâi testul de umor, apoi poți da swipe."
+    },
     "hint": "← nu-mi place · îmi place → · ↑ super like · ↓ înapoi",
     "cues": {
       "like": "LIKE",
