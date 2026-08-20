@@ -31,7 +31,7 @@ import {
   SEARCH_AGE_MIN,
   validateStep,
 } from '@/features/anketa/validation';
-import { PhotoGrid, usePhotoPicker } from '@/features/photos';
+import { PhotoGrid, usePhotoErrorText, usePhotoPicker } from '@/features/photos';
 import { deletePhoto, reorderPhotos, uploadPhoto } from '@/features/photos/photosApi';
 import { PhotoTile } from '@/features/photos/types';
 import {
@@ -165,6 +165,8 @@ export default function AnketaWizard() {
   const [uploadProgress, setUploadProgress] = useState(0);
 
   const picker = usePhotoPicker();
+  // Eșecurile de upload vin ca motiv (cheie); aici devin text.
+  const photoErrorText = usePhotoErrorText();
 
   // Ce s-a terminat deja, ca o REÎNCERCARE să nu refacă munca (și, mai ales, să
   // nu retrimită anketa — un al doilea PUT ar rescrie `photos` cu lista goală și
@@ -294,11 +296,7 @@ export default function AnketaWizard() {
       router.replace('/humor');
     } catch (error) {
       setUploadingIndex(null);
-      const reason =
-        error instanceof Error && error.message
-          ? error.message
-          : t('errors.uploadPhotos');
-      setPhotosError(t('errors.uploadRetry', { reason }));
+      setPhotosError(t('errors.uploadRetry', { reason: photoErrorText(error) }));
     } finally {
       setSubmitting(false);
     }

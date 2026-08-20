@@ -25,7 +25,7 @@ import {
   MAX_ABOUT_LENGTH,
   validateStep,
 } from '@/features/anketa/validation';
-import { PhotoGrid, usePhotoPicker } from '@/features/photos';
+import { PhotoGrid, usePhotoErrorText, usePhotoPicker } from '@/features/photos';
 import { deletePhoto, reorderPhotos, uploadPhoto } from '@/features/photos/photosApi';
 import { moveItem } from '@/features/photos/reorder';
 import { PhotoTile } from '@/features/photos/types';
@@ -149,6 +149,8 @@ export default function ProfileEditScreen() {
   const [uploadProgress, setUploadProgress] = useState(0);
 
   const picker = usePhotoPicker();
+  // Eșecurile de upload vin ca motiv (cheie); aici devin text.
+  const photoErrorText = usePhotoErrorText();
 
   const profileQuery = useQuery({ queryKey: ['my-profile'], queryFn: fetchMyProfile });
   const referenceQuery = useQuery({
@@ -218,11 +220,7 @@ export default function ProfileEditScreen() {
       setPhotos(urls);
       await queryClient.invalidateQueries({ queryKey: ['my-profile'] });
     } catch (error) {
-      setPhotosError(
-        error instanceof Error && error.message
-          ? error.message
-          : t('edit.uploadError'),
-      );
+      setPhotosError(photoErrorText(error));
     } finally {
       setPendingPhotoUri(null);
       setPhotosBusy(false);

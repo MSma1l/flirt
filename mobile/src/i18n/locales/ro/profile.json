@@ -21,9 +21,36 @@
     "datingStatus": "Statusul cunoștinței",
     "interests": "Interese",
     "save": "Salvează",
-    "uploadError": "Nu am putut încărca poza. Încearcă din nou.",
     "deleteError": "Nu am putut șterge poza. Încearcă din nou.",
     "reorderError": "Nu am putut salva ordinea pozelor. Încearcă din nou.",
     "saveError": "Nu am putut salva profilul. Încearcă din nou."
+  },
+  "photos": {
+    "counter": "Poze ({{current}}/{{max}}) — minimum {{min}}. Prima poză este cea principală.",
+    "mainBadge": "Principală",
+    "add": "Adaugă",
+    "maxReached_one": "Ai atins numărul maxim de {{count}} poză.",
+    "maxReached_few": "Ai atins numărul maxim de {{count}} poze.",
+    "maxReached_other": "Ai atins numărul maxim de {{count}} de poze.",
+    "openSettings": "Deschide setările",
+    "a11y": {
+      "mainPhoto": "Poza principală",
+      "photo": "Poza {{number}}",
+      "remove": "Șterge poza {{number}}",
+      "moveEarlier": "Mută poza {{number}} mai devreme",
+      "moveLater": "Mută poza {{number}} mai târziu",
+      "add": "Adaugă o poză"
+    },
+    "confirm": {
+      "title": "Ștergi poza?",
+      "main": "Este poza ta principală. Următoarea poză îi va lua locul.",
+      "other": "Poza va fi eliminată din profil."
+    },
+    "errors": {
+      "blobLost": "Poza nu mai este disponibilă în browser. Alege-o din nou și încearcă iar.",
+      "network": "Conexiune întreruptă. Verifică internetul și încearcă din nou.",
+      "tooLarge": "Poza depășește limita de {{limit}}.",
+      "uploadFailed": "Nu am putut încărca poza. Încearcă din nou."
+    }
   }
 }

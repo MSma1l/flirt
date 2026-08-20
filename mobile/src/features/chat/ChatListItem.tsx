@@ -1,5 +1,6 @@
 /** Rând din lista de dialoguri: avatar-inițială, nume, preview, timp, badge unread. */
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useTheme } from '@theme/index';
@@ -36,6 +37,8 @@ function initial(name: string): string {
 
 function ChatListItemBase({ chat, onPress }: Props) {
   const { colors, typography, spacing, radius } = useTheme();
+  // Eticheta de compatibilitate vine din `feed`, unde stă și regula scorului.
+  const { t } = useTranslation('feed');
   const hasUnread = chat.unreadCount > 0;
 
   return (
@@ -70,7 +73,10 @@ function ChatListItemBase({ chat, onPress }: Props) {
           <View
             testID="compat-pill"
             accessibilityRole="text"
-            accessibilityLabel={`${compatLabel(chat.compatibility)}: ${chat.compatibility}%`}
+            accessibilityLabel={t('compat.badge', {
+              level: t(compatLabel(chat.compatibility)),
+              score: chat.compatibility,
+            })}
             style={[
               styles.compat,
               { backgroundColor: compatColor(chat.compatibility, colors), borderRadius: radius.pill },

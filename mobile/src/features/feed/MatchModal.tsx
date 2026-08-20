@@ -1,5 +1,6 @@
 /** Modal „Connect! 💘" afișat la un match reciproc. */
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Modal, StyleSheet, Text, View } from 'react-native';
 
 import { Button } from '@/components/ui';
@@ -15,6 +16,7 @@ interface Props {
 
 export function MatchModal({ visible, name, onWriteMessage, onContinue }: Props) {
   const { colors, typography, radius, spacing } = useTheme();
+  const { t } = useTranslation('feed');
 
   return (
     <Modal
@@ -37,18 +39,22 @@ export function MatchModal({ visible, name, onWriteMessage, onContinue }: Props)
           ]}
         >
           <Text style={[typography.display, styles.center, { color: colors.accent }]}>
-            Connect! 💘
+            {t('match.title')}
           </Text>
           <Text
             style={[typography.body, styles.center, { color: colors.textSecondary }]}
           >
-            Tu și {name} v-ați plăcut reciproc.
+            {t('match.body', { name })}
           </Text>
 
           <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
-            <Button label="Scrie un mesaj" onPress={onWriteMessage} testID="match-write" />
             <Button
-              label="Continuă"
+              label={t('match.write')}
+              onPress={onWriteMessage}
+              testID="match-write"
+            />
+            <Button
+              label={t('match.continue')}
               variant="ghost"
               onPress={onContinue}
               testID="match-continue"

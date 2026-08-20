@@ -14,9 +14,11 @@ export {
   isPhotoUploadError,
   PhotoUploadError,
   reorderPhotos,
+  uploadErrorReason,
   uploadPhoto,
 } from './photosApi';
-export type { UploadOptions } from './photosApi';
+export type { PhotoErrorKey, PhotoErrorReason, UploadOptions } from './photosApi';
+export { usePhotoErrorText } from './usePhotoErrorText';
 export { moveItem } from './reorder';
 export type {
   CompressResult,

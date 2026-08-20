@@ -1,5 +1,59 @@
 {
   "dateOfBirth": {
     "placeholder": "Alege data din calendar"
+  },
+  "deck": {
+    "loadError": "Nu am putut încărca anketele.",
+    "retry": "Reîncearcă",
+    "empty": "Nu mai sunt ankete acum",
+    "reload": "Caută mai multe",
+    "undo": "↩ Înapoi",
+    "sendError": "Nu am putut trimite. Încearcă din nou.",
+    "undoError": "Nu am putut anula. Încearcă din nou.",
+    "hint": "← nu-mi place · îmi place → · ↑ super like · ↓ înapoi",
+    "cues": {
+      "like": "LIKE",
+      "nope": "NOPE",
+      "superLike": "★ SUPER LIKE",
+      "undo": "↩ ÎNAPOI"
+    },
+    "a11y": {
+      "card": "Anketa {{name}}, {{age}}",
+      "hint": "Trage cardul: dreapta pentru like, stânga pentru nu-mi place, sus pentru super like, jos pentru înapoi. Sau înclină telefonul în aceleași direcții.",
+      "like": "Îmi place",
+      "dislike": "Nu-mi place",
+      "superLike": "Super like",
+      "undo": "Înapoi la anketa anterioară"
+    }
+  },
+  "card": {
+    "cityWithDistance": "{{city}} · {{km}} km",
+    "favorite": "Adaugă la favorite",
+    "alreadyFavorite": "Deja la favorite",
+    "report": "Raportează",
+    "block": "Blochează"
+  },
+  "match": {
+    "title": "Connect! 💘",
+    "body": "Tu și {{name}} v-ați plăcut reciproc.",
+    "write": "Scrie un mesaj",
+    "continue": "Continuă"
+  },
+  "firstMessage": {
+    "title": "Scrie-i lui {{name}}",
+    "subtitle": "Un mesaj de deschidere crește șansele la răspuns.",
+    "placeholder": "Scrie un mesaj...",
+    "send": "Trimite",
+    "skip": "Doar like",
+    "quick": {
+      "hi": "Salut 👋",
+      "hiHowAreYou": "Salut, ce faci?"
+    }
+  },
+  "compat": {
+    "excellent": "Potrivire excelentă",
+    "good": "Potrivire bună",
+    "weak": "Potrivire slabă",
+    "badge": "{{level}}: {{score}}%"
   }
 }

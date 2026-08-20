@@ -10,6 +10,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   AccessibilityActionEvent,
   ActivityIndicator,
@@ -50,10 +51,18 @@ const FLING_Y = SCREEN_HEIGHT * 1.5;
 /** Cât se mișcă degetul până acceptăm că e un gest, nu o atingere. */
 const GESTURE_SLOP = 8;
 
+/**
+ * Cheile de eroare ale acțiunilor din deck. Ținem CHEIA în state, nu textul:
+ * dacă userul comută limba cu eroarea pe ecran, ea se re-traduce singură.
+ */
+type ActionErrorKey = 'deck.sendError' | 'deck.undoError';
+
 export default function AnketeScreen() {
   const { colors, typography, spacing, radius } = useTheme();
   const router = useRouter();
   const queryClient = useQueryClient();
+  // Ambele namespace-uri: textele deck-ului din `feed`, pluralul vârstei din `common`.
+  const { t } = useTranslation(['feed', 'common']);
   const { data, isLoading, isError, refetch } = useQuery<FeedCard[]>({
     queryKey: ['feed'],
     queryFn: fetchFeed,
@@ -77,7 +86,7 @@ export default function AnketeScreen() {
   // Câte swipe-uri s-au făcut în sesiune (pentru activarea butonului de undo).
   const [swipeCount, setSwipeCount] = useState(0);
   // Eroare la o acțiune (swipe / undo), afișată sub butoane. Null = fără eroare.
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<ActionErrorKey | null>(null);
 
   const cards = data ?? [];
   const current = cards[index];
@@ -133,7 +142,7 @@ export default function AnketeScreen() {
       await maybeShowAd();
     } catch {
       // Rețea/server picat: nu avansăm indexul, rămânem pe același card și anunțăm userul.
-      setActionError('Nu am putut trimite. Încearcă din nou.');
+      setActionError('deck.sendError');
     } finally {
       position.setValue({ x: 0, y: 0 });
       setBusy(false);
@@ -177,7 +186,7 @@ export default function AnketeScreen() {
         // ar reseta indexul la 0 (efectul de mai sus) și ne-ar arunca la primul card.
       }
     } catch {
-      setActionError('Nu am putut anula. Încearcă din nou.');
+      setActionError('deck.undoError');
     } finally {
       setBusy(false);
     }
@@ -355,7 +364,7 @@ export default function AnketeScreen() {
         { color: colors.danger, marginTop: spacing.md },
       ]}
     >
-      {actionError}
+      {t(actionError)}
     </Text>
   ) : null;
 
@@ -371,11 +380,11 @@ export default function AnketeScreen() {
     return (
       <ScreenContainer center>
         <Text style={[typography.body, styles.center, { color: colors.textSecondary }]}>
-          Nu am putut încărca anketele.
+          {t('deck.loadError')}
         </Text>
         <Pressable onPress={() => refetch()} style={{ marginTop: spacing.md }}>
           <Text style={[typography.bodyStrong, { color: colors.accent }]}>
-            Reîncearcă
+            {t('deck.retry')}
           </Text>
         </Pressable>
       </ScreenContainer>
@@ -388,12 +397,12 @@ export default function AnketeScreen() {
         <StoriesBar />
         <View style={[styles.emptyState, { gap: spacing.lg }]}>
           <Text style={[typography.body, styles.center, { color: colors.textSecondary }]}>
-            Nu mai sunt ankete acum
+            {t('deck.empty')}
           </Text>
-          <Button label="Caută mai multe" onPress={reloadDeck} testID="deck-reload" />
+          <Button label={t('deck.reload')} onPress={reloadDeck} testID="deck-reload" />
           {swipeCount > 0 ? (
             <Button
-              label="↩ Înapoi"
+              label={t('deck.undo')}
               variant="ghost"
               onPress={onUndo}
               disabled={busy}
@@ -447,7 +456,9 @@ export default function AnketeScreen() {
               },
             ]}
           >
-            <Text style={[typography.bodyStrong, { color: colors.success }]}>LIKE</Text>
+            <Text style={[typography.bodyStrong, { color: colors.success }]}>
+              {t('deck.cues.like')}
+            </Text>
           </Animated.View>
 
           {/* Indiciu NOPE (drag stânga) */}
@@ -462,7 +473,9 @@ export default function AnketeScreen() {
               },
             ]}
           >
-            <Text style={[typography.bodyStrong, { color: colors.danger }]}>NOPE</Text>
+            <Text style={[typography.bodyStrong, { color: colors.danger }]}>
+              {t('deck.cues.nope')}
+            </Text>
           </Animated.View>
 
           {/* Indiciu SUPER LIKE (drag sus) */}
@@ -478,7 +491,7 @@ export default function AnketeScreen() {
             ]}
           >
             <Text style={[typography.bodyStrong, { color: colors.accent }]}>
-              ★ SUPER LIKE
+              {t('deck.cues.superLike')}
             </Text>
           </Animated.View>
 
@@ -495,7 +508,7 @@ export default function AnketeScreen() {
             ]}
           >
             <Text style={[typography.bodyStrong, { color: colors.textSecondary }]}>
-              ↩ ÎNAPOI
+              {t('deck.cues.undo')}
             </Text>
           </Animated.View>
         </Animated.View>
@@ -512,19 +525,24 @@ export default function AnketeScreen() {
       <View
         testID="deck-gestures"
         accessible
-        accessibilityLabel={`Anketa ${current.name}, ${current.age} ani`}
-        accessibilityHint="Trage cardul: dreapta pentru like, stânga pentru nu-mi place, sus pentru super like, jos pentru înapoi. Sau înclină telefonul în aceleași direcții."
+        accessibilityLabel={t('deck.a11y.card', {
+          name: current.name,
+          // Vârsta trece prin pluralul din `common`: româna cere „24 de ani",
+          // nu „24 ani", iar rusa are încă o formă în plus.
+          age: t('common:age', { count: current.age }),
+        })}
+        accessibilityHint={t('deck.a11y.hint')}
         accessibilityActions={[
-          { name: 'like', label: 'Îmi place' },
-          { name: 'dislike', label: 'Nu-mi place' },
-          { name: 'superLike', label: 'Super like' },
-          { name: 'undo', label: 'Înapoi la anketa anterioară' },
+          { name: 'like', label: t('deck.a11y.like') },
+          { name: 'dislike', label: t('deck.a11y.dislike') },
+          { name: 'superLike', label: t('deck.a11y.superLike') },
+          { name: 'undo', label: t('deck.a11y.undo') },
         ]}
         onAccessibilityAction={onAccessibilityAction}
         style={[styles.hintWrap, { marginTop: spacing.lg }]}
       >
         <Text style={[typography.caption, styles.center, { color: colors.textSecondary }]}>
-          ← nu-mi place · îmi place → · ↑ super like · ↓ înapoi
+          {t('deck.hint')}
         </Text>
       </View>
 

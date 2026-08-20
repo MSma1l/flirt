@@ -21,9 +21,35 @@
     "datingStatus": "Relationship status",
     "interests": "Interests",
     "save": "Save",
-    "uploadError": "We couldn't upload the photo. Please try again.",
     "deleteError": "We couldn't delete the photo. Please try again.",
     "reorderError": "We couldn't save the photo order. Please try again.",
     "saveError": "We couldn't save your profile. Please try again."
+  },
+  "photos": {
+    "counter": "Photos ({{current}}/{{max}}) — minimum {{min}}. The first photo is the main one.",
+    "mainBadge": "Main",
+    "add": "Add",
+    "maxReached_one": "You have reached the maximum of {{count}} photo.",
+    "maxReached_other": "You have reached the maximum of {{count}} photos.",
+    "openSettings": "Open settings",
+    "a11y": {
+      "mainPhoto": "Main photo",
+      "photo": "Photo {{number}}",
+      "remove": "Delete photo {{number}}",
+      "moveEarlier": "Move photo {{number}} earlier",
+      "moveLater": "Move photo {{number}} later",
+      "add": "Add a photo"
+    },
+    "confirm": {
+      "title": "Delete this photo?",
+      "main": "This is your main photo. The next one will take its place.",
+      "other": "The photo will be removed from your profile."
+    },
+    "errors": {
+      "blobLost": "The photo is no longer available in the browser. Pick it again and retry.",
+      "network": "The connection dropped. Check your internet and try again.",
+      "tooLarge": "The photo is over the {{limit}} limit.",
+      "uploadFailed": "We could not upload the photo. Try again."
+    }
   }
 }
