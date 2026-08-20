@@ -10,8 +10,8 @@ import {
 } from '../validation';
 
 describe('limitele de poze', () => {
-  it('sunt simetrice cu backend-ul (min 1, max 9, 8 MB, jpeg/png/webp)', () => {
-    expect(PHOTO_LIMITS.min).toBe(1);
+  it('sunt simetrice cu backend-ul (min 2, max 9, 8 MB, jpeg/png/webp)', () => {
+    expect(PHOTO_LIMITS.min).toBe(2);
     expect(PHOTO_LIMITS.max).toBe(9);
     expect(PHOTO_LIMITS.maxUploadBytes).toBe(8_388_608);
     expect(PHOTO_LIMITS.allowedTypes).toEqual(['image/jpeg', 'image/png', 'image/webp']);
@@ -63,12 +63,18 @@ describe('validatePhotoSize', () => {
 
 describe('validatePhotoCount', () => {
   it('cere minimul de poze și spune câte mai lipsesc', () => {
-    expect(validatePhotoCount(0)).toContain('cel puțin 1 poze');
-    expect(validatePhotoCount(0)).toContain('mai ai 1 de adăugat');
+    expect(validatePhotoCount(0)).toContain('cel puțin 2 poze');
+    expect(validatePhotoCount(0)).toContain('mai ai 2 de adăugat');
+  });
+
+  // Cazul care scotea userul din onboarding cu profilul nepublicat: clientul
+  // accepta o singură poză, serverul (min 2) lăsa .
+  it('respinge o singură poză și spune că mai lipsește una', () => {
+    expect(validatePhotoCount(1)).toContain('mai ai 1 de adăugat');
   });
 
   it('acceptă între min și max', () => {
-    expect(validatePhotoCount(1)).toBeNull();
+    expect(validatePhotoCount(2)).toBeNull();
     expect(validatePhotoCount(9)).toBeNull();
   });
 

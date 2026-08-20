@@ -287,11 +287,11 @@ describe('AnketaWizard (onboarding)', () => {
     const utils = renderWizard();
     await goToPhotosStep(utils);
 
-    // Zero poze — sub `min_photos` = 1.
+    // Zero poze — sub `min_photos`.
     fireEvent.press(utils.getByText('Finalizează'));
 
     await waitFor(() =>
-      utils.getByText('Adaugă cel puțin 1 poze ca să continui (mai ai 1 de adăugat).'),
+      utils.getByText('Adaugă cel puțin 2 poze ca să continui (mai ai 2 de adăugat).'),
     );
     expect(mockSubmitAnketa).not.toHaveBeenCalled();
     expect(mockUploadPhoto).not.toHaveBeenCalled();

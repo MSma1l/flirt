@@ -32,6 +32,16 @@ os.environ.setdefault("ENVIRONMENT", "development")
 # legătură cu codul. Un `.env` prezent nu are voie să schimbe rezultatul testelor.
 os.environ["REDIS_URL"] = ""  # rate-limit in-memory + readiness fără Redis, în teste
 
+# Și, mai important, IGNORĂM cu totul `.env`: `Settings` îl citea ca `env_file`, deci
+# orice valoare de dezvoltare de acolo intra în teste. Nu era o problemă teoretică —
+# un `MIN_PHOTOS=3` în `.env`-ul local făcea 107 teste să pice pe mașina
+# dezvoltatorului și niciunul în CI (unde `.env` nu există), iar un
+# `STORAGE_PUBLIC_BASE_URL=http://192.168.x.x` mai pica încă patru. Neutralizarea
+# unei variabile o dată la fiecare bug nou e o cursă fără linie de sosire; tăiem
+# fișierul din rădăcină. Valorile de care testele chiar au nevoie se pun explicit,
+# aici sau prin fixture.
+os.environ["ENV_FILE"] = ""
+
 # Chei RSA efemere de test, generate în proces (nu se comită chei reale).
 #
 # TREBUIE să stea AICI, înaintea oricărui import din `app.*`. `app/core/config.py`
@@ -95,6 +105,7 @@ import pytest_asyncio  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
+from app.core.config import settings  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app.db.session import AsyncSessionLocal, engine as app_engine, get_db  # noqa: E402
 from app.main import app  # noqa: E402
@@ -133,7 +144,7 @@ async def complete_humor(client, headers: dict, api: str = "/api/v1") -> None:
 
 
 async def upload_photo(client, headers: dict, api: str = "/api/v1") -> str:
-    """Încarcă o poză prin API-ul REAL, completează umorul, și întoarce URL-ul pozei.
+    """Încarcă MINIMUL de poze prin API-ul REAL, completează umorul, întoarce ultimul URL.
 
     DE CE EXISTĂ: un profil fără poze nu e complet (principiu al aplicației) și nu
     apare în feedul nimănui — `feed_service._min_photos_clause`. Anketa NU poate
@@ -149,16 +160,24 @@ async def upload_photo(client, headers: dict, api: str = "/api/v1") -> str:
     repetat în ~14 fișiere de test. Testele care vor EXPLICIT un user fără umor
     postează poza direct pe `POST /profiles/photos`, nu prin acest helper.
 
+    CÂTE POZE: exact `settings.min_photos`, nu una singură. Pragul e configurabil,
+    iar `_sync_profile_completed` îl aplică — o singură poză lăsa userul incomplet
+    în clipa în care minimul a urcat la 2, și ~100 de teste picau dintr-odată. Cifra
+    se citește din config tocmai ca fixtura să nu mai depindă de valoarea ei.
+
     Merge pe stub-urile implicite (storage + moderare NSFW), fără configurare.
     """
-    resp = await client.post(
-        f"{api}/profiles/photos",
-        files={"file": ("p.png", PNG_1X1, "image/png")},
-        headers=headers,
-    )
-    assert resp.status_code == 200, resp.text
+    urls: list[str] = []
+    for _ in range(max(1, settings.min_photos)):
+        resp = await client.post(
+            f"{api}/profiles/photos",
+            files={"file": ("p.png", PNG_1X1, "image/png")},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        urls = resp.json()
     await complete_humor(client, headers, api)
-    return resp.json()[-1]
+    return urls[-1]
 
 
 def pytest_sessionfinish(session, exitstatus):

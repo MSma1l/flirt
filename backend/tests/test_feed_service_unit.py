@@ -14,6 +14,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.security import hash_password
 from app.models.account import Block, UserSettings
 from app.models.chat import Chat, Message
@@ -104,7 +105,11 @@ async def _complete_profile(db, user, *, gender="female", age=28, name="Ana"):
         lng=28.8,
         languages=["ro"],
         dating_statuses=["serious"],
-        photos=["https://cdn.flirt.local/p1.jpg"],
+        # Exact pragul din config: cu o singură poză, profilul ar fi sub
+        # `min_photos` și n-ar mai fi vizibil în feed (vezi `_min_photos_clause`).
+        photos=[
+            f"https://cdn.flirt.local/p{i}.jpg" for i in range(settings.min_photos)
+        ],
         # Testul de umor e obligatoriu SERVER-SIDE la swipe (`_authorize_swipe`):
         # un profil „complet" (anketă + poze) fără `humor_vector` non-gol nu poate
         # da swipe. Vector uniform pe cele 7 tipuri — orice non-gol trece gate-ul.

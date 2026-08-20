@@ -5,6 +5,7 @@ from uuid import UUID
 import pytest
 from sqlalchemy import select, update
 
+from app.core.config import settings
 from app.models.profile import Profile
 from app.services import feed_service, geo, push
 from tests import conftest
@@ -626,8 +627,8 @@ async def test_feed_includes_profile_after_first_photo(client):
 
 
 @pytest.mark.asyncio
-async def test_feed_drops_profile_after_last_photo_removed(client):
-    """(c) Ștergerea ULTIMEI poze scoate profilul din feed.
+async def test_feed_drops_profile_when_photos_fall_below_min(client):
+    """(c) Coborârea sub `min_photos` scoate profilul din feed.
 
     Gate-ul se RECALCULEAZĂ, nu se evaluează o singură dată la onboarding: altfel
     un user și-ar putea goli pozele după ce a intrat în feed și ar rămâne acolo cu
@@ -648,12 +649,13 @@ async def test_feed_drops_profile_after_last_photo_removed(client):
         "DELETE", f"{API}/profiles/photos", json={"url": photo_url}, headers=b_headers
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json() == []
+    # Fixtura încarcă exact `min_photos` poze, deci una ștearsă = sub prag.
+    assert len(resp.json()) == settings.min_photos - 1
 
     resp = await client.get(f"{API}/feed/", headers=a_headers)
     assert resp.status_code == 200, resp.text
     assert b_id not in {c["user_id"] for c in resp.json()}, (
-        "După ștergerea ultimei poze, profilul trebuie să dispară din feed."
+        "Sub pragul de poze, profilul trebuie să dispară din feed."
     )
 
 
@@ -1065,19 +1067,24 @@ async def _make_user_without_humor(
 ) -> tuple[dict, str]:
     """User complet (anketă + poză) DAR fără testul de umor dat.
 
-    Postează poza direct pe `POST /profiles/photos` (nu prin helperul `upload_photo`,
-    care ar completa și umorul). Reproduce exact userul legacy: `profile_completed`
-    e true (anketă + poze), dar `humor_vector` e gol → swipe-ul trebuie respins.
+    Postează pozele direct pe `POST /profiles/photos` (nu prin helperul
+    `upload_photo`, care ar completa și umorul). Reproduce exact userul legacy:
+    `profile_completed` e true (anketă + poze), dar `humor_vector` e gol → swipe-ul
+    trebuie respins.
+
+    Numărul de poze vine din `settings.min_photos`: sub prag userul n-ar fi complet,
+    iar testul ar cădea din alt motiv decât cel pe care îl verifică (umorul).
     """
     headers = await _register(client, email)
     resp = await client.put(f"{API}/profiles/me", json=anketa, headers=headers)
     assert resp.status_code == 200, resp.text
-    resp = await client.post(
-        f"{API}/profiles/photos",
-        files={"file": ("p.png", conftest.PNG_1X1, "image/png")},
-        headers=headers,
-    )
-    assert resp.status_code == 200, resp.text
+    for _ in range(settings.min_photos):
+        resp = await client.post(
+            f"{API}/profiles/photos",
+            files={"file": ("p.png", conftest.PNG_1X1, "image/png")},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
     return headers, await _me_id(client, headers)
 
 
