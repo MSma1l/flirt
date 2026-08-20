@@ -146,7 +146,7 @@ Montate sub `/api/v1/profiles` (`app/api/v1/profiles.py`). Anketa este **upsert*
 > **Verificarea facială e ✅ IMPLEMENTATĂ PE BACKEND.** Provider real: **AWS Rekognition** (`compare_faces` cu prima poză de referință), comutabil din `FACE_VERIFY_PROVIDER` (`stub` | `rekognition`); guardul de producție refuză pornirea dacă providerul e `rekognition` fără chei. Ruta acceptă fie `multipart/form-data` (câmp `file`, validat pe dimensiune + tip + magic-bytes), fie un body JSON simplu (mod stub).
 > **❌ Ce lipsește e CAPTURA pe mobil** (ecranul de selfie/liveness) — amânată. Backend-ul e gata; nu are cine să-i trimită poza.
 
-**Notă:** `birth_date` trăiește pe **Profile** (nu pe User); `age` se calculează din el la răspuns și e validat **18+** la salvare. `interests` sunt slug-uri validate față de catalog. Pozele se gestionează prin `/profiles/photos*` peste un **storage abstractizat** (`StubStorage` local, gata de S3); `min_photos=3` / `max_photos=9` din config.
+**Notă:** `birth_date` trăiește pe **Profile** (nu pe User); `age` se calculează din el la răspuns și e validat **18+** la salvare. `interests` sunt slug-uri validate față de catalog. Pozele se gestionează prin `/profiles/photos*` peste un **storage abstractizat** (`StubStorage` local, gata de S3); `min_photos=2` / `max_photos=9` din config.
 
 **Geocodare — o singură dată:** la `PUT /profiles/me`, orașul e geocodat și coordonatele se **persistă** în `Profile.lat` / `Profile.lng`. Feed-ul nu mai face niciun apel de rețea per candidat. Provider implicit recomandat: **Nominatim (OpenStreetMap) — gratuit, fără cheie API**.
 

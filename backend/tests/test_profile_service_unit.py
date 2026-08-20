@@ -284,40 +284,43 @@ async def test_profile_completed_false_without_photos(db_session):
 
 
 @pytest.mark.asyncio
-async def test_profile_completed_true_after_first_photo(db_session):
-    """(b) După prima poză → `profile_completed` devine True."""
+async def test_profile_completed_true_when_min_photos_reached(db_session):
+    """(b) Gate-ul se deschide exact la a `min_photos`-a poză, nu mai devreme."""
     user = await _make_user(db_session, "gate-b@example.com")
     await PS.upsert_anketa(db_session, user, _anketa())
     assert user.profile_completed is False
 
-    await PS.add_photo(
-        db_session, user, filename="a.jpg", content=b"x",
-        content_type="image/jpeg", url="https://cdn/a.jpg",
-    )
+    for i in range(settings.min_photos):
+        # Înainte de fiecare poză suntem încă sub prag — inclusiv înaintea ultimei.
+        assert user.profile_completed is False
+        await PS.add_photo(
+            db_session, user, filename=f"{i}.jpg", content=b"x",
+            content_type="image/jpeg", url=f"https://cdn/{i}.jpg",
+        )
     assert user.profile_completed is True
 
 
 @pytest.mark.asyncio
-async def test_profile_completed_false_after_removing_last_photo(db_session):
-    """(c) După ștergerea ULTIMEI poze → `profile_completed` redevine False."""
+async def test_profile_completed_false_after_dropping_below_min(db_session):
+    """(c) La coborârea sub `min_photos` → `profile_completed` redevine False."""
     user = await _make_user(db_session, "gate-c@example.com")
     await PS.upsert_anketa(db_session, user, _anketa())
-    await PS.add_photo(
-        db_session, user, filename="a.jpg", content=b"x",
-        content_type="image/jpeg", url="https://cdn/a.jpg",
-    )
-    await PS.add_photo(
-        db_session, user, filename="b.jpg", content=b"x",
-        content_type="image/jpeg", url="https://cdn/b.jpg",
-    )
+
+    # Una peste prag, ca ștergerea următoare să nu ne scoată imediat sub el.
+    urls = [f"https://cdn/{i}.jpg" for i in range(settings.min_photos + 1)]
+    for i, url in enumerate(urls):
+        await PS.add_photo(
+            db_session, user, filename=f"{i}.jpg", content=b"x",
+            content_type="image/jpeg", url=url,
+        )
     assert user.profile_completed is True
 
-    # Mai rămâne o poză → peste prag, gate-ul stă deschis.
-    await PS.remove_photo(db_session, user, "https://cdn/b.jpg")
+    # Rămâne exact pragul → gate-ul stă deschis.
+    await PS.remove_photo(db_session, user, urls[-1])
     assert user.profile_completed is True
 
-    # Ultima poză → sub prag, userul e trimis înapoi în onboarding.
-    await PS.remove_photo(db_session, user, "https://cdn/a.jpg")
+    # Sub prag → userul e trimis înapoi în onboarding.
+    await PS.remove_photo(db_session, user, urls[0])
     assert user.profile_completed is False
 
 
@@ -328,17 +331,21 @@ async def test_profile_completed_true_when_anketa_saved_with_photos(db_session):
     await PS.upsert_anketa(db_session, user, _anketa())
 
     profile = await PS._get_profile_or_404(db_session, user)
-    # URL în namespace-ul propriu — altfel `upsert_anketa` respinge poza (422).
-    url = f"{settings.storage_base_url}/photos/{profile.id}/pic.jpg"
-    await PS.add_photo(
-        db_session, user, filename="pic.jpg", content=b"x",
-        content_type="image/jpeg", url=url,
-    )
+    # URL-uri în namespace-ul propriu — altfel `upsert_anketa` respinge pozele (422).
+    urls = [
+        f"{settings.storage_base_url}/photos/{profile.id}/pic{i}.jpg"
+        for i in range(settings.min_photos)
+    ]
+    for i, url in enumerate(urls):
+        await PS.add_photo(
+            db_session, user, filename=f"pic{i}.jpg", content=b"x",
+            content_type="image/jpeg", url=url,
+        )
     assert user.profile_completed is True
 
     # Re-salvarea anketei (cu pozele retrimise) NU închide gate-ul.
-    out = await PS.upsert_anketa(db_session, user, _anketa(photos=[url]))
-    assert out.photos == [url]
+    out = await PS.upsert_anketa(db_session, user, _anketa(photos=urls))
+    assert out.photos == urls
     assert user.profile_completed is True
 
 

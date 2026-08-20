@@ -192,7 +192,7 @@ describe('ProfileEditScreen — poze', () => {
     fireEvent.press(utils.getByText('Salvează'));
 
     await waitFor(() =>
-      utils.getByText('Adaugă cel puțin 1 poze ca să continui (mai ai 1 de adăugat).'),
+      utils.getByText('Adaugă cel puțin 2 poze ca să continui (mai ai 2 de adăugat).'),
     );
     expect(mockSubmitAnketa).not.toHaveBeenCalled();
   });

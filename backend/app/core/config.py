@@ -1,4 +1,5 @@
 """Configurare centralizată — totul din mediu, zero valori hardcodate în cod."""
+import os
 from functools import lru_cache
 from typing import Literal
 from urllib.parse import urlparse
@@ -9,7 +10,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Fișierul de mediu e configurabil ca TESTELE să-l poată dezactiva
+        # (`ENV_FILE=""` în `tests/conftest.py`). Un `.env` local — cel cu care
+        # dezvoltatorul ridică stack-ul în Docker — nu are voie să schimbe
+        # rezultatul testelor; s-a întâmplat concret: un `MIN_PHOTOS=3` acolo
+        # făcea 107 teste roșii pe mașina locală și verzi în CI, unde `.env`
+        # nu există.
+        env_file=os.getenv("ENV_FILE", ".env") or None,
         env_file_encoding="utf-8",
         extra="ignore",
         # `storage_provider`/`storage_base_url` au `validation_alias` (acceptă și
@@ -56,7 +63,12 @@ class Settings(BaseSettings):
     # APP 18+ ONLY (cerință App Store / Google Play pentru dating): vârsta minimă
     # de înregistrare NU poate coborî sub `adult_age` (validat mai jos).
     min_registration_age: int = 18
-    min_photos: int = 1
+    # Minimul de poze pentru un profil publicabil. E SINGURA sursă de adevăr:
+    # mobilul îl primește prin `GET /profiles/reference` (`photo_limits`), iar
+    # `photoMinCount` din `app.json` e doar rezerva folosită până răspunde
+    # serverul. Un test de paritate (`tests/test_config_parity.py`) cade dacă
+    # cele două se despart.
+    min_photos: int = 2
     max_photos: int = 9
     search_radius_default_km: int = 50
     account_deletion_grace_days: int = 30

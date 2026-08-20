@@ -206,7 +206,7 @@
       "router": {
         "origin": false
       },
-      "photoMinCount": 1,
+      "photoMinCount": 2,
       "photoMaxCount": 9,
       "photoMaxUploadBytes": 8388608,
       "photoAllowedTypes": [
