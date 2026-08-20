@@ -1,5 +1,59 @@
 {
   "dateOfBirth": {
     "placeholder": "Pick a date from the calendar"
+  },
+  "deck": {
+    "loadError": "We couldn't load the profiles.",
+    "retry": "Try again",
+    "empty": "No more profiles right now",
+    "reload": "Find more",
+    "undo": "↩ Back",
+    "sendError": "We couldn't send that. Try again.",
+    "undoError": "We couldn't undo that. Try again.",
+    "hint": "← nope · like → · ↑ super like · ↓ back",
+    "cues": {
+      "like": "LIKE",
+      "nope": "NOPE",
+      "superLike": "★ SUPER LIKE",
+      "undo": "↩ BACK"
+    },
+    "a11y": {
+      "card": "{{name}}'s profile, {{age}}",
+      "hint": "Swipe the card: right to like, left to pass, up to super like, down to go back. Or tilt your phone the same way.",
+      "like": "Like",
+      "dislike": "Nope",
+      "superLike": "Super like",
+      "undo": "Back to the previous profile"
+    }
+  },
+  "card": {
+    "cityWithDistance": "{{city}} · {{km}} km",
+    "favorite": "Add to favorites",
+    "alreadyFavorite": "Already in favorites",
+    "report": "Report",
+    "block": "Block"
+  },
+  "match": {
+    "title": "Connect! 💘",
+    "body": "You and {{name}} liked each other.",
+    "write": "Send a message",
+    "continue": "Continue"
+  },
+  "firstMessage": {
+    "title": "Write to {{name}}",
+    "subtitle": "An opening message improves your chances of a reply.",
+    "placeholder": "Write a message...",
+    "send": "Send",
+    "skip": "Just like",
+    "quick": {
+      "hi": "Hi 👋",
+      "hiHowAreYou": "Hi, how are you?"
+    }
+  },
+  "compat": {
+    "excellent": "Excellent match",
+    "good": "Good match",
+    "weak": "Weak match",
+    "badge": "{{level}}: {{score}}%"
   }
 }

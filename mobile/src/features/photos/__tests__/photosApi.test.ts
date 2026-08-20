@@ -3,7 +3,7 @@ import {
   isRetriableError,
   PhotoUploadError,
   reorderPhotos,
-  uploadErrorMessage,
+  uploadErrorReason,
   uploadPhoto,
 } from '../photosApi';
 import { LocalPhoto } from '../types';
@@ -93,8 +93,8 @@ describe('uploadPhoto', () => {
   it('după epuizarea reîncercărilor aruncă un mesaj de rețea clar', async () => {
     (api.post as jest.Mock).mockRejectedValue(axiosError());
 
-    await expect(uploadPhoto(photo, { retries: 2, retryDelayMs: 0 })).rejects.toThrow(
-      /Conexiune întreruptă/,
+    await expect(uploadPhoto(photo, { retries: 2, retryDelayMs: 0 })).rejects.toMatchObject(
+      { reason: { key: 'photos.errors.network' } },
     );
     expect(api.post).toHaveBeenCalledTimes(3); // 1 încercare + 2 reîncercări
   });
@@ -110,12 +110,12 @@ describe('uploadPhoto', () => {
     expect(api.post).toHaveBeenCalledTimes(1);
   });
 
-  it('traduce 413 în mesajul de limită depășită', async () => {
+  it('traduce 413 în motivul „peste limită", cu limita ca parametru', async () => {
     (api.post as jest.Mock).mockRejectedValue(axiosError(413));
 
-    await expect(uploadPhoto(photo, { retryDelayMs: 0 })).rejects.toThrow(
-      /depășește limita de 8 MB/,
-    );
+    await expect(uploadPhoto(photo, { retryDelayMs: 0 })).rejects.toMatchObject({
+      reason: { key: 'photos.errors.tooLarge', params: { limit: '8 MB' } },
+    });
   });
 });
 
@@ -177,9 +177,9 @@ describe('postPhoto — web vs nativ', () => {
     });
 
     try {
-      await expect(uploadPhoto(photo, { retryDelayMs: 0 })).rejects.toThrow(
-        /Poza nu mai este disponibilă în browser/,
-      );
+      await expect(uploadPhoto(photo, { retryDelayMs: 0 })).rejects.toMatchObject({
+        reason: { key: 'photos.errors.blobLost' },
+      });
       // Nu are rost reîncercat: un URL revocat nu învie, iar rețeaua e nevinovată.
       expect(api.post).not.toHaveBeenCalled();
     } finally {
@@ -238,21 +238,27 @@ describe('postPhoto — web vs nativ', () => {
   });
 });
 
-describe('uploadErrorMessage', () => {
+describe('uploadErrorReason', () => {
   it('NU scapă spre user mesaje tehnice, în engleză, ale platformei', () => {
     // Exact excepțiile pe care le aruncă platformele când cade rețeaua.
-    expect(uploadErrorMessage(new TypeError('Failed to fetch'))).toBe(
-      'Nu am putut încărca poza. Încearcă din nou.',
-    );
-    expect(uploadErrorMessage(new Error('Network request failed'))).toBe(
-      'Nu am putut încărca poza. Încearcă din nou.',
-    );
+    expect(uploadErrorReason(new TypeError('Failed to fetch'))).toEqual({
+      key: 'photos.errors.uploadFailed',
+    });
+    expect(uploadErrorReason(new Error('Network request failed'))).toEqual({
+      key: 'photos.errors.uploadFailed',
+    });
   });
 
-  it('păstrează mesajele NOASTRE, deja scrise în română', () => {
-    const mine = new PhotoUploadError('Poza nu mai este disponibilă în browser.');
+  it('păstrează motivul NOSTRU, deja pregătit', () => {
+    const mine = new PhotoUploadError({ key: 'photos.errors.blobLost' });
 
-    expect(uploadErrorMessage(mine)).toBe('Poza nu mai este disponibilă în browser.');
+    expect(uploadErrorReason(mine)).toEqual({ key: 'photos.errors.blobLost' });
+  });
+
+  it('lasă neatins textul venit de la backend (e deja o propoziție)', () => {
+    const fromServer = new PhotoUploadError({ text: 'Poza nu e o imagine validă.' });
+
+    expect(uploadErrorReason(fromServer)).toEqual({ text: 'Poza nu e o imagine validă.' });
   });
 });
 

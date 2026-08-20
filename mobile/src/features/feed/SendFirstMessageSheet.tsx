@@ -1,5 +1,6 @@
 /** Sheet afișat la LIKE: mesaj de deschidere (variante rapide + text liber) sau doar like. */
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Button, Input } from '@/components/ui';
@@ -17,11 +18,22 @@ interface Props {
   onClose: () => void;
 }
 
-/** Variante rapide de mesaj de deschidere. */
-const QUICK_MESSAGES = ['Salut 👋', 'Salut, ce faci?'] as const;
+/**
+ * Variantele rapide de mesaj de deschidere.
+ *
+ * `id` e separat de `key` FIINDCĂ `testID`-ul se construiește din el: dacă am
+ * folosi textul tradus (cum era înainte), `testID`-urile s-ar schimba odată cu
+ * limba, iar testele ar depinde de catalogul român.
+ */
+const QUICK_MESSAGES = [
+  { id: 'hi', key: 'firstMessage.quick.hi' },
+  { id: 'hiHowAreYou', key: 'firstMessage.quick.hiHowAreYou' },
+] as const;
 
 export function SendFirstMessageSheet({ visible, name, onSend, onSkip, onClose }: Props) {
   const { colors, typography, radius, spacing } = useTheme();
+  // `common` pentru „Închide", textul propriu al foii din `feed`.
+  const { t } = useTranslation(['feed', 'common']);
   const [text, setText] = useState('');
 
   // Resetăm câmpul de fiecare dată când sheet-ul se deschide pentru un card nou.
@@ -47,7 +59,7 @@ export function SendFirstMessageSheet({ visible, name, onSend, onSkip, onClose }
           style={StyleSheet.absoluteFill}
           onPress={onClose}
           accessibilityRole="button"
-          accessibilityLabel="Închide"
+          accessibilityLabel={t('common:actions.close')}
         >
           <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.scrim }]} />
         </Pressable>
@@ -71,38 +83,41 @@ export function SendFirstMessageSheet({ visible, name, onSend, onSkip, onClose }
           ]}
         >
           <Text style={[typography.h1, { color: colors.textPrimary }]}>
-            Scrie-i lui {name}
+            {t('firstMessage.title', { name })}
           </Text>
           <Text style={[typography.caption, { color: colors.textSecondary }]}>
-            Un mesaj de deschidere crește șansele la răspuns.
+            {t('firstMessage.subtitle')}
           </Text>
 
           <View style={[styles.chips, { gap: spacing.sm, marginTop: spacing.xs }]}>
-            {QUICK_MESSAGES.map((msg) => (
-              <Pressable
-                key={msg}
-                testID={`first-msg-quick-${msg}`}
-                accessibilityRole="button"
-                accessibilityLabel={msg}
-                onPress={() => setText(msg)}
-                style={[
-                  styles.chip,
-                  {
-                    backgroundColor: colors.tagBg,
-                    borderRadius: radius.pill,
-                    paddingHorizontal: spacing.md,
-                    paddingVertical: spacing.xs,
-                  },
-                ]}
-              >
-                <Text style={[typography.caption, { color: colors.link }]}>{msg}</Text>
-              </Pressable>
-            ))}
+            {QUICK_MESSAGES.map(({ id, key }) => {
+              const msg = t(key);
+              return (
+                <Pressable
+                  key={id}
+                  testID={`first-msg-quick-${id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={msg}
+                  onPress={() => setText(msg)}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: colors.tagBg,
+                      borderRadius: radius.pill,
+                      paddingHorizontal: spacing.md,
+                      paddingVertical: spacing.xs,
+                    },
+                  ]}
+                >
+                  <Text style={[typography.caption, { color: colors.link }]}>{msg}</Text>
+                </Pressable>
+              );
+            })}
           </View>
 
           <Input
             testID="first-msg-input"
-            placeholder="Scrie un mesaj..."
+            placeholder={t('firstMessage.placeholder')}
             value={text}
             onChangeText={setText}
             multiline
@@ -110,13 +125,13 @@ export function SendFirstMessageSheet({ visible, name, onSend, onSkip, onClose }
 
           <View style={{ gap: spacing.sm, marginTop: spacing.xs }}>
             <Button
-              label="Trimite"
+              label={t('firstMessage.send')}
               testID="first-msg-send"
               disabled={!canSend}
               onPress={() => onSend(trimmed)}
             />
             <Button
-              label="Doar like"
+              label={t('firstMessage.skip')}
               variant="ghost"
               testID="first-msg-skip"
               onPress={onSkip}
