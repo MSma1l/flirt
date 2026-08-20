@@ -143,7 +143,7 @@ export default function AnketaWizard() {
   const { t } = useTranslation('onboarding');
   const { current: language } = useLanguage();
   const { colors, typography, spacing, radius } = useTheme();
-  const setProfileCompleted = useAuthStore((s) => s.setProfileCompleted);
+  const refreshUser = useAuthStore((s) => s.refreshUser);
 
   const {
     draft,
@@ -287,13 +287,17 @@ export default function AnketaWizard() {
         await reorderPhotos(desired);
       }
 
-      setProfileCompleted(true);
+      // Starea o dă SERVERUL, nu noi: `profile_completed` se aprinde acolo, la
+      // scrierea profilului. Înainte ecranul își nota singur `true` fără să
+      // aștepte, așa că un profil respins de server (prea puține poze) trecea
+      // drept complet, iar userul ajungea în feed unde nimic nu-i mergea.
+      await refreshUser();
       reset();
-      // NU în feed: testul de umor urmează imediat după anketă. Vectorul de umor
-      // intră în scorul de compatibilitate, deci un user care intră direct în
-      // feed ar primi (și ar da) potriviri slabe. Ordinea de mai sus rămâne
-      // neatinsă — anketă, poze, abia apoi navigarea.
-      router.replace('/humor');
+      // NU alegem noi ecranul următor (nici măcar `/humor`, deși de obicei el
+      // urmează): `/` înseamnă „decide poarta". Testul de umor, pozele lipsă sau
+      // rămânerea în onboarding sunt toate cazuri pe care le știe `AuthGuard`,
+      // într-un singur loc.
+      router.replace('/');
     } catch (error) {
       setUploadingIndex(null);
       setPhotosError(t('errors.uploadRetry', { reason: photoErrorText(error) }));

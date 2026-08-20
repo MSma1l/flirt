@@ -14,11 +14,12 @@ jest.mock('expo-router', () => ({
   useRouter: () => ({ replace: mockReplace, push: jest.fn(), back: jest.fn() }),
 }));
 
-// Mock store de auth: doar `setProfileCompleted` e folosit de ecran.
-const mockSetProfileCompleted = jest.fn();
+// Mock store de auth: ecranul folosește doar `refreshUser` — recitirea userului
+// de pe server după ce profilul a fost salvat.
+const mockRefreshUser = jest.fn(() => Promise.resolve(null));
 jest.mock('@/store/authStore', () => ({
-  useAuthStore: (selector: (s: { setProfileCompleted: typeof mockSetProfileCompleted }) => unknown) =>
-    selector({ setProfileCompleted: mockSetProfileCompleted }),
+  useAuthStore: (selector: (s: { refreshUser: typeof mockRefreshUser }) => unknown) =>
+    selector({ refreshUser: mockRefreshUser }),
 }));
 
 // Mock la anketaApi: controlăm referința și spionăm submit-ul.
@@ -375,12 +376,15 @@ describe('AnketaWizard (onboarding)', () => {
     );
 
     await waitFor(() => {
-      expect(mockSetProfileCompleted).toHaveBeenCalledWith(true);
-      // NU în feed: după anketă urmează testul de umor (vectorul lui intră în
-      // scorul de compatibilitate, deci userul nu are ce căuta în feed fără el).
-      expect(mockReplace).toHaveBeenCalledWith('/humor');
+      // Starea profilului o dă serverul, nu ecranul: `profile_completed` se
+      // recitește de la `GET /auth/me` în loc să fie presupus `true` local.
+      expect(mockRefreshUser).toHaveBeenCalled();
+      // Ecranul NU alege unde merge userul mai departe (de obicei testul de umor,
+      // dar decide poarta din `AuthGuard`, într-un singur loc): `/` = „decide ea".
+      expect(mockReplace).toHaveBeenCalledWith('/');
     });
     expect(mockReplace).not.toHaveBeenCalledWith('/(tabs)/ankete');
+    expect(mockReplace).not.toHaveBeenCalledWith('/humor');
   });
 
   it('la eroare de upload reia de unde a rămas, fără să retrimită anketa', async () => {
@@ -414,7 +418,7 @@ describe('AnketaWizard (onboarding)', () => {
     // poza rămasă — primele două nu se dublează.
     fireEvent.press(utils.getByText('Finalizează'));
 
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/humor'));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/'));
     expect(mockSubmitAnketa).toHaveBeenCalledTimes(1);
     expect(mockUploadPhoto).toHaveBeenCalledTimes(4); // 3 + doar poza eșuată
     expect(stored).toHaveLength(3);

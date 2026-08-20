@@ -10,6 +10,11 @@
     "undo": "↩ Back",
     "sendError": "We couldn't send that. Try again.",
     "undoError": "We couldn't undo that. Try again.",
+    "gate": {
+      "anketa": "Finish your profile to start swiping.",
+      "photos": "You need at least {{min}} photos to start swiping.",
+      "humor": "Take the humor test first, then you can swipe."
+    },
     "hint": "← nope · like → · ↑ super like · ↓ back",
     "cues": {
       "like": "LIKE",

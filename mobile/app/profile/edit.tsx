@@ -34,6 +34,7 @@ import {
   validatePhotoCount,
 } from '@/features/photos/validation';
 import { fetchMyProfile } from '@/features/profile/profileApi';
+import { useAuthStore } from '@/store/authStore';
 import { useTheme } from '@theme/index';
 
 /** Chip selectabil (gen, limbi, statusuri, interese). */
@@ -151,6 +152,7 @@ export default function ProfileEditScreen() {
   const picker = usePhotoPicker();
   // Eșecurile de upload vin ca motiv (cheie); aici devin text.
   const photoErrorText = usePhotoErrorText();
+  const refreshUser = useAuthStore((s) => s.refreshUser);
 
   const profileQuery = useQuery({ queryKey: ['my-profile'], queryFn: fetchMyProfile });
   const referenceQuery = useQuery({
@@ -219,6 +221,11 @@ export default function ProfileEditScreen() {
       const urls = await uploadPhoto(photo, { onProgress: setUploadProgress });
       setPhotos(urls);
       await queryClient.invalidateQueries({ queryKey: ['my-profile'] });
+      // `users.profile_completed` e ȘI-ul dintre anketă și poze, iar serverul îl
+      // recalculează la fiecare schimbare de poze. Îl recitim, fiindcă exact el
+      // decide unde are voie să fie userul: cine a ajuns aici trimis de poartă
+      // (poze sub prag) iese din editor abia când flagul se aprinde.
+      await refreshUser();
     } catch (error) {
       setPhotosError(photoErrorText(error));
     } finally {
@@ -238,6 +245,9 @@ export default function ProfileEditScreen() {
       const urls = await deletePhoto(url);
       setPhotos(urls);
       await queryClient.invalidateQueries({ queryKey: ['my-profile'] });
+      // Simetric cu adăugarea: ștergerea poate coborî sub prag, iar flagul de pe
+      // server se stinge la loc.
+      await refreshUser();
     } catch {
       setPhotosError(t('edit.deleteError'));
     } finally {

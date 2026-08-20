@@ -23,14 +23,20 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Button, ProgressDots, ScreenContainer } from '@/components/ui';
 import { cardText } from '@/features/humor/cardText';
 import { fetchQuiz, submitQuiz } from '@/features/humor/humorApi';
-import { HUMOR_ME_QUERY_KEY, useHumorGateStore } from '@/features/humor/humorGate';
+import { humorMeQueryKey, useHumorGateStore } from '@/features/humor/humorGate';
 import { HumorAnswer, HumorCard, HumorProfile } from '@/features/humor/types';
 import { useLanguage } from '@/i18n/useLanguage';
 import { useAuthStore } from '@/store/authStore';
 import { useTheme } from '@theme/index';
 
-/** Unde pleacă userul când a terminat (sau când quiz-ul e indisponibil). */
-const AFTER_QUIZ_ROUTE = '/(tabs)/ankete' as const;
+/**
+ * Unde pleacă userul când a terminat (sau când quiz-ul e indisponibil).
+ *
+ * `/` nu e un ecran, e „decide poarta": ecranul ăsta nu știe (și nu trebuie să
+ * știe) dacă mai e ceva de completat după test. Singurul care decide e
+ * `AuthGuard` — vezi `features/navigation/appRoute.ts`.
+ */
+const AFTER_QUIZ_ROUTE = '/' as const;
 
 export default function HumorScreen() {
   const router = useRouter();
@@ -56,7 +62,7 @@ export default function HumorScreen() {
       // Poarta citește aceeași cheie: punându-i rezultatul proaspăt, `AuthGuard`
       // vede imediat vectorul plin și nu ne mai trimite înapoi la quiz. Fără asta
       // ar apărea exact bucla quiz → feed → guard → quiz.
-      queryClient.setQueryData(HUMOR_ME_QUERY_KEY, profile);
+      queryClient.setQueryData(humorMeQueryKey(userId), profile);
     },
   });
 

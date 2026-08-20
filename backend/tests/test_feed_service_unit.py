@@ -270,6 +270,33 @@ async def test_swipe_without_humor_403_distinct_detail(db_session):
     assert exc.value.detail == F.HUMOR_REQUIRED_DETAIL
 
 
+async def test_swipe_without_enough_photos_403_distinct_detail(db_session):
+    """Actorul cu prea puține poze → 403 cu mesajul DISTINCT de poze.
+
+    DE CE contează distincția: „profil incomplet" (anketa lipsă) și „prea puține
+    poze" duc în ecrane DIFERITE pe mobil — wizardul de înregistrare, respectiv
+    editorul de profil. Cu un singur text, clientul îl trimitea pe cel cu anketă
+    bună înapoi în wizard, care reporneşte cu draft gol și îi rescrie profilul.
+
+    Cazul e real: `min_photos` a crescut de la 1 la 2, deci există conturi cu
+    `completed=True` și poze sub prag.
+    """
+    a = await _make_user(db_session, "few_photos_a@example.com")
+    b = await _make_user(db_session, "few_photos_b@example.com")
+    pa = await _complete_profile(db_session, a, gender="male", name="Putine")
+    await _complete_profile(db_session, b, gender="female", name="Destule")
+    # Anketa rămâne completă — cade DOAR poarta pozelor.
+    pa.photos = pa.photos[: settings.min_photos - 1]
+    await db_session.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        await F.swipe(db_session, a, b.id, "like")
+    assert exc.value.status_code == 403
+    assert exc.value.detail == F.PHOTOS_REQUIRED_DETAIL
+    # Distinct de mesajul anketei: pe asta se bazează redirectul de pe mobil.
+    assert exc.value.detail != "Profilul tău nu este complet."
+
+
 async def test_swipe_target_without_humor_allowed(db_session):
     """Ținta fără umor NU e blocată — umorul contează doar la scor pentru ea."""
     a, b = await _pair(db_session, "target_no_humor")

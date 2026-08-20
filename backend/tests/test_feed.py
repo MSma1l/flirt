@@ -705,6 +705,14 @@ async def test_user_without_photos_cannot_swipe_or_get_feed(client):
         headers=b_headers,
     )
     assert resp.status_code == 403, resp.text
+    # Mesaj DISTINCT de „profil incomplet": pozele se adaugă în editorul de
+    # profil, anketa lipsă în wizardul de înregistrare. Mobilul alege ecranul
+    # după acest text, deci un mesaj comun l-ar trimite pe cel cu anketă bună
+    # înapoi în wizard, care îi rescrie profilul.
+    detail = resp.json()["detail"]
+    assert detail == feed_service.PHOTOS_REQUIRED_DETAIL
+    assert detail != "Profilul tău nu este complet."
+    assert detail != feed_service.HUMOR_REQUIRED_DETAIL
 
 
 # --- SUPER LIKE (swipe sus) --------------------------------------------------

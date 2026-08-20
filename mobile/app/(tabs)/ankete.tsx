@@ -40,6 +40,8 @@ import {
 } from '@/features/feed/swipeDirection';
 import { FeedCard, SwipeAction } from '@/features/feed/types';
 import { useTiltSwipe } from '@/features/feed/useTiltSwipe';
+import { useReportSwipeRefusal } from '@/features/navigation/serverGate';
+import { PHOTO_LIMITS } from '@/features/photos/validation';
 import { StoriesBar } from '@/features/stories/StoriesBar';
 import { useTheme } from '@theme/index';
 
@@ -54,13 +56,33 @@ const GESTURE_SLOP = 8;
 /**
  * Cheile de eroare ale acțiunilor din deck. Ținem CHEIA în state, nu textul:
  * dacă userul comută limba cu eroarea pe ecran, ea se re-traduce singură.
+ *
+ * Cele trei `deck.gate.*` sunt răspunsul la un 403 de la `POST /feed/swipe`:
+ * nu e o pană de rețea, ci o poartă (anketă / poze / testul de umor). Mesajul
+ * spune ce lipsește, iar `AuthGuard` duce userul acolo — până acum tot ce vedea
+ * era „Nu am putut trimite. Încearcă din nou.", adică un îndemn la reîncercare
+ * pentru ceva ce nu se rezolvă prin reîncercare.
  */
-type ActionErrorKey = 'deck.sendError' | 'deck.undoError';
+type ActionErrorKey =
+  | 'deck.sendError'
+  | 'deck.undoError'
+  | 'deck.gate.anketa'
+  | 'deck.gate.photos'
+  | 'deck.gate.humor';
+
+/** Poarta reclamată de server → mesajul afișat cât timp userul e mutat. */
+const GATE_ERROR_KEY = {
+  anketa: 'deck.gate.anketa',
+  photos: 'deck.gate.photos',
+  humor: 'deck.gate.humor',
+} as const;
 
 export default function AnketeScreen() {
   const { colors, typography, spacing, radius } = useTheme();
   const router = useRouter();
   const queryClient = useQueryClient();
+  // Traduce un refuz al serverului în starea pe care o citește poarta de navigare.
+  const reportSwipeRefusal = useReportSwipeRefusal();
   // Ambele namespace-uri: textele deck-ului din `feed`, pluralul vârstei din `common`.
   const { t } = useTranslation(['feed', 'common']);
   const { data, isLoading, isError, refetch } = useQuery<FeedCard[]>({
@@ -140,9 +162,13 @@ export default function AnketeScreen() {
       setSwipeCount((c) => c + 1);
       setIndex((i) => i + 1);
       await maybeShowAd();
-    } catch {
+    } catch (error) {
+      // Poarta serverului (403 cu text distinct) nu e o eroare de rețea: userului
+      // îi lipsește ceva. Raportăm faptul, poarta îl duce singură unde trebuie,
+      // iar aici doar spunem ce anume lipsește.
+      const block = await reportSwipeRefusal(error);
       // Rețea/server picat: nu avansăm indexul, rămânem pe același card și anunțăm userul.
-      setActionError('deck.sendError');
+      setActionError(block ? GATE_ERROR_KEY[block] : 'deck.sendError');
     } finally {
       position.setValue({ x: 0, y: 0 });
       setBusy(false);
@@ -364,7 +390,7 @@ export default function AnketeScreen() {
         { color: colors.danger, marginTop: spacing.md },
       ]}
     >
-      {t(actionError)}
+      {t(actionError, { min: PHOTO_LIMITS.min })}
     </Text>
   ) : null;
 
