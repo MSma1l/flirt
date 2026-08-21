@@ -1,1 +1,24 @@
-{}
+{
+  "report": {
+    "title": "Report",
+    "categories": {
+      "spam": "Spam",
+      "fake": "Fake profile",
+      "offensive": "Offensive language",
+      "obscene": "Obscene content"
+    },
+    "noteLabel": "Note (optional)",
+    "notePlaceholder": "Additional details…",
+    "submit": "Send report",
+    "sendError": "Couldn’t send the report. Try again.",
+    "thanks": "Thanks, we got your report"
+  },
+  "block": {
+    "title": "Block user",
+    "confirm": "Block",
+    "body": "They won’t be able to contact you and won’t appear in the app.",
+    "bodyNamed": "{{name}} won’t be able to contact you and won’t appear in the app.",
+    "errorTitle": "Something went wrong",
+    "errorBody": "Couldn’t block this user. Try again."
+  }
+}

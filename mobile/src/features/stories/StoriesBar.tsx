@@ -2,6 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { fetchStories } from './storiesApi';
@@ -16,6 +17,7 @@ function initial(name: string): string {
 
 export function StoriesBar() {
   const router = useRouter();
+  const { t } = useTranslation('stories');
   const { colors, typography, spacing } = useTheme();
 
   const { data } = useQuery<UserStories[]>({
@@ -39,7 +41,7 @@ export function StoriesBar() {
       {/* Primul cerc: „+" Adaugă story */}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Adaugă story"
+        accessibilityLabel={t('bar.addLabel')}
         onPress={() => router.push('/stories/new')}
         style={styles.item}
       >
@@ -56,7 +58,7 @@ export function StoriesBar() {
           numberOfLines={1}
           style={[typography.caption, styles.name, { color: colors.textSecondary }]}
         >
-          Adaugă
+          {t('bar.add')}
         </Text>
       </Pressable>
 
@@ -65,7 +67,7 @@ export function StoriesBar() {
         <Pressable
           key={group.userId}
           accessibilityRole="button"
-          accessibilityLabel={`Vezi poveștile: ${group.name}`}
+          accessibilityLabel={t('bar.open', { name: group.name })}
           onPress={() => router.push(`/stories/${group.userId}`)}
           style={styles.item}
         >

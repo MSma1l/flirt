@@ -2,6 +2,7 @@
 import { Alert, Platform } from 'react-native';
 
 import { alertMessage, confirmAsync } from '../dialog';
+import i18n from '@/i18n';
 
 describe('dialog cross-platform', () => {
   const originalOS = Platform.OS;
@@ -55,6 +56,49 @@ describe('dialog cross-platform', () => {
       const spy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
       alertMessage('Eroare', 'x');
       expect(spy).toHaveBeenCalledWith('Eroare', 'x');
+    });
+  });
+
+  /**
+   * Modulul NU e o componentă, deci nu poate folosi `useTranslation`: citește
+   * din instanța globală. De aici două lucruri de verificat — că butonul de
+   * anulare chiar vine din catalog și că traducerea se ia la FIECARE apel, nu o
+   * dată la încărcarea modulului (altfel primul dialog ar îngheța limba).
+   */
+  describe('i18n', () => {
+    afterEach(async () => {
+      await i18n.changeLanguage('ro');
+    });
+
+    /** Textul butonului de anulare din ultimul `Alert.alert`. */
+    function cancelTextOf(spy: jest.SpyInstance): string | undefined {
+      const buttons = spy.mock.calls[0][2] as { text?: string; style?: string }[] | undefined;
+      return buttons?.find((b) => b.style === 'cancel')?.text;
+    }
+
+    it('butonul de anulare vine din `common:actions.cancel`', async () => {
+      setPlatform('ios');
+      const spy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+
+      confirmAsync('Ștergi?');
+      expect(cancelTextOf(spy)).toBe('Anulează');
+    });
+
+    it('urmează limba activă la fiecare apel', async () => {
+      setPlatform('ios');
+      await i18n.changeLanguage('ru');
+      const spy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+
+      confirmAsync('Удалить?');
+      expect(cancelTextOf(spy)).toBe('Отмена');
+    });
+
+    it('un `cancelText` explicit are prioritate', () => {
+      setPlatform('ios');
+      const spy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+
+      confirmAsync('Ștergi?', undefined, { cancelText: 'Nu acum' });
+      expect(cancelTextOf(spy)).toBe('Nu acum');
     });
   });
 });

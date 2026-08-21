@@ -37,5 +37,33 @@
     "newTitle": "New match",
     "newHint": "You matched — send the first message.",
     "activeTitle": "Conversations"
+  },
+  "conversation": {
+    "fallbackTitle": "Conversation",
+    "report": "Report",
+    "block": "Block",
+    "empty": "Send the first message 👋",
+    "placeholder": "Write a message…",
+    "send": "Send",
+    "sendError": "Message wasn’t sent. Try again."
+  },
+  "bubble": {
+    "own": "your message",
+    "received": "message received",
+    "react": "React to message",
+    "reaction": "Reaction: {{emoji}}",
+    "reactionOption": "React with {{emoji}}",
+    "maskedHint": "Contact details hidden for safety"
+  },
+  "list": {
+    "noMessages": "No messages yet",
+    "unread_one": "{{count}} unread message",
+    "unread_other": "{{count}} unread messages",
+    "time": {
+      "now": "now",
+      "minutes": "{{value}}m",
+      "hours": "{{value}}h",
+      "days": "{{value}}d"
+    }
   }
 }
