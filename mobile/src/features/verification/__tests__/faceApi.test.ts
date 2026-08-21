@@ -1,7 +1,7 @@
 import { LocalPhoto } from '@/features/photos';
 
 import { FaceVerifyError, verifyFace } from '../faceApi';
-import { FACE_MESSAGES, faceVerifyReason } from '../messages';
+import { faceVerifyMessage, faceVerifyReason } from '../messages';
 
 jest.mock('@/services/api', () => ({
   api: {
@@ -93,7 +93,7 @@ describe('verifyFace', () => {
     await expect(verifyFace(selfie)).rejects.toBeInstanceOf(FaceVerifyError);
     await expect(verifyFace(selfie)).rejects.toMatchObject({
       reason: 'network',
-      message: FACE_MESSAGES.network,
+      message: faceVerifyMessage('network'),
     });
   });
 
@@ -102,7 +102,7 @@ describe('verifyFace', () => {
 
     await expect(verifyFace(selfie)).rejects.toMatchObject({
       reason: 'unavailable',
-      message: FACE_MESSAGES.unavailable,
+      message: faceVerifyMessage('unavailable'),
     });
   });
 });

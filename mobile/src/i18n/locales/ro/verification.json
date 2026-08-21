@@ -1,1 +1,26 @@
-{}
+{
+  "title": "Verificare",
+  "intro": "Confirmă că profilul îți aparține printr-un selfie rapid. Verificarea îți aduce un badge de încredere și îi ajută pe ceilalți să știe că ești o persoană reală.",
+  "framingHint": "Poziționează-ți fața în cadru",
+  "verified": "Cont verificat ✓",
+  "openSettings": "Deschide setările",
+  "grant": "Permite accesul la cameră",
+  "start": "Fă un selfie și verifică",
+  "privacyNote": "Selfie-ul este folosit doar pentru verificare și nu apare în profilul tău.",
+  "camera": {
+    "captureFailed": "Nu am putut face selfie-ul. Încearcă din nou.",
+    "permission": "Avem nevoie de cameră ca să faci selfie-ul de verificare. Fără acces, verificarea nu poate fi făcută.",
+    "permissionBlocked": "Accesul la cameră este oprit. Deschide setările și activează camera pentru FLIRT, apoi revino la verificare."
+  },
+  "reasons": {
+    "no_match": "Nu am putut confirma că ești tu. Asigură-te că fața ta e clar vizibilă și bine luminată, iar pozele din profil te arată la față. Poți încerca din nou.",
+    "no_face": "Nu am găsit nicio față în selfie. Ține telefonul la nivelul ochilor și încadrează-ți fața complet, apoi încearcă din nou.",
+    "invalid_image": "Selfie-ul nu a putut fi citit. Încearcă să faci altul, cu lumină mai bună.",
+    "too_large": "Selfie-ul e prea mare pentru încărcare. Încearcă din nou.",
+    "rate_limited": "Ai încercat de prea multe ori. Așteaptă câteva minute și revino.",
+    "no_profile": "Ai nevoie de un profil cu poze înainte de verificare. Completează-ți profilul, apoi revino.",
+    "unavailable": "Serviciul de verificare nu răspunde acum. Nu e din vina ta — încearcă din nou peste câteva minute.",
+    "network": "Conexiune întreruptă. Verifică internetul și încearcă din nou.",
+    "unknown": "Verificarea nu a reușit. Încearcă din nou."
+  }
+}

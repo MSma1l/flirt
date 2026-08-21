@@ -1,1 +1,26 @@
-{}
+{
+  "title": "Verification",
+  "intro": "Confirm the profile is yours with a quick selfie. Verification earns you a trust badge and helps others see you’re a real person.",
+  "framingHint": "Position your face in the frame",
+  "verified": "Account verified ✓",
+  "openSettings": "Open Settings",
+  "grant": "Allow camera access",
+  "start": "Take a selfie and verify",
+  "privacyNote": "The selfie is used only for verification and won’t appear on your profile.",
+  "camera": {
+    "captureFailed": "Couldn’t take the selfie. Try again.",
+    "permission": "We need the camera to take your verification selfie. Without access, verification can’t be done.",
+    "permissionBlocked": "Camera access is turned off. Open Settings, enable the camera for FLIRT, then come back to verification."
+  },
+  "reasons": {
+    "no_match": "We couldn’t confirm it’s you. Make sure your face is clearly visible and well lit, and that your profile photos show your face. You can try again.",
+    "no_face": "We didn’t find a face in the selfie. Hold the phone at eye level, fit your whole face in the frame, then try again.",
+    "invalid_image": "The selfie couldn’t be read. Try taking another one, with better light.",
+    "too_large": "The selfie is too large to upload. Try again.",
+    "rate_limited": "Too many attempts. Wait a few minutes and come back.",
+    "no_profile": "You need a profile with photos before verifying. Complete your profile, then come back.",
+    "unavailable": "The verification service isn’t responding right now. It’s not your fault — try again in a few minutes.",
+    "network": "Connection lost. Check your internet and try again.",
+    "unknown": "Verification failed. Try again."
+  }
+}
