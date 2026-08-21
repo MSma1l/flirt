@@ -379,12 +379,13 @@ describe('AnketaWizard (onboarding)', () => {
       // Starea profilului o dă serverul, nu ecranul: `profile_completed` se
       // recitește de la `GET /auth/me` în loc să fie presupus `true` local.
       expect(mockRefreshUser).toHaveBeenCalled();
-      // Ecranul NU alege unde merge userul mai departe (de obicei testul de umor,
-      // dar decide poarta din `AuthGuard`, într-un singur loc): `/` = „decide ea".
-      expect(mockReplace).toHaveBeenCalledWith('/');
     });
-    expect(mockReplace).not.toHaveBeenCalledWith('/(tabs)/ankete');
-    expect(mockReplace).not.toHaveBeenCalledWith('/humor');
+    // Ecranul nu navighează DELOC — nici la `/`. Are de ce: `app/index.tsx` și
+    // `app/(onboarding)/index.tsx` răspund amândouă la `/`, iar expo-router alege
+    // ruta din grupul curent, deci `replace('/')` doar REMONTA wizardul (golit de
+    // `reset()`, adică anketa părea că o ia de la capăt). Cine mută userul e
+    // `AuthGuard`, care vede singur `profile_completed` schimbat.
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it('la eroare de upload reia de unde a rămas, fără să retrimită anketa', async () => {
@@ -418,7 +419,8 @@ describe('AnketaWizard (onboarding)', () => {
     // poza rămasă — primele două nu se dublează.
     fireEvent.press(utils.getByText('Finalizează'));
 
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/'));
+    await waitFor(() => expect(mockRefreshUser).toHaveBeenCalled());
+    expect(mockReplace).not.toHaveBeenCalled();
     expect(mockSubmitAnketa).toHaveBeenCalledTimes(1);
     expect(mockUploadPhoto).toHaveBeenCalledTimes(4); // 3 + doar poza eșuată
     expect(stored).toHaveLength(3);

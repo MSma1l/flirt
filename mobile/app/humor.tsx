@@ -32,11 +32,18 @@ import { useTheme } from '@theme/index';
 /**
  * Unde pleacă userul când a terminat (sau când quiz-ul e indisponibil).
  *
- * `/` nu e un ecran, e „decide poarta": ecranul ăsta nu știe (și nu trebuie să
- * știe) dacă mai e ceva de completat după test. Singurul care decide e
- * `AuthGuard` — vezi `features/navigation/appRoute.ts`.
+ * Aici era `/`, adică „decide poarta". Suna curat, dar costa DOUĂ tranziții de
+ * stivă una după alta: întâi quiz → splash, apoi splash → feed. Pe telefon, a
+ * doua îl prindea pe `(tabs)` în montare, iar `react-native-screens` rămânea cu
+ * stratul nativ al ecranului dinainte — de acolo „două ecrane de ankete unul
+ * peste altul, fiecare pe alt card".
+ *
+ * Acum e un singur salt. Ecranul NU decide de capul lui: la quiz se ajunge doar
+ * cu profilul complet (vezi `resolveAppRoute`), deci feed-ul e singura urmare
+ * posibilă; iar dacă între timp serverul reclamă altceva, `AuthGuard` corectează
+ * imediat — el rămâne autoritatea, ăsta e doar drumul scurt spre răspunsul lui.
  */
-const AFTER_QUIZ_ROUTE = '/' as const;
+const AFTER_QUIZ_ROUTE = '/(tabs)/ankete' as const;
 
 export default function HumorScreen() {
   const router = useRouter();
@@ -74,7 +81,7 @@ export default function HumorScreen() {
    */
   const continueWithoutQuiz = () => {
     if (userId) markUnavailable(userId);
-    router.replace(AFTER_QUIZ_ROUTE);
+    router.dismissTo(AFTER_QUIZ_ROUTE);
   };
 
   const header = (
@@ -151,11 +158,13 @@ export default function HumorScreen() {
         >
           {t('quiz.saved')}
         </Text>
-        {/* `replace`, nu `back()`: la intrarea prin poartă (după anketă sau după
-            login) nu există ecran în spate la care să ne întoarcem. */}
+        {/* `dismissTo`, nu `back()`: la intrarea prin poartă (după anketă sau
+            după login) nu există ecran în spate la care să ne întoarcem, iar
+            când există (quiz redat din Setări) ne întoarcem la EL, fără să mai
+            stivuim un feed peste cel deja montat. */}
         <Button
           label={t('quiz.done')}
-          onPress={() => router.replace(AFTER_QUIZ_ROUTE)}
+          onPress={() => router.dismissTo(AFTER_QUIZ_ROUTE)}
           testID="humor-done"
         />
       </ScreenContainer>
