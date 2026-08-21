@@ -6,6 +6,8 @@ Inventarul textelor **încă scrise în cod**, în română, din `mobile/`. Fiec
 
 **Stare:** măsurat pe `main` la commit-ul de merge al PR #10 (`312ab98`), după migrarea zonelor
 auth, onboarding, feed, chat, moderare, setări, abonamente, passport, bilet și favorite.
+Zona de **story-uri** a fost închisă separat, în `feat/translate-stories` — secțiunea ei a fost
+scoasă de aici.
 
 **Regula de bază** (din [`mobile/src/i18n/README.md`](../mobile/src/i18n/README.md)):
 un ecran ⇒ un namespace ⇒ fișiere disjuncte. Namespace-urile există deja toate, în toate cele
@@ -23,7 +25,9 @@ un ecran ⇒ un namespace ⇒ fișiere disjuncte. Namespace-urile există deja t
    globală, **la fiecare apel**, nu la încărcarea modulului. Două precedente în cod:
    - [`src/utils/dialog.ts`](../mobile/src/utils/dialog.ts) — butonul de anulare al dialogurilor;
    - [`src/features/billing/iap.ts`](../mobile/src/features/billing/iap.ts) — dicționarul de mesaje
-     de achiziție, prin `MESSAGE_KEY` + `msg()`.
+     de achiziție, prin `MESSAGE_KEY` + `msg()`;
+   - [`src/features/stories/storyLimits.ts`](../mobile/src/features/stories/storyLimits.ts) —
+     același tipar, `MESSAGE_KEY` + `storyMessage()`, citit din trei module diferite.
 
    Motivul: dacă traducerea se citește o singură dată, la import, prima folosire îngheață limba
    pentru toată sesiunea.
@@ -47,24 +51,7 @@ un ecran ⇒ un namespace ⇒ fișiere disjuncte. Namespace-urile există deja t
 
 ## Sarcini
 
-### 1. Story-uri — namespace `stories` · ≈40 de texte
-
-Namespace-ul are deja `bar.*` (bara de story-uri de deasupra feed-ului). Restul zonei e nemigrat.
-
-| Fișier | Exemple |
-|---|---|
-| `app/stories/[userId].tsx` | „Nu am putut încărca poveștile.", „Nu există povești de afișat.", „Șterge povestea", a11y „Povestea anterioară" / „Povestea următoare", două `alertMessage` |
-| `app/stories/new.tsx` | „Permisiune necesară", „Poză respinsă", „Descriere (opțional)", „Adaugă un text…", „Publică", „Refă" |
-| `src/features/stories/StoryCameraScreen.tsx` | „Permite acces la cameră", „Alege din galerie", „Fă o poză", a11y „Comută camera" |
-| `src/features/stories/StoryReplyBar.tsx` | „Răspunde-i lui {{name}}…", a11y „Reacționează cu {{emoji}}", „Trimite răspunsul" |
-| `src/features/stories/storyLimits.ts` | dicționar de 9 mesaje: galerie/cameră refuzată, upload eșuat, publicare eșuată |
-
-**Capcană:** `storyLimits.ts` e exact tiparul din `iap.ts` — un obiect de mesaje într-un modul care
-nu e componentă. Se migrează la fel: chei în catalog + o funcție care le citește la apel.
-
----
-
-### 2. Verificare prin selfie — namespace `verification` · ≈19 texte
+### 1. Verificare prin selfie — namespace `verification` · ≈19 texte
 
 **Singurul namespace încă gol** din cele 14.
 
@@ -78,7 +65,7 @@ trece în catalog. Structura e deja bună pentru asta.
 
 ---
 
-### 3. Evenimente — namespace `events` · ≈9 texte
+### 2. Evenimente — namespace `events` · ≈9 texte
 
 Namespace-ul are deja `detail.*` (ecranul unui eveniment). Lipsesc lista și harta.
 
@@ -92,7 +79,7 @@ Atributul trebuie să urmeze limba activă odată cu textele.
 
 ---
 
-### 4. Validare — 3 fișiere · ≈30 de texte
+### 3. Validare — 3 fișiere · ≈30 de texte
 
 Semnalat deja în `src/i18n/README.md` ca sarcină separată, fiindcă atinge mai multe ecrane deodată.
 
@@ -112,7 +99,7 @@ onboarding ȘI în editorul de profil). Recomandare: `profile`, fiindcă acolo s
 
 ---
 
-### 5. Mărunțișuri vizibile · ≈20 de texte
+### 4. Mărunțișuri vizibile · ≈20 de texte
 
 Se pot face separat sau într-un singur pas — nu depind unul de altul.
 
@@ -195,9 +182,8 @@ grep -nE "['\"][A-ZĂÎȘȚÂ][^'\"]*[ăîâșț][^'\"]*['\"]" <fisier> | grep -
 
 | Namespace | Stare |
 |---|---|
-| `common`, `auth`, `onboarding`, `feed`, `chat`, `profile`, `settings`, `billing`, `moderation`, `social`, `humor` | ✅ ecranele principale migrate |
-| `stories` | 🔧 doar bara de story-uri |
+| `common`, `auth`, `onboarding`, `feed`, `chat`, `profile`, `settings`, `billing`, `moderation`, `social`, `humor`, `stories` | ✅ ecranele principale migrate |
 | `events` | 🔧 doar ecranul unui eveniment |
 | `verification` | ❌ gol |
 
-Textele rămase sunt cele din „Sarcini": ≈118 de șiruri, în 18 fișiere.
+Textele rămase sunt cele din „Sarcini": ≈78 de șiruri, în 13 fișiere.
