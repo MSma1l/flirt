@@ -4,6 +4,7 @@ import React from 'react';
 import { Linking } from 'react-native';
 
 import PaywallScreen from '../paywall';
+import i18n from '@/i18n';
 import { config } from '@/config';
 import { IapError } from '@/features/billing/iap';
 import type { PurchaseOutcome, RestoreResult, StoreCatalog } from '@/features/billing/iap';
@@ -144,7 +145,9 @@ describe('PaywallScreen', () => {
     expect(getByTestId('plan-premium-price')).toHaveTextContent('9,99 € / lună');
     // Prețul din backend (9.99 € cu punct) NU trebuie să apară pe cardul plătit.
     expect(queryByText('9.99 € / lună')).toBeNull();
-    expect(getByText('Fără reclame')).toBeTruthy();
+    // Beneficiile vin din catalogul CLIENTULUI, după codul planului — nu din
+    // `features` primite de la server (vezi blocul `i18n` de mai jos).
+    expect(getByText('Swipe nelimitat')).toBeTruthy();
   });
 
   it('reia tranzacțiile rămase neconfirmate la deschiderea ecranului', async () => {
@@ -303,4 +306,59 @@ describe('PaywallScreen', () => {
     await waitFor(() => getByTestId('paywall-restore-error'));
     expect(getByTestId('paywall-restore-error')).toHaveTextContent('Magazinul nu e disponibil.');
   });
+
+  /**
+   * Catalogul de planuri stă pe SERVER și vine doar în română. Ecranul traduce
+   * după CODUL planului — singura parte stabilă a contractului — iar un cod pe
+   * care nu-l cunoaște își păstrează textele de la server.
+   */
+  describe('i18n', () => {
+    afterEach(async () => {
+      await i18n.changeLanguage('ro');
+    });
+
+    it('titlul și beneficiile planului vin din catalog, nu de la server', async () => {
+      // Serverul trimite altceva decât catalogul clientului: dacă ecranul ar
+      // folosi textele lui, s-ar vedea exact șirurile de mai jos.
+      mockFetchPlans.mockResolvedValue([
+        {
+          code: 'all_inclusive',
+          title: 'TEXT DE LA SERVER',
+          priceEur: 19.99,
+          features: ['BENEFICIU DE LA SERVER'],
+        },
+      ]);
+      const { getByText, queryByText } = renderScreen();
+
+      await waitFor(() => getByText('Totul inclus'));
+      expect(getByText('Premium complet')).toBeTruthy();
+      expect(queryByText('TEXT DE LA SERVER')).toBeNull();
+      expect(queryByText('BENEFICIU DE LA SERVER')).toBeNull();
+    });
+
+    it('planul urmează limba activă', async () => {
+      mockFetchPlans.mockResolvedValue([
+        { code: 'card_5', title: 'ignorat', priceEur: 5, features: ['ignorat'] },
+      ]);
+      await i18n.changeLanguage('ru');
+      const { getByText } = renderScreen();
+
+      await waitFor(() => getByText('Карта скидок — 5 входов'));
+      expect(getByText('Доступ к скидкам на мероприятия')).toBeTruthy();
+    });
+
+    it('un cod de plan necunoscut păstrează textele serverului', async () => {
+      // Plan adăugat pe server între două versiuni de aplicație: mai bine în
+      // română decât deloc.
+      mockFetchPlans.mockResolvedValue([
+        { code: 'plan_nou', title: 'Plan nou', priceEur: 1, features: ['Ceva nou'] },
+      ]);
+      await i18n.changeLanguage('en');
+      const { getByText } = renderScreen();
+
+      await waitFor(() => getByText('Plan nou'));
+      expect(getByText('Ceva nou')).toBeTruthy();
+    });
+  });
+
 });

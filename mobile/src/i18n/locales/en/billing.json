@@ -23,5 +23,66 @@
     "renewNote": "The subscription renews automatically each month at the displayed price, unless you cancel it at least 24 hours before the end of the current period. You can manage or cancel it anytime from your account settings.",
     "terms": "Terms and conditions",
     "privacy": "Privacy policy"
+  },
+  "iap": {
+    "cancelled": "You cancelled the purchase.",
+    "unavailable": "The store isn’t available on this device. Check your connection and your App Store account.",
+    "productMissing": "This plan isn’t available in the store right now. Try later or pick another one.",
+    "notConfirmed": "The store recorded the payment, but we couldn’t activate the subscription just now. You won’t be charged again — we’ll finish the activation automatically when you come back.",
+    "alreadyOwned": "You already have this subscription. Tap “Restore purchases” to bring it back to this device.",
+    "noReceipt": "The store didn’t return proof of payment. Try the purchase again.",
+    "inProgress": "A purchase is already in progress. Wait for it to finish.",
+    "unknown": "Couldn’t complete the purchase. Try again."
+  },
+  "plans": {
+    "premium": {
+      "title": "Premium",
+      "features": [
+        "Unlimited swipes",
+        "No timer and no ads",
+        "Unlimited undo",
+        "Priority in the feed"
+      ]
+    },
+    "no_ads": {
+      "title": "No ads",
+      "features": [
+        "Turns off banners and video ads",
+        "Doesn’t lift the swipe limit"
+      ]
+    },
+    "ai_bot": {
+      "title": "AI bot in chat",
+      "features": [
+        "Extended message suggestions",
+        "Compatibility analysis beyond the free limit"
+      ]
+    },
+    "all_inclusive": {
+      "title": "All inclusive",
+      "features": [
+        "Full Premium",
+        "No ads",
+        "AI bot in chat",
+        "Event discounts",
+        "Cheaper than buying them separately"
+      ]
+    },
+    "card_5": {
+      "title": "Discount card — 5 entries",
+      "features": [
+        "Access to event discounts",
+        "5 discounted entries (check-ins)",
+        "One entry is used at every check-in"
+      ]
+    },
+    "card_10": {
+      "title": "Discount card — 10 entries",
+      "features": [
+        "Access to event discounts",
+        "10 discounted entries (check-ins)",
+        "One entry is used at every check-in"
+      ]
+    }
   }
 }

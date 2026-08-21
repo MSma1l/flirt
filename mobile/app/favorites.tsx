@@ -14,6 +14,7 @@
  */
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Image,
@@ -74,6 +75,7 @@ function FavoriteRow({
   removing: boolean;
 }) {
   const { colors, typography, spacing, radius } = useTheme();
+  const { t } = useTranslation('social');
   return (
     <View
       style={[
@@ -96,7 +98,7 @@ function FavoriteRow({
       </View>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Elimină ${item.name} din favorite`}
+        accessibilityLabel={t('favorites.remove', { name: item.name })}
         disabled={removing}
         onPress={onRemove}
         hitSlop={spacing.sm}
@@ -118,6 +120,7 @@ function FavoriteRow({
  */
 function LikeSentRow({ item }: { item: FavoriteItem }) {
   const { colors, typography, spacing, radius } = useTheme();
+  const { t } = useTranslation('social');
   const { isFavorite, markFavorite, isAdding } = useFavorite(item.targetUserId);
 
   return (
@@ -143,7 +146,9 @@ function LikeSentRow({ item }: { item: FavoriteItem }) {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={
-          isFavorite ? `${item.name} e deja la favorite` : `Adaugă ${item.name} la favorite`
+          isFavorite
+            ? t('favorites.already', { name: item.name })
+            : t('favorites.add', { name: item.name })
         }
         accessibilityState={{ selected: isFavorite, disabled: isFavorite || isAdding }}
         disabled={isFavorite || isAdding}
@@ -186,6 +191,7 @@ interface Section {
  */
 function SectionFooter({ section }: { section: Section }) {
   const { colors, typography, spacing } = useTheme();
+  const { t } = useTranslation('social');
 
   if (!section.hasMore && !section.failedMore) return null;
 
@@ -204,11 +210,11 @@ function SectionFooter({ section }: { section: Section }) {
           testID={`${section.key}-load-more-error`}
           style={[typography.caption, styles.center, { color: colors.danger }]}
         >
-          Nu am putut încărca mai multe.
+          {t('favorites.loadMoreError')}
         </Text>
       )}
       <Button
-        label={section.failedMore ? 'Reîncearcă' : 'Încarcă mai multe'}
+        label={section.failedMore ? t('favorites.retry') : t('favorites.loadMore')}
         variant="outline"
         onPress={section.loadMore}
         testID={`${section.key}-load-more`}
@@ -220,6 +226,7 @@ function SectionFooter({ section }: { section: Section }) {
 export default function FavoritesScreen() {
   const queryClient = useQueryClient();
   const { colors, typography, spacing } = useTheme();
+  const { t } = useTranslation('social');
 
   // Ambele liste sunt paginate pe cursor de backend (`X-Next-Cursor`), deci
   // `useInfiniteQuery`: el ține paginile în cache și le concatenează singur, în
@@ -246,7 +253,8 @@ export default function FavoritesScreen() {
   const mutation = useMutation({
     mutationFn: (targetUserId: string) => removeFavorite(targetUserId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['favorites'] }),
-    onError: () => alertMessage('Ceva n-a mers', 'Nu am putut elimina din favorite. Reîncearcă.'),
+    onError: () =>
+      alertMessage(t('favorites.removeErrorTitle'), t('favorites.removeErrorBody')),
   });
 
   // Loading și eroare se tratează ÎNAINTEA ramurii de gol: un ecran care încă
@@ -275,10 +283,10 @@ export default function FavoritesScreen() {
             { color: colors.textSecondary, marginBottom: spacing.lg },
           ]}
         >
-          Nu am putut încărca lista.
+          {t('favorites.loadError')}
         </Text>
         <Button
-          label="Reîncearcă"
+          label={t('favorites.retry')}
           variant="outline"
           onPress={() => {
             favoritesQuery.refetch();
@@ -298,8 +306,8 @@ export default function FavoritesScreen() {
   const allSections: Section[] = [
     {
       key: 'likes',
-      title: 'Le-ai dat like',
-      hint: 'Profilurile pe care le-ai apreciat cu swipe dreapta.',
+      title: t('favorites.sections.likesTitle'),
+      hint: t('favorites.sections.likesHint'),
       data: likes,
       hasMore: likesQuery.hasNextPage,
       loadingMore: likesQuery.isFetchingNextPage,
@@ -308,8 +316,8 @@ export default function FavoritesScreen() {
     },
     {
       key: 'favorites',
-      title: 'Favorite ★',
-      hint: 'Profilurile pe care le-ai marcat manual cu ★.',
+      title: t('favorites.sections.favoritesTitle'),
+      hint: t('favorites.sections.favoritesHint'),
       data: favorites,
       hasMore: favoritesQuery.hasNextPage,
       loadingMore: favoritesQuery.isFetchingNextPage,
@@ -323,13 +331,15 @@ export default function FavoritesScreen() {
     <ScreenContainer>
       <View style={styles.header}>
         <BackButton />
-        <Text style={[typography.h1, { color: colors.textPrimary }]}>Favorite</Text>
+        <Text style={[typography.h1, { color: colors.textPrimary }]}>
+          {t('favorites.title')}
+        </Text>
       </View>
 
       {sections.length === 0 ? (
         <View style={styles.empty} testID="favorites-empty">
           <Text style={[typography.body, styles.center, { color: colors.textSecondary }]}>
-            Încă n-ai dat like nimănui și n-ai marcat pe nimeni cu ★.
+            {t('favorites.empty')}
           </Text>
           <Text
             style={[
@@ -338,7 +348,7 @@ export default function FavoritesScreen() {
               { color: colors.textSecondary, marginTop: spacing.sm },
             ]}
           >
-            Profilurile apreciate în deck apar aici automat.
+            {t('favorites.emptyHint')}
           </Text>
         </View>
       ) : (
