@@ -12,6 +12,7 @@
  *    tastează, iar mesajul pleacă la altcineva (sau ecranul se închide).
  */
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useTheme } from '@theme/index';
@@ -46,6 +47,7 @@ export function StoryReplyBar({
   onActiveChange,
 }: StoryReplyBarProps) {
   const { colors, typography, radius, spacing } = useTheme();
+  const { t } = useTranslation('stories');
   const [text, setText] = useState('');
   const [focused, setFocused] = useState(false);
 
@@ -72,7 +74,9 @@ export function StoryReplyBar({
     setText('');
   };
 
-  const placeholder = authorName ? `Răspunde-i lui ${authorName}…` : 'Trimite un mesaj…';
+  const placeholder = authorName
+    ? t('reply.placeholder', { name: authorName })
+    : t('reply.placeholderGeneric');
 
   return (
     <View style={styles.wrap} testID="story-reply-bar">
@@ -82,7 +86,7 @@ export function StoryReplyBar({
           <Pressable
             key={emoji}
             accessibilityRole="button"
-            accessibilityLabel={`Reacționează cu ${emoji}`}
+            accessibilityLabel={t('reply.react', { emoji })}
             disabled={sending}
             onPress={() => send(emoji)}
             hitSlop={spacing.xs}
@@ -116,7 +120,7 @@ export function StoryReplyBar({
       >
         <TextInput
           testID="story-reply-input"
-          accessibilityLabel="Scrie un răspuns la poveste"
+          accessibilityLabel={t('reply.input')}
           value={text}
           onChangeText={changeText}
           onFocus={() => {
@@ -141,13 +145,15 @@ export function StoryReplyBar({
         ) : (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Trimite răspunsul"
+            accessibilityLabel={t('reply.send')}
             disabled={!canSend}
             onPress={() => send(text)}
             hitSlop={spacing.xs}
             style={[styles.send, { opacity: canSend ? 1 : 0.4 }]}
           >
-            <Text style={[typography.bodyStrong, { color: colors.accent }]}>Trimite</Text>
+            <Text style={[typography.bodyStrong, { color: colors.accent }]}>
+              {t('reply.sendLabel')}
+            </Text>
           </Pressable>
         )}
       </View>

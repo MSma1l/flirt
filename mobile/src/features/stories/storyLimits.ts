@@ -9,19 +9,33 @@
  * Limitele de dimensiune ale pozelor stau într-un singur loc — `features/photos`
  * (`compressPhoto`), folosit și de pozele de profil.
  */
+import i18n from '@/i18n';
 
-/** Mesaje afișabile (RO), fără module native — testabile separat. */
-export const STORY_MESSAGES = {
-  pickerFailed: 'Nu am putut deschide galeria. Încearcă din nou.',
-  permissionDenied: 'Avem nevoie de acces la galerie ca să alegi o poză.',
-  permissionBlocked:
-    'Accesul la galerie este oprit. Deschide setările, activează-l pentru FLIRT, apoi revino.',
-  cameraPermission: 'Avem nevoie de acces la cameră ca să faci o poză pentru story.',
-  cameraPermissionBlocked:
-    'Accesul la cameră este oprit. Deschide setările și activează camera pentru FLIRT, apoi revino.',
-  cameraUnavailable:
-    'Nu am putut porni camera aici. Poți alege în schimb o poză din galerie.',
-  captureFailed: 'Nu am putut face poza. Încearcă din nou.',
-  uploadFailed: 'Nu am putut încărca poza. Încearcă din nou.',
-  createFailed: 'Nu am putut publica povestea. Încearcă din nou.',
+/**
+ * Cheile mesajelor afișabile. Modulul e folosit din `storyPicker` și
+ * `storyCamera`, care NU sunt componente, deci nu pot chema `useTranslation`.
+ */
+const MESSAGE_KEY = {
+  pickerFailed: 'stories:messages.pickerFailed',
+  permissionDenied: 'stories:messages.permissionDenied',
+  permissionBlocked: 'stories:messages.permissionBlocked',
+  cameraPermission: 'stories:messages.cameraPermission',
+  cameraPermissionBlocked: 'stories:messages.cameraPermissionBlocked',
+  cameraUnavailable: 'stories:messages.cameraUnavailable',
+  captureFailed: 'stories:messages.captureFailed',
+  uploadFailed: 'stories:messages.uploadFailed',
+  createFailed: 'stories:messages.createFailed',
 } as const;
+
+export type StoryMessageKey = keyof typeof MESSAGE_KEY;
+
+/**
+ * Mesajul, în limba activă.
+ *
+ * Se citește la FIECARE apel, nu la încărcarea modulului: altfel primul mesaj ar
+ * îngheța limba pentru toată sesiunea. Același tipar ca `features/billing/iap.ts`
+ * și `utils/dialog.ts`.
+ */
+export function storyMessage(key: StoryMessageKey): string {
+  return i18n.t(MESSAGE_KEY[key]);
+}
