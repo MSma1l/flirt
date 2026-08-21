@@ -1,6 +1,7 @@
 /** Modal de raportare utilizator (TZ 5.5): categorie + notă opțională → POST /reports/. */
 import { useMutation } from '@tanstack/react-query';
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Button, Input } from '@/components/ui';
@@ -17,16 +18,17 @@ interface Props {
   onClose: () => void;
 }
 
-/** Categoriile cu etichete în română, în ordinea afișării. */
-const CATEGORIES: { value: ReportCategory; label: string }[] = [
-  { value: 'spam', label: 'Spam' },
-  { value: 'fake', label: 'Profil fals' },
-  { value: 'offensive', label: 'Limbaj ofensator' },
-  { value: 'obscene', label: 'Conținut obscen' },
-];
+/**
+ * Categoriile, în ordinea afișării. Aici stă doar ORDINEA și valoarea trimisă
+ * serverului; eticheta vine din catalog (`report.categories.<valoare>`), ca
+ * lista să nu trebuiască rescrisă la fiecare limbă nouă.
+ */
+const CATEGORIES: readonly ReportCategory[] = ['spam', 'fake', 'offensive', 'obscene'];
 
 export function ReportModal({ visible, reportedUserId, chatId, onClose }: Props) {
   const { colors, typography, radius, spacing } = useTheme();
+  // „Închide" și „Anulează" sunt acțiuni generice — stau în `common`, nu aici.
+  const { t } = useTranslation(['moderation', 'common']);
   const [category, setCategory] = useState<ReportCategory | null>(null);
   const [note, setNote] = useState('');
   const [sent, setSent] = useState(false);
@@ -82,25 +84,25 @@ export function ReportModal({ visible, reportedUserId, chatId, onClose }: Props)
           {sent ? (
             <>
               <Text style={[typography.h2, { color: colors.textPrimary }]}>
-                Mulțumim, am primit raportul
+                {t('report.thanks')}
               </Text>
-              <Button label="Închide" onPress={onClose} />
+              <Button label={t('common:actions.close')} onPress={onClose} />
             </>
           ) : (
             <>
               <Text style={[typography.h2, { color: colors.textPrimary }]}>
-                Raportează
+                {t('report.title')}
               </Text>
 
               <View style={{ gap: spacing.sm }}>
-                {CATEGORIES.map((c) => {
-                  const selected = category === c.value;
+                {CATEGORIES.map((value) => {
+                  const selected = category === value;
                   return (
                     <Pressable
-                      key={c.value}
+                      key={value}
                       accessibilityRole="button"
                       accessibilityState={{ selected }}
-                      onPress={() => setCategory(c.value)}
+                      onPress={() => setCategory(value)}
                       style={{
                         borderWidth: 1.5,
                         borderColor: selected ? colors.accent : colors.border,
@@ -116,7 +118,7 @@ export function ReportModal({ visible, reportedUserId, chatId, onClose }: Props)
                           { color: selected ? colors.accent : colors.textPrimary },
                         ]}
                       >
-                        {c.label}
+                        {t(`report.categories.${value}`)}
                       </Text>
                     </Pressable>
                   );
@@ -124,28 +126,28 @@ export function ReportModal({ visible, reportedUserId, chatId, onClose }: Props)
               </View>
 
               <Input
-                label="Notă (opțional)"
+                label={t('report.noteLabel')}
                 value={note}
                 onChangeText={setNote}
                 error={noteError}
                 maxLength={LIMITS.note}
-                placeholder="Detalii suplimentare…"
+                placeholder={t('report.notePlaceholder')}
                 multiline
               />
 
               {mutation.isError ? (
                 <Text style={[typography.caption, { color: colors.danger }]}>
-                  Nu am putut trimite raportul. Încearcă din nou.
+                  {t('report.sendError')}
                 </Text>
               ) : null}
 
               <Button
-                label="Trimite raportul"
+                label={t('report.submit')}
                 onPress={handleSubmit}
                 disabled={!canSubmit}
                 loading={mutation.isPending}
               />
-              <Button label="Anulează" variant="ghost" onPress={onClose} />
+              <Button label={t('common:actions.cancel')} variant="ghost" onPress={onClose} />
             </>
           )}
         </View>

@@ -5,6 +5,7 @@ import { ThemeProvider } from '@theme/index';
 
 import { ChatListItem } from '../ChatListItem';
 import { ChatSummary } from '../types';
+import i18n from '@/i18n';
 
 function makeChat(over: Partial<ChatSummary> = {}): ChatSummary {
   return {
@@ -77,5 +78,67 @@ describe('ChatListItem', () => {
   it('nu se blochează cu o dată lipsă sau invalidă', () => {
     expect(renderItem(makeChat({ lastMessageAt: undefined })).getByText('Ana')).toBeTruthy();
     expect(renderItem(makeChat({ lastMessageAt: 'nu-e-dată' })).getByText('Ana')).toBeTruthy();
+  });
+
+  describe('i18n', () => {
+    afterEach(async () => {
+      await i18n.changeLanguage('ro');
+    });
+
+    it('previewul gol și timpul relativ urmează limba activă', async () => {
+      await i18n.changeLanguage('ru');
+      const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
+
+      expect(
+        renderItem(makeChat({ lastMessage: undefined })).getByText('Пока нет сообщений'),
+      ).toBeTruthy();
+      expect(
+        renderItem(makeChat({ lastMessageAt: iso(10 * 1000) })).getByText('сейчас'),
+      ).toBeTruthy();
+      expect(
+        renderItem(makeChat({ lastMessageAt: iso(3 * 3600 * 1000) })).getByText('3 ч'),
+      ).toBeTruthy();
+    });
+
+    /**
+     * Numărul de necitite NU se scrie cu `${n} mesaje` în cod: româna are trei
+     * forme (1 mesaj / 3 mesaje / 21 de mesaje), iar rusa patru. Alegerea o face
+     * i18next după regulile CLDR, deci o verificăm pe cifre care cad în categorii
+     * diferite.
+     */
+    it('badge-ul de necitite folosește forma de plural corectă', async () => {
+      expect(
+        renderItem(makeChat({ unreadCount: 1 })).getByLabelText('1 mesaj necitit'),
+      ).toBeTruthy();
+      expect(
+        renderItem(makeChat({ unreadCount: 21 })).getByLabelText('21 de mesaje necitite'),
+      ).toBeTruthy();
+
+      await i18n.changeLanguage('ru');
+      expect(
+        renderItem(makeChat({ unreadCount: 1 })).getByLabelText('1 непрочитанное сообщение'),
+      ).toBeTruthy();
+      expect(
+        renderItem(makeChat({ unreadCount: 3 })).getByLabelText('3 непрочитанных сообщения'),
+      ).toBeTruthy();
+      expect(
+        renderItem(makeChat({ unreadCount: 7 })).getByLabelText('7 непрочитанных сообщений'),
+      ).toBeTruthy();
+    });
+
+    it('data de peste o săptămână se scrie în limba activă, nu fix în română', async () => {
+      const old = new Date(Date.now() - 30 * 86400 * 1000).toISOString();
+      const roText = renderItem(makeChat({ lastMessageAt: old })).getByText(
+        new Date(old).toLocaleDateString('ro', { day: 'numeric', month: 'short' }),
+      );
+      expect(roText).toBeTruthy();
+
+      await i18n.changeLanguage('en');
+      expect(
+        renderItem(makeChat({ lastMessageAt: old })).getByText(
+          new Date(old).toLocaleDateString('en', { day: 'numeric', month: 'short' }),
+        ),
+      ).toBeTruthy();
+    });
   });
 });

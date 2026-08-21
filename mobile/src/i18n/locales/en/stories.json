@@ -1,1 +1,7 @@
-{}
+{
+  "bar": {
+    "add": "Add",
+    "addLabel": "Add story",
+    "open": "View {{name}}’s stories"
+  }
+}

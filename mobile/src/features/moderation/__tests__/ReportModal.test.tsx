@@ -5,6 +5,7 @@ import React from 'react';
 import { ThemeProvider } from '@theme/index';
 
 import { ReportModal } from '../ReportModal';
+import i18n from '@/i18n';
 
 jest.mock('../reportApi', () => ({
   sendReport: jest.fn(),
@@ -120,5 +121,50 @@ describe('ReportModal', () => {
     const { getByText, onClose } = renderModal();
     fireEvent.press(getByText('Anulează'));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  describe('i18n', () => {
+    afterEach(async () => {
+      await i18n.changeLanguage('ro');
+    });
+
+    it('titlul, categoriile și butoanele urmează limba activă', async () => {
+      await i18n.changeLanguage('ru');
+      const { getByPlaceholderText, getByText } = renderModal();
+
+      expect(getByText('Пожаловаться')).toBeTruthy();
+      expect(getByText('Спам')).toBeTruthy();
+      expect(getByText('Фальшивая анкета')).toBeTruthy();
+      expect(getByText('Примечание (необязательно)')).toBeTruthy();
+      expect(getByPlaceholderText('Дополнительные детали…')).toBeTruthy();
+      expect(getByText('Отправить жалобу')).toBeTruthy();
+      // „Anulează" vine din `common`, nu din `moderation` — se traduce la fel.
+      expect(getByText('Отмена')).toBeTruthy();
+    });
+
+    it('confirmarea de după trimitere urmează limba activă', async () => {
+      sendReport.mockResolvedValueOnce(undefined);
+      await i18n.changeLanguage('en');
+      const { getByText } = renderModal();
+
+      fireEvent.press(getByText('Spam'));
+      fireEvent.press(getByText('Send report'));
+
+      await waitFor(() => expect(getByText('Thanks, we got your report')).toBeTruthy());
+      expect(getByText('Close')).toBeTruthy();
+    });
+
+    it('eroarea de trimitere urmează limba activă', async () => {
+      sendReport.mockRejectedValueOnce(new Error('boom'));
+      await i18n.changeLanguage('en');
+      const { getByText } = renderModal();
+
+      fireEvent.press(getByText('Spam'));
+      fireEvent.press(getByText('Send report'));
+
+      await waitFor(() =>
+        expect(getByText('Couldn’t send the report. Try again.')).toBeTruthy(),
+      );
+    });
   });
 });

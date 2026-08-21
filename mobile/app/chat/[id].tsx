@@ -2,6 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   FlatList,
@@ -30,6 +31,7 @@ const REFETCH_MS = 3000;
 
 export default function ChatScreen() {
   const { colors, typography, spacing, radius } = useTheme();
+  const { t } = useTranslation('chat');
   const router = useRouter();
   const queryClient = useQueryClient();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -58,7 +60,7 @@ export default function ChatScreen() {
     queryFn: fetchChats,
   });
   const summary = chats?.find((c) => c.chatId === chatId);
-  const headerName = summary?.otherName ?? 'Conversație';
+  const headerName = summary?.otherName ?? t('conversation.fallbackTitle');
   const compatibility = summary?.compatibility;
 
   // Marchează dialogul ca citit la deschidere.
@@ -165,7 +167,7 @@ export default function ChatScreen() {
         {typeof compatibility === 'number' ? <CompatBadge score={compatibility} /> : null}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Raportează"
+          accessibilityLabel={t('conversation.report')}
           onPress={() => setReportOpen(true)}
           disabled={!reportedUserId}
           hitSlop={8}
@@ -175,7 +177,7 @@ export default function ChatScreen() {
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Blochează"
+          accessibilityLabel={t('conversation.block')}
           onPress={() => confirmBlock(reportedUserId, summary?.otherName)}
           disabled={!reportedUserId || isBlocking}
           hitSlop={8}
@@ -209,14 +211,14 @@ export default function ChatScreen() {
               <Text
                 style={[typography.body, { color: colors.danger, marginBottom: spacing.lg }]}
               >
-                Nu am putut încărca mesajele.
+                {t('loadError')}
               </Text>
-              <Button label="Reîncearcă" variant="outline" onPress={() => refetch()} />
+              <Button label={t('retry')} variant="outline" onPress={() => refetch()} />
             </View>
           ) : messages.length === 0 ? (
             <View style={styles.center}>
               <Text style={[typography.body, { color: colors.textSecondary }]}>
-                Scrie primul mesaj 👋
+                {t('conversation.empty')}
               </Text>
             </View>
           ) : (
@@ -268,7 +270,7 @@ export default function ChatScreen() {
               },
             ]}
           >
-            Mesajul nu a fost trimis. Reîncearcă.
+            {t('conversation.sendError')}
           </Text>
         ) : null}
 
@@ -286,7 +288,7 @@ export default function ChatScreen() {
           <TextInput
             value={draft}
             onChangeText={setDraft}
-            placeholder="Scrie un mesaj…"
+            placeholder={t('conversation.placeholder')}
             placeholderTextColor={colors.textDisabled}
             maxLength={LIMITS.message}
             multiline
@@ -303,7 +305,7 @@ export default function ChatScreen() {
           />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Trimite"
+            accessibilityLabel={t('conversation.send')}
             disabled={!canSend}
             onPress={handleSend}
             style={({ pressed }) => [
@@ -321,7 +323,9 @@ export default function ChatScreen() {
             {sendMutation.isPending ? (
               <ActivityIndicator color={colors.onAccent} />
             ) : (
-              <Text style={[typography.bodyStrong, { color: colors.onAccent }]}>Trimite</Text>
+              <Text style={[typography.bodyStrong, { color: colors.onAccent }]}>
+                {t('conversation.send')}
+              </Text>
             )}
           </Pressable>
         </View>
