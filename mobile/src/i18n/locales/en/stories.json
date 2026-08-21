@@ -3,5 +3,52 @@
     "add": "Add",
     "addLabel": "Add story",
     "open": "View {{name}}’s stories"
+  },
+  "openSettings": "Open Settings",
+  "messages": {
+    "pickerFailed": "Couldn’t open the gallery. Try again.",
+    "permissionDenied": "We need access to your gallery to pick a photo.",
+    "permissionBlocked": "Gallery access is turned off. Open Settings, enable it for FLIRT, then come back.",
+    "cameraPermission": "We need camera access to take a photo for your story.",
+    "cameraPermissionBlocked": "Camera access is turned off. Open Settings, enable the camera for FLIRT, then come back.",
+    "cameraUnavailable": "We couldn’t start the camera here. You can pick a photo from the gallery instead.",
+    "captureFailed": "Couldn’t take the photo. Try again.",
+    "uploadFailed": "Couldn’t upload the photo. Try again.",
+    "createFailed": "Couldn’t publish the story. Try again."
+  },
+  "camera": {
+    "grant": "Allow camera access",
+    "gallery": "Pick from gallery",
+    "capture": "Take a photo",
+    "flip": "Switch camera"
+  },
+  "compose": {
+    "title": "New story",
+    "hint": "Check the photo, add a caption and publish.",
+    "retake": "Retake",
+    "captionLabel": "Caption (optional)",
+    "captionPlaceholder": "Add a caption…",
+    "publish": "Publish",
+    "permissionTitle": "Permission needed",
+    "rejectedTitle": "Photo rejected"
+  },
+  "viewer": {
+    "loadError": "Couldn’t load the stories.",
+    "retry": "Try again",
+    "empty": "No stories to show.",
+    "previous": "Previous story",
+    "next": "Next story",
+    "delete": "Delete story",
+    "errorTitle": "Something went wrong",
+    "deleteError": "Couldn’t delete the story. Try again.",
+    "replyError": "Couldn’t send the reply. Try again."
+  },
+  "reply": {
+    "placeholder": "Reply to {{name}}…",
+    "placeholderGeneric": "Send a message…",
+    "react": "React with {{emoji}}",
+    "input": "Write a reply to the story",
+    "send": "Send reply",
+    "sendLabel": "Send"
   }
 }

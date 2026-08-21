@@ -17,7 +17,7 @@ import { Linking } from 'react-native';
 import { compressPhoto, ensureLibraryPermission } from '@/features/photos';
 
 import { StoryMediaFile } from './storiesApi';
-import { STORY_MESSAGES } from './storyLimits';
+import { storyMessage } from './storyLimits';
 
 /** Rezultatul alegerii unei poze — nu aruncă niciodată. */
 export type PickStoryResult =
@@ -69,7 +69,7 @@ export async function pickStoryMedia(): Promise<PickStoryResult> {
   try {
     permission = await ensureLibraryPermission();
   } catch {
-    return { status: 'rejected', message: STORY_MESSAGES.pickerFailed };
+    return { status: 'rejected', message: storyMessage('pickerFailed') };
   }
   if (!permission.granted) {
     return { status: 'denied', canAskAgain: permission.canAskAgain };
@@ -89,6 +89,6 @@ export async function pickStoryMedia(): Promise<PickStoryResult> {
 
     return await prepareImage(asset);
   } catch {
-    return { status: 'rejected', message: STORY_MESSAGES.pickerFailed };
+    return { status: 'rejected', message: storyMessage('pickerFailed') };
   }
 }

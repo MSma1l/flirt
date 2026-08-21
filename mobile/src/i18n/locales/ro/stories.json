@@ -3,5 +3,52 @@
     "add": "Adaugă",
     "addLabel": "Adaugă story",
     "open": "Vezi poveștile: {{name}}"
+  },
+  "openSettings": "Deschide setările",
+  "messages": {
+    "pickerFailed": "Nu am putut deschide galeria. Încearcă din nou.",
+    "permissionDenied": "Avem nevoie de acces la galerie ca să alegi o poză.",
+    "permissionBlocked": "Accesul la galerie este oprit. Deschide setările, activează-l pentru FLIRT, apoi revino.",
+    "cameraPermission": "Avem nevoie de acces la cameră ca să faci o poză pentru story.",
+    "cameraPermissionBlocked": "Accesul la cameră este oprit. Deschide setările și activează camera pentru FLIRT, apoi revino.",
+    "cameraUnavailable": "Nu am putut porni camera aici. Poți alege în schimb o poză din galerie.",
+    "captureFailed": "Nu am putut face poza. Încearcă din nou.",
+    "uploadFailed": "Nu am putut încărca poza. Încearcă din nou.",
+    "createFailed": "Nu am putut publica povestea. Încearcă din nou."
+  },
+  "camera": {
+    "grant": "Permite acces la cameră",
+    "gallery": "Alege din galerie",
+    "capture": "Fă o poză",
+    "flip": "Comută camera"
+  },
+  "compose": {
+    "title": "Story nou",
+    "hint": "Verifică poza, adaugă un text și publică.",
+    "retake": "Refă",
+    "captionLabel": "Descriere (opțional)",
+    "captionPlaceholder": "Adaugă un text…",
+    "publish": "Publică",
+    "permissionTitle": "Permisiune necesară",
+    "rejectedTitle": "Poză respinsă"
+  },
+  "viewer": {
+    "loadError": "Nu am putut încărca poveștile.",
+    "retry": "Reîncearcă",
+    "empty": "Nu există povești de afișat.",
+    "previous": "Povestea anterioară",
+    "next": "Povestea următoare",
+    "delete": "Șterge povestea",
+    "errorTitle": "Ceva n-a mers",
+    "deleteError": "Nu am putut șterge povestea. Reîncearcă.",
+    "replyError": "Nu am putut trimite răspunsul. Reîncearcă."
+  },
+  "reply": {
+    "placeholder": "Răspunde-i lui {{name}}…",
+    "placeholderGeneric": "Trimite un mesaj…",
+    "react": "Reacționează cu {{emoji}}",
+    "input": "Scrie un răspuns la poveste",
+    "send": "Trimite răspunsul",
+    "sendLabel": "Trimite"
   }
 }

@@ -2,6 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -45,6 +46,8 @@ type PauseReason = 'hold' | 'reply';
 
 export default function StoryViewerScreen() {
   const { colors, typography, spacing, radius } = useTheme();
+  // „Închide" e acțiune generică — vine din `common`.
+  const { t } = useTranslation(['stories', 'common']);
   const router = useRouter();
   const queryClient = useQueryClient();
   const currentUserId = useAuthStore((s) => s.user?.id);
@@ -97,7 +100,7 @@ export default function StoryViewerScreen() {
       queryClient.invalidateQueries({ queryKey: ['stories'] });
       router.back();
     },
-    onError: () => alertMessage('Ceva n-a mers', 'Nu am putut șterge povestea. Reîncearcă.'),
+    onError: () => alertMessage(t('viewer.errorTitle'), t('viewer.deleteError')),
   });
 
   const replyMutation = useMutation({
@@ -109,7 +112,7 @@ export default function StoryViewerScreen() {
       queryClient.invalidateQueries({ queryKey: ['chats'] });
     },
     onError: () =>
-      alertMessage('Ceva n-a mers', 'Nu am putut trimite răspunsul. Reîncearcă.'),
+      alertMessage(t('viewer.errorTitle'), t('viewer.replyError')),
   });
 
   // Progresul e ținut ÎNTR-UN REF, nu doar în state: la reluarea după pauză
@@ -194,11 +197,11 @@ export default function StoryViewerScreen() {
       ) : isError ? (
         <View style={styles.center}>
           <Text style={[typography.body, styles.centerText, { color: colors.danger }]}>
-            Nu am putut încărca poveștile.
+            {t('viewer.loadError')}
           </Text>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Reîncearcă"
+            accessibilityLabel={t('viewer.retry')}
             onPress={() => refetch()}
             hitSlop={spacing.sm}
             style={{ marginTop: spacing.lg }}
@@ -207,7 +210,7 @@ export default function StoryViewerScreen() {
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Închide"
+            accessibilityLabel={t('common:actions.close')}
             onPress={close}
             hitSlop={spacing.sm}
             style={{ marginTop: spacing.md }}
@@ -218,11 +221,11 @@ export default function StoryViewerScreen() {
       ) : !current ? (
         <View style={styles.center}>
           <Text style={[typography.body, { color: colors.textSecondary }]}>
-            Nu există povești de afișat.
+            {t('viewer.empty')}
           </Text>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Închide"
+            accessibilityLabel={t('common:actions.close')}
             onPress={close}
             hitSlop={spacing.sm}
             style={{ marginTop: spacing.lg }}
@@ -264,7 +267,7 @@ export default function StoryViewerScreen() {
             <View style={[styles.tapRow, styles.boxNone]}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Povestea anterioară"
+                accessibilityLabel={t('viewer.previous')}
                 testID="story-tap-prev"
                 style={styles.tapLeft}
                 onPress={goPrev}
@@ -274,7 +277,7 @@ export default function StoryViewerScreen() {
               />
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Povestea următoare"
+                accessibilityLabel={t('viewer.next')}
                 testID="story-tap-next"
                 style={styles.tapRight}
                 onPress={goNext}
@@ -318,7 +321,7 @@ export default function StoryViewerScreen() {
               <Text style={[typography.bodyStrong, styles.overlayText]}>{group?.name ?? ''}</Text>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Închide"
+                accessibilityLabel={t('common:actions.close')}
                 onPress={close}
                 hitSlop={spacing.md}
               >
@@ -354,7 +357,7 @@ export default function StoryViewerScreen() {
               {isMine ? (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Șterge povestea"
+                  accessibilityLabel={t('viewer.delete')}
                   onPress={() => deleteMutation.mutate(current.id)}
                   disabled={deleteMutation.isPending}
                   style={[
