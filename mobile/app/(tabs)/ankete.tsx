@@ -116,11 +116,47 @@ export default function AnketeScreen() {
   // Poziția cardului de sus pentru gesturi (stabilă între render-uri).
   const position = useRef(new Animated.ValueXY()).current;
 
-  // Când sosesc date noi (reîncărcare feed), pornim iar de la primul card.
+  /** Lista pentru care `index` a fost calculat ultima dată. */
+  const placedForRef = useRef<FeedCard[] | undefined>(undefined);
+  /** Userul a cerut explicit un deck nou („Încarcă din nou") → de la primul card. */
+  const restartRef = useRef(false);
+
+  /**
+   * A venit o listă nouă: ne ținem de CARDUL pe care stătea userul, nu de poziție.
+   *
+   * `data` e o referință nouă la FIECARE refetch de fundal (expiră `staleTime`-ul
+   * de 30s, revine fereastra în față), chiar dacă vin exact aceleași carduri.
+   * Efectul de dinainte era legat de referință și făcea `setIndex(0)`, adică
+   * arunca userul înapoi la primul card în mijlocul răsfoirii.
+   *
+   * Regula acum: dacă acel card mai există în lista nouă, mergem după el; dacă a
+   * dispărut (l-a swipe-uit, serverul nu-l mai dă), pornim de la primul; iar dacă
+   * deck-ul era deja răsfoit până la capăt, rămâne gol. Repornirea explicită de
+   * la primul card rămâne a userului, prin `reloadDeck`.
+   */
   useEffect(() => {
-    setIndex(0);
+    // Efectul rulează și când se schimbă doar `index` (un swipe): atunci lista e
+    // aceeași și n-avem ce reașeza. `index` e aici POZIȚIA DE DINAINTE, fiindcă
+    // sosirea datelor nu schimbă starea locală.
+    if (!data || placedForRef.current === data) return;
+    const previous = placedForRef.current;
+    placedForRef.current = data;
+
+    const anchor = previous?.[index]?.userId ?? null;
+    const next = restartRef.current
+      ? 0
+      : anchor === null
+        ? Math.min(index, data.length)
+        : Math.max(
+            0,
+            data.findIndex((card) => card.userId === anchor),
+          );
+    restartRef.current = false;
+
+    if (next === index) return;
+    setIndex(next);
     position.setValue({ x: 0, y: 0 });
-  }, [data, position]);
+  }, [data, index, position]);
 
   const resetCardPosition = () => {
     Animated.spring(position, {
@@ -349,6 +385,9 @@ export default function AnketeScreen() {
   };
 
   const reloadDeck = () => {
+    // Cerere explicită de deck nou: reperul de mai sus nu are ce căuta aici,
+    // altfel ne-ar duce înapoi la cardul de dinainte în loc de primul.
+    restartRef.current = true;
     setIndex(0);
     refetch();
   };

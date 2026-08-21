@@ -8,9 +8,9 @@
  * trimitea la `/humor`, poarta trimitea în feed — și userul ajungea în feed fără
  * testul de umor, unde `POST /feed/swipe` îi răspundea 403 la fiecare swipe.
  *
- * Acum ecranele NU mai decid: `index`, login, register și quiz-ul trimit userul
- * la `/`, iar de acolo `AuthGuard` (singurul care cheamă `router.replace`) îl
- * duce unde spune `resolveAppRoute`.
+ * Acum ecranele NU mai decid: login, register și quiz-ul trimit userul la `/`,
+ * iar de acolo `AuthGuard` (singurul care navighează) îl duce unde spune
+ * `resolveAppRoute`.
  */
 import { useAuthStore, type AuthStatus } from '@/store/authStore';
 import { useHumorGate } from '@/features/humor/humorGate';
@@ -98,7 +98,7 @@ export function resolveAppRoute(input: AppRouteInput): AppRoute | null {
 
 /**
  * Ruta cerută, filtrată prin „userul e deja acolo?" — ce rămâne e exact ce
- * trebuie dat lui `router.replace`, sau `null` dacă nu e nimic de făcut.
+ * trebuie dat lui `router.dismissTo`, sau `null` dacă nu e nimic de făcut.
  */
 export function navigationTarget(
   route: AppRoute | null,

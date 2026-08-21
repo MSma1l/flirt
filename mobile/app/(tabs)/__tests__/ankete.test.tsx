@@ -101,13 +101,23 @@ function renderScreen() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
-    <QueryClientProvider client={client}>
-      <ThemeProvider>
-        <AnketeScreen />
-      </ThemeProvider>
-    </QueryClientProvider>,
-  );
+  return {
+    ...render(
+      <QueryClientProvider client={client}>
+        <ThemeProvider>
+          <AnketeScreen />
+        </ThemeProvider>
+      </QueryClientProvider>,
+    ),
+    // Expus ca testele să poată provoca un refetch de fundal, exact ca aplicația
+    // când expiră `staleTime`-ul sau revine fereastra în față.
+    client,
+  };
+}
+
+/** Eticheta de accesibilitate a deck-ului — de acolo aflăm CE card se vede. */
+function shownCard(gestures: { props: { accessibilityLabel: string } }): string {
+  return gestures.props.accessibilityLabel;
 }
 
 /**
@@ -468,6 +478,79 @@ describe('AnketeScreen', () => {
 
       await waitFor(() => getByTestId('match-write'));
       expect(lastTilt?.enabled).toBe(false);
+    });
+  });
+
+  describe('un refetch de fundal nu mută userul de pe cardul lui', () => {
+    const deck = () => [card('u1', 'Ana'), card('u2', 'Bogdan'), card('u3', 'Cristina')];
+
+    it('aceleași carduri, listă nouă → rămâne pe cardul curent', async () => {
+      // Regresie: efectul era legat de REFERINȚA listei (`[data]`), iar React
+      // Query dă una nouă la fiecare refetch — chiar cu exact aceleași carduri.
+      // Userul ajuns la al doilea card era aruncat înapoi la primul, în mijlocul
+      // răsfoirii.
+      mockFetchFeed.mockImplementation(() => Promise.resolve(deck()));
+      const { getByTestId, client } = renderScreen();
+
+      await waitFor(() => getByTestId('deck-gestures'));
+      expect(shownCard(getByTestId('deck-gestures'))).toMatch(/Ana/);
+
+      accessibilityAction(getByTestId('deck-gestures'), 'dislike');
+      await waitFor(() =>
+        expect(shownCard(getByTestId('deck-gestures'))).toMatch(/Bogdan/),
+      );
+
+      // Refetch de fundal: aceleași carduri, dar altă listă (altă referință).
+      await act(async () => {
+        client.setQueryData(['feed'], deck());
+        // React Query anunță abonații pe un tick separat.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(shownCard(getByTestId('deck-gestures'))).toMatch(/Bogdan/);
+    });
+
+    it('cardul curent a dispărut din lista nouă → o ia de la primul', async () => {
+      mockFetchFeed.mockImplementation(() => Promise.resolve(deck()));
+      const { getByTestId, client } = renderScreen();
+
+      await waitFor(() => getByTestId('deck-gestures'));
+      accessibilityAction(getByTestId('deck-gestures'), 'dislike');
+      await waitFor(() =>
+        expect(shownCard(getByTestId('deck-gestures'))).toMatch(/Bogdan/),
+      );
+
+      // Serverul nu-l mai dă pe Bogdan (l-a șters, l-a blocat, a ieșit din rază).
+      await act(async () => {
+        client.setQueryData(['feed'], [card('u3', 'Cristina'), card('u4', 'Dan')]);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(shownCard(getByTestId('deck-gestures'))).toMatch(/Cristina/);
+    });
+
+    it('„Încarcă din nou" chiar pornește de la primul card', async () => {
+      // Deck de un card: îl trecem și rămânem pe ecranul gol, de unde userul
+      // cere explicit un deck nou.
+      mockFetchFeed.mockImplementation(() => Promise.resolve([card('u1', 'Ana')]));
+      const { getByTestId, client } = renderScreen();
+
+      await waitFor(() => getByTestId('deck-gestures'));
+      accessibilityAction(getByTestId('deck-gestures'), 'dislike');
+      await waitFor(() => getByTestId('deck-reload'));
+
+      // Lista nouă îl conține tot pe Ana, dar pe altă poziție: reîncărcarea
+      // cerută de user înseamnă „de la primul card", nu „unde eram".
+      mockFetchFeed.mockImplementation(() =>
+        Promise.resolve([card('u5', 'Elena'), card('u1', 'Ana')]),
+      );
+      await act(async () => {
+        fireEvent.press(getByTestId('deck-reload'));
+      });
+
+      await waitFor(() =>
+        expect(shownCard(getByTestId('deck-gestures'))).toMatch(/Elena/),
+      );
     });
   });
 

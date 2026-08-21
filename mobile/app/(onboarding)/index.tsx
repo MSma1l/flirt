@@ -1,6 +1,5 @@
 /** Wizard de anketă (multi-pas într-un ecran) — chestionarul de înregistrare. */
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -139,7 +138,6 @@ function ChipGroup({
 }
 
 export default function AnketaWizard() {
-  const router = useRouter();
   const { t } = useTranslation('onboarding');
   const { current: language } = useLanguage();
   const { colors, typography, spacing, radius } = useTheme();
@@ -293,11 +291,15 @@ export default function AnketaWizard() {
       // drept complet, iar userul ajungea în feed unde nimic nu-i mergea.
       await refreshUser();
       reset();
-      // NU alegem noi ecranul următor (nici măcar `/humor`, deși de obicei el
-      // urmează): `/` înseamnă „decide poarta". Testul de umor, pozele lipsă sau
-      // rămânerea în onboarding sunt toate cazuri pe care le știe `AuthGuard`,
-      // într-un singur loc.
-      router.replace('/');
+      // Aici NU se navighează, deloc. `refreshUser()` a aprins deja
+      // `profile_completed`, iar `AuthGuard` vede schimbarea și duce userul mai
+      // departe — la quiz, la poze sau în feed, după caz.
+      //
+      // Aveam aici `router.replace('/')`, care nu făcea NIMIC: `app/index.tsx`
+      // și `app/(onboarding)/index.tsx` răspund amândouă la `/`, iar expo-router
+      // alege ruta din grupul în care ești deja. Așa că „ieșirea" din wizard
+      // remonta wizardul — golit de `reset()`, adică anketa părea că o ia de la
+      // capăt — și abia poarta îl scotea de acolo.
     } catch (error) {
       setUploadingIndex(null);
       setPhotosError(t('errors.uploadRetry', { reason: photoErrorText(error) }));
