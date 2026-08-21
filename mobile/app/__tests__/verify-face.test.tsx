@@ -3,10 +3,11 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
 import { Linking } from 'react-native';
 
-import { CAPTURE_FAILED_MESSAGE, FACE_MESSAGES } from '@/features/verification';
+import { cameraMessage, faceVerifyMessage } from '@/features/verification';
 import { ThemeProvider } from '@theme/index';
 
 import VerifyFaceScreen from '../verify-face';
+import i18n from '@/i18n';
 
 // Mock router + Stack.Screen (evită expo-router real).
 const mockBack = jest.fn();
@@ -129,7 +130,7 @@ describe('VerifyFaceScreen — permisiune acordată', () => {
     fireEvent.press(getByTestId('verify-button'));
 
     await waitFor(() => expect(getByTestId('verify-error')).toBeTruthy());
-    expect(getByText(FACE_MESSAGES.no_match)).toBeTruthy();
+    expect(getByText(faceVerifyMessage('no_match'))).toBeTruthy();
     expect(queryByTestId('verify-success')).toBeNull();
   });
 
@@ -140,7 +141,7 @@ describe('VerifyFaceScreen — permisiune acordată', () => {
     fireEvent.press(getByTestId('verify-button'));
 
     await waitFor(() => expect(getByTestId('verify-error')).toBeTruthy());
-    expect(getByText(FACE_MESSAGES.network)).toBeTruthy();
+    expect(getByText(faceVerifyMessage('network'))).toBeTruthy();
     expect(queryByTestId('verify-success')).toBeNull();
   });
 
@@ -150,7 +151,7 @@ describe('VerifyFaceScreen — permisiune acordată', () => {
 
     fireEvent.press(getByTestId('verify-button'));
 
-    await waitFor(() => expect(getByText(FACE_MESSAGES.unavailable)).toBeTruthy());
+    await waitFor(() => expect(getByText(faceVerifyMessage('unavailable'))).toBeTruthy());
   });
 
   it('captura eșuează → mesaj clar și NIMIC nu se încarcă', async () => {
@@ -159,7 +160,7 @@ describe('VerifyFaceScreen — permisiune acordată', () => {
 
     fireEvent.press(getByTestId('verify-button'));
 
-    await waitFor(() => expect(getByText(CAPTURE_FAILED_MESSAGE)).toBeTruthy());
+    await waitFor(() => expect(getByText(cameraMessage('captureFailed'))).toBeTruthy());
     expect(api.post).not.toHaveBeenCalled();
   });
 
@@ -213,5 +214,54 @@ describe('VerifyFaceScreen — navigare', () => {
     const { getByLabelText } = renderScreen();
     fireEvent.press(getByLabelText('Închide'));
     expect(mockBack).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('VerifyFaceScreen — i18n', () => {
+  afterEach(async () => {
+    await i18n.changeLanguage('ro');
+  });
+
+  it('titlul, explicația și acțiunea urmează limba activă', async () => {
+    await i18n.changeLanguage('ru');
+    const { getByText } = renderScreen();
+
+    expect(getByText('Проверка')).toBeTruthy();
+    expect(
+      getByText(
+        'Подтвердите, что профиль ваш, — быстрым селфи. Проверка даёт знак доверия и помогает другим понять, что вы реальный человек.',
+      ),
+    ).toBeTruthy();
+    expect(getByText('Сделать селфи и проверить')).toBeTruthy();
+    expect(
+      getByText('Селфи используется только для проверки и не появится в вашем профиле.'),
+    ).toBeTruthy();
+  });
+
+  /**
+   * Verdictul negativ vine prin `faceVerifyMessage`, dintr-un modul care NU e
+   * componentă: dovada că textul urmează limba activă, nu pe cea de la import.
+   */
+  it('verdictul negativ e afișat în limba activă', async () => {
+    mockTakePicture.mockResolvedValue({ uri: 'file:///selfie.jpg', width: 800, height: 800 });
+    (api.post as jest.Mock).mockResolvedValue({
+      data: { verified: false, similarity: 0 },
+    });
+    await i18n.changeLanguage('en');
+
+    const { getByTestId, getByText } = renderScreen();
+    fireEvent.press(getByTestId('verify-button'));
+
+    await waitFor(() => expect(getByTestId('verify-error')).toBeTruthy());
+    expect(getByText(faceVerifyMessage('no_match'))).toBeTruthy();
+    expect(getByText(/We couldn’t confirm it’s you/)).toBeTruthy();
+  });
+
+  it('mesajul de permisiune blocată urmează limba activă', async () => {
+    mockPermission = { granted: false, canAskAgain: false, status: 'denied' };
+    await i18n.changeLanguage('en');
+    const { getByText } = renderScreen();
+
+    expect(getByText(/Camera access is turned off/)).toBeTruthy();
   });
 });

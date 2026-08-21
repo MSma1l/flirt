@@ -9,7 +9,7 @@
  */
 import { compressPhoto, LocalPhoto } from '@/features/photos';
 
-import { CAPTURE_FAILED_MESSAGE } from './messages';
+import { cameraMessage } from './messages';
 
 /** Tipul MIME al pozei livrate de cameră (expo-camera scrie JPEG). */
 const CAPTURE_MIME_TYPE = 'image/jpeg';
@@ -44,7 +44,7 @@ export type SelfieCaptureResult =
 export async function captureSelfie(camera: SelfieCamera): Promise<SelfieCaptureResult> {
   try {
     const picture = await camera.takePictureAsync({ quality: 1, exif: false });
-    if (!picture?.uri) return { status: 'rejected', message: CAPTURE_FAILED_MESSAGE };
+    if (!picture?.uri) return { status: 'rejected', message: cameraMessage('captureFailed') };
 
     const compressed = await compressPhoto({
       uri: picture.uri,
@@ -56,6 +56,6 @@ export async function captureSelfie(camera: SelfieCamera): Promise<SelfieCapture
 
     return { status: 'captured', photo: compressed.photo };
   } catch {
-    return { status: 'rejected', message: CAPTURE_FAILED_MESSAGE };
+    return { status: 'rejected', message: cameraMessage('captureFailed') };
   }
 }

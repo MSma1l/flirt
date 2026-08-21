@@ -6,8 +6,8 @@ Inventarul textelor **încă scrise în cod**, în română, din `mobile/`. Fiec
 
 **Stare:** măsurat pe `main` la commit-ul de merge al PR #10 (`312ab98`), după migrarea zonelor
 auth, onboarding, feed, chat, moderare, setări, abonamente, passport, bilet și favorite.
-Zona de **story-uri** a fost închisă separat, în `feat/translate-stories` — secțiunea ei a fost
-scoasă de aici.
+Zonele de **story-uri** și **verificare** au fost închise separat, în
+`feat/translate-stories` și `feat/translate-verification` — secțiunile lor au fost scoase de aici.
 
 **Regula de bază** (din [`mobile/src/i18n/README.md`](../mobile/src/i18n/README.md)):
 un ecran ⇒ un namespace ⇒ fișiere disjuncte. Namespace-urile există deja toate, în toate cele
@@ -27,7 +27,10 @@ un ecran ⇒ un namespace ⇒ fișiere disjuncte. Namespace-urile există deja t
    - [`src/features/billing/iap.ts`](../mobile/src/features/billing/iap.ts) — dicționarul de mesaje
      de achiziție, prin `MESSAGE_KEY` + `msg()`;
    - [`src/features/stories/storyLimits.ts`](../mobile/src/features/stories/storyLimits.ts) —
-     același tipar, `MESSAGE_KEY` + `storyMessage()`, citit din trei module diferite.
+     același tipar, `MESSAGE_KEY` + `storyMessage()`, citit din trei module diferite;
+   - [`src/features/verification/messages.ts`](../mobile/src/features/verification/messages.ts) —
+     varianta cu **coduri de la server**: codul rămâne cheia (`REASON_KEY`), doar textul trece în
+     catalog. Modelul de urmat când un modul mapează un răspuns de backend la un mesaj.
 
    Motivul: dacă traducerea se citește o singură dată, la import, prima folosire îngheață limba
    pentru toată sesiunea.
@@ -51,21 +54,7 @@ un ecran ⇒ un namespace ⇒ fișiere disjuncte. Namespace-urile există deja t
 
 ## Sarcini
 
-### 1. Verificare prin selfie — namespace `verification` · ≈19 texte
-
-**Singurul namespace încă gol** din cele 14.
-
-| Fișier | Exemple |
-|---|---|
-| `app/verify-face.tsx` | textul introductiv („Confirmă că profilul îți aparține printr-un selfie rapid…"), „Poziționează-ți fața în cadru", „Fă un selfie și verifică", „Selfie-ul este folosit doar pentru verificare și nu apare în profilul tău." |
-| `src/features/verification/messages.ts` | 8 mesaje pe coduri de eroare (`no_face`, `too_large`, `rate_limited`, …) + 3 despre accesul la cameră |
-
-**Capcană:** `messages.ts` mapează **coduri de la server** la texte. Codul rămâne cheia; doar textul
-trece în catalog. Structura e deja bună pentru asta.
-
----
-
-### 2. Evenimente — namespace `events` · ≈9 texte
+### 1. Evenimente — namespace `events` · ≈9 texte
 
 Namespace-ul are deja `detail.*` (ecranul unui eveniment). Lipsesc lista și harta.
 
@@ -79,7 +68,7 @@ Atributul trebuie să urmeze limba activă odată cu textele.
 
 ---
 
-### 3. Validare — 3 fișiere · ≈30 de texte
+### 2. Validare — 3 fișiere · ≈30 de texte
 
 Semnalat deja în `src/i18n/README.md` ca sarcină separată, fiindcă atinge mai multe ecrane deodată.
 
@@ -99,7 +88,7 @@ onboarding ȘI în editorul de profil). Recomandare: `profile`, fiindcă acolo s
 
 ---
 
-### 4. Mărunțișuri vizibile · ≈20 de texte
+### 3. Mărunțișuri vizibile · ≈20 de texte
 
 Se pot face separat sau într-un singur pas — nu depind unul de altul.
 
@@ -182,8 +171,8 @@ grep -nE "['\"][A-ZĂÎȘȚÂ][^'\"]*[ăîâșț][^'\"]*['\"]" <fisier> | grep -
 
 | Namespace | Stare |
 |---|---|
-| `common`, `auth`, `onboarding`, `feed`, `chat`, `profile`, `settings`, `billing`, `moderation`, `social`, `humor`, `stories` | ✅ ecranele principale migrate |
+| toate, în afară de cele de mai jos | ✅ ecranele principale migrate |
 | `events` | 🔧 doar ecranul unui eveniment |
-| `verification` | ❌ gol |
 
-Textele rămase sunt cele din „Sarcini": ≈78 de șiruri, în 13 fișiere.
+Textele rămase sunt cele din „Sarcini": ≈59 de șiruri, în 11 fișiere.
+Nu mai există niciun namespace gol.
