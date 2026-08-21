@@ -52,5 +52,22 @@
       "tooLarge": "Poza depășește limita de {{limit}}.",
       "uploadFailed": "Nu am putut încărca poza. Încearcă din nou."
     }
+  },
+  "passport": {
+    "loadError": "Nu am putut încărca Flirt Passport.",
+    "retry": "Reîncearcă",
+    "empty": "Încă nu ai ștampile — participă la un eveniment!",
+    "discountsTitle": "Reducerile mele",
+    "stamp": "Ștampilă {{event}}",
+    "discountCard": {
+      "badge": "CARD REDUCERI",
+      "entriesLeft_one": "{{count}} intrare rămasă din {{total}}",
+      "entriesLeft_few": "{{count}} intrări rămase din {{total}}",
+      "entriesLeft_other": "{{count}} de intrări rămase din {{total}}",
+      "a11y_one": "Card reduceri: {{count}} intrare rămasă din {{total}}",
+      "a11y_few": "Card reduceri: {{count}} intrări rămase din {{total}}",
+      "a11y_other": "Card reduceri: {{count}} de intrări rămase din {{total}}",
+      "hint": "Arată cardul la intrarea în evenimentele partenere."
+    }
   }
 }

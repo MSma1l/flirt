@@ -2,6 +2,7 @@
 import React from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
+import i18n from '@/i18n';
 import { ThemeColors } from '@theme/colors';
 import { useTheme } from '@theme/index';
 
@@ -36,7 +37,10 @@ export function formatEventDate(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   try {
-    return date.toLocaleDateString('ro-RO', {
+    // Limba interfeței, nu fix `ro-RO`: altfel un user rus vedea luna scrisă
+    // românește — și pe cardul de eveniment, și pe ștampilele din Flirt Passport.
+    // Funcția nu e componentă, deci citește din instanța globală, ca `dialog.ts`.
+    return date.toLocaleDateString(i18n.language, {
       day: 'numeric',
       month: 'long',
       hour: '2-digit',

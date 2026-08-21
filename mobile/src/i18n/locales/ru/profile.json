@@ -53,5 +53,24 @@
       "tooLarge": "Фото превышает лимит в {{limit}}.",
       "uploadFailed": "Не удалось загрузить фото. Попробуйте ещё раз."
     }
+  },
+  "passport": {
+    "loadError": "Не удалось загрузить Flirt Passport.",
+    "retry": "Повторить",
+    "empty": "У вас пока нет штампов — сходите на мероприятие!",
+    "discountsTitle": "Мои скидки",
+    "stamp": "Штамп {{event}}",
+    "discountCard": {
+      "badge": "КАРТА СКИДОК",
+      "entriesLeft_one": "Остался {{count}} вход из {{total}}",
+      "entriesLeft_few": "Осталось {{count}} входа из {{total}}",
+      "entriesLeft_many": "Осталось {{count}} входов из {{total}}",
+      "entriesLeft_other": "Осталось {{count}} входа из {{total}}",
+      "a11y_one": "Карта скидок: остался {{count}} вход из {{total}}",
+      "a11y_few": "Карта скидок: осталось {{count}} входа из {{total}}",
+      "a11y_many": "Карта скидок: осталось {{count}} входов из {{total}}",
+      "a11y_other": "Карта скидок: осталось {{count}} входа из {{total}}",
+      "hint": "Покажите карту на входе в партнёрские мероприятия."
+    }
   }
 }

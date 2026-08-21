@@ -7,6 +7,7 @@
  */
 import type { Purchase } from 'expo-iap';
 
+import i18n from '@/i18n';
 import type { Subscription } from '@/features/subscription/types';
 
 /* ------------------------------- Mock-uri ------------------------------- */
@@ -379,5 +380,36 @@ describe('resumeUnfinishedPurchases', () => {
     await expect(resumeUnfinishedPurchases()).resolves.toEqual([]);
     expect(mockServerPurchase).not.toHaveBeenCalled();
     expect(mockFinishTransaction).not.toHaveBeenCalled();
+  });
+});
+
+/* --------------------------------- i18n --------------------------------- */
+
+/**
+ * Modulul nu e o componentă, deci nu poate folosi `useTranslation`: mesajele le
+ * ia din instanța globală de i18n, la momentul aruncării erorii. Asta e ce
+ * verificăm aici — nu textul în sine, ci faptul că vine din catalog ȘI că
+ * urmează limba activă chiar dacă modulul a fost încărcat demult.
+ */
+describe('mesajele erorilor', () => {
+  afterEach(async () => {
+    await i18n.changeLanguage('ro');
+  });
+
+  it('vin din catalog, în limba activă', async () => {
+    mockInitConnection.mockResolvedValue(false);
+    await expect(connectStore()).rejects.toMatchObject({
+      kind: 'unavailable',
+      message: i18n.t('billing:iap.unavailable'),
+    });
+  });
+
+  it('se traduc la fiecare aruncare, nu o dată la încărcarea modulului', async () => {
+    await i18n.changeLanguage('ru');
+    mockInitConnection.mockResolvedValue(false);
+
+    await expect(connectStore()).rejects.toMatchObject({
+      message: 'Магазин недоступен на этом устройстве. Проверьте подключение и аккаунт в App Store.',
+    });
   });
 });

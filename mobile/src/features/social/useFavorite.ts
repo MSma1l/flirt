@@ -10,6 +10,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { addFavorite, fetchFavorites } from '@/features/social/socialApi';
 import { alertMessage } from '@/utils/dialog';
@@ -25,6 +26,7 @@ interface FavoriteApi {
 
 export function useFavorite(targetUserId: string): FavoriteApi {
   const queryClient = useQueryClient();
+  const { t } = useTranslation('social');
 
   const { data } = useQuery({
     queryKey: ['favorites'],
@@ -39,7 +41,7 @@ export function useFavorite(targetUserId: string): FavoriteApi {
       queryClient.invalidateQueries({ queryKey: ['favorites'] });
     },
     onError: () => {
-      alertMessage('Ceva n-a mers', 'Nu am putut adăuga la favorite. Reîncearcă.');
+      alertMessage(t('favorites.addErrorTitle'), t('favorites.addErrorBody'));
     },
   });
 

@@ -23,5 +23,66 @@
     "renewNote": "Abonamentul se reînnoiește automat lunar, la prețul afișat, dacă nu îl anulezi cu cel puțin 24 de ore înainte de finalul perioadei curente. Îl poți gestiona sau anula oricând din setările contului tău.",
     "terms": "Termeni și condiții",
     "privacy": "Politica de confidențialitate"
+  },
+  "iap": {
+    "cancelled": "Ai anulat achiziția.",
+    "unavailable": "Magazinul nu este disponibil pe acest dispozitiv. Verifică-ți conexiunea și contul din App Store.",
+    "productMissing": "Planul nu este disponibil în magazin momentan. Încearcă mai târziu sau alege alt plan.",
+    "notConfirmed": "Plata a fost înregistrată de magazin, dar nu am putut activa abonamentul acum. Nu vei fi taxat din nou — reluăm activarea automat când revii în aplicație.",
+    "alreadyOwned": "Ai deja acest abonament. Apasă „Restaurează achizițiile” ca să îl reactivezi pe acest dispozitiv.",
+    "noReceipt": "Magazinul nu a întors dovada de plată. Reîncearcă achiziția.",
+    "inProgress": "O achiziție este deja în curs. Așteaptă finalizarea ei.",
+    "unknown": "Nu am putut finaliza achiziția. Reîncearcă."
+  },
+  "plans": {
+    "premium": {
+      "title": "Premium",
+      "features": [
+        "Swipe nelimitat",
+        "Fără timer și fără reclamă",
+        "Undo nelimitat",
+        "Prioritate în feed"
+      ]
+    },
+    "no_ads": {
+      "title": "Fără reclamă",
+      "features": [
+        "Dezactivează bannerele și reclama video",
+        "Fără ridicarea limitei de swipe"
+      ]
+    },
+    "ai_bot": {
+      "title": "AI-bot în chat",
+      "features": [
+        "Sugestii de mesaje extinse",
+        "Analiză de compatibilitate peste limita free"
+      ]
+    },
+    "all_inclusive": {
+      "title": "Totul inclus",
+      "features": [
+        "Premium complet",
+        "Fără reclamă",
+        "AI-bot în chat",
+        "Reduceri la evenimente",
+        "Preț redus față de cumpărarea separată"
+      ]
+    },
+    "card_5": {
+      "title": "Card reduceri — 5 intrări",
+      "features": [
+        "Acces la reducerile de la evenimente",
+        "5 intrări (check-in-uri) cu reducere",
+        "Se consumă câte o intrare la fiecare check-in"
+      ]
+    },
+    "card_10": {
+      "title": "Card reduceri — 10 intrări",
+      "features": [
+        "Acces la reducerile de la evenimente",
+        "10 intrări (check-in-uri) cu reducere",
+        "Se consumă câte o intrare la fiecare check-in"
+      ]
+    }
   }
 }

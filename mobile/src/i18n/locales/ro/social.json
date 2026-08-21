@@ -35,5 +35,36 @@
       "body": "Plata a fost confirmată. Prezintă acest bilet la intrare.",
       "code": "Cod bilet"
     }
+  },
+  "myTicket": {
+    "title": "Biletul meu Flirt Party",
+    "hint": "Prezintă acest bilet la intrare. Este valabil o singură dată.",
+    "code": "Cod bilet",
+    "used": "FOLOSIT",
+    "unused": "NEFOLOSIT",
+    "loadError": "Nu am putut încărca biletul.",
+    "retry": "Reîncearcă"
+  },
+  "favorites": {
+    "title": "Favorite",
+    "empty": "Încă n-ai dat like nimănui și n-ai marcat pe nimeni cu ★.",
+    "emptyHint": "Profilurile apreciate în deck apar aici automat.",
+    "loadError": "Nu am putut încărca lista.",
+    "retry": "Reîncearcă",
+    "loadMore": "Încarcă mai multe",
+    "loadMoreError": "Nu am putut încărca mai multe.",
+    "sections": {
+      "likesTitle": "Le-ai dat like",
+      "likesHint": "Profilurile pe care le-ai apreciat cu swipe dreapta.",
+      "favoritesTitle": "Favorite ★",
+      "favoritesHint": "Profilurile pe care le-ai marcat manual cu ★."
+    },
+    "remove": "Elimină {{name}} din favorite",
+    "add": "Adaugă {{name}} la favorite",
+    "already": "{{name}} e deja la favorite",
+    "removeErrorTitle": "Ceva n-a mers",
+    "removeErrorBody": "Nu am putut elimina din favorite. Reîncearcă.",
+    "addErrorTitle": "Ceva n-a mers",
+    "addErrorBody": "Nu am putut adăuga la favorite. Reîncearcă."
   }
 }

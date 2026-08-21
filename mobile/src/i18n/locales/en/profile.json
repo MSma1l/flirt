@@ -51,5 +51,20 @@
       "tooLarge": "The photo is over the {{limit}} limit.",
       "uploadFailed": "We could not upload the photo. Try again."
     }
+  },
+  "passport": {
+    "loadError": "Couldn’t load Flirt Passport.",
+    "retry": "Try again",
+    "empty": "No stamps yet — go to an event!",
+    "discountsTitle": "My discounts",
+    "stamp": "Stamp {{event}}",
+    "discountCard": {
+      "badge": "DISCOUNT CARD",
+      "entriesLeft_one": "{{count}} entry left of {{total}}",
+      "entriesLeft_other": "{{count}} entries left of {{total}}",
+      "a11y_one": "Discount card: {{count}} entry left of {{total}}",
+      "a11y_other": "Discount card: {{count}} entries left of {{total}}",
+      "hint": "Show the card at the entrance to partner events."
+    }
   }
 }
