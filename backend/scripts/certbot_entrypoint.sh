@@ -9,23 +9,29 @@
 # Cum funcționează:
 #   1. nginx pornește ORICUM (self-signed) și servește /.well-known/acme-challenge/
 #      pe :80 din webroot-ul partajat.
-#   2. Scriptul ăsta cere certificatul REAL pentru AMBELE nume (api + admin), într-un
-#      singur certificat (lineage numit după $DOMAIN).
+#   2. Scriptul ăsta cere certificatul REAL pentru TOATE numele setate (api + admin
+#      + Telegram Mini App), într-un singur certificat (lineage numit după $DOMAIN).
 #   3. nginx observă schimbarea certificatului (verifică la fiecare minut) și dă reload.
 #   4. La fiecare $CERTBOT_INTERVAL_SECONDS reluăm: `--keep-until-expiring` face
 #      operația inofensivă dacă certificatul e încă valid (no-op), și reînnoiește
 #      când mai sunt <30 de zile.
 #
 # Rezistență la realitate:
-#   - dacă DNS-ul pentru `admin` nu e încă propagat, emiterea pentru AMBELE nume
-#     eșuează → reîncercăm DOAR cu $DOMAIN, ca API-ul să aibă totuși TLS real.
-#     La ciclul următor, când DNS-ul admin apare, `--expand` adaugă și al doilea nume.
+#   - dacă DNS-ul pentru `admin` sau pentru Mini App nu e încă propagat, emiterea
+#     pentru setul COMPLET eșuează → coborâm treptat: întâi fără Mini App (numele cel
+#     mai nou, deci cel mai probabil fără DNS), apoi DOAR cu $DOMAIN, ca API-ul să aibă
+#     oricum TLS real. La un ciclu următor, când DNS-ul apare, `--expand` adaugă
+#     automat numele lipsă în ACELAȘI certificat.
 #   - eșec → reîncercare peste $CERTBOT_RETRY_SECONDS (implicit 1h). Let's Encrypt
 #     limitează la 5 validări eșuate/oră/hostname: nu ne batem cu limita.
 set -eu
 
 DOMAIN="${DOMAIN:-localhost}"
 ADMIN_DOMAIN="${ADMIN_DOMAIN:-}"
+# Telegram Mini App — OPȚIONAL. Gol (sau nesetat) = exact comportamentul de
+# dinainte, cu două nume. Nu se inventează niciun default: un nume greșit în
+# cerere ar face să eșueze emiterea pentru TOATE numele.
+MINIAPP_DOMAIN="${MINIAPP_DOMAIN:-}"
 CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
 WEBROOT=/var/www/certbot
 INTERVAL="${CERTBOT_INTERVAL_SECONDS:-43200}"      # 12h
@@ -53,9 +59,10 @@ if [ -z "$CERTBOT_EMAIL" ]; then
     while :; do sleep 86400 & wait ${!}; done
 fi
 
-# Numele cerute: api + (opțional) admin.
+# Numele cerute: api + (opțional) admin + (opțional) Mini App.
 DOMAIN_ARGS="-d $DOMAIN"
 [ -n "$ADMIN_DOMAIN" ] && DOMAIN_ARGS="$DOMAIN_ARGS -d $ADMIN_DOMAIN"
+[ -n "$MINIAPP_DOMAIN" ] && DOMAIN_ARGS="$DOMAIN_ARGS -d $MINIAPP_DOMAIN"
 
 issue() {
     # $1 = lista de `-d ...`
@@ -79,13 +86,31 @@ ensure_cert() {
         return 0
     fi
 
-    if [ -n "$ADMIN_DOMAIN" ]; then
-        log "EȘEC pe setul complet (probabil DNS-ul pentru $ADMIN_DOMAIN nu e gata)."
-        log "Reîncerc DOAR cu $DOMAIN — API-ul trebuie să aibă TLS real chiar dacă"
-        log "panoul de admin mai așteaptă DNS-ul."
-        if issue "-d $DOMAIN"; then
-            log "OK — certificat emis pentru $DOMAIN. Voi adăuga $ADMIN_DOMAIN automat"
+    # Treapta 1: scoatem Mini App-ul (cel mai nou nume ⇒ cel mai probabil fără DNS),
+    # dar păstrăm admin-ul. Doar dacă Mini App-ul chiar era în cerere.
+    if [ -n "$MINIAPP_DOMAIN" ]; then
+        log "EȘEC pe setul complet (probabil DNS-ul pentru $MINIAPP_DOMAIN nu e gata)."
+        partial="-d $DOMAIN"
+        [ -n "$ADMIN_DOMAIN" ] && partial="$partial -d $ADMIN_DOMAIN"
+        log "Reîncerc fără Mini App: $partial"
+        if issue "$partial"; then
+            log "OK — certificat emis fără $MINIAPP_DOMAIN. Îl adaug automat (--expand)"
             log "la un ciclu următor, când DNS-ul lui va fi corect."
+            return 0
+        fi
+    fi
+
+    # Treapta 2 (neschimbată față de varianta cu două domenii): doar API-ul.
+    # Aplicația mobilă NU are voie să rămână fără TLS real pentru că un frontend
+    # web mai așteaptă DNS. Condiția pe $ADMIN_DOMAIN evită o încercare DUBLĂ:
+    # dacă admin-ul e gol, treapta 1 a cerut deja exact `-d $DOMAIN`.
+    if [ -n "$ADMIN_DOMAIN" ]; then
+        log "EȘEC și pe setul redus (probabil DNS-ul pentru $ADMIN_DOMAIN nu e gata)."
+        log "Reîncerc DOAR cu $DOMAIN — API-ul trebuie să aibă TLS real chiar dacă"
+        log "panourile web mai așteaptă DNS-ul."
+        if issue "-d $DOMAIN"; then
+            log "OK — certificat emis pentru $DOMAIN. Voi adăuga celelalte nume automat"
+            log "la un ciclu următor, când DNS-ul lor va fi corect."
             return 0
         fi
     fi

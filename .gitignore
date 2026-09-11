@@ -16,6 +16,7 @@ node_modules/
 dist/
 web-build/
 mobile/.env
+mobile/.env.local
 npm-debug.*
 *.tsbuildinfo
 

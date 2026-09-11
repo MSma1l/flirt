@@ -8,9 +8,9 @@
 # Logica:
 #   1. Dacă există certificat Let's Encrypt pentru $DOMAIN → îl folosim (symlink,
 #      ca reînnoirile certbot să fie preluate fără să rescriem nimic). Certificatul
-#      e emis pentru AMBELE nume (api + admin) într-un singur lineage, numit după
-#      $DOMAIN (primul `-d` dat lui certbot).
-#   2. Altfel → generăm un certificat SELF-SIGNED, cu ambele nume în SAN. Serverul
+#      e emis pentru TOATE numele setate (api + admin + Telegram Mini App) într-un
+#      singur lineage, numit după $DOMAIN (primul `-d` dat lui certbot).
+#   2. Altfel → generăm un certificat SELF-SIGNED, cu toate numele în SAN. Serverul
 #      pornește imediat și poate răspunde la provocarea ACME pe :80, ca certbot să
 #      emită certificatul REAL. Fără asta ai un ou-și-găina: nginx nu pornește fără
 #      cert, certbot nu poate emite cert fără nginx care să servească challenge-ul.
@@ -21,12 +21,16 @@ set -e
 CERT_DIR=/etc/nginx/certs
 DOMAIN="${DOMAIN:-localhost}"
 ADMIN_DOMAIN="${ADMIN_DOMAIN:-admin.localhost}"
+# Mini App-ul Telegram: numele public poate lipsi (nu e încă decis). Rămâne GOL —
+# nu inventăm un default aici, ca să nu bage un nume inutil în SAN-ul
+# certificatului. Tot ce ține de el e condiționat mai jos.
+MINIAPP_DOMAIN="${MINIAPP_DOMAIN:-}"
 LE_DIR="/etc/letsencrypt/live/${DOMAIN}"
 
 mkdir -p "$CERT_DIR"
 
 if [ -f "$LE_DIR/fullchain.pem" ] && [ -f "$LE_DIR/privkey.pem" ]; then
-    echo "[cert] Folosesc certificatul Let's Encrypt pentru ${DOMAIN} (+ ${ADMIN_DOMAIN})"
+    echo "[cert] Folosesc certificatul Let's Encrypt pentru ${DOMAIN} (+ ${ADMIN_DOMAIN}${MINIAPP_DOMAIN:+ + ${MINIAPP_DOMAIN}})"
     ln -sf "$LE_DIR/fullchain.pem" "$CERT_DIR/fullchain.pem"
     ln -sf "$LE_DIR/privkey.pem"   "$CERT_DIR/privkey.pem"
     exit 0
@@ -46,12 +50,18 @@ if ! command -v openssl >/dev/null 2>&1; then
     apk add --no-cache openssl >/dev/null
 fi
 
+# SAN-ul: api + admin + (doar dacă e setat) Mini App. Fără MINIAPP_DOMAIN, lista
+# rămâne EXACT cea de dinainte — cazul cu două domenii nu se schimbă cu nimic.
+SAN="DNS:${DOMAIN},DNS:${ADMIN_DOMAIN}"
+[ -n "$MINIAPP_DOMAIN" ] && SAN="${SAN},DNS:${MINIAPP_DOMAIN}"
+SAN="${SAN},DNS:localhost,IP:127.0.0.1"
+
 rm -f "$CERT_DIR/fullchain.pem" "$CERT_DIR/privkey.pem"
 openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
     -keyout "$CERT_DIR/privkey.pem" \
     -out "$CERT_DIR/fullchain.pem" \
     -subj "/CN=${DOMAIN}" \
-    -addext "subjectAltName=DNS:${DOMAIN},DNS:${ADMIN_DOMAIN},DNS:localhost,IP:127.0.0.1" \
+    -addext "subjectAltName=${SAN}" \
     2>/dev/null
 
-echo "[cert] Gata (self-signed, valabil 365 zile, SAN: ${DOMAIN}, ${ADMIN_DOMAIN})."
+echo "[cert] Gata (self-signed, valabil 365 zile, SAN: ${SAN})."

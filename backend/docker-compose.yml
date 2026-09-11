@@ -6,10 +6,11 @@
 # (pornind de la `.env.production.example`). Restul e automat:
 #   - migrațiile Alembic rulează la pornirea containerului `api` (entrypoint.sh);
 #   - nginx pornește din prima, chiar fără certificat (self-signed generat pe loc);
-#   - `certbot` cere singur certificatul REAL pentru api + admin, iar nginx îl preia
-#     și dă reload în ≤1 minut, fără downtime;
-#   - panoul de admin (folderul `admin/`, alt agent) e construit și publicat automat;
-#     dacă lipsește sau build-ul lui pică, backend-ul pornește NORMAL.
+#   - `certbot` cere singur certificatul REAL pentru api + admin + Telegram Mini App
+#     (numele setate), iar nginx îl preia și dă reload în ≤1 minut, fără downtime;
+#   - panoul de admin (folderul `admin/`) și Telegram Mini App-ul (folderul
+#     `miniapp/`) sunt construite și publicate automat; dacă lipsesc sau build-ul
+#     lor pică, backend-ul pornește NORMAL.
 #
 # Servicii publice: DOAR nginx (80/443). Postgres și Redis NU au `ports:` — trăiesc
 # exclusiv în rețeaua internă Docker. Vezi comentariile de la fiecare.
@@ -135,6 +136,38 @@ services:
       - ./scripts/build_admin.sh:/build_admin.sh:ro
     command: ["/bin/sh", "/build_admin.sh"]
 
+  # Construiește Telegram Mini App-ul (`miniapp/`, Vite) și îl publică în volumul
+  # `miniapp_dist`, de unde nginx îl servește ca fișiere statice pe ${MINIAPP_DOMAIN}.
+  #
+  # Geamăn cu `admin-build`: rulează O DATĂ, apoi iese (`restart: "no"`). Sursa e
+  # montată READ-ONLY: nu atingem folderul altui agent. Scriptul iese ÎNTOTDEAUNA
+  # cu 0 și nginx NU depinde de el ⇒ un Mini App lipsă sau un build stricat nu pot
+  # ține backend-ul jos. Detalii: scripts/build_miniapp.sh
+  miniapp-build:
+    image: node:20-alpine
+    restart: "no"
+    logging: *default-logging
+    security_opt: [ "no-new-privileges:true" ]
+    working_dir: /tmp
+    environment:
+      MINIAPP_SRC: /src/miniapp
+      MINIAPP_OUT: /dist
+      MINIAPP_BUILD_DIR: ${MINIAPP_BUILD_DIR:-dist}
+      # Mini App-ul are nevoie de URL-ul API-ului la BUILD (Vite inline-uiește
+      # VITE_*). Gol → se compune din DOMAIN. NICIUN SECRET aici: bundle-ul e
+      # public, iar TELEGRAM_BOT_TOKEN rămâne exclusiv pe backend.
+      VITE_API_URL: ${VITE_API_URL:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      DOMAIN: ${DOMAIN:-localhost}
+      API_V1_PREFIX: ${API_V1_PREFIX:-/api/v1}
+    volumes:
+      # Rădăcina repo-ului, READ-ONLY. Montăm repo-ul, nu `../miniapp`, tocmai ca
+      # Docker să NU creeze un folder `miniapp/` gol pe host când acesta lipsește.
+      - ../:/src:ro
+      - miniapp_dist:/dist
+      - ./scripts/build_miniapp.sh:/build_miniapp.sh:ro
+    command: ["/bin/sh", "/build_miniapp.sh"]
+
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
@@ -145,6 +178,9 @@ services:
       # certificat caută nginx în /etc/letsencrypt. Zero hardcodare.
       DOMAIN: ${DOMAIN:-localhost}
       ADMIN_DOMAIN: ${ADMIN_DOMAIN:-admin.localhost}
+      # Telegram Mini App. Gol/nesetat = entrypoint-ul randează un nume-santinelă
+      # (miniapp.localhost): blocul rămâne valid, nginx pornește, nimic nu se rupe.
+      MINIAPP_DOMAIN: ${MINIAPP_DOMAIN:-}
     ports:
       - "80:80"     # doar ACME + redirect 301 către HTTPS
       - "443:443"   # tot traficul real (api + admin)
@@ -156,6 +192,7 @@ services:
       - certbot_www:/var/www/certbot          # webroot pentru HTTP-01
       - nginx_certs:/etc/nginx/certs          # certificatul activ (LE sau self-signed)
       - admin_dist:/var/www/admin:ro          # build-ul panoului de admin
+      - miniapp_dist:/var/www/miniapp:ro      # build-ul Telegram Mini App
     # Randează configul (${DOMAIN}) → asigură un certificat → `nginx -t` → pornește
     # → supraveghează certificatul și dă reload când certbot îl emite/reînnoiește.
     command: ["/bin/sh", "/usr/local/bin/nginx-entrypoint.sh"]
@@ -172,6 +209,8 @@ services:
     environment:
       DOMAIN: ${DOMAIN:-localhost}
       ADMIN_DOMAIN: ${ADMIN_DOMAIN:-}
+      # Gol = certificatul se emite ca înainte, doar pentru api + admin.
+      MINIAPP_DOMAIN: ${MINIAPP_DOMAIN:-}
       CERTBOT_EMAIL: ${CERTBOT_EMAIL:-}
       CERTBOT_STAGING: ${CERTBOT_STAGING:-false}
       CERTBOT_INTERVAL_SECONDS: ${CERTBOT_INTERVAL_SECONDS:-43200}
@@ -225,6 +264,28 @@ services:
         condition: service_healthy
     command: ["/bin/sh", "/scripts/backup_db.sh", "--loop"]
 
+  # Backup periodic al MEDIA (pozele/story-urile userilor) — volumul `mediadata`.
+  # Auditul l-a găsit fără backup: un dump SQL conține doar CĂILE fișierelor, deci
+  # fără arhiva asta un volum pierdut = mii de profiluri goale, irecuperabile.
+  #
+  # ⚠️  `mediadata` e montat READ-ONLY aici: chiar dacă scriptul ar avea vreodată
+  # un bug, kernelul nu-i permite să scrie sau să șteargă date sursă.
+  backup-media:
+    image: alpine:3.20
+    restart: unless-stopped
+    logging: *default-logging
+    security_opt: [ "no-new-privileges:true" ]
+    environment:
+      MEDIA_DIR: /data/media
+      MEDIA_BACKUP_DIR: /backups/media
+      MEDIA_BACKUP_INTERVAL_SECONDS: ${MEDIA_BACKUP_INTERVAL_SECONDS:-86400}
+      MEDIA_BACKUP_RETENTION_DAYS: ${MEDIA_BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - ./scripts:/scripts:ro
+      - mediadata:/data/media:ro
+      - ${BACKUP_HOST_DIR:-./backups}:/backups
+    command: ["/bin/sh", "/scripts/backup_media.sh", "--loop"]
+
 volumes:
   pgdata:
   mediadata:
@@ -233,3 +294,4 @@ volumes:
   certbot_www:
   nginx_certs:
   admin_dist:
+  miniapp_dist:

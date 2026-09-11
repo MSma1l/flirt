@@ -98,3 +98,63 @@ jobs:
 
       - name: Teste (jest)
         run: npm test -- --ci
+
+  # Frontendul Telegram Mini App (`miniapp/`, Vite). Modelat pe jobul `mobile`,
+  # cu o diferență: folderul e creat de alt agent și încă NU există pe toate
+  # branch-urile. Un job care ar căuta orbește `miniapp/package.json` ar face CI-ul
+  # ROȘU pe branch-uri perfect sănătoase — deci verificăm întâi și, dacă lipsește,
+  # sărim peste pași cu un `notice` explicit (jobul rămâne verde, nu „fals verde":
+  # în momentul în care folderul apare, toți pașii devin obligatorii).
+  miniapp:
+    name: Mini App — typecheck + teste + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verific dacă `miniapp/` există pe acest branch
+        id: check
+        run: |
+          if [ -f miniapp/package.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::miniapp/package.json lipsește pe acest branch — sar peste job."
+          fi
+          # Cache-ul npm din setup-node EȘUEAZĂ dacă fișierul indicat nu există,
+          # deci îl activăm doar când chiar avem lock-file.
+          if [ -f miniapp/package-lock.json ]; then
+            echo "lock=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "lock=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.exists == 'true'
+        with:
+          node-version: "20"
+          cache: ${{ steps.check.outputs.lock == 'true' && 'npm' || '' }}
+          cache-dependency-path: miniapp/package-lock.json
+
+      - name: Instalez dependențele
+        if: steps.check.outputs.exists == 'true'
+        working-directory: miniapp
+        # `npm ci` cere package-lock.json; dacă lipsește, cădem pe `npm install`.
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: Typecheck (tsc --noEmit)
+        if: steps.check.outputs.exists == 'true'
+        working-directory: miniapp
+        run: npm run typecheck --if-present
+
+      - name: Teste
+        if: steps.check.outputs.exists == 'true'
+        working-directory: miniapp
+        # `--if-present`: la început `miniapp/` poate să nu aibă încă teste, iar
+        # un job roșu din cauza asta ar antrena echipa să ignore CI-ul.
+        run: npm run test --if-present
+
+      - name: Build (vite build)
+        if: steps.check.outputs.exists == 'true'
+        working-directory: miniapp
+        run: npm run build

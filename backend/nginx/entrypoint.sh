@@ -5,7 +5,8 @@
 # ordine, exact lucrurile fără de care `docker compose up -d` NU ar fi suficient:
 #
 #   1. RANDEAZĂ /etc/nginx/templates/default.conf.template → conf.d/default.conf,
-#      înlocuind ${DOMAIN} și ${ADMIN_DOMAIN} (domeniul nu e hardcodat în config).
+#      înlocuind ${DOMAIN}, ${ADMIN_DOMAIN} și ${MINIAPP_DOMAIN} (niciun domeniu
+#      nu e hardcodat în config).
 #   2. ASIGURĂ un certificat (Let's Encrypt dacă există; altfel SELF-SIGNED), ca
 #      nginx să poată porni din prima pe un server curat, fără niciun pas manual.
 #   3. VALIDEAZĂ configurația (`nginx -t`) — o greșeală de sintaxă trebuie să iasă
@@ -16,6 +17,14 @@ set -eu
 
 DOMAIN="${DOMAIN:-localhost}"
 ADMIN_DOMAIN="${ADMIN_DOMAIN:-admin.localhost}"
+# Telegram Mini App: numele public NU e încă decis de proprietar, deci variabila
+# poate lipsi sau poate fi GOALĂ. Un `server_name ;` gol e eroare de sintaxă și ar
+# împiedica nginx să pornească — adică API-ul ar cădea din cauza unui frontend
+# care nici nu există încă. De aceea cădem pe un nume-santinelă nerutabil:
+# blocul se randează valid, dar nu poate fi atins din internet (orice Host
+# necunoscut ajunge pe `default_server` → 444).
+MINIAPP_DOMAIN="${MINIAPP_DOMAIN:-}"
+[ -n "$MINIAPP_DOMAIN" ] || MINIAPP_DOMAIN="miniapp.localhost"
 TEMPLATE=/etc/nginx/templates/default.conf.template
 RENDERED=/etc/nginx/conf.d/default.conf
 CERT=/etc/nginx/certs/fullchain.pem
@@ -29,10 +38,14 @@ log() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [nginx-entrypoint] $*"; }
 # --- 1. Randare șablon ------------------------------------------------------ #
 # `sed` cu o listă FIXĂ de variabile: variabilele nginx ($host, $request_id,
 # $binary_remote_addr...) rămân intacte — nu le poate atinge din greșeală nimeni.
-log "randez configurația pentru DOMAIN=$DOMAIN ADMIN_DOMAIN=$ADMIN_DOMAIN"
+log "randez configurația pentru DOMAIN=$DOMAIN ADMIN_DOMAIN=$ADMIN_DOMAIN MINIAPP_DOMAIN=$MINIAPP_DOMAIN"
+# Ordinea expresiilor nu contează: fiecare `s|...|` potrivește tokenul ÎNTREG
+# (`${DOMAIN}`), deci `${ADMIN_DOMAIN}` / `${MINIAPP_DOMAIN}` nu pot fi atinse
+# parțial de prima expresie.
 sed \
     -e "s|\${DOMAIN}|${DOMAIN}|g" \
     -e "s|\${ADMIN_DOMAIN}|${ADMIN_DOMAIN}|g" \
+    -e "s|\${MINIAPP_DOMAIN}|${MINIAPP_DOMAIN}|g" \
     "$TEMPLATE" > "$RENDERED"
 
 # --- 2. Certificat ---------------------------------------------------------- #
