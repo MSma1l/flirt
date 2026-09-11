@@ -242,6 +242,13 @@ services:
       db:
         condition: service_healthy
     command: ["python", "scripts/gdpr_purge.py", "--loop"]
+    # Containerul moșteneşte din Dockerfile verificarea de sănătate a API-ului,
+    # care interoghează un server web pe :8000. Aici rulează un script de fundal,
+    # fără server web, deci verificarea NU putea trece niciodată: serviciul apărea
+    # permanent „nesănătos" deşi funcţiona (peste 100.000 de eşecuri consecutive).
+    # O alarmă mereu aprinsă ascunde alarmele reale, de aceea o oprim aici.
+    healthcheck:
+      disable: true
 
   # Backup periodic (pg_dump comprimat) + retenție. Restore: vezi DEPLOYMENT.md.
   # Un backup NETESTAT nu e backup — `scripts/restore_db.sh` e procedura testabilă.
