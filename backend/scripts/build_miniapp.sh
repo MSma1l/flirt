@@ -19,6 +19,11 @@ set -u
 SRC="${MINIAPP_SRC:-/src/miniapp}"
 OUT="${MINIAPP_OUT:-/dist}"
 WORK=/tmp/miniapp-build
+APP="$WORK/miniapp"
+# Sursele partajate cu aplicatia mobila, referite prin alias-urile @mobile/ si @theme/
+# (vezi miniapp/vite.config.ts). Sunt TypeScript pur, fara module native.
+SHARED="${MINIAPP_SHARED:-mobile/src mobile/theme}"
+ROOT="${MINIAPP_ROOT:-$(dirname "$SRC")}"
 HASH_FILE="$OUT/.build-hash"
 
 log() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [miniapp-build] $*"; }
@@ -53,8 +58,14 @@ if [ ! -f "$SRC/package.json" ]; then
 fi
 
 # --- 2. S-a schimbat ceva de la ultimul build? ------------------------------ #
+# Amprenta acopera si sursele partajate din `mobile/`: altfel o schimbare acolo
+# (ex. reducerea numarului de limbi) nu ar declansa reconstructia.
+_hash_paths="$SRC"
+for rel in $SHARED; do
+    [ -d "$ROOT/$rel" ] && _hash_paths="$_hash_paths $ROOT/$rel"
+done
 current_hash="$(
-    find "$SRC" \
+    find $_hash_paths \
         -type d \( -name node_modules -o -name dist -o -name .git \) -prune -o \
         -type f -print0 2>/dev/null \
     | sort -z | xargs -0 md5sum 2>/dev/null | md5sum | cut -d' ' -f1
@@ -69,17 +80,34 @@ fi
 # --- 3. Build ---------------------------------------------------------------- #
 log "construiesc Mini App-ul din $SRC (amprentă $current_hash)"
 rm -rf "$WORK"
-mkdir -p "$WORK"
+mkdir -p "$APP"
 ( cd "$SRC" && tar cf - \
     --exclude=./node_modules --exclude=./dist --exclude=./.git . ) \
-  | ( cd "$WORK" && tar xf - ) || {
+  | ( cd "$APP" && tar xf - ) || {
     log "EȘEC la copierea surselor din $SRC"
     [ -f "$OUT/index.html" ] && exit 0
     placeholder
     exit 0
 }
 
-cd "$WORK" || { log "nu pot intra în $WORK"; placeholder; exit 0; }
+# Mini App-ul importa logica pura din aplicatia mobila (apeluri de feed, scor de
+# compatibilitate, cataloage de traduceri, paleta). Alias-urile arata spre
+# `../mobile/`, deci acele surse trebuie sa existe LANGA copia aplicatiei —
+# altfel verificarea de tipuri cade cu "Cannot find module '@mobile/...'".
+for rel in $SHARED; do
+    if [ -d "$ROOT/$rel" ]; then
+        mkdir -p "$WORK/$(dirname "$rel")"
+        ( cd "$ROOT" && tar cf - \
+            --exclude="*/node_modules" --exclude="*/__tests__" "./$rel" ) \
+          | ( cd "$WORK" && tar xf - ) \
+          && log "am adus sursele partajate: $rel" \
+          || log "ATENTIE: nu am putut copia $rel"
+    else
+        log "ATENTIE: sursa partajata lipseste: $ROOT/$rel"
+    fi
+done
+
+cd "$APP" || { log "nu pot intra în $APP"; placeholder; exit 0; }
 
 if [ -f package-lock.json ]; then
     install_cmd="npm ci"
@@ -117,7 +145,7 @@ fi
 # Vite scrie în `dist/`; alte setup-uri în `build/`. Acceptăm ambele.
 BUILT=""
 for d in "${MINIAPP_BUILD_DIR:-dist}" dist build; do
-    if [ -f "$WORK/$d/index.html" ]; then BUILT="$WORK/$d"; break; fi
+    if [ -f "$APP/$d/index.html" ]; then BUILT="$APP/$d"; break; fi
 done
 
 if [ -z "$BUILT" ]; then
