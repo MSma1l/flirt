@@ -3,6 +3,7 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
 import FavoritesScreen from '../favorites';
+import i18n from '@/i18n';
 import { ThemeProvider } from '@theme/index';
 import type { FavoriteItem, Page, PageParams } from '@/features/social/socialApi';
 
@@ -232,5 +233,42 @@ describe('FavoritesScreen', () => {
     expect(getByText('Maria, 28')).toBeTruthy();
     expect(getByText('Ion, 30')).toBeTruthy();
     expect(queryByText('Nu am putut încărca lista.')).toBeNull();
+  });
+
+  describe('i18n', () => {
+    afterEach(async () => {
+      await i18n.changeLanguage('ro');
+    });
+
+    it('antetele celor două secțiuni urmează limba activă', async () => {
+      mockFetchFavoritesPage.mockResolvedValue(lastPage(favorites));
+      mockFetchLikesSentPage.mockResolvedValue(lastPage(likesSent));
+      await i18n.changeLanguage('ru');
+      const { getByText } = renderScreen();
+
+      await waitFor(() => getByText('Вы поставили лайк'));
+      expect(getByText('Профили, которым вы поставили лайк свайпом вправо.')).toBeTruthy();
+      expect(getByText('Избранное')).toBeTruthy();
+    });
+
+    it('starea goală urmează limba activă', async () => {
+      mockFetchFavoritesPage.mockResolvedValue({ items: [], nextCursor: null });
+      mockFetchLikesSentPage.mockResolvedValue({ items: [], nextCursor: null });
+      await i18n.changeLanguage('en');
+      const { getByTestId, getByText } = renderScreen();
+
+      await waitFor(() => getByTestId('favorites-empty'));
+      expect(
+        getByText('You haven’t liked anyone yet, and haven’t starred anyone either.'),
+      ).toBeTruthy();
+    });
+
+    it('etichetele de accesibilitate interpolează numele, în limba activă', async () => {
+      mockFetchFavoritesPage.mockResolvedValue(lastPage(favorites));
+      await i18n.changeLanguage('en');
+      const { getByLabelText } = renderScreen();
+
+      await waitFor(() => expect(getByLabelText('Remove Ana from favorites')).toBeTruthy());
+    });
   });
 });

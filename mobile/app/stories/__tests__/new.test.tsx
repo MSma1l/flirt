@@ -3,6 +3,7 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
 import NewStoryScreen from '../new';
+import i18n from '@/i18n';
 import { ThemeProvider } from '@theme/index';
 import type { Story } from '@/features/stories/types';
 
@@ -238,4 +239,45 @@ describe('NewStoryScreen', () => {
     await waitFor(() => expect(getByTestId('story-camera')).toBeTruthy());
     expect(queryByTestId('story-preview')).toBeNull();
   });
+
+  describe('i18n', () => {
+    afterEach(async () => {
+      await i18n.changeLanguage('ro');
+    });
+
+    it('ecranul de compunere urmează limba activă', async () => {
+      mockCapture.mockResolvedValue({ status: 'captured', file: SHOT_IMAGE });
+      await i18n.changeLanguage('ru');
+      const { getByPlaceholderText, getByTestId, getByText } = renderScreen();
+
+      fireEvent.press(getByTestId('story-capture'));
+      await waitFor(() => expect(getByTestId('story-preview')).toBeTruthy());
+
+      expect(getByText('Новая история')).toBeTruthy();
+      expect(getByText('Проверьте фото, добавьте текст и опубликуйте.')).toBeTruthy();
+      expect(getByText('Переснять')).toBeTruthy();
+      expect(getByText('Опубликовать')).toBeTruthy();
+      expect(getByPlaceholderText('Добавьте текст…')).toBeTruthy();
+    });
+
+    /**
+     * Mesajele de permisiune vin din `storyLimits`, un modul care NU e
+     * componentă: le citește din instanța globală, la fiecare apel. Verificăm
+     * exact asta — dialogul apare in limba activa, nu in cea de la import.
+     */
+    it('dialogul de permisiune vorbește limba activă', async () => {
+      mockPick.mockResolvedValue({ status: 'denied', canAskAgain: true });
+      await i18n.changeLanguage('en');
+      const { getByTestId } = renderScreen();
+
+      fireEvent.press(getByTestId('story-gallery'));
+
+      await waitFor(() => expect(mockAlert).toHaveBeenCalled());
+      expect(mockAlert).toHaveBeenCalledWith(
+        'Permission needed',
+        'We need access to your gallery to pick a photo.',
+      );
+    });
+  });
+
 });

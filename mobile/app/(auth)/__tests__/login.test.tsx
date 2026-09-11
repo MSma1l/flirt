@@ -76,12 +76,12 @@ describe('Login', () => {
     });
 
     it('randează în limba activă', async () => {
-      await i18n.changeLanguage('uk');
+      await i18n.changeLanguage('en');
       const { getByText } = renderLogin();
 
-      expect(getByText('З поверненням')).toBeTruthy();
-      expect(getByText('Увійдіть, щоб продовжити.')).toBeTruthy();
-      expect(getByText('Увійти')).toBeTruthy();
+      expect(getByText('Welcome back')).toBeTruthy();
+      expect(getByText('Sign in to continue.')).toBeTruthy();
+      expect(getByText('Sign in')).toBeTruthy();
     });
 
     it('afișează eroarea de autentificare în limba activă', async () => {

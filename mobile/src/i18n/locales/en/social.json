@@ -35,5 +35,36 @@
       "body": "Your payment has been confirmed. Show this ticket at the entrance.",
       "code": "Ticket code"
     }
+  },
+  "myTicket": {
+    "title": "My Flirt Party ticket",
+    "hint": "Show this ticket at the entrance. It’s valid once only.",
+    "code": "Ticket code",
+    "used": "USED",
+    "unused": "UNUSED",
+    "loadError": "Couldn’t load the ticket.",
+    "retry": "Try again"
+  },
+  "favorites": {
+    "title": "Favorites",
+    "empty": "You haven’t liked anyone yet, and haven’t starred anyone either.",
+    "emptyHint": "Profiles you like in the deck show up here automatically.",
+    "loadError": "Couldn’t load the list.",
+    "retry": "Try again",
+    "loadMore": "Load more",
+    "loadMoreError": "Couldn’t load more.",
+    "sections": {
+      "likesTitle": "You liked them",
+      "likesHint": "Profiles you liked by swiping right.",
+      "favoritesTitle": "Favorites ★",
+      "favoritesHint": "Profiles you starred by hand."
+    },
+    "remove": "Remove {{name}} from favorites",
+    "add": "Add {{name}} to favorites",
+    "already": "{{name}} is already in favorites",
+    "removeErrorTitle": "Something went wrong",
+    "removeErrorBody": "Couldn’t remove from favorites. Try again.",
+    "addErrorTitle": "Something went wrong",
+    "addErrorBody": "Couldn’t add to favorites. Try again."
   }
 }

@@ -116,8 +116,11 @@ export default function SetariScreen() {
    * Dacă referința nu se încarcă, ascundem doar chips-urile, nu tot ecranul de setări.
    */
   const { data: reference } = useQuery({
-    queryKey: ['anketa-reference'],
-    queryFn: fetchReference,
+    // Limba intră în cheie: etichetele referinței vin DEJA localizate de la
+    // server, deci un cache comun tuturor limbilor ar servi etichetele vechi
+    // după comutare.
+    queryKey: ['anketa-reference', language],
+    queryFn: () => fetchReference(language),
   });
 
   const settingsMutation = useMutation({

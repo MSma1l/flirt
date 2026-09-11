@@ -1,7 +1,10 @@
 import { cardText } from '../cardText';
 import { HumorCard } from '../types';
 
-/** Card complet, așa cum îl trimite serverul (toate cele 4 limbi). */
+/**
+ * Card complet, așa cum îl trimite serverul: el trimite în continuare și
+ * `text_uk`, deși interfața nu mai are ucraineana — clientul ignoră varianta.
+ */
 const full: HumorCard = {
   id: 'c1',
   type: 'sarcasm',
@@ -12,16 +15,15 @@ const full: HumorCard = {
 };
 
 describe('cardText', () => {
-  it('alege textul limbii active pentru fiecare dintre cele 4 limbi', () => {
+  it('alege textul limbii active pentru fiecare dintre cele 3 limbi', () => {
     expect(cardText(full, 'ro')).toBe('Glumă în română');
     expect(cardText(full, 'ru')).toBe('Шутка по-русски');
-    expect(cardText(full, 'uk')).toBe('Жарт українською');
     expect(cardText(full, 'en')).toBe('A joke in English');
   });
 
   it('lipsește textul într-o limbă → cade pe română, nu rămâne gol', () => {
-    const missing: HumorCard = { ...full, text_uk: undefined };
-    expect(cardText(missing, 'uk')).toBe('Glumă în română');
+    const missing: HumorCard = { ...full, text_en: undefined };
+    expect(cardText(missing, 'en')).toBe('Glumă în română');
   });
 
   it('text gol sau doar spații se tratează ca lipsă (fallback pe română)', () => {

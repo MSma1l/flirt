@@ -33,10 +33,10 @@ describe('i18n', () => {
 
   describe('resolveInitialLanguage', () => {
     it('preferă limba salvată de utilizator', async () => {
-      await languageStore.set('uk');
+      await languageStore.set('en');
       mockedGetLocales.mockReturnValue(deviceLocale('ru-RU', 'ru'));
 
-      await expect(resolveInitialLanguage()).resolves.toBe('uk');
+      await expect(resolveInitialLanguage()).resolves.toBe('en');
     });
 
     it('fără alegere salvată, ia limba dispozitivului', async () => {
@@ -87,9 +87,6 @@ describe('i18n', () => {
       await i18n.changeLanguage('ru');
       expect(i18n.t('auth:login.title')).toBe('С возвращением');
 
-      await i18n.changeLanguage('uk');
-      expect(i18n.t('auth:login.title')).toBe('З поверненням');
-
       await i18n.changeLanguage('en');
       expect(i18n.t('auth:login.title')).toBe('Welcome back');
     });
@@ -112,12 +109,6 @@ describe('i18n', () => {
       expect(i18n.t('common:age', { count: 1 })).toBe('1 год');
       expect(i18n.t('common:age', { count: 3 })).toBe('3 года');
       expect(i18n.t('common:age', { count: 7 })).toBe('7 лет');
-
-      // Ucraineana, la fel, dar cu formele ei — NU e rusa transliterată.
-      await i18n.changeLanguage('uk');
-      expect(i18n.t('common:age', { count: 1 })).toBe('1 рік');
-      expect(i18n.t('common:age', { count: 3 })).toBe('3 роки');
-      expect(i18n.t('common:age', { count: 7 })).toBe('7 років');
 
       await i18n.changeLanguage('en');
       expect(i18n.t('common:age', { count: 1 })).toBe('1 year old');

@@ -1,6 +1,7 @@
 /** Flirt Passport (TZ secț. 8): grid de ștampile primite la check-in-ul evenimentelor. */
 import { useQuery } from '@tanstack/react-query';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 
 import { BackButton, Button, ScreenContainer } from '@/components/ui';
@@ -14,14 +15,20 @@ import { useTheme } from '@theme/index';
 /** Contorul „Card reduceri": câte intrări i-au rămas userului (doar pt. planurile card). */
 function DiscountCard({ subscription }: { subscription: Subscription }) {
   const { colors, typography, radius, spacing } = useTheme();
+  const { t } = useTranslation('profile');
   const { entriesTotal, entriesRemaining } = subscription;
   if (entriesRemaining == null) return null;
+
+  // Numărul de intrări trece prin plural: româna are trei forme (1 intrare /
+  // 3 intrări / 21 DE intrări), rusa patru. `count` e cel rămas — el e subiectul
+  // frazei — iar totalul intră ca simplă interpolare.
+  const entries = { count: entriesRemaining, total: entriesTotal ?? entriesRemaining };
 
   return (
     <View
       testID="passport-discount-card"
       accessibilityRole="text"
-      accessibilityLabel={`Card reduceri: ${entriesRemaining} din ${entriesTotal ?? entriesRemaining} intrări rămase`}
+      accessibilityLabel={t('passport.discountCard.a11y', entries)}
       style={[
         styles.discount,
         {
@@ -32,12 +39,14 @@ function DiscountCard({ subscription }: { subscription: Subscription }) {
         },
       ]}
     >
-      <Text style={[typography.badge, { color: colors.onAccent }]}>CARD REDUCERI</Text>
+      <Text style={[typography.badge, { color: colors.onAccent }]}>
+        {t('passport.discountCard.badge')}
+      </Text>
       <Text style={[typography.h2, { color: colors.onAccent }]}>
-        {entriesRemaining} din {entriesTotal ?? entriesRemaining} intrări rămase
+        {t('passport.discountCard.entriesLeft', entries)}
       </Text>
       <Text style={[typography.caption, { color: colors.onAccent }]}>
-        Arată cardul la intrarea în evenimentele partenere.
+        {t('passport.discountCard.hint')}
       </Text>
     </View>
   );
@@ -46,10 +55,11 @@ function DiscountCard({ subscription }: { subscription: Subscription }) {
 /** O ștampilă din grid: titlu eveniment, oraș, dată. */
 function StampCard({ stamp }: { stamp: PassportStamp }) {
   const { colors, typography, radius, spacing } = useTheme();
+  const { t } = useTranslation('profile');
   return (
     <View
       accessibilityRole="text"
-      accessibilityLabel={`Ștampilă ${stamp.eventTitle}`}
+      accessibilityLabel={t('passport.stamp', { event: stamp.eventTitle })}
       style={[
         styles.stamp,
         {
@@ -79,6 +89,7 @@ function StampCard({ stamp }: { stamp: PassportStamp }) {
 
 export default function PassportScreen() {
   const { colors, typography, spacing } = useTheme();
+  const { t } = useTranslation('profile');
 
   const { data, isLoading, isError, refetch } = useQuery<PassportStamp[]>({
     queryKey: ['passport'],
@@ -93,6 +104,7 @@ export default function PassportScreen() {
   const header = (
     <View style={styles.header}>
       <BackButton />
+      {/* Numele produsului NU se traduce — ca „FLIRT" sau „Flirt Party". */}
       <Text style={[typography.h1, { color: colors.textPrimary }]}>Flirt Passport</Text>
     </View>
   );
@@ -101,7 +113,7 @@ export default function PassportScreen() {
     subscription && subscription.entriesRemaining != null ? (
       <View style={{ marginTop: spacing.lg }}>
         <Text style={[typography.h2, { color: colors.textPrimary, marginBottom: spacing.sm }]}>
-          Reducerile mele
+          {t('passport.discountsTitle')}
         </Text>
         <DiscountCard subscription={subscription} />
       </View>
@@ -125,9 +137,9 @@ export default function PassportScreen() {
             { color: colors.textSecondary, marginBottom: spacing.lg },
           ]}
         >
-          Nu am putut încărca Flirt Passport.
+          {t('passport.loadError')}
         </Text>
-        <Button label="Reîncearcă" variant="outline" onPress={() => refetch()} />
+        <Button label={t('passport.retry')} variant="outline" onPress={() => refetch()} />
       </ScreenContainer>
     );
   }
@@ -143,7 +155,7 @@ export default function PassportScreen() {
           {discountSection}
           <View style={styles.empty}>
             <Text style={[typography.body, styles.center, { color: colors.textSecondary }]}>
-              Încă nu ai ștampile — participă la un eveniment!
+              {t('passport.empty')}
             </Text>
           </View>
         </View>

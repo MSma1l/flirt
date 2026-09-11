@@ -1,6 +1,7 @@
 /** Bulă de mesaj: aliniere + culoare după emitent; hint discret dacă e mascat.
  *  Long-press deschide un picker de reacții; reacția setată apare ca badge. */
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useTheme } from '@theme/index';
@@ -20,6 +21,7 @@ interface Props {
 
 function MessageBubbleBase({ message, currentUserId, onReact }: Props) {
   const { colors, typography, spacing, radius } = useTheme();
+  const { t } = useTranslation('chat');
   const isOwn = message.senderId === currentUserId;
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -32,12 +34,12 @@ function MessageBubbleBase({ message, currentUserId, onReact }: Props) {
   return (
     <View
       testID="message-bubble"
-      accessibilityLabel={isOwn ? 'mesaj propriu' : 'mesaj primit'}
+      accessibilityLabel={isOwn ? t('bubble.own') : t('bubble.received')}
       style={[styles.wrap, isOwn ? styles.wrapOwn : styles.wrapOther]}
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Reacționează la mesaj"
+        accessibilityLabel={t('bubble.react')}
         onLongPress={onReact ? () => setPickerOpen(true) : undefined}
         delayLongPress={300}
         style={[
@@ -58,7 +60,7 @@ function MessageBubbleBase({ message, currentUserId, onReact }: Props) {
       {message.reaction ? (
         <View
           testID="reaction-badge"
-          accessibilityLabel={`Reacție: ${message.reaction}`}
+          accessibilityLabel={t('bubble.reaction', { emoji: message.reaction })}
           style={[
             styles.reaction,
             {
@@ -90,7 +92,7 @@ function MessageBubbleBase({ message, currentUserId, onReact }: Props) {
             <Pressable
               key={emoji}
               accessibilityRole="button"
-              accessibilityLabel={`Reacție ${emoji}`}
+              accessibilityLabel={t('bubble.reactionOption', { emoji })}
               testID={`reaction-option-${emoji}`}
               onPress={() => handlePick(emoji)}
               hitSlop={6}
@@ -111,7 +113,7 @@ function MessageBubbleBase({ message, currentUserId, onReact }: Props) {
             { color: colors.textSecondary, marginTop: spacing.xs },
           ]}
         >
-          Contact ascuns pentru siguranță
+          {t('bubble.maskedHint')}
         </Text>
       ) : null}
     </View>

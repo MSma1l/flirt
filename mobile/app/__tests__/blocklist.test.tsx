@@ -3,6 +3,7 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
 import BlocklistScreen from '../blocklist';
+import i18n from '@/i18n';
 import { ThemeProvider } from '@theme/index';
 import type { BlockedUser, BlocksPage, BlocksPageParams } from '@/features/settings/settingsApi';
 
@@ -130,4 +131,39 @@ describe('BlocklistScreen', () => {
     expect(getByText('Vlad')).toBeTruthy();
     expect(queryByText('Nu am putut încărca lista.')).toBeNull();
   });
+
+  describe('i18n', () => {
+    afterEach(async () => {
+      await i18n.changeLanguage('ro');
+    });
+
+    it('titlul, lista și butonul de deblocare urmează limba activă', async () => {
+      mockFetchBlocks.mockResolvedValue(lastPage(blocks));
+      await i18n.changeLanguage('ru');
+      const { getAllByText, getByText } = renderScreen();
+
+      await waitFor(() => getByText('Заблокированные пользователи'));
+      // Câte un buton per rând blocat — de aici `getAllByText`.
+      expect(getAllByText('Разблокировать')).toHaveLength(blocks.length);
+    });
+
+    it('starea goală urmează limba activă', async () => {
+      mockFetchBlocks.mockResolvedValue(lastPage([]));
+      await i18n.changeLanguage('en');
+      const { getByText } = renderScreen();
+
+      await waitFor(() => getByText('You haven’t blocked anyone.'));
+      expect(getByText('Blocked users')).toBeTruthy();
+    });
+
+    it('eroarea de încărcare și retry-ul urmează limba activă', async () => {
+      mockFetchBlocks.mockRejectedValue(new Error('boom'));
+      await i18n.changeLanguage('en');
+      const { getByText } = renderScreen();
+
+      await waitFor(() => getByText('Couldn’t load the list.'));
+      expect(getByText('Try again')).toBeTruthy();
+    });
+  });
+
 });

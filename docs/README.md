@@ -42,6 +42,7 @@ ce e amânat și de ce). Restul documentelor descriu **cum** funcționează ce e
 | [`./admin/api.md`](./admin/api.md) | Specificația rutelor `/api/v1/admin/*` |
 | [`./admin/frontend.md`](./admin/frontend.md) | SPA-ul de admin: pagini, auth, build, servire |
 | [`./frontend/navigation.md`](./frontend/navigation.md) · [`./frontend/screens.md`](./frontend/screens.md) · [`./frontend/styling.md`](./frontend/styling.md) | Navigare, ecrane, stiluri |
+| [`./i18n-remaining.md`](./i18n-remaining.md) | Textele încă scrise în cod (ro), grupate ca sarcini gata de preluat |
 
 ## Surse
 

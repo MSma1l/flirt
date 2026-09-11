@@ -8,15 +8,15 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Stack, useRouter } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
 
 import { BackButton, Button, ScreenContainer } from '@/components/ui';
 import { LocalPhoto, openAppSettings } from '@/features/photos';
 import {
-  CAMERA_PERMISSION_BLOCKED_MESSAGE,
-  CAMERA_PERMISSION_MESSAGE,
+  cameraMessage,
   captureSelfie,
-  FACE_MESSAGES,
+  faceVerifyMessage,
   FaceVerification,
   verifyFace,
 } from '@/features/verification';
@@ -24,6 +24,8 @@ import { useTheme } from '@theme/index';
 
 export default function VerifyFaceScreen() {
   const { colors, typography, spacing, radius } = useTheme();
+  // „Închide", „Gata" și „Încearcă din nou" sunt acțiuni generice — din `common`.
+  const { t } = useTranslation(['verification', 'common']);
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -57,7 +59,7 @@ export default function VerifyFaceScreen() {
   const errorMessage =
     captureError ??
     (mutation.isError ? mutation.error.message : null) ??
-    (mutation.isSuccess && !mutation.data.verified ? FACE_MESSAGES.no_match : null);
+    (mutation.isSuccess && !mutation.data.verified ? faceVerifyMessage('no_match') : null);
 
   const handleVerify = useCallback(async () => {
     const camera = cameraRef.current;
@@ -98,13 +100,14 @@ export default function VerifyFaceScreen() {
 
       {/* Header: titlu + buton de închidere. */}
       <View style={[styles.header, { marginBottom: spacing.xl }]}>
-        <Text style={[typography.h1, { color: colors.textPrimary }]}>Verificare</Text>
-        <BackButton icon="close" color={colors.textSecondary} accessibilityLabel="Închide" />
+        <Text style={[typography.h1, { color: colors.textPrimary }]}>
+          {t('title')}
+        </Text>
+        <BackButton icon="close" color={colors.textSecondary} accessibilityLabel={t('common:actions.close')} />
       </View>
 
       <Text style={[typography.body, { color: colors.textSecondary, marginBottom: spacing.xl }]}>
-        Confirmă că profilul îți aparține printr-un selfie rapid. Verificarea îți aduce un badge de
-        încredere și îi ajută pe ceilalți să știe că ești o persoană reală.
+        {t('intro')}
       </Text>
 
       {/* Cadrul de captură: cameră live / previzualizarea selfie-ului / placeholder. */}
@@ -148,10 +151,8 @@ export default function VerifyFaceScreen() {
               ]}
             >
               {permission === null
-                ? 'Poziționează-ți fața în cadru'
-                : blocked
-                  ? CAMERA_PERMISSION_BLOCKED_MESSAGE
-                  : CAMERA_PERMISSION_MESSAGE}
+                ? t('framingHint')
+                : cameraMessage(blocked ? 'permissionBlocked' : 'permission')}
             </Text>
           </>
         )}
@@ -178,7 +179,9 @@ export default function VerifyFaceScreen() {
             },
           ]}
         >
-          <Text style={[typography.bodyStrong, { color: colors.success }]}>Cont verificat ✓</Text>
+          <Text style={[typography.bodyStrong, { color: colors.success }]}>
+            {t('verified')}
+          </Text>
         </View>
       )}
 
@@ -204,26 +207,26 @@ export default function VerifyFaceScreen() {
 
       {/* Acțiunea principală depinde de permisiune: fără ea nu există „ecran mort". */}
       {succeeded ? (
-        <Button testID="done-button" label="Gata" onPress={() => router.back()} />
+        <Button testID="done-button" label={t('common:actions.done')} onPress={() => router.back()} />
       ) : blocked ? (
         <Button
           testID="open-settings-button"
-          label="Deschide setările"
+          label={t('openSettings')}
           onPress={() => void openAppSettings()}
         />
       ) : !granted ? (
         <Button
           testID="grant-permission-button"
-          label="Permite accesul la cameră"
+          label={t('grant')}
           loading={permission === null}
           onPress={() => void requestPermission()}
         />
       ) : selfie && errorMessage ? (
-        <Button testID="retry-button" label="Încearcă din nou" onPress={handleRetry} />
+        <Button testID="retry-button" label={t('common:actions.retry')} onPress={handleRetry} />
       ) : (
         <Button
           testID="verify-button"
-          label="Fă un selfie și verifică"
+          label={t('start')}
           loading={busy}
           onPress={() => void handleVerify()}
         />
@@ -236,7 +239,7 @@ export default function VerifyFaceScreen() {
           { color: colors.textSecondary, marginTop: spacing.lg },
         ]}
       >
-        Selfie-ul este folosit doar pentru verificare și nu apare în profilul tău.
+        {t('privacyNote')}
       </Text>
     </ScreenContainer>
   );

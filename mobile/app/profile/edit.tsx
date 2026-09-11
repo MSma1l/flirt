@@ -18,13 +18,14 @@ import { fetchReference, submitAnketa } from '@/features/anketa/anketaApi';
 import { CountryPickerField } from '@/features/anketa/components/CountryPickerField';
 import { DateOfBirthField } from '@/features/anketa/components/DateOfBirthField';
 import { AnketaDraft, InterestOption, OptionItem } from '@/features/anketa/types';
+import { useLanguage } from '@/i18n/useLanguage';
 import {
   FieldErrors,
   isValid,
   MAX_ABOUT_LENGTH,
   validateStep,
 } from '@/features/anketa/validation';
-import { PhotoGrid, usePhotoPicker } from '@/features/photos';
+import { PhotoGrid, usePhotoErrorText, usePhotoPicker } from '@/features/photos';
 import { deletePhoto, reorderPhotos, uploadPhoto } from '@/features/photos/photosApi';
 import { moveItem } from '@/features/photos/reorder';
 import { PhotoTile } from '@/features/photos/types';
@@ -33,6 +34,7 @@ import {
   validatePhotoCount,
 } from '@/features/photos/validation';
 import { fetchMyProfile } from '@/features/profile/profileApi';
+import { useAuthStore } from '@/store/authStore';
 import { useTheme } from '@theme/index';
 
 /** Chip selectabil (gen, limbi, statusuri, interese). */
@@ -132,6 +134,7 @@ export default function ProfileEditScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { t } = useTranslation('profile');
+  const { current: language } = useLanguage();
   const { colors, typography, spacing, radius } = useTheme();
 
   const [draft, setDraft] = useState<Partial<AnketaDraft>>({});
@@ -147,9 +150,18 @@ export default function ProfileEditScreen() {
   const [uploadProgress, setUploadProgress] = useState(0);
 
   const picker = usePhotoPicker();
+  // Eșecurile de upload vin ca motiv (cheie); aici devin text.
+  const photoErrorText = usePhotoErrorText();
+  const refreshUser = useAuthStore((s) => s.refreshUser);
 
   const profileQuery = useQuery({ queryKey: ['my-profile'], queryFn: fetchMyProfile });
-  const referenceQuery = useQuery({ queryKey: ['anketa-reference'], queryFn: fetchReference });
+  const referenceQuery = useQuery({
+    // Limba intră în cheie: etichetele referinței vin DEJA localizate de la
+    // server, deci un cache comun tuturor limbilor ar servi etichetele vechi
+    // după comutare.
+    queryKey: ['anketa-reference', language],
+    queryFn: () => fetchReference(language),
+  });
 
   const profile = profileQuery.data;
   const reference = referenceQuery.data;
@@ -209,12 +221,13 @@ export default function ProfileEditScreen() {
       const urls = await uploadPhoto(photo, { onProgress: setUploadProgress });
       setPhotos(urls);
       await queryClient.invalidateQueries({ queryKey: ['my-profile'] });
+      // `users.profile_completed` e ȘI-ul dintre anketă și poze, iar serverul îl
+      // recalculează la fiecare schimbare de poze. Îl recitim, fiindcă exact el
+      // decide unde are voie să fie userul: cine a ajuns aici trimis de poartă
+      // (poze sub prag) iese din editor abia când flagul se aprinde.
+      await refreshUser();
     } catch (error) {
-      setPhotosError(
-        error instanceof Error && error.message
-          ? error.message
-          : t('edit.uploadError'),
-      );
+      setPhotosError(photoErrorText(error));
     } finally {
       setPendingPhotoUri(null);
       setPhotosBusy(false);
@@ -232,6 +245,9 @@ export default function ProfileEditScreen() {
       const urls = await deletePhoto(url);
       setPhotos(urls);
       await queryClient.invalidateQueries({ queryKey: ['my-profile'] });
+      // Simetric cu adăugarea: ștergerea poate coborî sub prag, iar flagul de pe
+      // server se stinge la loc.
+      await refreshUser();
     } catch {
       setPhotosError(t('edit.deleteError'));
     } finally {

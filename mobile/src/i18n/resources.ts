@@ -1,10 +1,15 @@
 /**
  * Registrul cataloagelor: leagă fiecare (limbă × namespace) de JSON-ul lui.
  *
- * Fișier PARTAJAT și DELIBERAT COMPLET: toate cele 14 namespace-uri × 4 limbi
+ * Fișier PARTAJAT și DELIBERAT COMPLET: toate cele 14 namespace-uri × 3 limbi
  * sunt deja importate, chiar dacă unele JSON-uri sunt încă goale (`{}`).
  * Așa, un agent care migrează un ecran nu atinge NICIODATĂ fișierul ăsta —
  * doar scrie în `locales/<limbă>/<namespace>.json`. Zero conflicte pe merge.
+ *
+ * `locales/uk` a rămas pe disc, dar NU se mai importă: ucraineana a ieșit din
+ * interfață (vezi `SUPPORTED_LANGUAGES`). Fișierele stau acolo ca traducerile să
+ * nu se piardă dacă limba se reactivează — un import aici le-ar duce în bundle
+ * degeaba.
  *
  * Importurile sunt STATICE (nu `require` dinamic): Metro trebuie să vadă
  * fiecare cale la build, altfel cataloagele nu ajung în bundle.
@@ -56,21 +61,6 @@ import ruSocial from './locales/ru/social.json';
 import ruStories from './locales/ru/stories.json';
 import ruVerification from './locales/ru/verification.json';
 
-import ukAuth from './locales/uk/auth.json';
-import ukBilling from './locales/uk/billing.json';
-import ukChat from './locales/uk/chat.json';
-import ukCommon from './locales/uk/common.json';
-import ukEvents from './locales/uk/events.json';
-import ukFeed from './locales/uk/feed.json';
-import ukHumor from './locales/uk/humor.json';
-import ukModeration from './locales/uk/moderation.json';
-import ukOnboarding from './locales/uk/onboarding.json';
-import ukProfile from './locales/uk/profile.json';
-import ukSettings from './locales/uk/settings.json';
-import ukSocial from './locales/uk/social.json';
-import ukStories from './locales/uk/stories.json';
-import ukVerification from './locales/uk/verification.json';
-
 /** Cataloagele româneşti — SURSA DE ADEVĂR pentru tipuri şi pentru fallback. */
 export const roResources = {
   common: roCommon,
@@ -113,22 +103,6 @@ export const resources: Record<Language, LanguageResources> = {
     verification: ruVerification,
     humor: ruHumor,
     social: ruSocial,
-  },
-  uk: {
-    common: ukCommon,
-    auth: ukAuth,
-    onboarding: ukOnboarding,
-    feed: ukFeed,
-    chat: ukChat,
-    profile: ukProfile,
-    settings: ukSettings,
-    events: ukEvents,
-    stories: ukStories,
-    billing: ukBilling,
-    moderation: ukModeration,
-    verification: ukVerification,
-    humor: ukHumor,
-    social: ukSocial,
   },
   en: {
     common: enCommon,

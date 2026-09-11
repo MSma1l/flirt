@@ -14,7 +14,7 @@ const { api } = require('@/services/api');
 describe('fetchReference', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('normalizează opțiunile backend {value,label_ru,label_ro} → {value,label} (ro)', async () => {
+  it('normalizează opțiunile backend {value,label_*} → {value,label} (ro)', async () => {
     // Forma REALĂ a backend-ului: obiecte cu etichete localizate, NU string-uri.
     // (Randarea directă a acestor obiecte crăpa cu „Objects are not valid as a
     // React child" — de aceea testul trebuie să oglindească contractul real.)
@@ -35,7 +35,7 @@ describe('fetchReference', () => {
       },
     });
 
-    const ref = await fetchReference();
+    const ref = await fetchReference('ro');
 
     expect(api.get).toHaveBeenCalledWith('/profiles/reference');
     // Fiecare opțiune are {value, label} — label-ul e cel românesc, gata de afișat.
@@ -53,9 +53,76 @@ describe('fetchReference', () => {
     ]);
   });
 
+  it('alege eticheta limbii active, nu pe cea românească', async () => {
+    // Serverul trimite TOATE variantele; clientul alege una singură.
+    (api.get as jest.Mock).mockResolvedValue({
+      data: {
+        genders: [
+          {
+            value: 'male',
+            label_ro: 'Bărbat',
+            label_ru: 'Мужчина',
+            label_uk: 'Чоловік',
+            label_en: 'Man',
+          },
+        ],
+        interests: [
+          {
+            slug: 'sport',
+            label_ro: 'Sport',
+            label_ru: 'Спорт',
+            label_uk: 'Спорт',
+            label_en: 'Sports',
+          },
+        ],
+      },
+    });
+
+    await expect(fetchReference('ru')).resolves.toMatchObject({
+      genders: [{ value: 'male', label: 'Мужчина' }],
+      interests: [{ slug: 'sport', label: 'Спорт' }],
+    });
+  });
+
+  it('engleza ia label_en, nu label_ro', async () => {
+    (api.get as jest.Mock).mockResolvedValue({
+      data: {
+        languages: [{ value: 'ro', label_ro: 'Română', label_ru: 'Румынский', label_en: 'Romanian' }],
+      },
+    });
+
+    await expect(fetchReference('en')).resolves.toMatchObject({
+      languages: [{ value: 'ro', label: 'Romanian' }],
+    });
+  });
+
+  /**
+   * Un server mai vechi (sau o traducere neintrodusă) nu trebuie să lase chip-uri
+   * fără nume: eticheta lipsă ori goală cade pe română — regula „niciodată text gol".
+   */
+  it('etichetă lipsă sau goală în limba activă → cade pe română', async () => {
+    (api.get as jest.Mock).mockResolvedValue({
+      data: {
+        genders: [
+          { value: 'male', label_ro: 'Bărbat' },
+          { value: 'female', label_ro: 'Femeie', label_en: '   ' },
+        ],
+        interests: [{ slug: 'sport', label_ro: 'Sport' }],
+      },
+    });
+
+    await expect(fetchReference('en')).resolves.toMatchObject({
+      genders: [
+        { value: 'male', label: 'Bărbat' },
+        { value: 'female', label: 'Femeie' },
+      ],
+      interests: [{ slug: 'sport', label: 'Sport' }],
+    });
+  });
+
   it('tolerează câmpuri lipsă', async () => {
     (api.get as jest.Mock).mockResolvedValue({ data: {} });
-    const ref = await fetchReference();
+    const ref = await fetchReference('ro');
     expect(ref).toEqual({
       genders: [],
       datingStatuses: [],

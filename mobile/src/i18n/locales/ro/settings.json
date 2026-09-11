@@ -82,5 +82,15 @@
   "openError": {
     "title": "Ceva n-a mers",
     "body": "Nu am putut deschide pagina. Încearcă din nou."
+  },
+  "blocklist": {
+    "title": "Utilizatori blocați",
+    "empty": "Nu ai utilizatori blocați.",
+    "unblock": "Deblochează",
+    "loadError": "Nu am putut încărca lista.",
+    "loadMore": "Încarcă mai multe",
+    "loadMoreError": "Nu am putut încărca mai multe.",
+    "unblockErrorTitle": "Ceva n-a mers",
+    "unblockErrorBody": "Nu am putut debloca utilizatorul. Reîncearcă."
   }
 }

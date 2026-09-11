@@ -20,8 +20,16 @@ import { useAuthStore } from '@/store/authStore';
 import { fetchHumor } from './humorApi';
 import { HumorProfile } from './types';
 
-/** Cheia de cache pentru `GET /humor/me` — partajată cu ecranul de quiz. */
-export const HUMOR_ME_QUERY_KEY = ['humor-me'] as const;
+/**
+ * Cheia de cache pentru `GET /humor/me` — partajată cu ecranul de quiz.
+ *
+ * `userId` face PARTE din cheie, altfel cache-ul se scurge între conturi: pe
+ * același telefon, un logout + login cu alt cont ar citi vectorul celui dinainte
+ * și ar deschide poarta unui user care n-a dat niciodată quiz-ul.
+ */
+export function humorMeQueryKey(userId: string | undefined) {
+  return ['humor-me', userId] as const;
+}
 
 /**
  * Are userul date de umor?
@@ -67,6 +75,15 @@ export const useHumorGateStore = create<HumorGateState>((set) => ({
 export interface HumorGate {
   /** Userul trebuie dus la quiz ACUM (server a confirmat că datele lipsesc). */
   needsQuiz: boolean;
+  /**
+   * Poarta încă nu are un verdict: prima interogare e pe drum.
+   *
+   * Cine decide navigarea trebuie să AȘTEPTE, nu să presupună „n-are nevoie" —
+   * altfel userul intră o clipă în feed și e scos imediat la quiz. E doar
+   * PRIMA încărcare (`isLoading`), nu orice refetch: un refetch pe date deja
+   * cunoscute răspunde din cache, fără să blocheze pe nimeni.
+   */
+  pending: boolean;
 }
 
 /**
@@ -85,17 +102,24 @@ export function useHumorGate(): HumorGate {
   const unavailable = !!userId && unavailableForUserId === userId;
   const enabled = status === 'authenticated' && !!profileCompleted && !unavailable;
 
-  const { data, isSuccess } = useQuery({
-    queryKey: HUMOR_ME_QUERY_KEY,
+  const { data, isSuccess, isLoading } = useQuery({
+    queryKey: humorMeQueryKey(userId),
     queryFn: fetchHumor,
     enabled,
     // Fără reîncercări în lanț: la eroare vrem verdict rapid „nu știm” →
     // poarta rămâne deschisă, nu ținem userul în așteptare între ecrane.
     retry: false,
-    staleTime: Infinity,
+    // FĂRĂ `staleTime: Infinity`: un răspuns citit o dată rămânea adevăr pe viață,
+    // deci poarta nu mai afla niciodată că vectorul s-a schimbat (nici invers —
+    // vezi 403-ul de la `POST /feed/swipe`, care spune negru pe alb că lipsește).
+    // Rămâne implicitul clientului (30s), suficient cât să nu interogăm la
+    // fiecare navigare.
   });
 
   // `isSuccess` e cheia: la eroare rămâne `false` → `needsQuiz` false → trecere
   // liberă. Poarta se închide doar pe un „vector gol” confirmat de server.
-  return { needsQuiz: enabled && isSuccess && !hasHumorData(data) };
+  return {
+    needsQuiz: enabled && isSuccess && !hasHumorData(data),
+    pending: enabled && isLoading,
+  };
 }

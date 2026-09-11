@@ -3,6 +3,7 @@ import React from 'react';
 
 import { MessageBubble } from '../MessageBubble';
 import { ChatMessage } from '../types';
+import i18n from '@/i18n';
 import { ThemeProvider } from '@theme/index';
 import { darkTheme, lightTheme } from '@theme/colors';
 
@@ -104,5 +105,48 @@ describe('MessageBubble', () => {
     fireEvent(getByTestId('message-bubble').children[0] as never, 'longPress');
     fireEvent.press(getByTestId('reaction-option-👍'));
     expect(onReact).toHaveBeenCalledWith(null);
+  });
+
+  /**
+   * Bula n-are text propriu în afară de mesaj — tot ce se traduce aici sunt
+   * etichetele pentru cititorul de ecran și hintul de contact mascat. Sunt la
+   * fel de „interfață" ca un buton: fără ele, un user cu VoiceOver pe rusă ar
+   * auzi românește.
+   */
+  describe('i18n', () => {
+    afterEach(async () => {
+      await i18n.changeLanguage('ro');
+    });
+
+    it('etichetele de accesibilitate urmează limba activă', async () => {
+      await i18n.changeLanguage('ru');
+      const { getByLabelText, getByTestId } = renderBubble(
+        makeMessage({ reaction: '🔥' }),
+        jest.fn(),
+      );
+
+      expect(getByLabelText('полученное сообщение')).toBeTruthy();
+      expect(getByLabelText('Отреагировать на сообщение')).toBeTruthy();
+      expect(getByLabelText('Реакция: 🔥')).toBeTruthy();
+
+      fireEvent(getByTestId('message-bubble').children[0] as never, 'longPress');
+      expect(getByLabelText('Реакция ❤️')).toBeTruthy();
+    });
+
+    it('mesajul propriu se anunță ca atare, în limba activă', async () => {
+      await i18n.changeLanguage('en');
+      const { getByLabelText } = renderBubble(makeMessage({ senderId: CURRENT }));
+
+      expect(getByLabelText('your message')).toBeTruthy();
+    });
+
+    it('hintul de contact mascat urmează limba activă', async () => {
+      await i18n.changeLanguage('en');
+      const { getByTestId } = renderBubble(makeMessage({ wasMasked: true }));
+
+      expect(getByTestId('masked-hint').props.children).toBe(
+        'Contact details hidden for safety',
+      );
+    });
   });
 });

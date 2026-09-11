@@ -6,6 +6,7 @@
  * (drag & drop ar cere o dependență nativă în plus, fără câștig funcțional).
  */
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Alert,
@@ -58,6 +59,8 @@ export function PhotoGrid({
   busy,
 }: Props) {
   const { colors, typography, radius, spacing } = useTheme();
+  // Butoanele dialogului de confirmare sunt generice ⇒ `common`; restul, `profile`.
+  const { t } = useTranslation(['profile', 'common']);
 
   const canAdd = photos.length < max;
 
@@ -67,8 +70,8 @@ export function PhotoGrid({
     // avertismentul special când dispare poza principală (index 0 dintre mai multe).
     const message =
       index === 0 && photos.length > 1
-        ? 'Este poza ta principală. Următoarea poză îi va lua locul.'
-        : 'Poza va fi eliminată din profil.';
+        ? t('photos.confirm.main')
+        : t('photos.confirm.other');
 
     // Pe web `Alert.alert` din react-native-web e un no-op → dialogul nu apărea
     // niciodată și butonul „✕" părea mort. Folosim `window.confirm` nativ browserului.
@@ -80,9 +83,13 @@ export function PhotoGrid({
     }
 
     // Nativ: dialogul RN cu buton distructiv, neschimbat.
-    Alert.alert('Ștergi poza?', message, [
-      { text: 'Anulează', style: 'cancel' },
-      { text: 'Șterge', style: 'destructive', onPress: () => onRemove(index) },
+    Alert.alert(t('photos.confirm.title'), message, [
+      { text: t('common:actions.cancel'), style: 'cancel' },
+      {
+        text: t('common:actions.delete'),
+        style: 'destructive',
+        onPress: () => onRemove(index),
+      },
     ]);
   };
 
@@ -99,7 +106,7 @@ export function PhotoGrid({
   return (
     <View style={{ gap: spacing.sm, width: '100%' }}>
       <Text style={[typography.caption, { color: colors.textSecondary }]}>
-        Poze ({photos.length}/{max}) — minimum {min}. Prima poză este cea principală.
+        {t('photos.counter', { current: photos.length, max, min })}
       </Text>
 
       <View
@@ -114,7 +121,11 @@ export function PhotoGrid({
           <View key={photo.key} testID={`photo-tile-${index}`} style={tileStyle}>
             <Image
               source={{ uri: photo.uri }}
-              accessibilityLabel={index === 0 ? 'Poza principală' : `Poza ${index + 1}`}
+              accessibilityLabel={
+                index === 0
+                  ? t('photos.a11y.mainPhoto')
+                  : t('photos.a11y.photo', { number: index + 1 })
+              }
               style={{ width: '100%', height: '100%' }}
               resizeMode="cover"
             />
@@ -133,7 +144,7 @@ export function PhotoGrid({
                 }}
               >
                 <Text style={[typography.badge, { color: colors.onAccent }]}>
-                  Principală
+                  {t('photos.mainBadge')}
                 </Text>
               </View>
             ) : null}
@@ -158,7 +169,7 @@ export function PhotoGrid({
               <>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={`Șterge poza ${index + 1}`}
+                  accessibilityLabel={t('photos.a11y.remove', { number: index + 1 })}
                   testID={`photo-remove-${index}`}
                   disabled={busy}
                   onPress={() => confirmRemove(index)}
@@ -191,7 +202,9 @@ export function PhotoGrid({
                 >
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel={`Mută poza ${index + 1} mai devreme`}
+                    accessibilityLabel={t('photos.a11y.moveEarlier', {
+                      number: index + 1,
+                    })}
                     accessibilityState={{ disabled: index === 0 || !!busy }}
                     testID={`photo-move-left-${index}`}
                     disabled={index === 0 || busy}
@@ -211,7 +224,9 @@ export function PhotoGrid({
 
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel={`Mută poza ${index + 1} mai târziu`}
+                    accessibilityLabel={t('photos.a11y.moveLater', {
+                      number: index + 1,
+                    })}
                     accessibilityState={{
                       disabled: index === photos.length - 1 || !!busy,
                     }}
@@ -244,7 +259,7 @@ export function PhotoGrid({
         {canAdd ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Adaugă o poză"
+            accessibilityLabel={t('photos.a11y.add')}
             testID="photo-add"
             disabled={busy}
             onPress={onAdd}
@@ -260,7 +275,7 @@ export function PhotoGrid({
           >
             <Text style={[typography.h1, { color: colors.accent }]}>+</Text>
             <Text style={[typography.badge, { color: colors.textSecondary }]}>
-              Adaugă
+              {t('photos.add')}
             </Text>
           </Pressable>
         ) : null}
@@ -268,7 +283,7 @@ export function PhotoGrid({
 
       {!canAdd ? (
         <Text style={[typography.caption, { color: colors.textSecondary }]}>
-          Ai atins numărul maxim de {max} poze.
+          {t('photos.maxReached', { count: max })}
         </Text>
       ) : null}
 
@@ -280,7 +295,7 @@ export function PhotoGrid({
 
       {permissionDenied && onOpenSettings ? (
         <Button
-          label="Deschide setările"
+          label={t('photos.openSettings')}
           variant="outline"
           testID="photo-open-settings"
           onPress={onOpenSettings}

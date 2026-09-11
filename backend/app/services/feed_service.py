@@ -148,6 +148,22 @@ def _has_min_photos(profile: Profile) -> bool:
 # redirecționeze exact spre ecranul `/humor` (testul de umor), nu spre anketă.
 HUMOR_REQUIRED_DETAIL = "Completează testul de umor."
 
+# Același principiu pentru poze. „Profilul tău nu este complet." acoperea DOUĂ
+# situații diferite (anketă lipsă ȘI prea puține poze), iar mobilul nu le putea
+# deosebi din răspuns — deși duc în locuri diferite: anketa lipsă înseamnă
+# wizardul de înregistrare, pozele lipsă înseamnă editorul de profil. Trimis
+# greșit în wizard, un user cu anketă bună o lua de la capăt cu un draft gol și
+# își rescria profilul la final.
+#
+# Cazul e REAL, nu teoretic: `min_photos` a crescut de la 1 la 2, deci conturile
+# vechi au `profile_completed=true` (oglinda de pe `users`) și, în același timp,
+# prea puține poze pentru gate-ul de aici.
+#
+# FĂRĂ cifră în text, deliberat: clientul îl compară exact, iar textul trebuie să
+# rămână același indiferent de `settings.min_photos`. Numărul concret îl afișează
+# mobilul, din propria configurare și în limba userului.
+PHOTOS_REQUIRED_DETAIL = "Profilul tău nu are destule poze."
+
 
 def _has_humor(profile: Profile) -> bool:
     """True dacă profilul are un vector de umor NON-gol (testul de umor dat).
@@ -499,7 +515,7 @@ async def _authorize_swipe(
     if not _has_min_photos(my_profile):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Profilul tău nu este complet.",
+            detail=PHOTOS_REQUIRED_DETAIL,
         )
     if not _has_min_photos(target_profile):
         raise HTTPException(

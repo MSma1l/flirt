@@ -30,6 +30,7 @@ import {
 import type { AndroidSubscriptionOfferInput, ProductOrSubscription, Purchase } from 'expo-iap';
 
 import { config } from '@/config';
+import i18n from '@/i18n';
 import { purchase as confirmOnServer } from '@/features/subscription/subscriptionApi';
 import type { Subscription } from '@/features/subscription/types';
 
@@ -50,7 +51,7 @@ export type IapErrorKind =
   | 'already-owned'
   | 'unknown';
 
-/** Eroare de achiziție cu mesaj gata de afișat (română) și cauză pentru UI. */
+/** Eroare de achiziție cu mesaj gata de afișat și cauză pentru UI. */
 export class IapError extends Error {
   readonly kind: IapErrorKind;
 
@@ -61,23 +62,35 @@ export class IapError extends Error {
   }
 }
 
-const MSG = {
-  cancelled: 'Ai anulat achiziția.',
-  unavailable:
-    'Magazinul nu este disponibil pe acest dispozitiv. Verifică-ți conexiunea și contul din App Store.',
-  productMissing:
-    'Planul nu este disponibil în magazin momentan. Încearcă mai târziu sau alege alt plan.',
-  notConfirmed:
-    'Plata a fost înregistrată de magazin, dar nu am putut activa abonamentul acum. ' +
-    'Nu vei fi taxat din nou — reluăm activarea automat când revii în aplicație.',
-  alreadyOwned:
-    'Ai deja acest abonament. Apasă „Restaurează achizițiile" ca să îl reactivezi pe acest dispozitiv.',
-  pendingApproval:
-    'Achiziția este în așteptarea aprobării. Abonamentul se activează singur imediat ce plata e confirmată.',
-  noReceipt: 'Magazinul nu a întors dovada de plată. Reîncearcă achiziția.',
-  inProgress: 'O achiziție este deja în curs. Așteaptă finalizarea ei.',
-  unknown: 'Nu am putut finaliza achiziția. Reîncearcă.',
+/**
+ * Cheile mesajelor de achiziție. Modulul NU e o componentă, deci nu poate folosi
+ * `useTranslation` — citește din instanța globală, prin `msg()` de mai jos.
+ *
+ * `pendingApproval` trimite deliberat la cheia paywall-ului: e aceeași frază pe
+ * care ecranul o arată ca banner „în așteptare", iar o a doua copie a ei ar
+ * ajunge sigur să divergă la prima reformulare.
+ */
+const MESSAGE_KEY = {
+  cancelled: 'billing:iap.cancelled',
+  unavailable: 'billing:iap.unavailable',
+  productMissing: 'billing:iap.productMissing',
+  notConfirmed: 'billing:iap.notConfirmed',
+  alreadyOwned: 'billing:iap.alreadyOwned',
+  pendingApproval: 'billing:paywall.pending',
+  noReceipt: 'billing:iap.noReceipt',
+  inProgress: 'billing:iap.inProgress',
+  unknown: 'billing:iap.unknown',
 } as const;
+
+/**
+ * Mesajul unei erori de achiziție, în limba activă.
+ *
+ * Se citește la MOMENTUL aruncării erorii, nu la încărcarea modulului: altfel
+ * prima eroare ar îngheța limba pentru toată sesiunea.
+ */
+function msg(key: keyof typeof MESSAGE_KEY): string {
+  return i18n.t(MESSAGE_KEY[key]);
+}
 
 /**
  * Coduri din protocolul OpenIAP (nu sunt configurabile — fac parte din contractul
@@ -116,14 +129,14 @@ function asIapError(error: unknown): IapError {
   if (error instanceof IapError) return error;
 
   const code = String((error as StoreError | undefined)?.code ?? '');
-  if (code === CODE_CANCELLED) return new IapError('cancelled', MSG.cancelled);
-  if (code === CODE_ALREADY_OWNED) return new IapError('already-owned', MSG.alreadyOwned);
+  if (code === CODE_CANCELLED) return new IapError('cancelled', msg('cancelled'));
+  if (code === CODE_ALREADY_OWNED) return new IapError('already-owned', msg('alreadyOwned'));
   if (code === CODE_DEFERRED || code === CODE_PENDING) {
-    return new IapError('pending', MSG.pendingApproval);
+    return new IapError('pending', msg('pendingApproval'));
   }
-  if (CODE_UNAVAILABLE.has(code)) return new IapError('unavailable', MSG.unavailable);
-  if (CODE_PRODUCT_MISSING.has(code)) return new IapError('product-missing', MSG.productMissing);
-  return new IapError('unknown', MSG.unknown);
+  if (CODE_UNAVAILABLE.has(code)) return new IapError('unavailable', msg('unavailable'));
+  if (CODE_PRODUCT_MISSING.has(code)) return new IapError('product-missing', msg('productMissing'));
+  return new IapError('unknown', msg('unknown'));
 }
 
 /* ------------------------------- Tipuri -------------------------------- */
@@ -201,7 +214,7 @@ function settleFlow(action: (pending: PendingFlow) => void): void {
 /** ID-ul de produs pentru un plan (din `app.json`, niciodată hardcodat aici). */
 function productIdFor(plan: string): string {
   const productId = config.iap.productIds[plan];
-  if (!productId) throw new IapError('product-missing', MSG.productMissing);
+  if (!productId) throw new IapError('product-missing', msg('productMissing'));
   return productId;
 }
 
@@ -218,7 +231,7 @@ export async function connectStore(): Promise<void> {
   if (!connection) {
     connection = (async () => {
       const ready = await initConnection();
-      if (!ready) throw new IapError('unavailable', MSG.unavailable);
+      if (!ready) throw new IapError('unavailable', msg('unavailable'));
       attachListeners();
     })().catch((error) => {
       // Conexiunea eșuată nu se memorează: userul poate reîncerca fără restart.
@@ -320,7 +333,7 @@ function extractReceipt(purchase: Purchase): string | null {
  */
 async function confirmThenFinish(plan: string, purchase: Purchase): Promise<Subscription> {
   const receipt = extractReceipt(purchase);
-  if (!receipt) throw new IapError('not-confirmed', MSG.noReceipt);
+  if (!receipt) throw new IapError('not-confirmed', msg('noReceipt'));
 
   let subscription: Subscription;
   try {
@@ -330,7 +343,7 @@ async function confirmThenFinish(plan: string, purchase: Purchase): Promise<Subs
     // Backend picat sau rețea căzută la exact acest pas: ieșim FĂRĂ
     // `finishTransaction`. Tranzacția rămâne în coada magazinului și e reluată
     // de `resumeUnfinishedPurchases` / „Restaurează achizițiile".
-    throw new IapError('not-confirmed', MSG.notConfirmed);
+    throw new IapError('not-confirmed', msg('notConfirmed'));
   }
 
   try {
@@ -351,7 +364,7 @@ async function onPurchaseUpdated(purchase: Purchase): Promise<void> {
   if (!plan) {
     // Produs necunoscut catalogului: backend-ul nu are ce activa, deci nu-l
     // finalizăm (nu aruncăm o tranzacție pe care nu o înțelegem).
-    settleFlow((pending) => pending.reject(new IapError('product-missing', MSG.productMissing)));
+    settleFlow((pending) => pending.reject(new IapError('product-missing', msg('productMissing'))));
     return;
   }
 
@@ -387,7 +400,7 @@ async function recoverAlreadyOwned(): Promise<void> {
     const owned = (await getAvailablePurchases()).find(
       (item) => item.productId === pending.productId,
     );
-    if (!owned) throw new IapError('already-owned', MSG.alreadyOwned);
+    if (!owned) throw new IapError('already-owned', msg('alreadyOwned'));
     const subscription = await confirmThenFinish(pending.plan, owned);
     settleFlow((current) =>
       current.resolve({ status: 'active', plan: current.plan, subscription }),
@@ -409,10 +422,10 @@ export async function purchasePlan(plan: string): Promise<PurchaseOutcome> {
   // eșuează cu un cod obscur, iar userul rămâne cu un spinner fără explicație.
   const catalog = await fetchStoreCatalog();
   if (!catalog.products.some((product) => product.plan === plan)) {
-    throw new IapError('product-missing', MSG.productMissing);
+    throw new IapError('product-missing', msg('productMissing'));
   }
 
-  if (flow) throw new IapError('unknown', MSG.inProgress);
+  if (flow) throw new IapError('unknown', msg('inProgress'));
 
   return new Promise<PurchaseOutcome>((resolve, reject) => {
     flow = { plan, productId, resolve, reject };

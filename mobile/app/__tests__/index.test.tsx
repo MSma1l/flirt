@@ -4,23 +4,18 @@ import React from 'react';
 import Index from '../index';
 import { ThemeProvider } from '@theme/index';
 
-// Mock Redirect: capturează href-ul în loc să navigheze real.
+/**
+ * Ecranul nu mai decide nimic: e doar splash-ul pe care userul așteaptă cât
+ * timp `AuthGuard` (`app/_layout.tsx`) hotărăște unde trebuie dus. Testele de
+ * navigare stau la el, în `authGuard.test.tsx` — aici verificăm exact ce mai
+ * face ecranul ăsta: arată logo-ul și NU navighează.
+ */
 const mockRedirect = jest.fn();
 jest.mock('expo-router', () => ({
   Redirect: (props: { href: string }) => {
     mockRedirect(props.href);
     return null;
   },
-}));
-
-// Mock store: `useAuthStore(selector)` citește dintr-un state controlabil.
-type AuthState = {
-  status: 'loading' | 'authenticated' | 'unauthenticated';
-  user: { id: string; profile_completed: boolean } | null;
-};
-const mockAuthState: AuthState = { status: 'loading', user: null };
-jest.mock('@/store/authStore', () => ({
-  useAuthStore: (selector: (s: AuthState) => unknown) => selector(mockAuthState),
 }));
 
 function renderScreen() {
@@ -31,37 +26,20 @@ function renderScreen() {
   );
 }
 
-describe('Index (redirect gate)', () => {
-  beforeEach(() => {
-    mockRedirect.mockClear();
-    mockAuthState.status = 'loading';
-    mockAuthState.user = null;
-  });
+describe('Index (splash)', () => {
+  beforeEach(() => mockRedirect.mockClear());
 
-  it('status loading → arată splash-ul (fără redirect)', () => {
-    mockAuthState.status = 'loading';
-    const { getByLabelText } = renderScreen();
+  it('arată brandul', () => {
+    const { getByLabelText, getByText } = renderScreen();
     expect(getByLabelText('FLIRT')).toBeTruthy();
+    expect(getByText('No Regrets')).toBeTruthy();
+  });
+
+  it('NU redirecționează singur: decizia e a porții, într-un singur loc', () => {
+    // Regresie: aici exista un al doilea set de reguli de navigare, care știa
+    // doar de `profile_completed`. La cold-start ateriza în feed peste userul
+    // fără test de umor, iar serverul îi refuza apoi fiecare swipe cu 403.
+    renderScreen();
     expect(mockRedirect).not.toHaveBeenCalled();
-  });
-
-  it('unauthenticated → redirect la welcome', () => {
-    mockAuthState.status = 'unauthenticated';
-    renderScreen();
-    expect(mockRedirect).toHaveBeenCalledWith('/(auth)/welcome');
-  });
-
-  it('authenticated + profil necompletat → redirect la onboarding', () => {
-    mockAuthState.status = 'authenticated';
-    mockAuthState.user = { id: 'u1', profile_completed: false };
-    renderScreen();
-    expect(mockRedirect).toHaveBeenCalledWith('/(onboarding)');
-  });
-
-  it('authenticated + profil completat → redirect la tabs', () => {
-    mockAuthState.status = 'authenticated';
-    mockAuthState.user = { id: 'u1', profile_completed: true };
-    renderScreen();
-    expect(mockRedirect).toHaveBeenCalledWith('/(tabs)/ankete');
   });
 });

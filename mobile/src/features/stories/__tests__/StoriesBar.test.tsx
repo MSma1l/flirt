@@ -4,6 +4,7 @@ import React from 'react';
 
 import { StoriesBar } from '../StoriesBar';
 import { UserStories } from '../types';
+import i18n from '@/i18n';
 import { ThemeProvider } from '@theme/index';
 
 // Mock router (evită navigarea reală expo-router în teste).
@@ -108,5 +109,30 @@ describe('StoriesBar', () => {
     await waitFor(() => expect(getByLabelText('Vezi poveștile: Ana')).toBeTruthy());
     fireEvent.press(getByLabelText('Vezi poveștile: Ana'));
     expect(mockPush).toHaveBeenCalledWith('/stories/u1');
+  });
+
+  describe('i18n', () => {
+    afterEach(async () => {
+      await i18n.changeLanguage('ro');
+    });
+
+    it('eticheta cercului „+" urmează limba activă', async () => {
+      mockFetchStories.mockResolvedValue([]);
+      await i18n.changeLanguage('ru');
+      const { getByLabelText, getByText } = renderBar();
+
+      await waitFor(() => expect(getByText('Добавить')).toBeTruthy());
+      expect(getByLabelText('Добавить историю')).toBeTruthy();
+    });
+
+    it('eticheta cercului unui utilizator interpolează numele, în limba activă', async () => {
+      mockFetchStories.mockResolvedValue([
+        { userId: 'u1', name: 'Ana', storyCount: 1, stories: [] },
+      ]);
+      await i18n.changeLanguage('en');
+      const { getByLabelText } = renderBar();
+
+      await waitFor(() => expect(getByLabelText('View Ana’s stories')).toBeTruthy());
+    });
   });
 });

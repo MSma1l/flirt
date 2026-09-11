@@ -1,10 +1,12 @@
 /** Rând din lista de dialoguri: avatar-inițială, nume, preview, timp, badge unread. */
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useTheme } from '@theme/index';
 
 import { compatColor, compatLabel } from '@/features/feed/compat';
+import { useLanguage } from '@/i18n/useLanguage';
 
 import { ChatSummary } from './types';
 
@@ -15,28 +17,38 @@ interface Props {
   onPress: (chatId: string) => void;
 }
 
-/** Timp scurt relativ: „acum", „5 min", „3 h", „2 z" sau data. */
-function shortTime(iso?: string): string {
-  if (!iso) return '';
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '';
-  const diffMin = Math.floor((Date.now() - then) / 60000);
-  if (diffMin < 1) return 'acum';
-  if (diffMin < 60) return `${diffMin} min`;
-  const diffH = Math.floor(diffMin / 60);
-  if (diffH < 24) return `${diffH} h`;
-  const diffD = Math.floor(diffH / 24);
-  if (diffD < 7) return `${diffD} z`;
-  return new Date(iso).toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' });
-}
-
 function initial(name: string): string {
   return name.trim().charAt(0).toUpperCase() || '?';
 }
 
 function ChatListItemBase({ chat, onPress }: Props) {
   const { colors, typography, spacing, radius } = useTheme();
+  // Textele rândului sunt în `chat`; eticheta de compatibilitate vine din
+  // `feed`, unde stă și regula scorului — de acolo prefixul explicit `feed:`.
+  const { t } = useTranslation(['chat', 'feed']);
+  const { current: language } = useLanguage();
   const hasUnread = chat.unreadCount > 0;
+
+  /**
+   * Timp scurt relativ: „acum", „5 min", „3 h", „2 z" sau data.
+   *
+   * Stă ÎN componentă, nu lângă ea: are nevoie de `t` și de limba activă. Data
+   * de peste o săptămână se formatează cu limba interfeței, nu fix cu `ro-RO` —
+   * altfel un user rus vedea „3 sept." în română.
+   */
+  const shortTime = (iso?: string): string => {
+    if (!iso) return '';
+    const then = new Date(iso).getTime();
+    if (Number.isNaN(then)) return '';
+    const diffMin = Math.floor((Date.now() - then) / 60000);
+    if (diffMin < 1) return t('list.time.now');
+    if (diffMin < 60) return t('list.time.minutes', { value: diffMin });
+    const diffH = Math.floor(diffMin / 60);
+    if (diffH < 24) return t('list.time.hours', { value: diffH });
+    const diffD = Math.floor(diffH / 24);
+    if (diffD < 7) return t('list.time.days', { value: diffD });
+    return new Date(iso).toLocaleDateString(language, { day: 'numeric', month: 'short' });
+  };
 
   return (
     <Pressable
@@ -70,7 +82,10 @@ function ChatListItemBase({ chat, onPress }: Props) {
           <View
             testID="compat-pill"
             accessibilityRole="text"
-            accessibilityLabel={`${compatLabel(chat.compatibility)}: ${chat.compatibility}%`}
+            accessibilityLabel={t('feed:compat.badge', {
+              level: t(`feed:${compatLabel(chat.compatibility)}`),
+              score: chat.compatibility,
+            })}
             style={[
               styles.compat,
               { backgroundColor: compatColor(chat.compatibility, colors), borderRadius: radius.pill },
@@ -94,11 +109,11 @@ function ChatListItemBase({ chat, onPress }: Props) {
               { color: hasUnread ? colors.textPrimary : colors.textSecondary },
             ]}
           >
-            {chat.lastMessage ?? 'Niciun mesaj încă'}
+            {chat.lastMessage ?? t('list.noMessages')}
           </Text>
           {hasUnread ? (
             <View
-              accessibilityLabel={`${chat.unreadCount} mesaje necitite`}
+              accessibilityLabel={t('list.unread', { count: chat.unreadCount })}
               style={[styles.badge, { backgroundColor: colors.accent, borderRadius: radius.pill }]}
             >
               <Text style={[typography.badge, { color: colors.onAccent }]}>

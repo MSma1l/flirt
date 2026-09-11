@@ -82,5 +82,15 @@
   "openError": {
     "title": "Something went wrong",
     "body": "We couldn't open the page. Please try again."
+  },
+  "blocklist": {
+    "title": "Blocked users",
+    "empty": "You haven’t blocked anyone.",
+    "unblock": "Unblock",
+    "loadError": "Couldn’t load the list.",
+    "loadMore": "Load more",
+    "loadMoreError": "Couldn’t load more.",
+    "unblockErrorTitle": "Something went wrong",
+    "unblockErrorBody": "Couldn’t unblock this user. Try again."
   }
 }

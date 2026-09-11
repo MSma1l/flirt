@@ -13,9 +13,18 @@ export function compatColor(score: number, colors: ThemeColors): string {
   return colors.textDisabled;
 }
 
-/** Etichetă text pentru nivelul de compatibilitate. */
-export function compatLabel(score: number): string {
-  if (score > 80) return 'Potrivire excelentă';
-  if (score >= 50) return 'Potrivire bună';
-  return 'Potrivire slabă';
+/** Cheile de traducere ale nivelurilor de compatibilitate (namespace `feed`). */
+export type CompatLabelKey = 'compat.excellent' | 'compat.good' | 'compat.weak';
+
+/**
+ * CHEIA etichetei pentru nivelul de compatibilitate, nu textul.
+ *
+ * Modul pur, apelat în afara randării, unde `t` nu există — același tipar ca
+ * `features/auth/validation.ts`. Traducerea se face la afișare, în componentele
+ * care arată scorul (`CompatBadge`, `ChatListItem`).
+ */
+export function compatLabel(score: number): CompatLabelKey {
+  if (score > 80) return 'compat.excellent';
+  if (score >= 50) return 'compat.good';
+  return 'compat.weak';
 }

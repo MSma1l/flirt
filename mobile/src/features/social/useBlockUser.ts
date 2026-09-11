@@ -8,6 +8,7 @@
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { blockUser } from '@/features/settings/settingsApi';
 import { alertMessage, confirmAsync } from '@/utils/dialog';
@@ -26,6 +27,7 @@ interface BlockUserApi {
 
 export function useBlockUser({ onBlocked }: Options = {}): BlockUserApi {
   const queryClient = useQueryClient();
+  const { t } = useTranslation('moderation');
 
   const mutation = useMutation({
     mutationFn: (userId: string) => blockUser(userId),
@@ -37,7 +39,7 @@ export function useBlockUser({ onBlocked }: Options = {}): BlockUserApi {
       onBlocked?.();
     },
     onError: () => {
-      alertMessage('Ceva n-a mers', 'Nu am putut bloca utilizatorul. Reîncearcă.');
+      alertMessage(t('block.errorTitle'), t('block.errorBody'));
     },
   });
 
@@ -47,17 +49,15 @@ export function useBlockUser({ onBlocked }: Options = {}): BlockUserApi {
     async (userId: string, name?: string) => {
       if (!userId) return;
       const ok = await confirmAsync(
-        'Blochează utilizatorul',
-        name
-          ? `${name} nu te va mai putea contacta și nu va mai apărea în aplicație.`
-          : 'Persoana nu te va mai putea contacta și nu va mai apărea în aplicație.',
-        { confirmText: 'Blochează', destructive: true },
+        t('block.title'),
+        name ? t('block.bodyNamed', { name }) : t('block.body'),
+        { confirmText: t('block.confirm'), destructive: true },
       );
       if (ok) {
         mutate(userId);
       }
     },
-    [mutate],
+    [mutate, t],
   );
 
   return { confirmBlock, isBlocking: mutation.isPending };

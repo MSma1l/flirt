@@ -54,9 +54,28 @@ export function minLen(value: string | null | undefined, n: number): string | nu
   return null;
 }
 
+/**
+ * PREDICATE (adevărat/fals), separate de funcțiile care întorc mesaje.
+ *
+ * Un apelant care își traduce singur erorile (ecranele de auth, migrate pe i18n)
+ * are nevoie de REGULĂ, nu de propoziția în română. Expunându-le, regula rămâne
+ * într-un singur loc — aici, simetrică cu backend-ul — iar mesajul îl alege cine
+ * afișează. Fără ele, ecranele ar fi trebuit să-și copieze regex-urile.
+ */
+
+/** Conține marcaje HTML / `<script>`? */
+export function hasHtml(value?: string | null): boolean {
+  return !!value && HTML_RE.test(value);
+}
+
+/** Arată a adresă de email (format, fără spații)? Nu verifică marcajele. */
+export function looksLikeEmail(value?: string | null): boolean {
+  return EMAIL_RE.test((value ?? '').trim());
+}
+
 /** Respinge textul care conține marcaje HTML / `<script>` (anti-XSS). */
 export function noHtml(value?: string | null): string | null {
-  if (value && HTML_RE.test(value)) {
+  if (hasHtml(value)) {
     return 'Textul nu poate conține marcaje HTML.';
   }
   return null;
@@ -66,7 +85,7 @@ export function noHtml(value?: string | null): string | null {
 export function isEmail(value?: string | null): string | null {
   const v = (value ?? '').trim();
   if (!v) return 'Introdu adresa de email.';
-  if (!EMAIL_RE.test(v)) return 'Adresa de email nu este validă.';
+  if (!looksLikeEmail(v)) return 'Adresa de email nu este validă.';
   return noHtml(v);
 }
 

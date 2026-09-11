@@ -40,7 +40,8 @@ describe('SendFirstMessageSheet', () => {
 
   it('varianta rapidă completează câmpul și „Trimite" trimite textul (trim)', () => {
     const { getByTestId, onSend } = renderSheet();
-    fireEvent.press(getByTestId('first-msg-quick-Salut 👋'));
+    // `testID`-ul e id-ul variantei, nu textul ei: altfel ar depinde de limbă.
+    fireEvent.press(getByTestId('first-msg-quick-hi'));
     fireEvent.press(getByTestId('first-msg-send'));
     expect(onSend).toHaveBeenCalledWith('Salut 👋');
   });
@@ -63,7 +64,7 @@ describe('SendFirstMessageSheet', () => {
   it('apăsarea pe „Salut 👋" trimite mesajul și NU închide foaia', () => {
     const { getByTestId, onSend, onClose } = renderSheet();
 
-    fireEvent.press(getByTestId('first-msg-quick-Salut 👋'));
+    fireEvent.press(getByTestId('first-msg-quick-hi'));
     // Cât timp backdrop-ul era părinte, pe web click-ul putea ajunge la el și
     // închidea foaia în loc să completeze mesajul.
     expect(onClose).not.toHaveBeenCalled();
@@ -76,7 +77,7 @@ describe('SendFirstMessageSheet', () => {
   it('apăsarea pe butoanele din sheet nu declanșează onClose', () => {
     const { getByTestId, onClose } = renderSheet();
 
-    fireEvent.press(getByTestId('first-msg-quick-Salut, ce faci?'));
+    fireEvent.press(getByTestId('first-msg-quick-hiHowAreYou'));
     fireEvent.press(getByTestId('first-msg-skip'));
 
     expect(onClose).not.toHaveBeenCalled();

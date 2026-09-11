@@ -3,6 +3,7 @@ import { render, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
 import TicketScreen from '../ticket';
+import i18n from '@/i18n';
 import { ThemeProvider } from '@theme/index';
 import type { Ticket } from '@/features/settings/settingsApi';
 
@@ -53,5 +54,31 @@ describe('TicketScreen', () => {
     const { getByText } = renderScreen();
 
     await waitFor(() => getByText('FOLOSIT'));
+  });
+
+  describe('i18n', () => {
+    afterEach(async () => {
+      await i18n.changeLanguage('ro');
+    });
+
+    it('titlul, instrucțiunea și starea biletului urmează limba activă', async () => {
+      mockFetchTicket.mockResolvedValue({ code: 'ABCD1234', used: false });
+      await i18n.changeLanguage('ru');
+      const { getByText } = renderScreen();
+
+      await waitFor(() => getByText('Мой билет Flirt Party'));
+      expect(getByText('Покажите этот билет на входе. Он действителен только один раз.')).toBeTruthy();
+      expect(getByText('Код билета')).toBeTruthy();
+      expect(getByText('НЕ ИСПОЛЬЗОВАН')).toBeTruthy();
+    });
+
+    it('biletul folosit se anunță în limba activă', async () => {
+      mockFetchTicket.mockResolvedValue({ code: 'ABCD1234', used: true });
+      await i18n.changeLanguage('en');
+      const { getByText } = renderScreen();
+
+      await waitFor(() => getByText('USED'));
+      expect(getByText('My Flirt Party ticket')).toBeTruthy();
+    });
   });
 });

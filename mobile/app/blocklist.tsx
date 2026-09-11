@@ -2,6 +2,7 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 
 import { BackButton, Button, ScreenContainer } from '@/components/ui';
@@ -11,6 +12,7 @@ import { useTheme } from '@theme/index';
 
 export default function BlocklistScreen() {
   const { colors, typography, spacing, radius } = useTheme();
+  const { t } = useTranslation('settings');
   const queryClient = useQueryClient();
 
   // Backendul paginează pe cursor (`X-Next-Cursor`), deci `useInfiniteQuery`:
@@ -39,7 +41,8 @@ export default function BlocklistScreen() {
   const unblockMutation = useMutation({
     mutationFn: (blockedId: string) => unblock(blockedId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['blocks'] }),
-    onError: () => alertMessage('Ceva n-a mers', 'Nu am putut debloca utilizatorul. Reîncearcă.'),
+    onError: () =>
+      alertMessage(t('blocklist.unblockErrorTitle'), t('blocklist.unblockErrorBody')),
   });
 
   if (isLoading) {
@@ -58,7 +61,7 @@ export default function BlocklistScreen() {
       <ScreenContainer center>
         <Stack.Screen options={{ headerShown: false }} />
         <Text style={[typography.body, styles.center, { color: colors.danger }]}>
-          Nu am putut încărca lista.
+          {t('blocklist.loadError')}
         </Text>
         <Text
           accessibilityRole="button"
@@ -69,7 +72,7 @@ export default function BlocklistScreen() {
             { color: colors.accent, marginTop: spacing.md },
           ]}
         >
-          Reîncearcă
+          {t('retry')}
         </Text>
       </ScreenContainer>
     );
@@ -85,13 +88,13 @@ export default function BlocklistScreen() {
       <BackButton style={{ alignSelf: 'flex-start', marginBottom: spacing.lg }} />
 
       <Text style={[typography.h1, { color: colors.textPrimary, marginBottom: spacing.lg }]}>
-        Utilizatori blocați
+        {t('blocklist.title')}
       </Text>
 
       {blocks.length === 0 ? (
         <View style={styles.empty}>
           <Text style={[typography.body, styles.center, { color: colors.textSecondary }]}>
-            Nu ai utilizatori blocați.
+            {t('blocklist.empty')}
           </Text>
         </View>
       ) : (
@@ -117,11 +120,11 @@ export default function BlocklistScreen() {
                         testID="blocks-load-more-error"
                         style={[typography.caption, styles.center, { color: colors.danger }]}
                       >
-                        Nu am putut încărca mai multe.
+                        {t('blocklist.loadMoreError')}
                       </Text>
                     )}
                     <Button
-                      label={isFetchNextPageError ? 'Reîncearcă' : 'Încarcă mai multe'}
+                      label={isFetchNextPageError ? t('retry') : t('blocklist.loadMore')}
                       variant="outline"
                       onPress={() => fetchNextPage()}
                       testID="blocks-load-more"
@@ -152,7 +155,7 @@ export default function BlocklistScreen() {
                 {item.name}
               </Text>
               <Button
-                label="Deblochează"
+                label={t('blocklist.unblock')}
                 variant="outline"
                 loading={
                   unblockMutation.isPending &&

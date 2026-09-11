@@ -8,6 +8,8 @@
  */
 import axios from 'axios';
 
+import i18n from '@/i18n';
+
 /** De ce nu a reușit verificarea (sau de ce nici nu a plecat pe rețea). */
 export type FaceVerifyReason =
   /** Serverul a răspuns, dar fața nu se potrivește cu pozele de profil. */
@@ -30,30 +32,46 @@ export type FaceVerifyReason =
   | 'unknown';
 
 /**
- * Textele afișate utilizatorului. `no_match` acoperă intenționat și cazul în
- * care profilul n-are poze de referință: backend-ul întoarce identic
- * `verified=false, similarity=0` în ambele situații, așa că un mesaj care ar
- * afirma răspicat „nu semeni cu pozele tale" ar putea fi pur și simplu fals.
+ * Motiv → cheia din catalog.
+ *
+ * CODUL rămâne contractul (îl produce `faceVerifyReason` din statusul HTTP);
+ * doar textul stă în `locales/<limba>/verification.json`. `no_match` acoperă
+ * intenționat și cazul în care profilul n-are poze de referință: backend-ul
+ * întoarce identic `verified=false, similarity=0` în ambele situații, așa că un
+ * mesaj care ar afirma răspicat „nu semeni cu pozele tale" ar putea fi fals.
  */
-export const FACE_MESSAGES: Record<FaceVerifyReason, string> = {
-  no_match:
-    'Nu am putut confirma că ești tu. Asigură-te că fața ta e clar vizibilă și ' +
-    'bine luminată, iar pozele din profil te arată la față. Poți încerca din nou.',
-  no_face:
-    'Nu am găsit nicio față în selfie. Ține telefonul la nivelul ochilor și ' +
-    'încadrează-ți fața complet, apoi încearcă din nou.',
-  invalid_image:
-    'Selfie-ul nu a putut fi citit. Încearcă să faci altul, cu lumină mai bună.',
-  too_large: 'Selfie-ul e prea mare pentru încărcare. Încearcă din nou.',
-  rate_limited:
-    'Ai încercat de prea multe ori. Așteaptă câteva minute și revino.',
-  no_profile:
-    'Ai nevoie de un profil cu poze înainte de verificare. Completează-ți profilul, apoi revino.',
-  unavailable:
-    'Serviciul de verificare nu răspunde acum. Nu e din vina ta — încearcă din nou peste câteva minute.',
-  network: 'Conexiune întreruptă. Verifică internetul și încearcă din nou.',
-  unknown: 'Verificarea nu a reușit. Încearcă din nou.',
-};
+const REASON_KEY = {
+  no_match: 'verification:reasons.no_match',
+  no_face: 'verification:reasons.no_face',
+  invalid_image: 'verification:reasons.invalid_image',
+  too_large: 'verification:reasons.too_large',
+  rate_limited: 'verification:reasons.rate_limited',
+  no_profile: 'verification:reasons.no_profile',
+  unavailable: 'verification:reasons.unavailable',
+  network: 'verification:reasons.network',
+  unknown: 'verification:reasons.unknown',
+} as const satisfies Record<FaceVerifyReason, string>;
+
+/** Mesajele camerei, în afara mapării motivelor de la server. */
+const CAMERA_KEY = {
+  captureFailed: 'verification:camera.captureFailed',
+  permission: 'verification:camera.permission',
+  permissionBlocked: 'verification:camera.permissionBlocked',
+} as const;
+
+export type CameraMessageKey = keyof typeof CAMERA_KEY;
+
+/**
+ * Mesajul camerei, în limba activă.
+ *
+ * Modulul NU e o componentă (îl folosește și `faceCamera`), deci citește din
+ * instanța globală — la FIECARE apel, nu la încărcare: altfel primul mesaj ar
+ * îngheța limba pentru toată sesiunea. Același tipar ca `features/billing/iap.ts`
+ * și `features/stories/storyLimits.ts`.
+ */
+export function cameraMessage(key: CameraMessageKey): string {
+  return i18n.t(CAMERA_KEY[key]);
+}
 
 /** Detaliul de eroare trimis de FastAPI (`{"detail": "..."}`), dacă există. */
 function errorDetail(error: unknown): string {
@@ -87,24 +105,7 @@ export function faceVerifyReason(error: unknown): FaceVerifyReason {
   return 'unknown';
 }
 
-/** Motiv → mesaj afișabil. */
+/** Motiv → mesaj afișabil, în limba activă. */
 export function faceVerifyMessage(reason: FaceVerifyReason): string {
-  return FACE_MESSAGES[reason];
+  return i18n.t(REASON_KEY[reason]);
 }
-
-/** Mesajul când camera nu a putut face poza (eroare neașteptată de sistem). */
-export const CAPTURE_FAILED_MESSAGE =
-  'Nu am putut face selfie-ul. Încearcă din nou.';
-
-/** Permisiune refuzată, dar sistemul mai poate afișa dialogul o dată. */
-export const CAMERA_PERMISSION_MESSAGE =
-  'Avem nevoie de cameră ca să faci selfie-ul de verificare. ' +
-  'Fără acces, verificarea nu poate fi făcută.';
-
-/**
- * Refuz definitiv: sistemul nu mai arată dialogul, singura cale rămasă e
- * ecranul de Setări — de aceea nu lăsăm utilizatorul într-un ecran mort.
- */
-export const CAMERA_PERMISSION_BLOCKED_MESSAGE =
-  'Accesul la cameră este oprit. Deschide setările și activează camera pentru FLIRT, ' +
-  'apoi revino la verificare.';

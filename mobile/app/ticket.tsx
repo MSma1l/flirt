@@ -2,6 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
@@ -17,6 +18,7 @@ function formatCode(code: string): string {
 
 export default function TicketScreen() {
   const { colors, typography, spacing, radius } = useTheme();
+  const { t } = useTranslation('social');
 
   const { data, isLoading, isError, refetch } = useQuery<Ticket>({
     queryKey: ['ticket'],
@@ -37,7 +39,7 @@ export default function TicketScreen() {
       <ScreenContainer center>
         <Stack.Screen options={{ headerShown: false }} />
         <Text style={[typography.body, styles.center, { color: colors.danger }]}>
-          Nu am putut încărca biletul.
+          {t('myTicket.loadError')}
         </Text>
         <Text
           accessibilityRole="button"
@@ -48,7 +50,7 @@ export default function TicketScreen() {
             { color: colors.accent, marginTop: spacing.md },
           ]}
         >
-          Reîncearcă
+          {t('myTicket.retry')}
         </Text>
       </ScreenContainer>
     );
@@ -63,10 +65,10 @@ export default function TicketScreen() {
       <BackButton style={{ alignSelf: 'flex-start', marginBottom: spacing.lg }} />
 
       <Text style={[typography.h1, { color: colors.textPrimary, marginBottom: spacing.xs }]}>
-        Biletul meu Flirt Party
+        {t('myTicket.title')}
       </Text>
       <Text style={[typography.body, { color: colors.textSecondary, marginBottom: spacing.xl }]}>
-        Prezintă acest bilet la intrare. Este valabil o singură dată.
+        {t('myTicket.hint')}
       </Text>
 
       <View
@@ -105,7 +107,9 @@ export default function TicketScreen() {
         {/* Codul în clar, sub QR — pentru introducere manuală la intrare.
             Încadrat pe lățimea cardului și rupt în grupuri ca să nu iasă din ecran. */}
         <View style={styles.codeBox}>
-          <Text style={[typography.caption, { color: colors.textSecondary }]}>Cod bilet</Text>
+          <Text style={[typography.caption, { color: colors.textSecondary }]}>
+            {t('myTicket.code')}
+          </Text>
           <Text style={[styles.code, { color: colors.textPrimary }]}>
             {formatCode(data.code)}
           </Text>
@@ -125,7 +129,7 @@ export default function TicketScreen() {
           <Text
             style={[typography.badge, { color: used ? colors.danger : colors.success }]}
           >
-            {used ? 'FOLOSIT' : 'NEFOLOSIT'}
+            {used ? t('myTicket.used') : t('myTicket.unused')}
           </Text>
         </View>
       </View>

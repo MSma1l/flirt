@@ -8,6 +8,9 @@
  * `GET /profiles/reference`: serverul trimite toate variantele, clientul alege
  * limba activă. NU le duplicăm în cataloagele i18n.
  *
+ * `text_uk` a rămas în tip pentru că SERVERUL încă îl trimite; interfața nu mai
+ * are ucraineana, deci nu e citit niciodată. Îl ștergem când îl scoate serverul.
+ *
  * Toate câmpurile de text sunt OPȚIONALE aici, deși schema serverului le cere:
  * un client publicat poate vorbi cu un server mai vechi (care trimitea doar
  * `text`) sau invers. `cardText()` rezolvă orice combinație, cu fallback pe `ro`.

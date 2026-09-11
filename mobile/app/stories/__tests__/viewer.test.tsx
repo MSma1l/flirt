@@ -5,6 +5,7 @@ import { StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import StoryViewerScreen from '../[userId]';
+import i18n from '@/i18n';
 import { ThemeProvider } from '@theme/index';
 import type { UserStories } from '@/features/stories/types';
 
@@ -459,4 +460,28 @@ describe('StoryViewerScreen', () => {
       jest.useRealTimers();
     }
   });
+
+  describe('i18n', () => {
+    afterEach(async () => {
+      await i18n.changeLanguage('ro');
+    });
+
+    it('comenzile vizualizatorului urmează limba activă', async () => {
+      await i18n.changeLanguage('ru');
+      const { getByLabelText } = renderScreen();
+
+      await waitFor(() => expect(getByLabelText('Предыдущая история')).toBeTruthy());
+      expect(getByLabelText('Следующая история')).toBeTruthy();
+      expect(getByLabelText('Закрыть')).toBeTruthy();
+    });
+
+    it('bara de răspuns interpolează numele autorului, în limba activă', async () => {
+      await i18n.changeLanguage('en');
+      const { getByPlaceholderText, getByLabelText } = renderScreen();
+
+      await waitFor(() => expect(getByPlaceholderText('Reply to Ana…')).toBeTruthy());
+      expect(getByLabelText('Write a reply to the story')).toBeTruthy();
+    });
+  });
+
 });

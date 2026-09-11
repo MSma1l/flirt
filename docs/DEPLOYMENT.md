@@ -120,6 +120,7 @@ cheia. Rezumat al valorilor pe care **trebuie** să le pui tu:
 | `GOOGLE_CLIENT_ID` / `APPLE_CLIENT_ID`         | Google Cloud Console / Apple Developer (Sign in with Apple)            |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` | consola Twilio (SMS-urile OTP costă bani per mesaj)           |
 | `APP_STORE_SHARED_SECRET`                      | App Store Connect → App Information → App-Specific Shared Secret       |
+| `OPERATOR_LEGAL_NAME`                          | numele juridic real al operatorului (PFA / SRL) — vezi mai jos          |
 
 Deja completate corect în șablon (nu le schimba fără motiv): `DOMAIN=api.flrt.md`,
 `ADMIN_DOMAIN=admin-flirt-paty.flrt.md`, `CORS_ORIGINS=https://admin-flirt-paty.flrt.md`,
@@ -140,6 +141,39 @@ echo "JWT_PUBLIC_KEY=$(awk  '{printf "%s\\n", $0}' public.pem)"
 ```
 
 > Rotația cheii invalidează **toate** tokenurile emise (toți userii se reloghează).
+
+### Numele operatorului legal
+
+`OPERATOR_LEGAL_NAME` e numele complet al persoanei fizice sau al firmei care
+publică aplicația. Apare în Termeni și în Politica de confidențialitate, în ambele
+limbi — sunt documentele pe care le citește recenzentul App Store.
+
+Spre deosebire de restul variabilelor din tabel, **asta nu blochează pornirea**:
+guardul de producție n-o cere și nu e marcată cu `<<< COMPLETEAZĂ >>>`. Cât timp e
+goală, paginile legale afișează în locul numelui un marcaj vizibil:
+
+> **DE COMPLETAT: numele complet al operatorului**
+
+Alegerea e deliberată: mai bine un stack care pornește și își arată singur golul,
+decât unul care refuză să pornească sau — mult mai rău — care publică o denumire
+inventată. Din același motiv câmpul e gol implicit, nu „FLIRT": marca e `APP_NAME`,
+iar un operator legal nu se ghicește.
+
+Deci: se poate face deploy și fără ea, dar **nu se poate face submit în App Store**
+cu marcajul la vedere. Completeaz-o când numele juridic e decis:
+
+```bash
+# în backend/.env, pe server
+OPERATOR_LEGAL_NAME=Popescu Ion Întreprindere Individuală
+
+docker compose up -d --force-recreate api    # paginile legale sunt cache-uite în proces
+```
+
+Verificare:
+
+```bash
+curl -s https://api.flrt.md/legal/terms | grep -c "DE COMPLETAT"    # → 0
+```
 
 ### Check
 

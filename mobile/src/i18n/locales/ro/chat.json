@@ -37,5 +37,34 @@
     "newTitle": "Match nou",
     "newHint": "Ai un match — poți scrie primul mesaj.",
     "activeTitle": "Conversații"
+  },
+  "conversation": {
+    "fallbackTitle": "Conversație",
+    "report": "Raportează",
+    "block": "Blochează",
+    "empty": "Scrie primul mesaj 👋",
+    "placeholder": "Scrie un mesaj…",
+    "send": "Trimite",
+    "sendError": "Mesajul nu a fost trimis. Reîncearcă."
+  },
+  "bubble": {
+    "own": "mesaj propriu",
+    "received": "mesaj primit",
+    "react": "Reacționează la mesaj",
+    "reaction": "Reacție: {{emoji}}",
+    "reactionOption": "Reacție {{emoji}}",
+    "maskedHint": "Contact ascuns pentru siguranță"
+  },
+  "list": {
+    "noMessages": "Niciun mesaj încă",
+    "unread_one": "{{count}} mesaj necitit",
+    "unread_few": "{{count}} mesaje necitite",
+    "unread_other": "{{count}} de mesaje necitite",
+    "time": {
+      "now": "acum",
+      "minutes": "{{value}} min",
+      "hours": "{{value}} h",
+      "days": "{{value}} z"
+    }
   }
 }

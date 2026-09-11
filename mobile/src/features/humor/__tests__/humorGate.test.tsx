@@ -129,6 +129,44 @@ describe('useHumorGate', () => {
     await waitFor(() => expect(mockFetchHumor).not.toHaveBeenCalled());
   });
 
+  it('alt cont pe același telefon NU moștenește vectorul celui dinainte', async () => {
+    // Regresie: cu o cheie de cache fără `userId` (și `staleTime: Infinity`),
+    // răspunsul lui u1 rămânea în cache și îi deschidea poarta lui u2 — care
+    // n-a dat niciodată quiz-ul. Un singur client, exact ca în aplicație.
+    mockFetchHumor.mockResolvedValue({ vector: { sarcasm: 1 } });
+    const { result } = renderGate();
+    await waitFor(() => expect(result.current.needsQuiz).toBe(false));
+
+    // Logout + login cu alt cont: store-ul e zustand real, deci hook-ul se
+    // re-randează singur, exact ca în aplicație.
+    mockFetchHumor.mockResolvedValue({ vector: {} });
+    setAuth({
+      status: 'authenticated',
+      user: { id: 'u2', email: 'ion@flirt.md', profile_completed: true },
+    });
+
+    await waitFor(() => expect(result.current.needsQuiz).toBe(true));
+  });
+
+  it('cât timp prima interogare e pe drum → `pending`, ca nimeni să nu decidă pripit', async () => {
+    let resolveHumor: (p: HumorProfile) => void = () => {};
+    mockFetchHumor.mockReturnValue(
+      new Promise<HumorProfile>((resolve) => {
+        resolveHumor = resolve;
+      }),
+    );
+    const { result } = renderGate();
+
+    await waitFor(() => expect(result.current.pending).toBe(true));
+    // „Nu știm încă" nu e „nu are nevoie": ambele sunt `needsQuiz: false`, de
+    // asta poarta expune și `pending`.
+    expect(result.current.needsQuiz).toBe(false);
+
+    resolveHumor({ vector: {} });
+    await waitFor(() => expect(result.current.needsQuiz).toBe(true));
+    expect(result.current.pending).toBe(false);
+  });
+
   it('supapa e legată de user: alt cont pe același telefon e tot întrebat', async () => {
     mockFetchHumor.mockResolvedValue({ vector: {} });
     useHumorGateStore.getState().markUnavailable('u1');

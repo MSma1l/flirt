@@ -1,6 +1,5 @@
 /** Wizard de anketă (multi-pas într-un ecran) — chestionarul de înregistrare. */
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -31,7 +30,7 @@ import {
   SEARCH_AGE_MIN,
   validateStep,
 } from '@/features/anketa/validation';
-import { PhotoGrid, usePhotoPicker } from '@/features/photos';
+import { PhotoGrid, usePhotoErrorText, usePhotoPicker } from '@/features/photos';
 import { deletePhoto, reorderPhotos, uploadPhoto } from '@/features/photos/photosApi';
 import { PhotoTile } from '@/features/photos/types';
 import {
@@ -39,6 +38,7 @@ import {
   validateCanAddPhoto,
   validatePhotoCount,
 } from '@/features/photos/validation';
+import { useLanguage } from '@/i18n/useLanguage';
 import { useAuthStore } from '@/store/authStore';
 import { useTheme } from '@theme/index';
 
@@ -138,10 +138,10 @@ function ChipGroup({
 }
 
 export default function AnketaWizard() {
-  const router = useRouter();
   const { t } = useTranslation('onboarding');
+  const { current: language } = useLanguage();
   const { colors, typography, spacing, radius } = useTheme();
-  const setProfileCompleted = useAuthStore((s) => s.setProfileCompleted);
+  const refreshUser = useAuthStore((s) => s.refreshUser);
 
   const {
     draft,
@@ -163,6 +163,8 @@ export default function AnketaWizard() {
   const [uploadProgress, setUploadProgress] = useState(0);
 
   const picker = usePhotoPicker();
+  // Eșecurile de upload vin ca motiv (cheie); aici devin text.
+  const photoErrorText = usePhotoErrorText();
 
   // Ce s-a terminat deja, ca o REÎNCERCARE să nu refacă munca (și, mai ales, să
   // nu retrimită anketa — un al doilea PUT ar rescrie `photos` cu lista goală și
@@ -178,7 +180,13 @@ export default function AnketaWizard() {
     isLoading,
     isError,
     refetch,
-  } = useQuery({ queryKey: ['anketa-reference'], queryFn: fetchReference });
+  } = useQuery({
+    // Limba intră în cheie: etichetele referinței vin DEJA localizate de la
+    // server, deci un cache comun tuturor limbilor ar servi etichetele vechi
+    // după comutare.
+    queryKey: ['anketa-reference', language],
+    queryFn: () => fetchReference(language),
+  });
 
   /** Comută o valoare într-un câmp multi-select (array de string-uri). */
   const toggleMulti = (
@@ -277,20 +285,24 @@ export default function AnketaWizard() {
         await reorderPhotos(desired);
       }
 
-      setProfileCompleted(true);
+      // Starea o dă SERVERUL, nu noi: `profile_completed` se aprinde acolo, la
+      // scrierea profilului. Înainte ecranul își nota singur `true` fără să
+      // aștepte, așa că un profil respins de server (prea puține poze) trecea
+      // drept complet, iar userul ajungea în feed unde nimic nu-i mergea.
+      await refreshUser();
       reset();
-      // NU în feed: testul de umor urmează imediat după anketă. Vectorul de umor
-      // intră în scorul de compatibilitate, deci un user care intră direct în
-      // feed ar primi (și ar da) potriviri slabe. Ordinea de mai sus rămâne
-      // neatinsă — anketă, poze, abia apoi navigarea.
-      router.replace('/humor');
+      // Aici NU se navighează, deloc. `refreshUser()` a aprins deja
+      // `profile_completed`, iar `AuthGuard` vede schimbarea și duce userul mai
+      // departe — la quiz, la poze sau în feed, după caz.
+      //
+      // Aveam aici `router.replace('/')`, care nu făcea NIMIC: `app/index.tsx`
+      // și `app/(onboarding)/index.tsx` răspund amândouă la `/`, iar expo-router
+      // alege ruta din grupul în care ești deja. Așa că „ieșirea" din wizard
+      // remonta wizardul — golit de `reset()`, adică anketa părea că o ia de la
+      // capăt — și abia poarta îl scotea de acolo.
     } catch (error) {
       setUploadingIndex(null);
-      const reason =
-        error instanceof Error && error.message
-          ? error.message
-          : t('errors.uploadPhotos');
-      setPhotosError(t('errors.uploadRetry', { reason }));
+      setPhotosError(t('errors.uploadRetry', { reason: photoErrorText(error) }));
     } finally {
       setSubmitting(false);
     }

@@ -11,10 +11,15 @@
  */
 import { Alert, Platform } from 'react-native';
 
+import i18n from '@/i18n';
+
 interface ConfirmOptions {
   /** Textul butonului de confirmare (implicit „OK"). */
   confirmText?: string;
-  /** Textul butonului de anulare (implicit „Anulează"). */
+  /**
+   * Textul butonului de anulare. Implicit `common:actions.cancel` — aceeași
+   * „Anulează" pe care o folosesc butoanele din ecrane, în limba activă.
+   */
   cancelText?: string;
   /** Marchează acțiunea ca distructivă (roșu pe iOS). */
   destructive?: boolean;
@@ -44,7 +49,15 @@ export function confirmAsync(
   message?: string,
   opts: ConfirmOptions = {},
 ): Promise<boolean> {
-  const { confirmText = 'OK', cancelText = 'Anulează', destructive = false } = opts;
+  // Traducerea se citește la FIECARE apel, nu la încărcarea modulului: dacă
+  // userul comută limba, următorul dialog o urmează. Modulul nu e o componentă,
+  // deci nu poate folosi `useTranslation` — citim din instanța globală, aceeași
+  // pe care o inițializează `app/_layout.tsx` (și `jest.setup.js` în teste).
+  const {
+    confirmText = 'OK',
+    cancelText = i18n.t('common:actions.cancel'),
+    destructive = false,
+  } = opts;
   if (Platform.OS === 'web') {
     // eslint-disable-next-line no-alert
     return Promise.resolve(window.confirm(joinWeb(title, message)));

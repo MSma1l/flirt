@@ -1,5 +1,9 @@
 /**
- * Gardianul catalogului `humor` în cele 4 limbi.
+ * Gardianul catalogului `humor`.
+ *
+ * Verifică și `uk`, deși limba a ieșit din interfață: fișierele `locales/uk`
+ * au rămas pe disc, iar dacă limba se reactivează vrem traducerile deja valide,
+ * nu putrezite în tăcere. Importurile sunt directe, nu prin `resources`.
  *
  * Paritatea cheilor și interpolările sunt deja verificate global, pentru toate
  * namespace-urile, de `src/i18n/__tests__/catalogs.test.ts` — nu le dublăm aici.

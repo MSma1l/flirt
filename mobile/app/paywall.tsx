@@ -44,6 +44,32 @@ function productIdOf(plan: Plan): string | undefined {
   return config.iap.productIds[plan.code];
 }
 
+/**
+ * Planurile pe care catalogul clientului le cunoaște.
+ *
+ * `title` și `features` vin de la server (`backend/app/services/billing.py`),
+ * care le trimite DOAR în română. Codul planului e însă stabil și e deja
+ * contractul dintre client și server (pe el se face achiziția), deci îl folosim
+ * drept cheie de traducere.
+ *
+ * Un plan necunoscut aici — adăugat pe server între două versiuni de aplicație —
+ * își păstrează textele de la server: mai bine în română decât deloc.
+ */
+const TRANSLATED_PLANS = [
+  'premium',
+  'no_ads',
+  'ai_bot',
+  'all_inclusive',
+  'card_5',
+  'card_10',
+] as const;
+
+type TranslatedPlan = (typeof TRANSLATED_PLANS)[number];
+
+function isTranslatedPlan(code: string): code is TranslatedPlan {
+  return (TRANSLATED_PLANS as readonly string[]).includes(code);
+}
+
 export default function PaywallScreen() {
   const queryClient = useQueryClient();
   const { t } = useTranslation('billing');
@@ -275,6 +301,14 @@ export default function PaywallScreen() {
             ? t('paywall.priceStore', { price: product.displayPrice })
             : t('paywall.priceFallback', { price: plan.priceEur });
 
+          // Textele planului: din catalog după cod, cu textele serverului ca
+          // ultimă soluție (vezi `TRANSLATED_PLANS`).
+          const code = plan.code;
+          const title = isTranslatedPlan(code) ? t(`plans.${code}.title`) : plan.title;
+          const features = isTranslatedPlan(code)
+            ? t(`plans.${code}.features`, { returnObjects: true })
+            : plan.features;
+
           return (
             <View
               key={plan.code}
@@ -292,7 +326,7 @@ export default function PaywallScreen() {
             >
               <View style={styles.cardHead}>
                 <Text style={[typography.h2, styles.flex1, { color: colors.textPrimary }]}>
-                  {plan.title}
+                  {title}
                 </Text>
                 {isActive ? (
                   <View
@@ -320,7 +354,7 @@ export default function PaywallScreen() {
               </Text>
 
               <View style={{ gap: spacing.sm }}>
-                {plan.features.map((feature: string) => (
+                {features.map((feature: string) => (
                   <View key={feature} style={styles.featureRow}>
                     <Text style={[typography.bodyStrong, { color: colors.success }]}>✓</Text>
                     <Text style={[typography.body, styles.flex1, { color: colors.textSecondary }]}>

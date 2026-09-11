@@ -1,5 +1,6 @@
 /** Cardul de profil din deck: foto/placeholder, overlay cu date, interese, badge. */
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ReportModal } from '@/features/moderation/ReportModal';
@@ -16,6 +17,7 @@ interface Props {
 
 function ProfileCardBase({ card }: Props) {
   const { colors, typography, radius, spacing } = useTheme();
+  const { t } = useTranslation('feed');
   const hasPhoto = card.photos.length > 0;
   const initial = card.name.trim().charAt(0).toUpperCase() || '?';
   const interests = card.topInterests.slice(0, 3);
@@ -63,7 +65,7 @@ function ProfileCardBase({ card }: Props) {
               că profilul e DEJA la favorite (fără să pară că apăsarea n-a mers). */}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={isFavorite ? 'Deja la favorite' : 'Adaugă la favorite'}
+            accessibilityLabel={t(isFavorite ? 'card.alreadyFavorite' : 'card.favorite')}
             accessibilityState={{ selected: isFavorite, disabled: isFavorite || isAdding }}
             disabled={isFavorite || isAdding}
             onPress={markFavorite}
@@ -81,7 +83,7 @@ function ProfileCardBase({ card }: Props) {
 
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Raportează"
+            accessibilityLabel={t('card.report')}
             onPress={() => setReportOpen(true)}
             hitSlop={8}
             testID="card-report"
@@ -95,7 +97,7 @@ function ProfileCardBase({ card }: Props) {
 
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Blochează"
+            accessibilityLabel={t('card.block')}
             disabled={isBlocking}
             onPress={() => confirmBlock(card.userId, card.name)}
             hitSlop={8}
@@ -122,10 +124,12 @@ function ProfileCardBase({ card }: Props) {
               { color: colors.textSecondary, marginTop: spacing.xs },
             ]}
           >
-            {card.city}
             {card.distanceKm !== undefined
-              ? ` · ${Math.round(card.distanceKm)} km`
-              : ''}
+              ? t('card.cityWithDistance', {
+                  city: card.city,
+                  km: Math.round(card.distanceKm),
+                })
+              : card.city}
           </Text>
 
           {card.about ? (

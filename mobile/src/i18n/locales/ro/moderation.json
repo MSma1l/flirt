@@ -1,1 +1,24 @@
-{}
+{
+  "report": {
+    "title": "Raportează",
+    "categories": {
+      "spam": "Spam",
+      "fake": "Profil fals",
+      "offensive": "Limbaj ofensator",
+      "obscene": "Conținut obscen"
+    },
+    "noteLabel": "Notă (opțional)",
+    "notePlaceholder": "Detalii suplimentare…",
+    "submit": "Trimite raportul",
+    "sendError": "Nu am putut trimite raportul. Încearcă din nou.",
+    "thanks": "Mulțumim, am primit raportul"
+  },
+  "block": {
+    "title": "Blochează utilizatorul",
+    "confirm": "Blochează",
+    "body": "Persoana nu te va mai putea contacta și nu va mai apărea în aplicație.",
+    "bodyNamed": "{{name}} nu te va mai putea contacta și nu va mai apărea în aplicație.",
+    "errorTitle": "Ceva n-a mers",
+    "errorBody": "Nu am putut bloca utilizatorul. Reîncearcă."
+  }
+}

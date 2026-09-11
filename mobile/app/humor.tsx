@@ -23,13 +23,26 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Button, ProgressDots, ScreenContainer } from '@/components/ui';
 import { cardText } from '@/features/humor/cardText';
 import { fetchQuiz, submitQuiz } from '@/features/humor/humorApi';
-import { HUMOR_ME_QUERY_KEY, useHumorGateStore } from '@/features/humor/humorGate';
+import { humorMeQueryKey, useHumorGateStore } from '@/features/humor/humorGate';
 import { HumorAnswer, HumorCard, HumorProfile } from '@/features/humor/types';
 import { useLanguage } from '@/i18n/useLanguage';
 import { useAuthStore } from '@/store/authStore';
 import { useTheme } from '@theme/index';
 
-/** Unde pleacă userul când a terminat (sau când quiz-ul e indisponibil). */
+/**
+ * Unde pleacă userul când a terminat (sau când quiz-ul e indisponibil).
+ *
+ * Aici era `/`, adică „decide poarta". Suna curat, dar costa DOUĂ tranziții de
+ * stivă una după alta: întâi quiz → splash, apoi splash → feed. Pe telefon, a
+ * doua îl prindea pe `(tabs)` în montare, iar `react-native-screens` rămânea cu
+ * stratul nativ al ecranului dinainte — de acolo „două ecrane de ankete unul
+ * peste altul, fiecare pe alt card".
+ *
+ * Acum e un singur salt. Ecranul NU decide de capul lui: la quiz se ajunge doar
+ * cu profilul complet (vezi `resolveAppRoute`), deci feed-ul e singura urmare
+ * posibilă; iar dacă între timp serverul reclamă altceva, `AuthGuard` corectează
+ * imediat — el rămâne autoritatea, ăsta e doar drumul scurt spre răspunsul lui.
+ */
 const AFTER_QUIZ_ROUTE = '/(tabs)/ankete' as const;
 
 export default function HumorScreen() {
@@ -56,7 +69,7 @@ export default function HumorScreen() {
       // Poarta citește aceeași cheie: punându-i rezultatul proaspăt, `AuthGuard`
       // vede imediat vectorul plin și nu ne mai trimite înapoi la quiz. Fără asta
       // ar apărea exact bucla quiz → feed → guard → quiz.
-      queryClient.setQueryData(HUMOR_ME_QUERY_KEY, profile);
+      queryClient.setQueryData(humorMeQueryKey(userId), profile);
     },
   });
 
@@ -68,7 +81,7 @@ export default function HumorScreen() {
    */
   const continueWithoutQuiz = () => {
     if (userId) markUnavailable(userId);
-    router.replace(AFTER_QUIZ_ROUTE);
+    router.dismissTo(AFTER_QUIZ_ROUTE);
   };
 
   const header = (
@@ -145,11 +158,13 @@ export default function HumorScreen() {
         >
           {t('quiz.saved')}
         </Text>
-        {/* `replace`, nu `back()`: la intrarea prin poartă (după anketă sau după
-            login) nu există ecran în spate la care să ne întoarcem. */}
+        {/* `dismissTo`, nu `back()`: la intrarea prin poartă (după anketă sau
+            după login) nu există ecran în spate la care să ne întoarcem, iar
+            când există (quiz redat din Setări) ne întoarcem la EL, fără să mai
+            stivuim un feed peste cel deja montat. */}
         <Button
           label={t('quiz.done')}
-          onPress={() => router.replace(AFTER_QUIZ_ROUTE)}
+          onPress={() => router.dismissTo(AFTER_QUIZ_ROUTE)}
           testID="humor-done"
         />
       </ScreenContainer>

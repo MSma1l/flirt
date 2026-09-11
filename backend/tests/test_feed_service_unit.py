@@ -14,6 +14,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.security import hash_password
 from app.models.account import Block, UserSettings
 from app.models.chat import Chat, Message
@@ -104,7 +105,11 @@ async def _complete_profile(db, user, *, gender="female", age=28, name="Ana"):
         lng=28.8,
         languages=["ro"],
         dating_statuses=["serious"],
-        photos=["https://cdn.flirt.local/p1.jpg"],
+        # Exact pragul din config: cu o singură poză, profilul ar fi sub
+        # `min_photos` și n-ar mai fi vizibil în feed (vezi `_min_photos_clause`).
+        photos=[
+            f"https://cdn.flirt.local/p{i}.jpg" for i in range(settings.min_photos)
+        ],
         # Testul de umor e obligatoriu SERVER-SIDE la swipe (`_authorize_swipe`):
         # un profil „complet" (anketă + poze) fără `humor_vector` non-gol nu poate
         # da swipe. Vector uniform pe cele 7 tipuri — orice non-gol trece gate-ul.
@@ -263,6 +268,33 @@ async def test_swipe_without_humor_403_distinct_detail(db_session):
         await F.swipe(db_session, a, b.id, "like")
     assert exc.value.status_code == 403
     assert exc.value.detail == F.HUMOR_REQUIRED_DETAIL
+
+
+async def test_swipe_without_enough_photos_403_distinct_detail(db_session):
+    """Actorul cu prea puține poze → 403 cu mesajul DISTINCT de poze.
+
+    DE CE contează distincția: „profil incomplet" (anketa lipsă) și „prea puține
+    poze" duc în ecrane DIFERITE pe mobil — wizardul de înregistrare, respectiv
+    editorul de profil. Cu un singur text, clientul îl trimitea pe cel cu anketă
+    bună înapoi în wizard, care reporneşte cu draft gol și îi rescrie profilul.
+
+    Cazul e real: `min_photos` a crescut de la 1 la 2, deci există conturi cu
+    `completed=True` și poze sub prag.
+    """
+    a = await _make_user(db_session, "few_photos_a@example.com")
+    b = await _make_user(db_session, "few_photos_b@example.com")
+    pa = await _complete_profile(db_session, a, gender="male", name="Putine")
+    await _complete_profile(db_session, b, gender="female", name="Destule")
+    # Anketa rămâne completă — cade DOAR poarta pozelor.
+    pa.photos = pa.photos[: settings.min_photos - 1]
+    await db_session.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        await F.swipe(db_session, a, b.id, "like")
+    assert exc.value.status_code == 403
+    assert exc.value.detail == F.PHOTOS_REQUIRED_DETAIL
+    # Distinct de mesajul anketei: pe asta se bazează redirectul de pe mobil.
+    assert exc.value.detail != "Profilul tău nu este complet."
 
 
 async def test_swipe_target_without_humor_allowed(db_session):

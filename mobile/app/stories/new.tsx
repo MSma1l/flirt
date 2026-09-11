@@ -15,6 +15,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Stack, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   StyleSheet,
@@ -30,7 +31,7 @@ import {
   StoryMediaFile,
   uploadStoryMedia,
 } from '@/features/stories/storiesApi';
-import { STORY_MESSAGES } from '@/features/stories/storyLimits';
+import { storyMessage } from '@/features/stories/storyLimits';
 import { openAppSettings, pickStoryMedia } from '@/features/stories/storyPicker';
 import { alertMessage, confirmAsync } from '@/utils/dialog';
 import { firstError, LIMITS, maxLen, noHtml } from '@/utils/validation';
@@ -38,6 +39,8 @@ import { useTheme } from '@theme/index';
 
 export default function NewStoryScreen() {
   const { colors, typography, spacing, radius } = useTheme();
+  // „Închide" e acțiune generică — vine din `common`, nu se duplică aici.
+  const { t } = useTranslation(['stories', 'common']);
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -49,7 +52,7 @@ export default function NewStoryScreen() {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      if (!media) throw new Error(STORY_MESSAGES.uploadFailed);
+      if (!media) throw new Error(storyMessage('uploadFailed'));
       setProgress(0);
       const uploaded = await uploadStoryMedia(media, setProgress);
       return createStory(uploaded.mediaUrl, uploaded.mediaType, caption.trim() || undefined);
@@ -58,22 +61,22 @@ export default function NewStoryScreen() {
       queryClient.invalidateQueries({ queryKey: ['stories'] });
       router.back();
     },
-    onError: () => setError(STORY_MESSAGES.createFailed),
+    onError: () => setError(storyMessage('createFailed')),
   });
 
   /** Tratează refuzul de permisiune: mesaj + cale spre Setări dacă e blocat definitiv. */
   const handleDenied = useCallback(
     async (canAskAgain: boolean, blockedMsg: string, deniedMsg: string) => {
       if (canAskAgain) {
-        alertMessage('Permisiune necesară', deniedMsg);
+        alertMessage(t('compose.permissionTitle'), deniedMsg);
         return;
       }
-      const go = await confirmAsync('Permisiune necesară', blockedMsg, {
-        confirmText: 'Deschide setările',
+      const go = await confirmAsync(t('compose.permissionTitle'), blockedMsg, {
+        confirmText: t('openSettings'),
       });
       if (go) await openAppSettings();
     },
-    [],
+    [t],
   );
 
   /** Poza capturată live → trecem la compunere. */
@@ -92,12 +95,12 @@ export default function NewStoryScreen() {
     } else if (res.status === 'denied') {
       await handleDenied(
         res.canAskAgain,
-        STORY_MESSAGES.permissionBlocked,
-        STORY_MESSAGES.permissionDenied,
+        storyMessage('permissionBlocked'),
+        storyMessage('permissionDenied'),
       );
     } else if (res.status === 'rejected') {
       // Suntem încă pe cameră (fără cutie de eroare) → mesaj clar prin dialog.
-      alertMessage('Poză respinsă', res.message);
+      alertMessage(t('compose.rejectedTitle'), res.message);
     }
   }, [handleDenied, mutation]);
 
@@ -139,12 +142,14 @@ export default function NewStoryScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <View style={styles.header}>
-        <Text style={[typography.h1, { color: colors.textPrimary }]}>Story nou</Text>
-        <BackButton icon="close" color={colors.textPrimary} accessibilityLabel="Închide" />
+        <Text style={[typography.h1, { color: colors.textPrimary }]}>
+          {t('compose.title')}
+        </Text>
+        <BackButton icon="close" color={colors.textPrimary} accessibilityLabel={t('common:actions.close')} />
       </View>
 
       <Text style={[typography.caption, { color: colors.textSecondary, marginTop: spacing.sm, marginBottom: spacing.lg }]}>
-        Verifică poza, adaugă un text și publică.
+        {t('compose.hint')}
       </Text>
 
       <View
@@ -181,7 +186,7 @@ export default function NewStoryScreen() {
 
       <View style={{ gap: spacing.md }}>
         <Button
-          label="Refă"
+          label={t('compose.retake')}
           variant="outline"
           onPress={onRetake}
           disabled={uploading}
@@ -189,8 +194,8 @@ export default function NewStoryScreen() {
         />
 
         <Input
-          label="Descriere (opțional)"
-          placeholder="Adaugă un text…"
+          label={t('compose.captionLabel')}
+          placeholder={t('compose.captionPlaceholder')}
           value={caption}
           onChangeText={setCaption}
           error={captionError}
@@ -199,7 +204,7 @@ export default function NewStoryScreen() {
         />
 
         <Button
-          label="Publică"
+          label={t('compose.publish')}
           loading={uploading}
           onPress={submit}
           disabled={!media}

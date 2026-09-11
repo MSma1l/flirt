@@ -16,7 +16,7 @@
 import { compressPhoto } from '@/features/photos';
 
 import { StoryMediaFile } from './storiesApi';
-import { STORY_MESSAGES } from './storyLimits';
+import { storyMessage } from './storyLimits';
 
 /** Partea din `CameraView` de care avem nevoie pentru o poză. */
 export interface CapturingCamera {
@@ -43,7 +43,7 @@ export async function captureStoryPhoto(
     // Calitate maximă la captură; `compressPhoto` reduce controlat sub limita de upload.
     const photo = await camera.takePictureAsync({ quality: 1 });
     if (!photo?.uri) {
-      return { status: 'rejected', message: STORY_MESSAGES.captureFailed };
+      return { status: 'rejected', message: storyMessage('captureFailed') };
     }
 
     // Nu forțăm MIME-ul aici: `compressPhoto` reencodează oricum în JPEG.
@@ -66,6 +66,6 @@ export async function captureStoryPhoto(
       },
     };
   } catch {
-    return { status: 'rejected', message: STORY_MESSAGES.captureFailed };
+    return { status: 'rejected', message: storyMessage('captureFailed') };
   }
 }

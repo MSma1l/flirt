@@ -271,7 +271,7 @@ Profilele din `eas.json`:
 | Grup | Chei | Note |
 |---|---|---|
 | Hartă | `mapTileUrl`, `mapAttribution`, `mapZoom`, `mapLeafletCssUrl`, `mapLeafletJsUrl` | **Fără cheie API.** Tiles OSM + Leaflet din CDN (unpkg), încărcate doar în WebView. Atribuția e obligatorie prin licența ODbL. Momentan **nu sunt suprascrise** în `app.json` — se folosesc valorile implicite din cod. |
-| Poze | `photoMinCount` (3), `photoMaxCount` (9), `photoMaxUploadBytes` (8 MB), `photoAllowedTypes`, `photoMaxDimension` (1920), `photoCompressQuality` (0.8), `photoMinCompressQuality` (0.4) | **Simetrice cu backend-ul** (`app/core/config.py`). Dacă backendul își schimbă limitele, se suprascriu din `app.json` — fără a atinge codul ecranelor. |
+| Poze | `photoMinCount` (2), `photoMaxCount` (9), `photoMaxUploadBytes` (8 MB), `photoAllowedTypes`, `photoMaxDimension` (1920), `photoCompressQuality` (0.8), `photoMinCompressQuality` (0.4) | **Simetrice cu backend-ul** (`app/core/config.py`). Dacă backendul își schimbă limitele, se suprascriu din `app.json` — fără a atinge codul ecranelor. |
 | Legal | `termsUrl`, `privacyUrl`, `supportUrl` | ⚠️ **Placeholder-e** (`https://flirt.app/...`). Vezi §6. |
 
 ---

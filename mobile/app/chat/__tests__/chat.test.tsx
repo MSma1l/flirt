@@ -4,6 +4,7 @@ import React from 'react';
 import { Alert, AlertButton } from 'react-native';
 
 import ChatScreen from '../[id]';
+import i18n from '@/i18n';
 import { ThemeProvider } from '@theme/index';
 import type { ChatMessage, ChatSummary } from '@/features/chat/types';
 
@@ -205,5 +206,58 @@ describe('ChatScreen', () => {
     fireEvent.press(getByText('Reîncearcă'));
 
     await waitFor(() => getByText('Salut!'));
+  });
+
+  /**
+   * Ecran migrat pe i18n: aserțiile românești de mai sus rămân neschimbate
+   * (`ro` e limba implicită în teste), iar aici verificăm că textul chiar
+   * URMEAZĂ limba activă — altfel migrarea ar trece testele fără să traducă
+   * nimic. Vezi tiparul din `app/(auth)/__tests__/login.test.tsx`.
+   */
+  describe('i18n', () => {
+    afterEach(async () => {
+      // Limba e stare globală: o restaurăm ca să nu se scurgă în alt test.
+      await i18n.changeLanguage('ro');
+    });
+
+    it('composer, acțiunile din header și starea goală urmează limba activă', async () => {
+      await i18n.changeLanguage('en');
+      const { getByLabelText, getByPlaceholderText, getByText } = renderScreen();
+
+      await waitFor(() => getByText('Send the first message 👋'));
+      expect(getByPlaceholderText('Write a message…')).toBeTruthy();
+      // `accessibilityLabel` e text de interfață, nu decor: se traduce și el.
+      expect(getByLabelText('Report')).toBeTruthy();
+      expect(getByLabelText('Block')).toBeTruthy();
+      expect(getByLabelText('Send')).toBeTruthy();
+    });
+
+    it('eroarea de încărcare și butonul de retry urmează limba activă', async () => {
+      mockFetchMessages.mockReset();
+      mockFetchMessages.mockRejectedValue(new Error('boom'));
+      await i18n.changeLanguage('ru');
+      const { getByText } = renderScreen();
+
+      await waitFor(() => getByText('Не удалось загрузить сообщения.'));
+      expect(getByText('Повторить')).toBeTruthy();
+    });
+
+    it('dialogul de blocare (Alert) vorbește limba activă, cu numele interpolat', async () => {
+      await i18n.changeLanguage('ru');
+      const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+      const { getByText, getByTestId } = renderScreen();
+
+      await waitFor(() => getByText('Ana'));
+      fireEvent.press(getByTestId('chat-block'));
+
+      expect(alertSpy.mock.calls[0][0]).toBe('Заблокировать пользователя');
+      expect(alertSpy.mock.calls[0][1]).toBe(
+        'Ana больше не сможет с вами связаться и не появится в приложении.',
+      );
+      const buttons = alertSpy.mock.calls[0][2] as AlertButton[] | undefined;
+      expect(buttons?.find((b) => b.style === 'destructive')?.text).toBe('Заблокировать');
+
+      alertSpy.mockRestore();
+    });
   });
 });

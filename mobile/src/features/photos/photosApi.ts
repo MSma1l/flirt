@@ -7,6 +7,11 @@
  * Uploadul raportează progresul și reîncearcă automat la erorile de rețea /
  * 5xx / 429 (backoff liniar). NU reîncearcă la 4xx de validare — acolo problema
  * e poza, nu conexiunea, iar mesajul backend-ului e afișat ca atare.
+ *
+ * i18n: modulul NU produce propoziții, ci CHEI (`PhotoErrorReason`) — e cod pur,
+ * apelat în afara randării, unde `t` nu există; același tipar ca
+ * `features/auth/validation.ts`. Traducerea se face la afișare, cu
+ * `usePhotoErrorText()`.
  */
 import axios from 'axios';
 import { Platform } from 'react-native';
@@ -20,6 +25,23 @@ import {
   validatePhotoSize,
   validateUploadType,
 } from './validation';
+
+/** Cheile de eroare de upload, din namespace-ul `profile`. */
+export type PhotoErrorKey =
+  | 'photos.errors.blobLost'
+  | 'photos.errors.network'
+  | 'photos.errors.tooLarge'
+  | 'photos.errors.uploadFailed';
+
+/**
+ * Motivul unui eșec de upload, gata de afișat:
+ *  - `key` — text al NOSTRU, tradus la afișare;
+ *  - `text` — text care NU trece prin i18n: `detail`-ul backend-ului (vine doar
+ *    în română) și validarea locală din `./validation`, încă nemigrată.
+ */
+export type PhotoErrorReason =
+  | { key: PhotoErrorKey; params?: Record<string, string | number> }
+  | { text: string };
 
 /** Câte reîncercări facem peste încercarea inițială. */
 export const DEFAULT_RETRIES = 2;
@@ -48,16 +70,25 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
- * Eroare de upload al cărei `message` e DEJA scris pentru utilizator, în română.
+ * Eroare de upload al cărei motiv e DEJA pregătit pentru utilizator.
  *
- * Există ca să putem deosebi mesajele NOASTRE de excepțiile tehnice ale
+ * Există ca să putem deosebi motivele NOASTRE de excepțiile tehnice ale
  * platformei (`TypeError: Failed to fetch`, `Network request failed`) — pe
  * acelea nu avem voie să le arătăm ca atare. Marcarea se face cu o proprietate,
  * nu doar cu `instanceof`: după transpilare, lanțul de prototipuri al
  * subclaselor de `Error` nu e garantat în toate mediile.
+ *
+ * `message` rămâne pentru log-uri și stack trace; ce vede userul iese din
+ * `reason`, tradus la afișare de `usePhotoErrorText()`.
  */
 export class PhotoUploadError extends Error {
   readonly isPhotoUploadError = true;
+  readonly reason: PhotoErrorReason;
+
+  constructor(reason: PhotoErrorReason) {
+    super('key' in reason ? reason.key : reason.text);
+    this.reason = reason;
+  }
 }
 
 /** True doar pentru erorile create de noi, cu mesaj gata de afișat. */
@@ -77,27 +108,28 @@ export function isRetriableError(error: unknown): boolean {
   return status >= 500 || status === 429;
 }
 
-/** Traduce o eroare de upload într-un mesaj clar pentru utilizator. */
-export function uploadErrorMessage(error: unknown): string {
-  // Mesajele noastre sunt deja în română și explică ce are userul de făcut.
-  if (isPhotoUploadError(error) && error.message) return error.message;
+/** Reduce o eroare de upload la motivul afișabil utilizatorului. */
+export function uploadErrorReason(error: unknown): PhotoErrorReason {
+  // Motivele noastre sunt deja pregătite (cheie sau text de la server).
+  if (isPhotoUploadError(error)) return error.reason;
 
   if (axios.isAxiosError(error)) {
     const status = error.response?.status;
-    if (status === undefined) {
-      return 'Conexiune întreruptă. Verifică internetul și încearcă din nou.';
-    }
+    if (status === undefined) return { key: 'photos.errors.network' };
     if (status === 413) {
-      return `Poza depășește limita de ${formatMb(PHOTO_LIMITS.maxUploadBytes)}.`;
+      return {
+        key: 'photos.errors.tooLarge',
+        params: { limit: formatMb(PHOTO_LIMITS.maxUploadBytes) },
+      };
     }
     const detail = (error.response?.data as { detail?: unknown } | undefined)?.detail;
-    if (typeof detail === 'string' && detail.trim()) return detail;
-    return 'Nu am putut încărca poza. Încearcă din nou.';
+    if (typeof detail === 'string' && detail.trim()) return { text: detail };
+    return { key: 'photos.errors.uploadFailed' };
   }
   // ORICE altceva e o excepție tehnică a platformei, cu mesaj în engleză
   // (`Failed to fetch`, `Network request failed`). Utilizatorul nu are ce face cu
   // el, așa că îl înlocuim — nu îl afișăm „ca să nu pierdem informația".
-  return 'Nu am putut încărca poza. Încearcă din nou.';
+  return { key: 'photos.errors.uploadFailed' };
 }
 
 /** Un singur POST multipart, cu raportarea progresului. */
@@ -122,9 +154,7 @@ async function postPhoto(
       // `fetch` pe un URL `blob:` aruncă un `TypeError` sec („Failed to fetch"),
       // NU o eroare axios — de obicei fiindcă URL-ul a fost revocat între timp
       // (pagina reîncărcată). Fără traducere, userul citea exact „Failed to fetch".
-      throw new PhotoUploadError(
-        'Poza nu mai este disponibilă în browser. Alege-o din nou și încearcă iar.',
-      );
+      throw new PhotoUploadError({ key: 'photos.errors.blobLost' });
     }
 
     // Backend-ul respinge cu 422 („Tip de fișier nepermis") după tipul DECLARAT al
@@ -169,11 +199,13 @@ export async function uploadPhoto(
   photo: LocalPhoto,
   options: UploadOptions = {},
 ): Promise<string[]> {
+  // `./validation` întoarce încă propoziții gata scrise, în română (migrarea ei
+  // e o sarcină separată — vezi `src/i18n/README.md`), deci le trecem ca `text`.
   const typeError = validateUploadType(photo.mimeType);
-  if (typeError) throw new PhotoUploadError(typeError);
+  if (typeError) throw new PhotoUploadError({ text: typeError });
   // sizeBytes === 0 → dimensiune necunoscută pe platformă; backend-ul decide.
   const sizeError = photo.sizeBytes > 0 ? validatePhotoSize(photo.sizeBytes) : null;
-  if (sizeError) throw new PhotoUploadError(sizeError);
+  if (sizeError) throw new PhotoUploadError({ text: sizeError });
 
   const retries = options.retries ?? DEFAULT_RETRIES;
   const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
@@ -189,7 +221,7 @@ export async function uploadPhoto(
         options.onProgress?.(0);
         continue;
       }
-      throw new PhotoUploadError(uploadErrorMessage(error));
+      throw new PhotoUploadError(uploadErrorReason(error));
     }
   }
 }

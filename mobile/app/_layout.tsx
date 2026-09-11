@@ -6,12 +6,12 @@ import {
   useFonts,
 } from '@expo-google-fonts/manrope';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack, useNavigationContainerRef, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { useHumorGate } from '@/features/humor/humorGate';
+import { navigationTarget, useAppRoute } from '@/features/navigation/appRoute';
 import { PushBridge } from '@/features/push/PushBridge';
 // Importul inițializează instanța i18n (sincron, pe `ro`); `initI18n` comută
 // apoi pe limba salvată de user sau pe cea a dispozitivului.
@@ -33,63 +33,68 @@ const queryClient = new QueryClient({
 });
 
 /**
- * Guard reactiv de autentificare. Reacționează la schimbările din store
- * (login/logout, profile_completed) și redirecționează — mecanismul principal
- * de navigare de auth, spre deosebire de `index.tsx` care rulează doar la montare.
+ * SINGURUL loc din aplicație care decide unde trebuie să fie userul și singurul
+ * care navighează pentru asta.
  *
- * Exportat pentru teste: e singura logică de navigare din aplicație și merită
- * verificată direct, nu prin randarea întregului layout (fonturi, push, i18n).
+ * Ce trebuie știut despre el:
+ *  - CE rută e obligatorie → `resolveAppRoute` (poarta de auth, anketă, poze, umor);
+ *  - DACĂ e nevoie de navigare → `navigationTarget` (userul poate fi deja acolo);
+ *  - guard-ul doar execută.
+ *
+ * Ecranele NU decid nimic: login, register și quiz-ul trimit userul la `/`, iar
+ * de acolo poarta îl duce; wizardul de anketă nici măcar atât — doar recitește
+ * userul de pe server, iar poarta vede singură ce s-a schimbat. Înainte,
+ * `index.tsx` avea propriul redirect, știa doar de `profile_completed` și ateriza
+ * în feed peste userul care n-avea testul de umor — pe care serverul îl refuza
+ * apoi la fiecare swipe.
+ *
+ * Exportat pentru teste: e logica de navigare a aplicației și merită verificată
+ * direct, nu prin randarea întregului layout (fonturi, push, i18n).
  */
 export function AuthGuard() {
-  const status = useAuthStore((s) => s.status);
-  const profileCompleted = useAuthStore((s) => s.user?.profile_completed);
   const segments = useSegments();
   const router = useRouter();
-  // Testul de umor e obligatoriu: fără vector de umor, scorul de compatibilitate
-  // al userului iese slab. Poarta se închide DOAR când serverul confirmă că
-  // datele lipsesc; dacă tace (500, rețea moartă), `needsQuiz` e `false` și
-  // userul trece — vezi `humorGate.ts`.
-  const { needsQuiz } = useHumorGate();
+  const route = useAppRoute();
+  const navigationRef = useNavigationContainerRef();
+
+  /**
+   * La PRIMA randare navigatorul NU e încă montat, oricât de devreme am ști
+   * încotro trebuie dus userul: `NavigationContainer` se marchează „gata" într-un
+   * efect propriu, iar efectele copiilor — poarta asta — rulează înaintea lui.
+   * O navigare de acolo aruncă „Attempted to navigate before mounting the Root
+   * Layout component", adică ecran roșu la pornire — se întâmplă exact când
+   * sesiunea e deja hidratată la montare (SecureStore e mai rapid decât fonturile
+   * și limba, care țin splash-ul).
+   *
+   * Așa că amânăm un tick. Nu se pierde nimic: userul e pe splash oricum.
+   */
+  const [navigatorMounted, setNavigatorMounted] = useState(false);
+  useEffect(() => {
+    setNavigatorMounted(true);
+  }, []);
 
   useEffect(() => {
-    // Splash: nu facem nimic până când starea nu e cunoscută.
-    if (status === 'loading') return;
+    if (!navigatorMounted || !navigationRef.isReady()) return;
 
     // expo-router 6 tipează `useSegments()` ca uniune de tuple literale (lungime ≥ 1),
-    // deși la cold-start, pe ruta index, chiar întoarce o listă goală. O privim ca
-    // listă de string-uri ca să putem testa cazul real, fără `any`.
+    // deși pe ruta index chiar întoarce o listă goală. O privim ca listă de
+    // string-uri ca să putem trata cazul real, fără `any`.
     const path: readonly string[] = segments;
 
-    // Ruta index (splash) își gestionează singură redirect-ul la cold-start;
-    // evităm redirecturi duble ieșind devreme când suntem pe ea.
-    if (path.length === 0) return;
+    const target = navigationTarget(route, path);
+    if (!target) return;
 
-    const inAuth = path[0] === '(auth)';
-    const inOnboarding = path[0] === '(onboarding)';
-    const inHumor = path[0] === 'humor';
-
-    if (status === 'unauthenticated') {
-      if (!inAuth) router.replace('/(auth)/welcome');
-      return;
-    }
-
-    // status === 'authenticated'
-    if (!profileCompleted) {
-      if (!inOnboarding) router.replace('/(onboarding)');
-      return;
-    }
-
-    // Profil complet, dar fără date de umor → testul, oriunde ar fi userul
-    // (prima înregistrare SAU login ulterior). Ieșirea devreme când e deja pe
-    // quiz taie bucla quiz → feed → guard → quiz.
-    if (needsQuiz) {
-      if (!inHumor) router.replace('/humor');
-      return;
-    }
-
-    // Autentificat cu profil complet: nu rămâne blocat în (auth)/(onboarding).
-    if (inAuth || inOnboarding) router.replace('/(tabs)/ankete');
-  }, [status, profileCompleted, needsQuiz, segments, router]);
+    // `dismissTo`, NU `replace`: poarta spune UNDE trebuie să fie userul, nu
+    // „pune ecranul ăsta peste ce e acum". Diferența se vede când peste
+    // aplicație e deschis cu `push` un ecran (quiz-ul din Setări, un story, un
+    // chat): stiva rădăcină e atunci `[(tabs), humor]`, iar un `replace`
+    // schimbă DOAR vârful — feed-ul de dedesubt rămâne montat și ajungem cu
+    // `[(tabs), (tabs)]`, adică două ecrane de ankete unul peste altul (două
+    // bare de story-uri, două carduri, două bare de taburi).
+    // `dismissTo` se întoarce la ecranul care există deja în spate; dacă nu
+    // există, se poartă exact ca `replace`.
+    router.dismissTo(target);
+  }, [navigatorMounted, navigationRef, route, segments, router]);
 
   return null;
 }

@@ -20,9 +20,10 @@ describe('compatColor', () => {
 });
 
 describe('compatLabel', () => {
-  it('etichetează în funcție de prag', () => {
-    expect(compatLabel(81)).toBe('Potrivire excelentă');
-    expect(compatLabel(65)).toBe('Potrivire bună');
-    expect(compatLabel(30)).toBe('Potrivire slabă');
+  // Modul pur: întoarce CHEIA, textul îl produce `t` la afișare (vezi CompatBadge).
+  it('alege cheia în funcție de prag', () => {
+    expect(compatLabel(81)).toBe('compat.excellent');
+    expect(compatLabel(65)).toBe('compat.good');
+    expect(compatLabel(30)).toBe('compat.weak');
   });
 });

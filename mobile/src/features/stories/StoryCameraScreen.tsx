@@ -20,6 +20,7 @@
  */
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Platform,
@@ -33,7 +34,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui';
 import { StoryMediaFile } from '@/features/stories/storiesApi';
 import { captureStoryPhoto } from '@/features/stories/storyCamera';
-import { STORY_MESSAGES } from '@/features/stories/storyLimits';
+import { storyMessage } from '@/features/stories/storyLimits';
 import { openAppSettings } from '@/features/stories/storyPicker';
 import { useTheme } from '@theme/index';
 
@@ -54,6 +55,8 @@ interface Props {
 
 export function StoryCameraScreen({ onCaptured, onPickGallery, onClose, busy }: Props) {
   const { colors, typography, spacing } = useTheme();
+  // „Închide" e acțiune generică — vine din `common`.
+  const { t } = useTranslation(['stories', 'common']);
 
   const cameraRef = useRef<CameraView | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
@@ -111,7 +114,7 @@ export function StoryCameraScreen({ onCaptured, onPickGallery, onClose, busy }: 
           <Pressable
             testID="story-close"
             accessibilityRole="button"
-            accessibilityLabel="Închide"
+            accessibilityLabel={t('common:actions.close')}
             onPress={onClose}
             hitSlop={spacing.sm}
           >
@@ -122,26 +125,28 @@ export function StoryCameraScreen({ onCaptured, onPickGallery, onClose, busy }: 
         <View style={[styles.center, { padding: spacing.xl, gap: spacing.md }]}>
           <Text style={styles.permEmoji}>📷</Text>
           <Text style={[typography.bodyStrong, { color: ON_DARK, textAlign: 'center' }]}>
-            {Platform.OS === 'web' ? STORY_MESSAGES.cameraUnavailable : STORY_MESSAGES.cameraPermission}
+            {Platform.OS === 'web'
+              ? storyMessage('cameraUnavailable')
+              : storyMessage('cameraPermission')}
           </Text>
 
           {blocked ? (
             <Button
               testID="story-settings"
-              label="Deschide setările"
+              label={t('openSettings')}
               onPress={() => void openAppSettings()}
             />
           ) : (
             <Button
               testID="story-grant"
-              label="Permite acces la cameră"
+              label={t('camera.grant')}
               onPress={() => void requestPermission()}
             />
           )}
 
           <Button
             testID="story-gallery"
-            label="Alege din galerie"
+            label={t('camera.gallery')}
             variant="outline"
             onPress={onPickGallery}
           />
@@ -167,7 +172,7 @@ export function StoryCameraScreen({ onCaptured, onPickGallery, onClose, busy }: 
         <Pressable
           testID="story-close"
           accessibilityRole="button"
-          accessibilityLabel="Închide"
+          accessibilityLabel={t('common:actions.close')}
           onPress={onClose}
           hitSlop={spacing.sm}
         >
@@ -189,7 +194,7 @@ export function StoryCameraScreen({ onCaptured, onPickGallery, onClose, busy }: 
         <Pressable
           testID="story-gallery"
           accessibilityRole="button"
-          accessibilityLabel="Alege din galerie"
+          accessibilityLabel={t('camera.gallery')}
           onPress={onPickGallery}
           disabled={busy}
           hitSlop={spacing.sm}
@@ -201,7 +206,7 @@ export function StoryCameraScreen({ onCaptured, onPickGallery, onClose, busy }: 
         <Pressable
           testID="story-capture"
           accessibilityRole="button"
-          accessibilityLabel="Fă o poză"
+          accessibilityLabel={t('camera.capture')}
           onPress={() => void onCapture()}
           disabled={capturing || busy}
           style={styles.shutterOuter}
@@ -216,7 +221,7 @@ export function StoryCameraScreen({ onCaptured, onPickGallery, onClose, busy }: 
         <Pressable
           testID="story-flip"
           accessibilityRole="button"
-          accessibilityLabel="Comută camera"
+          accessibilityLabel={t('camera.flip')}
           onPress={flip}
           disabled={busy}
           hitSlop={spacing.sm}
