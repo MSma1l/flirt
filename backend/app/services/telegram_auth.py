@@ -34,6 +34,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import secrets
 import threading
 import time
@@ -355,6 +356,7 @@ def verify_init_data(
     expected = _expected_hash(_build_data_check_string(fields), bot_token)
     # `compare_digest`: comparație în timp constant (fără oracol de timing).
     if not hmac.compare_digest(expected, received_hash.lower()):
+        _diagnose_signature_mismatch(init_data, fields, received_hash, bot_token)
         raise InvalidInitDataSignature()
 
     auth_date = _parse_auth_date(fields.get("auth_date"), max_age_seconds)
@@ -455,3 +457,73 @@ async def claim_init_data(data: TelegramInitData, *, ttl_seconds: int) -> None:
 
     if not _replay_guard.claim(key, ttl):
         raise ReplayedInitData()
+
+
+# ---------------------------------------------------------------------------
+# Diagnostic TEMPORAR pentru nepotrivirea de semnătură
+# ---------------------------------------------------------------------------
+#
+# Se activează doar cu TELEGRAM_DEBUG_SIGNATURE=1 în mediu. Loghează NUMELE
+# câmpurilor și care variantă de calcul s-ar fi potrivit — NICIODATĂ valorile,
+# tokenul sau hash-urile întregi. Scopul e să deosebim, fără să ghicim:
+#   - alt bot a semnat datele (nicio variantă nu se potriveşte);
+#   - o greşeală de parsare la noi (o variantă se potriveşte).
+# De șters după ce cauza e stabilită.
+
+
+def _diagnose_signature_mismatch(
+    init_data: str, fields: dict[str, str], received_hash: str, bot_token: str
+) -> None:
+    if os.getenv("TELEGRAM_DEBUG_SIGNATURE") != "1":
+        return
+    try:
+        from urllib.parse import parse_qsl as _pq
+
+        target = received_hash.lower()
+        variants: dict[str, str] = {}
+
+        # 1. Referinţa actuală.
+        variants["actual"] = _expected_hash(_build_data_check_string(fields), bot_token)
+
+        # 2. Fără excluderea lui `signature`.
+        only_hash = {k: v for k, v in fields.items() if k != "hash"}
+        variants["include_signature"] = _expected_hash(
+            "\n".join(f"{k}={v}" for k, v in sorted(only_hash.items())), bot_token
+        )
+
+        # 3. Valori NEdecodate (unii clienţi trimit deja decodat).
+        rawp = dict(_pq(init_data, keep_blank_values=True))
+        raw_pairs = [
+            (k, v)
+            for k, v in (
+                pair.split("=", 1) for pair in init_data.split("&") if "=" in pair
+            )
+            if k not in _EXCLUDED_FIELDS
+        ]
+        variants["undecoded"] = _expected_hash(
+            "\n".join(f"{k}={v}" for k, v in sorted(raw_pairs)), bot_token
+        )
+
+        # 4. Fără conversia `+` în spaţiu.
+        noplus = {
+            k: v.replace(" ", "+") for k, v in fields.items() if k not in _EXCLUDED_FIELDS
+        }
+        variants["plus_preserved"] = _expected_hash(
+            "\n".join(f"{k}={v}" for k, v in sorted(noplus.items())), bot_token
+        )
+
+        matched = [name for name, h in variants.items() if hmac.compare_digest(h, target)]
+        log.warning(
+            "Diagnostic semnatura Telegram",
+            extra={
+                "campuri": sorted(fields.keys()),
+                "numar_campuri": len(fields),
+                "are_signature": "signature" in fields,
+                "varianta_potrivita": matched or "niciuna",
+                "lungime_initdata": len(init_data),
+                "lungime_user": len(fields.get("user", "")),
+                "rawp_egal_fields": rawp.keys() == fields.keys(),
+            },
+        )
+    except Exception:  # diagnosticul nu are voie să schimbe comportamentul
+        log.warning("Diagnostic semnatura Telegram: esuat", exc_info=False)
