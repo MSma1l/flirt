@@ -178,9 +178,16 @@ def _expected_hash(data_check_string: str, bot_token: str) -> str:
     """Hash-ul pe care TREBUIE să-l aibă `data_check_string` pentru acest bot.
 
     Ordinea argumentelor e esențială: `WebAppData` e CHEIA, tokenul e MESAJUL.
+
+    Tokenul se curăță de spații ÎNCĂ O DATĂ aici, pe lângă curățarea din
+    configurare: un secret e valoarea lui, nu formatarea fișierului din care a
+    fost citit. Un singur „\n" invizibil ar intra ca octet în derivarea cheii și
+    ar respinge TOATE datele reale ca „semnătură invalidă", în timp ce orice test
+    semnat cu aceeași valoare murdară ar trece — un defect aproape imposibil de
+    depistat din simptome.
     """
     secret_key = hmac.new(
-        key=_WEBAPP_DATA, msg=bot_token.encode(), digestmod=hashlib.sha256
+        key=_WEBAPP_DATA, msg=bot_token.strip().encode(), digestmod=hashlib.sha256
     ).digest()
     return hmac.new(
         key=secret_key,

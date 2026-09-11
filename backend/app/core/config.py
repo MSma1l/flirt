@@ -1,10 +1,10 @@
 """Configurare centralizată — totul din mediu, zero valori hardcodate în cod."""
 import os
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlparse
 
-from pydantic import AliasChoices, Field, field_validator, model_validator
+from pydantic import AliasChoices, BeforeValidator, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -169,7 +169,11 @@ class Settings(BaseSettings):
     #    Dev + teste. Refuzat în producție (vezi `_guard_production` mai jos și
     #    verificarea defensivă din `services/telegram_auth.py`).
     #  - 'live': verificare criptografică reală a semnăturii + `auth_date`.
-    telegram_bot_token: str = ""
+    # Curatate de spatii: un singur "\n" invizibil, ramas dintr-un copy-paste in
+    # `.env` sau dintr-un fisier salvat cu CRLF, intra ca octet in derivarea
+    # cheii HMAC si face ca TOATE datele reale sa fie respinse ca „semnatura
+    # invalida" — in timp ce orice test semnat cu aceeasi valoare murdara trece.
+    telegram_bot_token: Annotated[str, BeforeValidator(lambda v: v.strip() if isinstance(v, str) else v)] = ""
     telegram_bot_username: str = ""
     telegram_auth_mode: Literal["stub", "live"] = "stub"
     # Vechimea maximă acceptată a unui `initData` (secunde). Telegram retrimite

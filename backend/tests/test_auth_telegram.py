@@ -13,7 +13,7 @@ import hashlib
 import hmac
 import json
 import time
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, quote, urlencode
 
 import pytest
 from httpx import AsyncClient
@@ -376,3 +376,294 @@ async def test_production_guard_allows_telegram_live_with_keys():
         )
     )
     assert s.telegram_auth_mode == "live"
+
+
+# --------------------------------------------------------------------------- #
+# TIPUL erorii, nu doar codul HTTP
+# --------------------------------------------------------------------------- #
+#
+# DE CE S-A ADĂUGAT ACEASTĂ SECȚIUNE
+# ----------------------------------
+# Defectul care a ajuns în producție a fost „semnătură invalidă pe date reale".
+# Un test care verifică doar `status_code == 401` nu deosebește o semnătură
+# greșită de un `auth_date` expirat sau de un `user` corupt — adică exact
+# distincția de care depinde diagnosticul. Mai mult, `detail`-ul e un CONTRACT
+# cu Mini App-ul: `miniapp/src/auth/telegramAuth.ts::classifyAuthError` decide
+# după cuvintele din el ce mesaj arată utilizatorului. O redenumire tăcută în
+# backend ar transforma „semnătură invalidă" (nerezolvabilă de utilizator) în
+# „redeschide aplicația" (sfat inutil), fără ca vreun test să observe.
+#
+# Șirurile sunt scrise LITERAL, nu importate din `telegram_auth`: dacă le-am
+# importa, redenumirea ar trece verde aici și ar strica interfața.
+
+DETAIL_SIGNATURE = "Invalid Telegram init data signature"
+DETAIL_EXPIRED = "Telegram init data expired"
+DETAIL_MALFORMED = "Malformed Telegram init data"
+DETAIL_REPLAYED = "Telegram init data already used"
+
+
+def _detail(resp) -> str:
+    body = resp.json()
+    return body.get("detail", "") if isinstance(body, dict) else ""
+
+
+async def test_public_error_details_are_the_documented_contract():
+    """Mesajele publice sunt cele pe care le traduce Mini App-ul."""
+    assert telegram_auth.InvalidInitDataSignature.message == DETAIL_SIGNATURE
+    assert telegram_auth.ExpiredInitData.message == DETAIL_EXPIRED
+    assert telegram_auth.MalformedInitData.message == DETAIL_MALFORMED
+    assert telegram_auth.ReplayedInitData.message == DETAIL_REPLAYED
+
+
+async def test_invalid_hash_reports_a_signature_error(client: AsyncClient):
+    resp = await _login(client, _build_init_data(hash_override="0" * 64))
+    assert resp.status_code == 401
+    assert _detail(resp) == DETAIL_SIGNATURE
+
+
+async def test_other_bot_token_reports_a_signature_error(client: AsyncClient):
+    """Cazul din producție: date impecabile, semnate cu ALT bot.
+
+    Nu e suficient 401 — dacă răspunsul ar fi „expired", clientul ar sfătui
+    utilizatorul să redeschidă aplicația, ceea ce nu rezolvă niciodată o
+    semnătură greșită, iar depanarea ar porni pe pistă falsă.
+    """
+    resp = await _login(client, _build_init_data(bot_token="1111111:AAaltBot"))
+    assert resp.status_code == 401
+    assert _detail(resp) == DETAIL_SIGNATURE
+
+
+async def test_tampered_user_reports_a_signature_error(client: AsyncClient):
+    raw = _build_init_data(telegram_id=100_000_003)
+    resp = await _login(client, raw.replace("100000003", "100000004"))
+    assert resp.status_code == 401
+    assert _detail(resp) == DETAIL_SIGNATURE
+
+
+async def test_expired_auth_date_reports_an_expiry_error(client: AsyncClient):
+    old = int(time.time()) - (settings.telegram_init_data_max_age_seconds + 60)
+    resp = await _login(client, _build_init_data(auth_date=old))
+    assert resp.status_code == 401
+    assert _detail(resp) == DETAIL_EXPIRED
+
+
+async def test_corrupt_user_reports_a_malformed_error(client: AsyncClient):
+    fields = {"user": "{not-json", "auth_date": str(int(time.time()))}
+    fields["hash"] = _sign(fields, FAKE_BOT_TOKEN)
+    resp = await _login(client, urlencode(fields))
+    assert resp.status_code == 401
+    assert _detail(resp) == DETAIL_MALFORMED
+
+
+async def test_error_body_never_contains_the_bot_token(client: AsyncClient):
+    """Un 401 nu are voie să scurgă tokenul botului sau hash-ul așteptat.
+
+    Un răspuns care spune „am calculat X, tu ai trimis Y" e un oracol: cu el,
+    cineva poate ajusta datele până se potrivesc.
+    """
+    resp = await _login(client, _build_init_data(bot_token="1111111:AAaltBot"))
+    assert resp.status_code == 401
+    assert FAKE_BOT_TOKEN not in resp.text
+    assert FAKE_BOT_TOKEN.split(":")[1] not in resp.text
+
+
+# --------------------------------------------------------------------------- #
+# auth_date — restul formelor rele
+# --------------------------------------------------------------------------- #
+
+
+async def test_missing_auth_date_returns_401(client: AsyncClient):
+    """Fără `auth_date` nu există fereastră de valabilitate.
+
+    Semnătura e CORECTĂ (semnăm exact ce trimitem), deci testul verifică strict
+    că absența câmpului nu sare peste verificarea de vechime — altfel un
+    `initData` furat ar fi valabil la nesfârșit.
+    """
+    fields = {"user": json.dumps({"id": 42}), "query_id": "AAA"}
+    fields["hash"] = _sign(fields, FAKE_BOT_TOKEN)
+    resp = await _login(client, urlencode(fields))
+    assert resp.status_code == 401
+    assert _detail(resp) == DETAIL_EXPIRED
+
+
+@pytest.mark.parametrize("bad", ["", "ieri", "1.7e9", "17e9", "٠٠٠"])
+async def test_non_numeric_auth_date_returns_401(client: AsyncClient, bad: str):
+    """`auth_date` care nu e un întreg zecimal → respins, nu interpretat creativ."""
+    fields = {
+        "user": json.dumps({"id": 43}),
+        "auth_date": bad,
+        "query_id": f"AA{bad or 'gol'}",
+    }
+    fields["hash"] = _sign(fields, FAKE_BOT_TOKEN)
+    resp = await _login(client, urlencode(fields))
+    assert resp.status_code == 401, bad
+    assert _detail(resp) == DETAIL_EXPIRED, bad
+
+
+async def test_auth_date_inside_clock_skew_is_accepted(client: AsyncClient):
+    """Câteva secunde „în viitor" sunt ceasuri desincronizate, nu o fraudă.
+
+    Perechea lui `test_future_auth_date_returns_401`: fără acest test, cineva ar
+    putea „întări" verificarea la zero toleranță și ar respinge login-uri reale
+    ori de câte ori serverul rămâne cu o secundă în urma Telegram.
+    """
+    resp = await _login(client, _build_init_data(auth_date=int(time.time()) + 30))
+    assert resp.status_code == 200, resp.text
+
+
+# --------------------------------------------------------------------------- #
+# initData malformat — restul formelor
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "raw_id,label",
+    [
+        (0, "zero"),
+        (-1, "negativ"),
+        ("abc", "nenumeric"),
+        (True, "boolean"),
+        (None, "null"),
+    ],
+)
+async def test_unusable_user_id_returns_401(client: AsyncClient, raw_id, label: str):
+    """Un `id` care nu e un întreg pozitiv nu are voie să devină un cont.
+
+    `True` merită testat separat: în Python `isinstance(True, int)` e adevărat,
+    deci fără o verificare explicită `id: true` ar deschide contul cu id-ul 1.
+    """
+    fields = {
+        "user": json.dumps({"id": raw_id, "first_name": "Ivan"}),
+        "auth_date": str(int(time.time())),
+        "query_id": f"AA{label}",
+    }
+    fields["hash"] = _sign(fields, FAKE_BOT_TOKEN)
+    resp = await _login(client, urlencode(fields))
+    assert resp.status_code == 401, f"{label}: {resp.text}"
+    assert _detail(resp) == DETAIL_MALFORMED, label
+
+
+async def test_empty_init_data_returns_422(client: AsyncClient):
+    """Șirul gol e oprit de schemă (`min_length=1`), înainte de criptografie."""
+    assert (await _login(client, "")).status_code == 422
+
+
+async def test_field_appended_after_signing_returns_401(client: AsyncClient):
+    """Un câmp adăugat după semnare schimbă `data_check_string`."""
+    resp = await _login(client, _build_init_data() + "&start_param=promo")
+    assert resp.status_code == 401
+    assert _detail(resp) == DETAIL_SIGNATURE
+
+
+async def test_field_removed_after_signing_returns_401(client: AsyncClient):
+    """Un câmp șters după semnare schimbă `data_check_string`."""
+    raw = _build_init_data()
+    stripped = "&".join(p for p in raw.split("&") if not p.startswith("query_id="))
+    assert stripped != raw
+    resp = await _login(client, stripped)
+    assert resp.status_code == 401
+    assert _detail(resp) == DETAIL_SIGNATURE
+
+
+async def test_duplicated_user_field_cannot_smuggle_an_account(client: AsyncClient):
+    """Dublarea unui câmp (parameter pollution) trebuie să pice pe semnătură."""
+    raw = _build_init_data(telegram_id=101_000_001)
+    evil = raw + "&user=" + quote(
+        json.dumps({"id": 101_000_002, "first_name": "Ivan"}, separators=(",", ":")),
+        safe="",
+    )
+    resp = await _login(client, evil)
+    assert resp.status_code == 401
+    assert _detail(resp) == DETAIL_SIGNATURE
+
+
+async def test_uppercase_hash_is_accepted(client: AsyncClient):
+    """Hash-ul e hexazecimal — majusculele denumesc același număr.
+
+    Unele proxy-uri și clienți normalizează hexul în majuscule. O comparație
+    strictă de șiruri ar respinge un initData perfect valid.
+    """
+    lower = _build_init_data(telegram_id=102_000_001)
+    fields = dict(parse_qsl(lower, keep_blank_values=True))
+    fields["hash"] = fields["hash"].upper()
+    resp = await _login(client, urlencode(fields))
+    assert resp.status_code == 200, resp.text
+
+
+# --------------------------------------------------------------------------- #
+# Modul 'live' nu are voie să accepte scurtături
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "shortcut",
+    ["stub:123456789", "stub:123456789:ivan", "stub:999"],
+)
+async def test_stub_strings_are_refused_in_live_mode(
+    client: AsyncClient, shortcut: str
+):
+    """Formatul de dezvoltare `stub:<id>` NU autentifică în modul 'live'.
+
+    E poarta din spate cea mai ieftină de exploatat: dacă ramura de stub ar fi
+    aleasă după FORMA șirului în loc de setarea de mediu, oricine ar deveni
+    oricine trimițând nouă caractere.
+    """
+    resp = await _login(client, shortcut)
+    assert resp.status_code == 401, resp.text
+
+
+async def test_live_mode_without_bot_token_returns_503(
+    client: AsyncClient, monkeypatch
+):
+    """'live' fără token = nu putem verifica nimic → 503, NU 401 și NU 200.
+
+    401 ar trimite clientul să reîncearce la nesfârșit ceva ce nu poate reuși;
+    200 ar însemna autentificare fără verificare.
+    """
+    monkeypatch.setattr(settings, "telegram_bot_token", "")
+    resp = await _login(client, _build_init_data())
+    assert resp.status_code == 503, resp.text
+
+
+# --------------------------------------------------------------------------- #
+# Anti-replay — tipul erorii și granularitatea
+# --------------------------------------------------------------------------- #
+
+
+async def test_replay_reports_a_replay_error(client: AsyncClient):
+    """Replay-ul e „already used", nu „invalid signature".
+
+    Pentru utilizator sunt situații complet diferite: replay-ul se rezolvă
+    redeschizând Mini App-ul, semnătura invalidă nu se rezolvă deloc.
+    """
+    init_data = _build_init_data(telegram_id=616_000_111)
+    assert (await _login(client, init_data)).status_code == 200
+    second = await _login(client, init_data)
+    assert second.status_code == 401
+    assert _detail(second) == DETAIL_REPLAYED
+
+
+async def test_replay_state_is_per_hash_not_per_user(client: AsyncClient):
+    """Al doilea `initData` al ACELUIAȘI user (alt `query_id`) trebuie să intre.
+
+    O protecție „un login pe zi per utilizator" ar arăta la fel în testul de
+    replay și ar bloca oamenii 24 de ore.
+    """
+    tg = 617_000_222
+    assert (await _login(client, _build_init_data(telegram_id=tg))).status_code == 200
+    assert (
+        await _login(client, _build_init_data(telegram_id=tg, query_id="BBaltaSesiune"))
+    ).status_code == 200
+
+
+async def test_replay_guard_survives_a_failed_verification(client: AsyncClient):
+    """Un initData respins nu are voie să „consume" hash-ul altui initData.
+
+    Fără asta, un atacator ar putea face un denial-of-service ieftin: trimite
+    hash-ul victimei cu un câmp stricat și, dacă hash-ul s-ar consuma înainte de
+    verificare, victima n-ar mai putea intra.
+    """
+    init_data = _build_init_data(telegram_id=618_000_333)
+    broken = init_data + "&start_param=x"
+    assert (await _login(client, broken)).status_code == 401
+    assert (await _login(client, init_data)).status_code == 200, "hash consumat degeaba"
