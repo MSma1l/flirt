@@ -1,0 +1,48 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Strict — zero any, zero implicit */
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+    "forceConsistentCasingInFileNames": true,
+
+    "types": ["vitest/globals", "@testing-library/jest-dom", "node"],
+
+    /*
+     * Reutilizare din aplicația Expo, FĂRĂ copiere.
+     * `@/services/api` e mapat INTENȚIONAT pe clientul HTTP al Mini App-ului:
+     * fișierele pure din `mobile/src/features/feed/` (feedApi, compat,
+     * swipeDirection, types) se importă ca atare, iar acest alias le dă
+     * instanța axios de aici în loc de cea din Expo (care ar trage
+     * `expo-constants` și ar cădea în browser).
+     * Ordinea contează: TypeScript alege potrivirea cea mai specifică.
+     */
+    "paths": {
+      "@/services/api": ["./src/api/client.ts"],
+      "@/*": ["./src/*"],
+      "@theme/*": ["../mobile/theme/*"],
+      "@mobile/*": ["../mobile/src/*"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}

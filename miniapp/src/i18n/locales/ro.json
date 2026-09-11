@@ -1,0 +1,52 @@
+{
+  "app": {
+    "connecting": "Te conectăm…",
+    "greeting": "Salut, {{name}}!"
+  },
+  "errors": {
+    "outside_telegram": {
+      "title": "Deschide din Telegram",
+      "body": "Aplicația funcționează doar în interiorul Telegram. Deschide-o din chatul botului FLIRT."
+    },
+    "expired": {
+      "title": "Sesiune expirată",
+      "body": "Datele de conectare de la Telegram au expirat. Închide și redeschide aplicația din chat."
+    },
+    "invalid": {
+      "title": "Date de conectare invalide",
+      "body": "Telegram nu a putut confirma identitatea ta. Redeschide aplicația din chatul oficial al botului."
+    },
+    "network": {
+      "title": "Fără legătură",
+      "body": "Nu avem legătură cu serverul. Verifică internetul și încearcă din nou."
+    },
+    "server": {
+      "title": "Serverul nu răspunde",
+      "body": "Ceva n-a mers pe partea noastră. Încearcă din nou în câteva momente."
+    }
+  },
+  "feed": {
+    "loading": "Încărcăm anketele…",
+    "error": "Nu am putut încărca anketele.",
+    "empty": "Nu mai sunt ankete acum",
+    "reload": "Caută mai multe",
+    "undo": "↩ Înapoi",
+    "sendFailed": "Nu am putut trimite. Încearcă din nou.",
+    "undoFailed": "Nu am putut anula. Încearcă din nou.",
+    "hint": "Trage cardul: stânga = nu, dreapta = like, sus = super like, jos = înapoi.",
+    "cue": {
+      "like": "LIKE",
+      "nope": "NU",
+      "super": "★ SUPER LIKE",
+      "undo": "↩ ÎNAPOI"
+    },
+    "card": {
+      "distance": "{{km}} km"
+    },
+    "match": {
+      "title": "Aveți match!",
+      "body": "Ție și lui {{name}} vă place unul de altul.",
+      "continue": "Continuă"
+    }
+  }
+}

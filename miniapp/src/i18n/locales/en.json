@@ -1,0 +1,52 @@
+{
+  "app": {
+    "connecting": "Connecting…",
+    "greeting": "Hi, {{name}}!"
+  },
+  "errors": {
+    "outside_telegram": {
+      "title": "Open from Telegram",
+      "body": "This app only works inside Telegram. Open it from the FLIRT bot chat."
+    },
+    "expired": {
+      "title": "Session expired",
+      "body": "Your Telegram sign-in data has expired. Close the app and reopen it from the chat."
+    },
+    "invalid": {
+      "title": "Invalid sign-in data",
+      "body": "Telegram could not confirm your identity. Reopen the app from the official bot chat."
+    },
+    "network": {
+      "title": "No connection",
+      "body": "We can't reach the server. Check your connection and try again."
+    },
+    "server": {
+      "title": "Server not responding",
+      "body": "Something went wrong on our side. Please try again in a moment."
+    }
+  },
+  "feed": {
+    "loading": "Loading profiles…",
+    "error": "We couldn't load the profiles.",
+    "empty": "No more profiles right now",
+    "reload": "Find more",
+    "undo": "↩ Back",
+    "sendFailed": "We couldn't send that. Try again.",
+    "undoFailed": "We couldn't undo that. Try again.",
+    "hint": "Drag the card: left = no, right = like, up = super like, down = back.",
+    "cue": {
+      "like": "LIKE",
+      "nope": "NOPE",
+      "super": "★ SUPER LIKE",
+      "undo": "↩ BACK"
+    },
+    "card": {
+      "distance": "{{km}} km"
+    },
+    "match": {
+      "title": "It's a match!",
+      "body": "You and {{name}} like each other.",
+      "continue": "Continue"
+    }
+  }
+}

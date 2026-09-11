@@ -1,0 +1,178 @@
+/* Deck-ul de swipe. Geometria e în CSS; doar transformarea cardului de sus e
+   scrisă din JS, în timpul gestului. */
+.deck {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin: var(--space-md) 0;
+  touch-action: none; /* fără asta, browserul fură gestul pentru scroll */
+}
+
+.deck__card {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+
+.deck__card--settling {
+  transition: transform 200ms ease-out;
+}
+
+.profile-card {
+  position: relative;
+  height: 100%;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.profile-card__photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  -webkit-user-drag: none;
+}
+
+.profile-card__placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-tag-bg);
+  color: var(--color-accent);
+  font-size: 32px;
+  line-height: 38px;
+  font-weight: 700;
+}
+
+.profile-card__overlay {
+  position: relative;
+  padding: var(--space-lg);
+  background: var(--color-surface);
+  opacity: 0.96;
+}
+
+.profile-card__name {
+  font-size: 24px;
+  line-height: 30px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.profile-card__about {
+  margin: var(--space-sm) 0 0;
+  font-size: 16px;
+  line-height: 22px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.profile-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.chip {
+  background: var(--color-tag-bg);
+  color: var(--color-link);
+  border-radius: var(--radius-pill);
+  padding: var(--space-xs) var(--space-md);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.compat-badge {
+  position: absolute;
+  top: var(--space-lg);
+  right: var(--space-lg);
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-on-accent);
+  font-size: 12px;
+  line-height: 14px;
+  font-weight: 700;
+}
+
+/* Indiciile celor patru direcții. Opacitatea vine din JS, proporțional cu
+   distanța parcursă de deget — utilizatorul vede ce urmează să se întâmple
+   ÎNAINTE să ridice degetul. */
+.cue {
+  position: absolute;
+  padding: var(--space-sm) var(--space-md);
+  border: 2px solid currentColor;
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  font-size: 16px;
+  line-height: 22px;
+  pointer-events: none;
+}
+
+.cue--like {
+  top: 24px;
+  left: 24px;
+  color: var(--color-success);
+}
+
+.cue--nope {
+  top: 24px;
+  right: 24px;
+  color: var(--color-danger);
+}
+
+.cue--super {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--color-accent);
+}
+
+.cue--undo {
+  bottom: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--color-text-secondary);
+}
+
+.deck__hint {
+  text-align: center;
+  padding-bottom: var(--space-md);
+}
+
+.match-modal {
+  position: fixed;
+  inset: 0;
+  background: var(--color-scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xl);
+  z-index: 10;
+}
+
+.match-modal__box {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-xl);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  max-width: 320px;
+  width: 100%;
+}
