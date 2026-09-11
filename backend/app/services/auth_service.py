@@ -25,6 +25,7 @@ from app.core.security import (
 from app.models.session import RefreshSession
 from app.models.user import User
 from app.schemas.auth import TokenPair
+from app.services.telegram_auth import TelegramUser
 
 # RO: Hash Argon2 „dummy", constant, pentru a rula MEREU o verificare de parolă
 # la login — chiar și când userul nu există — ca timpul de răspuns să nu dezvăluie
@@ -158,6 +159,74 @@ async def login_with_identity(db: AsyncSession, email: str) -> TokenPair:
         # Login social/OTP nu are voie să ocolească banul (altfel „ștergi appul,
         # intri cu Google" și contul banat revine la viață).
         raise _BANNED_EXC
+
+    pair = await _issue_token_pair(db, user, family_id=uuid.uuid4().hex)
+    await db.commit()
+    return pair
+
+
+def telegram_identity_email(telegram_id: int) -> str:
+    """Emailul sintetic determinist al unei identități Telegram.
+
+    `User.email` e NOT NULL și UNIQUE, iar schimbarea asta ar atinge tot modelul —
+    deci facem ca la Apple/Google/telefon: un email derivat, care nu aparține
+    niciunui domeniu real (`.flirt` nu e un TLD valid, deci nu poate fi
+    revendicat de nimeni și nu primește niciodată mail).
+    """
+    return f"telegram_{telegram_id}@ext.flirt"
+
+
+async def login_with_telegram(
+    db: AsyncSession, telegram_user: TelegramUser
+) -> TokenPair:
+    """Get-or-create pentru o identitate Telegram VERIFICATĂ (Mini App).
+
+    Sursa de adevăr e coloana `users.telegram_user_id`, nu emailul sintetic:
+    emailul e doar compatibilitate cu modelul existent. Căutarea pe email rămâne
+    ca punte pentru conturile create înainte de coloană — dacă emailul sintetic
+    există, e prin definiție ACELAȘI user (e derivat determinist din id-ul de
+    Telegram), deci îl re-legăm, nu creăm un duplicat care ar sparge UNIQUE.
+
+    NU legăm automat un cont găsit după emailul REAL sau după telefon: „am același
+    email pe Telegram" nu dovedește că e aceeași persoană, iar o legare automată
+    ar fi o preluare de cont (cineva își pune pe Telegram emailul victimei).
+    Legarea unui cont existent la Telegram e un flux separat, pornit din contul
+    deja autentificat.
+
+    Întoarce perechea de token-uri (același drum ca `login_with_identity`), nu
+    obiectul `User`: ruta are nevoie de token-uri, iar emiterea lor trebuie să
+    rămână în aceeași tranzacție cu crearea contului.
+    """
+    telegram_id = int(telegram_user.id)
+    now = datetime.now(timezone.utc)
+
+    user = await db.scalar(
+        select(User).where(User.telegram_user_id == telegram_id)
+    )
+    if user is None:
+        email = telegram_identity_email(telegram_id)
+        user = await db.scalar(select(User).where(User.email == email))
+        if user is None:
+            user = User(
+                email=email,
+                password_hash=hash_password(uuid.uuid4().hex),  # parolă inutilizabilă
+                profile_completed=False,
+            )
+            db.add(user)
+        if user.is_banned:
+            raise _BANNED_EXC
+        # Legarea identității: se scrie DOAR aici, o singură dată.
+        user.telegram_user_id = telegram_id
+        user.telegram_linked_at = now
+        await db.flush()  # obținem user.id înainte de a crea sesiunea
+    elif user.is_banned:
+        # Login-ul prin Telegram nu are voie să ocolească banul (altfel „șterg
+        # appul, intru din bot" și contul banat revine la viață).
+        raise _BANNED_EXC
+
+    # Intrarea în Mini App e activitate reală a contului — vezi
+    # `account_service.touch_last_active` pentru semnificația câmpului.
+    user.last_active_at = now
 
     pair = await _issue_token_pair(db, user, family_id=uuid.uuid4().hex)
     await db.commit()

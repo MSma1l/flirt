@@ -30,6 +30,19 @@ class SocialLoginIn(BaseModel):
     id_token: str = Field(min_length=1)
 
 
+class TelegramAuthIn(BaseModel):
+    """Payload pentru Telegram Mini App: șirul `initData` semnat de Telegram.
+
+    `max_length` nu e cosmetic: `initData` real are câteva sute de octeți, dar
+    verificarea construiește `data_check_string` din TOATE câmpurile primite,
+    deci un șir arbitrar de lung ar fi muncă gratuită de sortat și de hash-uit,
+    pe un endpoint neautentificat. 4096 lasă loc berechet (`photo_url` lung,
+    `start_param`) și taie abuzul.
+    """
+
+    init_data: str = Field(min_length=1, max_length=4096)
+
+
 class PhoneRequestIn(BaseModel):
     """Cerere de trimitere OTP către un număr de telefon."""
 

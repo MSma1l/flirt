@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, String
+from sqlalchemy import BigInteger, Boolean, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -89,6 +89,21 @@ class User(Base):
     # NULL = cont vechi/nefolosit încă → tratat ca ACTIV (nu ascundem retroactiv).
     last_active_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True
+    )
+
+    # Identitatea Telegram (Mini App). Coloană TIPIZATĂ, nu doar emailul sintetic
+    # `telegram_{id}@ext.flirt`: emailul e un truc de compatibilitate cu modelul
+    # existent, ușor de fabricat de oricine prin alt flux, pe când aceasta e
+    # sursa de adevăr — scrisă DOAR după verificarea semnăturii `initData`.
+    # BigInteger: id-urile de Telegram au depășit intervalul de 32 de biți.
+    # UNIQUE: un cont de Telegram nu poate fi legat de două conturi FLIRT.
+    # NULL = cont care nu a intrat niciodată prin Telegram (majoritatea).
+    telegram_user_id: Mapped[int | None] = mapped_column(
+        BigInteger, unique=True, index=True, nullable=True
+    )
+    # Când s-a legat identitatea Telegram de acest cont (audit / suport).
+    telegram_linked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     # Relație opțională către profil; referință prin string ca să evităm

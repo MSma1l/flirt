@@ -1,6 +1,7 @@
 """Rute de autentificare — montate sub /api/v1/auth."""
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 import re
@@ -8,6 +9,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.deps import CurrentUser
 from app.core.ratelimit import rate_limit
 from app.db.session import get_db
@@ -19,10 +21,13 @@ from app.schemas.auth import (
     RefreshIn,
     RegisterIn,
     SocialLoginIn,
+    TelegramAuthIn,
     TokenPair,
     UserOut,
 )
-from app.services import auth_providers, auth_service
+from app.services import auth_providers, auth_service, telegram_auth
+
+log = logging.getLogger("app.auth")
 
 router = APIRouter()
 
@@ -33,6 +38,10 @@ _login_rl = rate_limit("login", "rate_limit_login_per_min", 60)
 _register_rl = rate_limit("register", "rate_limit_register_per_hour", 3600)
 _otp_request_rl = rate_limit("otp_request", "otp_request_per_hour", 3600)
 _otp_verify_rl = rate_limit("otp_verify", "rate_limit_login_per_min", 60)
+# Telegram: prag separat și mai generos — clientul retrimite `initData` la
+# fiecare deschidere a Mini App-ului, iar mai mulți useri pot veni prin același
+# NAT de operator mobil (vezi `rate_limit_telegram_per_min` din config).
+_telegram_rl = rate_limit("telegram", "rate_limit_telegram_per_min", 60)
 
 
 @router.post(
@@ -84,6 +93,39 @@ async def apple_login(data: SocialLoginIn, db: DbSession) -> TokenPair:
     claims = await auth_providers.verify_apple(data.id_token)
     email = f"apple_{claims['sub']}@ext.flirt"
     return await auth_service.login_with_identity(db, email=email)
+
+
+@router.post(
+    "/telegram",
+    response_model=TokenPair,
+    dependencies=[Depends(_telegram_rl)],
+)
+async def telegram_login(data: TelegramAuthIn, db: DbSession) -> TokenPair:
+    """Telegram Mini App: verifică `initData` și autentifică (get-or-create).
+
+    Două verificări, în ordine: semnătura HMAC (datele chiar vin de la Telegram)
+    și consumarea hash-ului (datele nu au mai fost folosite o dată — `initData`
+    e valabil 24h și retrimis identic, deci e interceptabil și reutilizabil).
+    """
+    try:
+        init = telegram_auth.verify_init_data(
+            data.init_data,
+            bot_token=settings.telegram_bot_token,
+            max_age_seconds=settings.telegram_init_data_max_age_seconds,
+        )
+        await telegram_auth.claim_init_data(
+            init, ttl_seconds=settings.telegram_init_data_max_age_seconds
+        )
+    except telegram_auth.TelegramAuthError as exc:
+        # Logăm DOAR tipul erorii. Niciodată `initData` brut (conține datele
+        # userului și hash-ul), niciodată tokenul botului: un log de aplicație
+        # ajunge în mult mai multe mâini decât baza de date.
+        log.warning(
+            "Login Telegram refuzat", extra={"error_type": type(exc).__name__}
+        )
+        raise
+
+    return await auth_service.login_with_telegram(db, init.user)
 
 
 @router.post(

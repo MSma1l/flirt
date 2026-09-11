@@ -146,6 +146,31 @@ class Settings(BaseSettings):
     otp_ttl_seconds: int = 300
     sms_api_key: str = ""
 
+    # --- Telegram Mini App (canal de intrare suplimentar) ---------------------
+    # Mini App-ul nu trimite un id_token OIDC, ci `initData`: un query-string
+    # semnat HMAC-SHA256 cu o cheie derivată din TOKENUL BOTULUI. Deci tokenul
+    # botului NU e doar o credențială de trimis mesaje — e cheia cu care se
+    # verifică fiecare login. Scurs = oricine își poate fabrica singur initData.
+    #
+    # `telegram_auth_mode` urmează convenția lui `social_auth_mode`:
+    #  - 'stub' (implicit): acceptă un initData de test, FĂRĂ verificare de hash.
+    #    Dev + teste. Refuzat în producție (vezi `_guard_production` mai jos și
+    #    verificarea defensivă din `services/telegram_auth.py`).
+    #  - 'live': verificare criptografică reală a semnăturii + `auth_date`.
+    telegram_bot_token: str = ""
+    telegram_bot_username: str = ""
+    telegram_auth_mode: Literal["stub", "live"] = "stub"
+    # Vechimea maximă acceptată a unui `initData` (secunde). Telegram retrimite
+    # ACELAȘI initData la fiecare deschidere a Mini App-ului până la re-emitere,
+    # deci o fereastră prea scurtă ar deconecta userii fără motiv. 24h e valoarea
+    # recomandată de Telegram; e și TTL-ul cheii anti-replay.
+    telegram_init_data_max_age_seconds: int = 86_400
+    # Secretul antetului `X-Telegram-Bot-Api-Secret-Token` pentru webhook-ul
+    # botului: fără el, oricine cunoaște URL-ul poate injecta update-uri false.
+    telegram_webhook_secret: str = ""
+    # URL-ul public al Mini App-ului (folosit la butonul din bot / deep-links).
+    telegram_miniapp_url: str = ""
+
     # Push notifications (TZ 6.3). Provider: 'stub' | 'expo' | 'fcm'
     push_provider: str = "stub"
     push_api_key: str = ""
@@ -279,6 +304,11 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_login_per_min: int = 5       # încercări login / IP / minut
     rate_limit_register_per_hour: int = 10  # înregistrări / IP / oră
+    # Login prin Telegram Mini App / IP / minut. Prag GENEROS intenționat: clientul
+    # retrimite `initData` la FIECARE deschidere a Mini App-ului, iar mai mulți
+    # useri pot veni prin același NAT (operator mobil) — un prag de 5, ca la login,
+    # ar bloca useri legitimi. Anti-brute-force real e semnătura HMAC, nu pragul.
+    rate_limit_telegram_per_min: int = 20
     otp_request_per_hour: int = 5           # cereri OTP / telefon / oră
     otp_max_attempts: int = 5               # încercări verify / cod, apoi invalidare
     max_upload_bytes: int = 8_388_608       # 8 MB limită upload
@@ -569,6 +599,30 @@ class Settings(BaseSettings):
                 ("GOOGLE_PLAY_PACKAGE", self.google_play_package),
                 ("GOOGLE_PLAY_SERVICE_ACCOUNT_FILE", self.google_play_service_account_file),
             ]
+        # TELEGRAM MINI APP. NU e în `stub_integrations` de mai sus — la fel ca
+        # `ai_provider`, e un canal OPȚIONAL: o producție care nu publică Mini
+        # App-ul nu trebuie obligată să inventeze un bot. Dar dacă e activat,
+        # regulile sunt stricte:
+        #  * 'live' fără TELEGRAM_BOT_TOKEN = imposibil de verificat semnătura;
+        #    fără TELEGRAM_WEBHOOK_SECRET = webhook public pentru oricine.
+        #  * 'stub' CU bot/Mini App configurat = login fără NICIO verificare de
+        #    hash, adică oricine se poate loga ca oricine trimițând un `user.id`
+        #    ales de el. Ar fi cea mai gravă breșă posibilă, deci e refuzată la
+        #    pornire, nu descoperită mai târziu.
+        if self.telegram_auth_mode == "live":
+            required_keys["TELEGRAM_AUTH_MODE=live"] = [
+                ("TELEGRAM_BOT_TOKEN", self.telegram_bot_token),
+                ("TELEGRAM_WEBHOOK_SECRET", self.telegram_webhook_secret),
+            ]
+        elif (
+            self.telegram_bot_token
+            or self.telegram_bot_username
+            or self.telegram_miniapp_url
+        ):
+            problems.append(
+                "TELEGRAM_AUTH_MODE este 'stub', dar Mini App-ul e configurat "
+                "(bot/URL setat): în stub login-ul Telegram NU verifică semnătura"
+            )
         if self.push_provider == "fcm":
             required_keys["PUSH_PROVIDER=fcm"] = [
                 ("FCM_SERVER_KEY", self.fcm_server_key),
