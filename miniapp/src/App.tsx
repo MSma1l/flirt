@@ -1,38 +1,41 @@
 /**
- * Rădăcina Mini App-ului: pornire Telegram → autentificare → ecranul de swipe.
+ * Rădăcina Mini App-ului: pornire Telegram → autentificare → rutare.
  *
  * Autentificarea rulează la FIECARE pornire, din `initData`. Nu există hidratare
  * dintr-o sesiune salvată — motivul stă în `api/tokenStore.ts`.
+ *
+ * DE CE `MemoryRouter` ȘI NU `HashRouter`/`BrowserRouter`
+ * ------------------------------------------------------
+ * Mini App-ul e servit dintr-un singur fișier, deci `BrowserRouter` ar cere o
+ * regulă de rescriere pe server pentru fiecare cale — o reîncărcare pe `/feed`
+ * ar da 404. Rămâneau `HashRouter` și `MemoryRouter`.
+ *
+ * `HashRouter` e EXCLUS pentru un motiv concret, nu de stil: Telegram transmite
+ * datele de deschidere chiar în FRAGMENTUL adresei
+ * (`#tgWebAppData=…&tgWebAppVersion=…&tgWebAppThemeParams=…`). Un router care
+ * scrie în `location.hash` le suprascrie la prima navigare; după asta, orice
+ * reîncărcare a paginii pornește fără `initData`, adică fără nicio dovadă de
+ * identitate, iar aplicația nu se mai poate autentifica.
+ *
+ * În plus, istoricul browserului se comportă neuniform în WebView-ul Telegram:
+ * pe unele clienți gestul „înapoi" al sistemului închide Mini App-ul în loc să
+ * întoarcă o intrare de istoric. `MemoryRouter` ține istoricul în memorie, nu
+ * atinge deloc adresa, iar navigarea în adâncime se face prin butonul ÎNAPOI
+ * nativ al Telegramului (vezi `components/DeepScreen.tsx`). Costul acceptat:
+ * o reîncărcare a paginii repornește de la rută zero — ceea ce e oricum
+ * comportamentul corect, fiindcă și autentificarea o ia de la capăt.
  */
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { MemoryRouter } from 'react-router';
 
 import { useAuthStore } from '@/auth/authStore';
-import { SwipeDeck } from '@/features/feed/SwipeDeck';
+import { StatusScreen } from '@/components/StatusScreen';
+import { AppRoutes } from '@/routes';
 import { useTelegramBootstrap, useTelegramChrome } from '@/telegram/useTelegram';
 
-/** Ecran de stare, cu titlu, explicație și (opțional) o acțiune. */
-function StatusScreen({
-  title,
-  body,
-  action,
-}: {
-  title: string;
-  body?: string;
-  action?: { label: string; onClick: () => void };
-}) {
-  return (
-    <div className="screen-center">
-      <h1 className="title">{title}</h1>
-      {body ? <p className="body-text">{body}</p> : null}
-      {action ? (
-        <button type="button" className="button" onClick={action.onClick}>
-          {action.label}
-        </button>
-      ) : null}
-    </div>
-  );
-}
+import '@/styles/shell.css';
+import '@/styles/forms.css';
 
 export function App() {
   const { t } = useTranslation('miniapp');
@@ -73,7 +76,11 @@ export function App() {
           title={t(`errors.${error}.title`)}
           body={t(`errors.${error}.body`)}
           {...(retryable
-            ? { action: { label: t('actions.retry', { ns: 'common' }), onClick: () => void signIn() } }
+            ? {
+                actions: [
+                  { label: t('actions.retry', { ns: 'common' }), onClick: () => void signIn() },
+                ],
+              }
             : {})}
         />
       </div>
@@ -81,8 +88,8 @@ export function App() {
   }
 
   return (
-    <div className="app-shell">
-      <SwipeDeck />
-    </div>
+    <MemoryRouter>
+      <AppRoutes />
+    </MemoryRouter>
   );
 }

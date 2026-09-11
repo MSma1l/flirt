@@ -144,7 +144,10 @@ services:
   # cu 0 și nginx NU depinde de el ⇒ un Mini App lipsă sau un build stricat nu pot
   # ține backend-ul jos. Detalii: scripts/build_miniapp.sh
   miniapp-build:
-    image: node:20-alpine
+    # Node 22: `react-router` cere >=22.22. Pe node:20 buildul frontendului ar
+    # esua, iar utilizatorii ar primi pagina de asteptare. Serviciul de admin
+    # ramane pe node:20 — nu are aceasta dependenta.
+    image: node:22-alpine
     restart: "no"
     logging: *default-logging
     security_opt: [ "no-new-privileges:true" ]

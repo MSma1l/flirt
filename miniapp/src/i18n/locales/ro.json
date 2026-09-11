@@ -47,6 +47,80 @@
       "title": "Aveți match!",
       "body": "Ție și lui {{name}} vă place unul de altul.",
       "continue": "Continuă"
+    },
+    "emptyBody": "Nu e o eroare: chiar nu mai avem pe cine să-ți arătăm acum. Revino mai târziu sau lărgește filtrele din Setări."
+  },
+  "nav": {
+    "label": "Navigare principală",
+    "feed": "Ankete",
+    "chats": "Mesaje",
+    "profile": "Profil",
+    "settings": "Setări",
+    "chat": "Conversație"
+  },
+  "welcome": {
+    "title": "Bine ai venit la FLIRT",
+    "titleNamed": "Bine ai venit, {{name}}!",
+    "body": "Contul tău e deja creat — ai intrat cu Telegram. Mai rămâne profilul, ca ceilalți să aibă ce vedea.",
+    "cta": "Continuă cu Telegram",
+    "note": "Fără parolă și fără cod pe SMS. Pornim de la numele și poza din Telegram, iar tu le poți schimba."
+  },
+  "onboarding": {
+    "title": "Profilul tău",
+    "subtitle": "Câmpurile marcate cu * sunt obligatorii. Durează un minut.",
+    "loading": "Pregătim formularul…",
+    "save": "Salvează și continuă",
+    "saving": "Salvăm…",
+    "fields": {
+      "name": "Nume",
+      "birthDate": "Data nașterii",
+      "gender": "Gen",
+      "height": "Înălțime (cm)",
+      "city": "Oraș",
+      "languages": "Limbi de comunicare",
+      "interests": "Interese",
+      "datingStatuses": "Ce cauți",
+      "interestedIn": "Pe cine cauți",
+      "about": "Despre tine"
+    },
+    "hints": {
+      "adultsOnly": "FLIRT este 18+. Trebuie să ai cel puțin {{min}} ani.",
+      "optional": "Opțional",
+      "interestedIn": "Opțional. Dacă nu alegi nimic, îți arătăm pe toată lumea."
+    },
+    "errors": {
+      "nameRequired": "Introdu numele tău.",
+      "noHtml": "Textul nu poate conține marcaje HTML.",
+      "tooLong": "Textul depășește {{max}} de caractere.",
+      "birthDateRequired": "Introdu data nașterii.",
+      "birthDateInvalid": "Data nașterii nu este validă.",
+      "birthDateFuture": "Data nașterii nu poate fi în viitor.",
+      "tooYoung": "FLIRT este doar pentru adulți: trebuie să ai cel puțin {{min}} ani.",
+      "genderRequired": "Alege genul.",
+      "heightRequired": "Introdu înălțimea în cm.",
+      "heightRange": "Înălțimea trebuie să fie între {{min}} și {{max}} cm.",
+      "cityRequired": "Introdu orașul.",
+      "languagesRequired": "Alege cel puțin o limbă.",
+      "interestsRequired": "Alege cel puțin un interes.",
+      "referenceFailed": "Nu am putut încărca opțiunile. Verifică internetul și încearcă din nou.",
+      "saveFailed": "Nu am putut salva profilul. Încearcă din nou.",
+      "network": "Nu avem legătură cu serverul. Verifică internetul.",
+      "uploadFailed": "Nu am putut încărca poza. Încearcă din nou.",
+      "deleteFailed": "Nu am putut șterge poza. Încearcă din nou.",
+      "photoType": "Fișierul ales nu e o imagine. Alege o poză.",
+      "photoDecode": "Nu am putut deschide poza. Unele formate (de exemplu HEIC, cel implicit pe iPhone) nu pot fi citite aici — alege altă poză sau salveaz-o ca JPEG.",
+      "photoTooLarge": "Poza depășește limita de {{limit}}.",
+      "photoStillTooLarge": "Poza rămâne prea mare ({{size}}) chiar și după micșorare, iar limita este {{limit}}. Alege altă poză.",
+      "notCompleteYet": "Serverul spune că profilul încă nu e complet. Ai nevoie de cel puțin {{min}} poze."
     }
+  },
+  "photos": {
+    "title": "Pozele tale",
+    "needMore": "Mai adaugă {{n}} poze ca să pornim (minimum {{min}}).",
+    "enough": "Ai destule poze. Poți adăuga și altele, dacă vrei.",
+    "add": "Adaugă o poză",
+    "remove": "Șterge poza",
+    "finish": "Gata, intru în aplicație",
+    "limits": "Maximum {{max}} poze. Le micșorăm automat sub {{size}} înainte de trimitere."
   }
 }

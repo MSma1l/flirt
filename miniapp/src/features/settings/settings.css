@@ -1,0 +1,100 @@
+/*
+ * Stilurile ecranului de Setări. Culorile și spațierile vin din variabilele CSS
+ * scrise de `theme/applyTheme.ts`, deci ecranul urmează tema clientului Telegram.
+ *
+ * `.pf-chip`, `.pf-chip--selectable`, `.pf-field__input` și `.pf-field__error`
+ * sunt definite în `features/profile/profile.css` și refolosite aici: ambele
+ * foldere aparțin aceluiași agent, iar `src/styles/` (global) e al altcuiva.
+ * Importul de mai jos face ecranul de Setări de sine stătător, chiar dacă e
+ * randat fără cel de profil. Motivul prefixului `pf-` e explicat acolo.
+ */
+@import '../profile/profile.css';
+
+.settings-screen {
+  flex: 1;
+  /* Derularea o face zona de continut a cadrului (.app-shell__content,
+     vezi styles/shell.css): un al doilea container cu overflow-y: auto ar
+     da doua bare de derulare imbricate, iar pe iOS impulsul de scroll s-ar
+     pierde intre ele. */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+  padding-bottom: var(--space-xxl);
+}
+
+.settings-screen__title {
+  margin: var(--space-lg) 0 0;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.settings-section__title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.settings-label {
+  margin: 0;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-row {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+  cursor: pointer;
+  /* Ținta de atingere: rândul întreg, nu doar pătratul checkboxului. */
+  min-height: 44px;
+}
+
+.settings-toggle__label {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-toggle input[type='checkbox'] {
+  width: 44px;
+  height: 26px;
+  flex: none;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.settings-banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-danger);
+  background: var(--color-tag-bg);
+}
+
+.settings-banner__title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+  color: var(--color-danger);
+}

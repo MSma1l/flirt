@@ -238,9 +238,17 @@ export function SwipeDeck() {
   ) : null;
 
   if (!current) {
+    // Feed gol NU e o eroare, și ecranul trebuie să spună asta răspicat. E chiar
+    // starea din producție pentru un cont nou într-un oraș mic: nu mai sunt
+    // profiluri de arătat acum. Un ecran gol, fără titlu și fără explicație, a
+    // fost citit de utilizatori drept „aplicația nu merge".
     return (
       <div className="screen-center">
-        <p className="body-text">{t('feed.empty')}</p>
+        <div className="status-icon" aria-hidden="true">
+          ♡
+        </div>
+        <h1 className="title">{t('feed.empty')}</h1>
+        <p className="body-text">{t('feed.emptyBody')}</p>
         <button
           type="button"
           className="button"

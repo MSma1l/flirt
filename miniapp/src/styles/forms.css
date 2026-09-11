@@ -1,0 +1,153 @@
+/*
+ * Formularul de înregistrare: câmpuri, etichete-buton (chips), grila de poze.
+ * Ținte de atingere de minimum 44px peste tot — un formular pe care nu-l poți
+ * completa cu degetul e la fel de rupt ca unul care nu există.
+ */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  padding: var(--space-md) 0 var(--space-xxl);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.field__label {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.field__required {
+  color: var(--color-accent);
+}
+
+.field__hint {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.field__error {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--color-danger);
+  margin: 0;
+}
+
+.input {
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: 16px; /* sub 16px, iOS mărește pagina la focus */
+  line-height: 22px;
+}
+
+.input:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.input[aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+
+.input--multiline {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.chip {
+  appearance: none;
+  min-height: 40px;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.chip--active {
+  background: var(--color-tag-bg);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+/* ——— Grila de poze ————————————————————————————————————————— */
+
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-sm);
+}
+
+.photo-tile {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.photo-tile__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.photo-tile__remove {
+  position: absolute;
+  top: var(--space-xs);
+  right: var(--space-xs);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-scrim);
+  color: var(--color-on-accent);
+  font-size: 18px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.photo-tile--add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  font-size: 28px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.photo-tile--add:disabled {
+  color: var(--color-text-disabled);
+  border-color: var(--color-border);
+  cursor: default;
+}

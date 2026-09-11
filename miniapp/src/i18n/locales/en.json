@@ -47,6 +47,80 @@
       "title": "It's a match!",
       "body": "You and {{name}} like each other.",
       "continue": "Continue"
+    },
+    "emptyBody": "This isn't an error: there really is nobody left to show right now. Come back later or widen your filters in Settings."
+  },
+  "nav": {
+    "label": "Main navigation",
+    "feed": "Profiles",
+    "chats": "Messages",
+    "profile": "Profile",
+    "settings": "Settings",
+    "chat": "Conversation"
+  },
+  "welcome": {
+    "title": "Welcome to FLIRT",
+    "titleNamed": "Welcome, {{name}}!",
+    "body": "Your account already exists — you signed in with Telegram. All that's left is your profile, so others have something to see.",
+    "cta": "Continue with Telegram",
+    "note": "No password, no SMS code. We start from your Telegram name and photo — you can change both."
+  },
+  "onboarding": {
+    "title": "Your profile",
+    "subtitle": "Fields marked with * are required. It takes a minute.",
+    "loading": "Preparing the form…",
+    "save": "Save and continue",
+    "saving": "Saving…",
+    "fields": {
+      "name": "Name",
+      "birthDate": "Date of birth",
+      "gender": "Gender",
+      "height": "Height (cm)",
+      "city": "City",
+      "languages": "Languages you speak",
+      "interests": "Interests",
+      "datingStatuses": "What you're looking for",
+      "interestedIn": "Who you're looking for",
+      "about": "About you"
+    },
+    "hints": {
+      "adultsOnly": "FLIRT is 18+. You must be at least {{min}}.",
+      "optional": "Optional",
+      "interestedIn": "Optional. Pick nothing and we'll show you everyone."
+    },
+    "errors": {
+      "nameRequired": "Enter your name.",
+      "noHtml": "Text cannot contain HTML markup.",
+      "tooLong": "Text is longer than {{max}} characters.",
+      "birthDateRequired": "Enter your date of birth.",
+      "birthDateInvalid": "That date of birth isn't valid.",
+      "birthDateFuture": "Your date of birth can't be in the future.",
+      "tooYoung": "FLIRT is adults only: you must be at least {{min}}.",
+      "genderRequired": "Pick your gender.",
+      "heightRequired": "Enter your height in cm.",
+      "heightRange": "Height must be between {{min}} and {{max}} cm.",
+      "cityRequired": "Enter your city.",
+      "languagesRequired": "Pick at least one language.",
+      "interestsRequired": "Pick at least one interest.",
+      "referenceFailed": "We couldn't load the options. Check your connection and try again.",
+      "saveFailed": "We couldn't save your profile. Try again.",
+      "network": "We can't reach the server. Check your connection.",
+      "uploadFailed": "We couldn't upload the photo. Try again.",
+      "deleteFailed": "We couldn't delete the photo. Try again.",
+      "photoType": "That file isn't an image. Pick a photo.",
+      "photoDecode": "We couldn't open that photo. Some formats (HEIC, the iPhone default) can't be read here — pick another photo or save it as JPEG.",
+      "photoTooLarge": "The photo is over the {{limit}} limit.",
+      "photoStillTooLarge": "The photo is still too large ({{size}}) even after shrinking, and the limit is {{limit}}. Pick another one.",
+      "notCompleteYet": "The server says your profile still isn't complete. You need at least {{min}} photos."
     }
+  },
+  "photos": {
+    "title": "Your photos",
+    "needMore": "Add {{n}} more photos to get started (minimum {{min}}).",
+    "enough": "You have enough photos. Add more if you like.",
+    "add": "Add a photo",
+    "remove": "Delete photo",
+    "finish": "Done, take me in",
+    "limits": "Up to {{max}} photos. We shrink them under {{size}} before sending."
   }
 }

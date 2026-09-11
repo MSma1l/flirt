@@ -1,0 +1,310 @@
+/*
+ * Stilurile ecranului de profil. Toate culorile, razele și spațierile vin din
+ * variabilele CSS scrise de `theme/applyTheme.ts`, deci ecranul urmează tema
+ * clientului Telegram fără nicio valoare hardcodată aici.
+ *
+ * PREFIXUL `pf-`: CSS-ul e global, iar `src/styles/forms.css` (al ecranelor de
+ * înregistrare) definește deja `.field`, `.chip`, `.photo-grid`, `.photo-tile`
+ * ș.a.m.d. cu ALTE valori. Două fișiere care revendică același nume se
+ * suprascriu în tăcere, după ordinea de import, și stricăm ecranele celuilalt.
+ * Clasele care s-ar ciocni poartă deci prefixul `pf-` (profil); cele care sunt
+ * deja unice (`.profile-*`, `.settings-*`, `.confirm-*`) rămân ca atare.
+ * Clasele GLOBALE folosite ca atare — `.button`, `.caption`, `.title`,
+ * `.error-text`, `.spinner`, `.screen-center` — vin din `styles/global.css`.
+ */
+
+.profile-screen {
+  flex: 1;
+  /* Derularea o face zona de continut a cadrului (.app-shell__content,
+     vezi styles/shell.css): un al doilea container cu overflow-y: auto ar
+     da doua bare de derulare imbricate, iar pe iOS impulsul de scroll s-ar
+     pierde intre ele. */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  padding-bottom: var(--space-xxl);
+}
+
+.profile-screen__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding-top: var(--space-lg);
+}
+
+.profile-screen__cta {
+  margin-top: var(--space-md);
+}
+
+.profile-verified {
+  margin: 0;
+  align-self: flex-start;
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-pill);
+  background: var(--color-tag-bg);
+  color: var(--color-success);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 700;
+}
+
+/* --------------------------------- Galerie ------------------------------- */
+
+.profile-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--space-sm);
+}
+
+.profile-gallery__img {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+/* ---------------------------- Date de profil ----------------------------- */
+
+.profile-facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: var(--space-sm) var(--space-md);
+  margin: 0;
+  align-items: baseline;
+}
+
+.profile-facts dt {
+  margin: 0;
+}
+
+.profile-facts dd {
+  margin: 0;
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.profile-about {
+  margin: 0;
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.profile-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+/* ---------------------------------- Chips -------------------------------- */
+
+.pf-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.pf-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-sm) var(--space-lg);
+  border-radius: var(--radius-pill);
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.pf-chip--selectable {
+  cursor: pointer;
+  /* Ținta de atingere minimă recomandată; chips-urile sunt mici pe telefon. */
+  min-height: 36px;
+}
+
+.pf-chip--on {
+  border-color: var(--color-accent);
+  background: var(--color-tag-bg);
+  color: var(--color-accent);
+}
+
+/* -------------------------------- Formular ------------------------------- */
+
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.pf-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  border: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.pf-field legend {
+  padding: 0;
+  margin-bottom: var(--space-xs);
+}
+
+.pf-field__input {
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: 16px; /* sub 16px, iOS mărește pagina la focus */
+  line-height: 22px;
+}
+
+.pf-field__input:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.pf-field__textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.pf-field__error {
+  color: var(--color-danger);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.profile-form__actions {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.profile-form__actions .button {
+  flex: 1;
+}
+
+/* ------------------------------ Grila de poze ---------------------------- */
+
+.pf-photo-manager {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.pf-photo-manager__counter,
+.pf-photo-manager__full {
+  margin: 0;
+}
+
+.pf-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-sm);
+}
+
+.pf-photo-tile {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.pf-photo-tile__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.pf-photo-tile__badge {
+  position: absolute;
+  top: var(--space-xs);
+  left: var(--space-xs);
+  padding: 2px var(--space-sm);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 12px;
+  line-height: 14px;
+  font-weight: 700;
+}
+
+.pf-photo-tile__remove,
+.pf-photo-tile__arrow {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-on-accent);
+  background: var(--color-scrim);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.pf-photo-tile__remove {
+  position: absolute;
+  top: var(--space-xs);
+  right: var(--space-xs);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+}
+
+.pf-photo-tile__move {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+}
+
+.pf-photo-tile__arrow {
+  flex: 1;
+  height: 28px;
+}
+
+.pf-photo-tile__remove:disabled,
+.pf-photo-tile__arrow:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pf-photo-tile__progress {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-scrim);
+  color: var(--color-on-accent);
+  font-weight: 700;
+}
+
+.pf-photo-tile--add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  cursor: pointer;
+  border-style: dashed;
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: 24px;
+}
+
+.pf-photo-tile--add:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
