@@ -30,12 +30,11 @@ import { getLanguageCode } from '@/telegram/bridge';
 import en from './locales/en.json';
 import ro from './locales/ro.json';
 import ru from './locales/ru.json';
-import uk from './locales/uk.json';
 
 /** Namespace-ul propriu Mini App-ului. */
 export const MINIAPP_NAMESPACE = 'miniapp' as const;
 
-const miniappResources: Record<Language, Record<string, unknown>> = { ro, ru, uk, en };
+const miniappResources: Record<Language, Record<string, unknown>> = { ro, ru, en };
 
 /** Cataloagele mobile + namespace-ul local, per limbă. */
 const resources = Object.fromEntries(
