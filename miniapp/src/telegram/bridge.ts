@@ -38,9 +38,26 @@ export function getWebApp(): TelegramWebApp | null {
   return app && typeof app.ready === 'function' ? app : null;
 }
 
-/** Rulăm în interiorul unui client Telegram? */
+/**
+ * Rulăm în interiorul unui client Telegram REAL?
+ *
+ * Prezența obiectului NU e o dovadă: programul oficial se încarcă de pe
+ * `telegram.org` în ORICE browser, deci `window.Telegram.WebApp` există și într-un
+ * Chrome obișnuit. Acolo raportează `platform: "unknown"`, `themeParams` gol,
+ * `initData` gol și `colorScheme: "light"`.
+ *
+ * Verificarea slabă a produs un defect vizibil: pagina deschisă direct în browser
+ * era tratată ca sesiune Telegram, prelua schema „deschis" implicită a
+ * programului și ajungea albă, peste paleta închisă a produsului.
+ *
+ * Semnalul de încredere e `platform`: un client real spune „tdesktop", „android",
+ * „ios", „web" etc., niciodată „unknown".
+ */
 export function isInsideTelegram(): boolean {
-  return getWebApp() !== null;
+  const app = getWebApp();
+  if (!app) return false;
+  const platform = typeof app.platform === 'string' ? app.platform.trim().toLowerCase() : '';
+  return platform !== '' && platform !== 'unknown';
 }
 
 /**

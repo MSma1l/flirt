@@ -30,6 +30,43 @@ describe('puntea Telegram — în afara Telegram', () => {
     expect(isInsideTelegram()).toBe(false);
   });
 
+  it('programul incarcat intr-un browser obisnuit NU inseamna client Telegram', () => {
+    // Regresie pentru un defect vizibil in productie: programul oficial se
+    // incarca de pe telegram.org in ORICE browser, deci obiectul exista si in
+    // Chrome. Acolo raporteaza platforma „unknown", parametri de tema zero si
+    // date de intrare goale. Verificarea slaba il trata ca sesiune Telegram,
+    // prelua schema „deschis" implicita si pagina ajungea alba, peste paleta
+    // inchisa a produsului.
+    (window as unknown as { Telegram: unknown }).Telegram = {
+      WebApp: {
+        ready: () => {},
+        platform: 'unknown',
+        version: '6.0',
+        colorScheme: 'light',
+        initData: '',
+        initDataUnsafe: {},
+        themeParams: {},
+      },
+    };
+
+    expect(isInsideTelegram()).toBe(false);
+
+    delete (window as unknown as { Telegram?: unknown }).Telegram;
+  });
+
+  it.each(['tdesktop', 'android', 'ios', 'web', 'macos'])(
+    'platforma reala „%s" inseamna client Telegram',
+    (platform) => {
+      (window as unknown as { Telegram: unknown }).Telegram = {
+        WebApp: { ready: () => {}, platform, version: '7.0', colorScheme: 'dark' },
+      };
+
+      expect(isInsideTelegram()).toBe(true);
+
+      delete (window as unknown as { Telegram?: unknown }).Telegram;
+    },
+  );
+
   it('nu aruncă la niciun apel și întoarce valori implicite', () => {
     expect(() => {
       ready();
