@@ -33,9 +33,22 @@ const ZERO_INSET: TelegramSafeAreaInset = { top: 0, bottom: 0, left: 0, right: 0
 export function getWebApp(): TelegramWebApp | null {
   if (typeof window === 'undefined') return null;
   const app = window.Telegram?.WebApp;
-  // Un `initData` absent înseamnă că SDK-ul nu s-a încărcat complet; obiectul
-  // există totuși pe unele clienți, deci verificăm o proprietate obligatorie.
-  return app && typeof app.ready === 'function' ? app : null;
+  if (!app || typeof app.ready !== 'function') return null;
+  // Programul oficial se încarcă de pe `telegram.org` în ORICE browser, deci
+  // simpla lui prezență NU dovedește că suntem într-un client Telegram. Într-un
+  // Chrome obișnuit raportează `platform: "unknown"`, `themeParams` gol și
+  // `colorScheme: "light"` — iar acel „light" implicit se scria peste paleta
+  // închisă a produsului și făcea pagina albă.
+  //
+  // Poarta stă AICI, în punctul central, nu în fiecare apelant: altfel o funcție
+  // rămâne pe drumul vechi și defectul reapare exact așa cum s-a întâmplat.
+  return isRealTelegramPlatform(app) ? app : null;
+}
+
+/** Platformă raportată de un client real („tdesktop", „android", …), nu „unknown". */
+function isRealTelegramPlatform(app: TelegramWebApp): boolean {
+  const platform = typeof app.platform === 'string' ? app.platform.trim().toLowerCase() : '';
+  return platform !== '' && platform !== 'unknown';
 }
 
 /**
@@ -54,10 +67,7 @@ export function getWebApp(): TelegramWebApp | null {
  * „ios", „web" etc., niciodată „unknown".
  */
 export function isInsideTelegram(): boolean {
-  const app = getWebApp();
-  if (!app) return false;
-  const platform = typeof app.platform === 'string' ? app.platform.trim().toLowerCase() : '';
-  return platform !== '' && platform !== 'unknown';
+  return getWebApp() !== null;
 }
 
 /**
