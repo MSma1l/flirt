@@ -74,11 +74,15 @@ MAX_INIT_DATA = 4096
 
 
 def sign(fields: dict[str, str], bot_token: str = FAKE_BOT_TOKEN) -> str:
+    # Telegram semneaza INCLUSIV campul `signature`; doar `hash` se exclude.
+    # Confirmat pe trafic real: excluderea lui facea ca verificarea sa cada
+    # mereu pe clientii moderni, iar testele care semnau la fel ramaneau verzi.
+
     """Hash-ul Telegram peste valorile DECODATE (algoritmul din documentație)."""
     data_check_string = "\n".join(
         f"{key}={fields[key]}"
         for key in sorted(fields)
-        if key not in ("hash", "signature")
+        if key != "hash"
     )
     secret_key = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
     return hmac.new(
@@ -197,21 +201,26 @@ async def test_modern_client_with_signature_field_is_accepted(client: AsyncClien
     assert resp.status_code == 200, resp.text
 
 
-async def test_including_signature_in_data_check_string_would_break_everything(
+async def test_excluding_signature_from_data_check_string_is_rejected(
     client: AsyncClient,
 ):
-    """Demonstrație directă a regulii de mai sus, nu doar afirmarea ei.
+    """Regresie pentru defectul care bloca TOȚI utilizatorii reali.
 
-    Semnăm INCLUZÂND `signature` în `data_check_string` (greșeala pe care o
-    face oricine citește superficial documentația). Backendul, care îl exclude
-    corect, trebuie să RESPINGĂ acest initData. Dacă testul ăsta ar trece cu
-    200, ar însemna că backendul include și el `signature` — și atunci ORICE
-    initData de la un client modern ar fi respins în producție.
+    Am exclus initial `signature` din `data_check_string`, urmând o citire
+    superficială a documentației. Clienții vechi nu trimit acel câmp, deci nimic
+    nu se vedea; clienții moderni îl trimit, iar fiecare login real era respins cu
+    „semnătură invalidă". Testele sintetice semnau cu ACEEAȘI presupunere greșită,
+    deci suita rămânea verde — de aceea defectul a ajuns în producție.
+
+    Aici semnăm în vechiul fel, EXCLUZÂND `signature`. Backendul trebuie să
+    respingă. Dacă testul ar trece cu 200, defectul a revenit.
     """
     fields = base_fields(signature="ZmFrZV9zaWduYXR1cmVfZm9yX3Rlc3Rz")
-    wrong = "\n".join(f"{k}={fields[k]}" for k in sorted(fields))  # include signature
+    vechi = "\n".join(
+        f"{k}={fields[k]}" for k in sorted(fields) if k != "signature"
+    )
     secret = hmac.new(b"WebAppData", FAKE_BOT_TOKEN.encode(), hashlib.sha256).digest()
-    fields["hash"] = hmac.new(secret, wrong.encode(), hashlib.sha256).hexdigest()
+    fields["hash"] = hmac.new(secret, vechi.encode(), hashlib.sha256).hexdigest()
 
     resp = await login(client, wire(fields))
     assert resp.status_code == 401, resp.text

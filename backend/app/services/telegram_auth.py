@@ -17,7 +17,7 @@ perfect în teste scrise cu aceeași greșeală, dar respinge ORICE initData rea
 la Telegram. De aceea testele din `tests/test_auth_telegram.py` semnează cu
 algoritmul corect, nu prin refolosirea funcției de aici.
 
-`data_check_string` = toate câmpurile EXCEPTÂND `hash` și `signature`, sortate
+`data_check_string` = toate câmpurile EXCEPTÂND `hash`, sortate
 alfabetic după cheie, în forma `cheie=valoare`, unite cu `\n`. `signature` e
 semnătura Ed25519 (validare de către terți) adăugată ulterior de Telegram și NU
 face parte din șirul verificat cu HMAC — dacă o includem, orice initData modern
@@ -53,7 +53,17 @@ log = logging.getLogger("app.telegram_auth")
 _WEBAPP_DATA = b"WebAppData"
 
 # Câmpuri care NU intră în `data_check_string` (vezi docstring-ul modulului).
-_EXCLUDED_FIELDS = frozenset({"hash", "signature"})
+# Doar `hash` se exclude din `data_check_string`.
+#
+# Am exclus initial si `signature`, urmand o citire gresita a documentatiei. Pe
+# datele REALE ale unui client Telegram modern verificarea cadea mereu: hash-ul
+# calculat de Telegram acopera si campul `signature`. Clientii vechi nu-l trimit,
+# deci defectul era invizibil — si testele sintetice semnau cu ACEEASI presupunere
+# gresita, deci ramaneau verzi. Confirmat pe trafic real, nu dedus.
+#
+# `signature` e semnatura Ed25519 pentru validarea de catre terti, care foloseste
+# alt sir de verificare; asta NU il scoate din sirul HMAC.
+_EXCLUDED_FIELDS = frozenset({"hash"})
 
 # Marjă de ceas acceptată pentru un `auth_date` „din viitor": serverul nostru și
 # serverele Telegram pot fi desincronizate cu câteva secunde. Peste marjă,
@@ -166,7 +176,7 @@ class TelegramInitData:
 
 
 def _build_data_check_string(fields: dict[str, str]) -> str:
-    """`cheie=valoare` sortate alfabetic, unite cu `\\n` (fără hash/signature)."""
+    """`cheie=valoare` sortate alfabetic, unite cu `\\n` (fără `hash`)."""
     return "\n".join(
         f"{key}={fields[key]}"
         for key in sorted(fields)

@@ -36,9 +36,13 @@ FAKE_BOT_TOKEN = "7654321:AAFakeTestTokenForUnitTestsOnly-0000000"
 
 
 def _sign(fields: dict[str, str], bot_token: str) -> str:
+    # Telegram semneaza INCLUSIV campul `signature`; doar `hash` se exclude.
+    # Confirmat pe trafic real: excluderea lui facea ca verificarea sa cada
+    # mereu pe clientii moderni, iar testele care semnau la fel ramaneau verzi.
+
     """Hash-ul Telegram pentru câmpurile date (algoritmul din documentație)."""
     data_check_string = "\n".join(
-        f"{k}={fields[k]}" for k in sorted(fields) if k not in ("hash", "signature")
+        f"{k}={fields[k]}" for k in sorted(fields) if k != "hash"
     )
     secret_key = hmac.new(
         b"WebAppData", bot_token.encode(), hashlib.sha256
