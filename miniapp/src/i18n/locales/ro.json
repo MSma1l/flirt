@@ -1,7 +1,11 @@
 {
+  "actions": {
+    "openInTelegram": "Deschide în Telegram"
+  },
   "app": {
     "connecting": "Te conectăm…",
-    "greeting": "Salut, {{name}}!"
+    "greeting": "Salut, {{name}}!",
+    "connectingBody": "Durează o clipă — verificăm datele primite de la Telegram."
   },
   "errors": {
     "outside_telegram": {
@@ -27,6 +31,7 @@
   },
   "feed": {
     "loading": "Încărcăm anketele…",
+    "loadingBody": "Căutăm oameni potriviți pentru tine.",
     "error": "Nu am putut încărca anketele.",
     "empty": "Nu mai sunt ankete acum",
     "reload": "Caută mai multe",

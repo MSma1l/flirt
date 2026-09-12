@@ -28,6 +28,7 @@ import {
 } from '@mobile/features/feed/swipeDirection';
 import type { FeedCard, SwipeAction } from '@mobile/features/feed/types';
 
+import { StatusScreen, type StatusAction } from '@/components/StatusScreen';
 import { haptic } from '@/telegram/bridge';
 
 import { ProfileCardView } from './ProfileCardView';
@@ -201,20 +202,29 @@ export function SwipeDeck() {
 
   if (isLoading) {
     return (
-      <div className="screen-center">
-        <div className="spinner" role="status" aria-label={t('feed.loading')} />
-      </div>
+      <StatusScreen
+        loading
+        testId="status-feed-loading"
+        title={t('feed.loading')}
+        body={t('feed.loadingBody')}
+      />
     );
   }
 
   if (isError) {
     return (
-      <div className="screen-center">
-        <p className="body-text">{t('feed.error')}</p>
-        <button type="button" className="button" onClick={() => void refetch()}>
-          {t('actions.retry', { ns: 'common' })}
-        </button>
-      </div>
+      <StatusScreen
+        testId="status-feed-error"
+        title={t('errors.network.title')}
+        body={t('feed.error')}
+        actions={[
+          {
+            label: t('actions.retry', { ns: 'common' }),
+            onClick: () => void refetch(),
+            testId: 'deck-retry',
+          },
+        ]}
+      />
     );
   }
 
@@ -242,38 +252,36 @@ export function SwipeDeck() {
     // starea din producție pentru un cont nou într-un oraș mic: nu mai sunt
     // profiluri de arătat acum. Un ecran gol, fără titlu și fără explicație, a
     // fost citit de utilizatori drept „aplicația nu merge".
+    const actions: StatusAction[] = [
+      {
+        label: t('feed.reload'),
+        testId: 'deck-reload',
+        onClick: () => {
+          setIndex(0);
+          void refetch();
+        },
+      },
+    ];
+    if (swipeCount > 0) {
+      actions.push({
+        label: t('feed.undo'),
+        testId: 'deck-undo',
+        ghost: true,
+        disabled: busy,
+        onClick: () => void onUndo(),
+      });
+    }
+
     return (
-      <div className="screen-center">
-        <div className="status-icon" aria-hidden="true">
-          ♡
-        </div>
-        <h1 className="title">{t('feed.empty')}</h1>
-        <p className="body-text">{t('feed.emptyBody')}</p>
-        <button
-          type="button"
-          className="button"
-          data-testid="deck-reload"
-          onClick={() => {
-            setIndex(0);
-            void refetch();
-          }}
-        >
-          {t('feed.reload')}
-        </button>
-        {swipeCount > 0 ? (
-          <button
-            type="button"
-            className="button button--ghost"
-            data-testid="deck-undo"
-            disabled={busy}
-            onClick={() => void onUndo()}
-          >
-            {t('feed.undo')}
-          </button>
-        ) : null}
+      <StatusScreen
+        testId="status-feed-empty"
+        title={t('feed.empty')}
+        body={t('feed.emptyBody')}
+        actions={actions}
+      >
         {errorText}
         {matchModal}
-      </div>
+      </StatusScreen>
     );
   }
 

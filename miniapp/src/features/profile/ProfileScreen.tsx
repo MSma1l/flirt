@@ -23,6 +23,8 @@ import { useTranslation } from 'react-i18next';
 
 import { DEFAULT_LANGUAGE, normalizeLanguage } from '@mobile/i18n/config';
 
+import { StatusScreen } from '@/components/StatusScreen';
+
 import { PhotoManager, type PhotoTile } from './PhotoManager';
 import {
   fetchMyProfile,
@@ -238,28 +240,27 @@ export function ProfileScreen() {
 
   if (profileQuery.isLoading || referenceQuery.isLoading) {
     return (
-      <div className="screen-center">
-        <div className="spinner" role="status" aria-label={t('edit.loading')} />
-        <p className="body-text">{t('edit.loading')}</p>
-      </div>
+      <StatusScreen loading logo={false} testId="status-profile-loading" title={t('edit.loading')} />
     );
   }
 
   if (profileQuery.isError || referenceQuery.isError || !reference) {
     return (
-      <div className="screen-center">
-        <p className="error-text">{t('edit.loadError')}</p>
-        <button
-          type="button"
-          className="button"
-          onClick={() => {
-            void profileQuery.refetch();
-            void referenceQuery.refetch();
-          }}
-        >
-          {t('edit.retry')}
-        </button>
-      </div>
+      <StatusScreen
+        logo={false}
+        testId="status-profile-error"
+        title={t('edit.loadError')}
+        actions={[
+          {
+            label: t('edit.retry'),
+            testId: 'profile-retry',
+            onClick: () => {
+              void profileQuery.refetch();
+              void referenceQuery.refetch();
+            },
+          },
+        ]}
+      />
     );
   }
 

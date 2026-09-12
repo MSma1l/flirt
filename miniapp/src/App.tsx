@@ -29,13 +29,47 @@ import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MemoryRouter } from 'react-router';
 
+import type { AuthErrorKind } from '@/auth/telegramAuth';
 import { useAuthStore } from '@/auth/authStore';
-import { StatusScreen } from '@/components/StatusScreen';
+import { StatusScreen, type StatusAction } from '@/components/StatusScreen';
 import { AppRoutes } from '@/routes';
+import { telegramBotAction } from '@/telegram/botLink';
 import { useTelegramBootstrap, useTelegramChrome } from '@/telegram/useTelegram';
 
 import '@/styles/shell.css';
 import '@/styles/forms.css';
+
+/**
+ * Ce poate face utilizatorul în fiecare stare de eroare.
+ *
+ * Regula: niciun ecran fără ieșire. „În afara Telegram" nu se rezolvă printr-o
+ * reîncercare (fără SDK nu există `initData`, deci ar eșua garantat) — singura
+ * acțiune corectă acolo e butonul care duce în chatul botului. Datele expirate
+ * sau invalide se rezolvă cel mai des tot prin redeschidere din chat, deci
+ * primesc reîncercarea ca acțiune principală și Telegramul ca a doua.
+ */
+export function errorActions(
+  error: AuthErrorKind,
+  labels: { retry: string; openTelegram: string },
+  retry: () => void,
+): StatusAction[] {
+  const toTelegram = (ghost: boolean) =>
+    telegramBotAction({ label: labels.openTelegram, ghost });
+
+  if (error === 'outside_telegram') {
+    const action = toTelegram(false);
+    return action ? [action] : [];
+  }
+
+  const actions: StatusAction[] = [
+    { label: labels.retry, onClick: retry, testId: 'auth-retry' },
+  ];
+  if (error === 'expired' || error === 'invalid') {
+    const action = toTelegram(true);
+    if (action) actions.push(action);
+  }
+  return actions;
+}
 
 export function App() {
   const { t } = useTranslation('miniapp');
@@ -54,34 +88,35 @@ export function App() {
   if (status === 'idle' || status === 'loading') {
     return (
       <div className="app-shell">
-        <div className="screen-center">
-          <div className="spinner" role="status" aria-label={t('app.connecting')} />
-          {/* Numele NEVERIFICAT din initDataUnsafe: doar ca ecranul să nu fie
-              gol cât timp cererea e în zbor. Nu decide nimic. */}
-          <p className="body-text">
-            {optimisticName ? t('app.greeting', { name: optimisticName }) : t('app.connecting')}
-          </p>
-        </div>
+        {/* Numele NEVERIFICAT din initDataUnsafe: doar ca ecranul să nu fie gol
+            cât timp cererea e în zbor. Nu decide nimic. */}
+        <StatusScreen
+          loading
+          testId="status-loading"
+          title={
+            optimisticName ? t('app.greeting', { name: optimisticName }) : t('app.connecting')
+          }
+          body={t('app.connectingBody')}
+        />
       </div>
     );
   }
 
   if (status === 'error' && error) {
-    // „În afara Telegram" nu se rezolvă printr-o reîncercare: fără SDK nu există
-    // `initData`, deci nu oferim un buton care ar eșua garantat.
-    const retryable = error !== 'outside_telegram';
     return (
       <div className="app-shell">
         <StatusScreen
+          testId={`status-${error}`}
           title={t(`errors.${error}.title`)}
           body={t(`errors.${error}.body`)}
-          {...(retryable
-            ? {
-                actions: [
-                  { label: t('actions.retry', { ns: 'common' }), onClick: () => void signIn() },
-                ],
-              }
-            : {})}
+          actions={errorActions(
+            error,
+            {
+              retry: t('actions.retry', { ns: 'common' }),
+              openTelegram: t('actions.openInTelegram'),
+            },
+            () => void signIn(),
+          )}
         />
       </div>
     );

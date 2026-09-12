@@ -92,6 +92,17 @@ describe('stările deck-ului', () => {
     expect(await screen.findByTestId('deck-reload')).toBeInTheDocument();
     // Fără swipe-uri în sesiune, butonul de undo nu are ce anula.
     expect(screen.queryByTestId('deck-undo')).not.toBeInTheDocument();
+    // Feed gol NU e o eroare: ecranul are logo, titlu și o cale înainte.
+    expect(screen.getByTestId('brand-logo')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
+  });
+
+  it('eroarea de feed are logo și buton de reîncercare', async () => {
+    vi.mocked(fetchFeed).mockRejectedValue(new Error('offline'));
+    renderWithProviders(<SwipeDeck />);
+
+    expect(await screen.findByTestId('deck-retry')).toBeInTheDocument();
+    expect(screen.getByTestId('brand-logo')).toBeInTheDocument();
   });
 });
 

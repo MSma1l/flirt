@@ -44,6 +44,8 @@ import {
   type SettingsUpdate,
 } from '@mobile/features/settings/settingsApi';
 
+import { StatusScreen } from '@/components/StatusScreen';
+
 import { ConfirmDialog } from '../profile/ConfirmDialog';
 import { fetchReference } from '../profile/profileApi';
 
@@ -269,20 +271,24 @@ export function SettingsScreen() {
 
   if (settingsQuery.isLoading) {
     return (
-      <div className="screen-center">
-        <div className="spinner" role="status" aria-label={t('title')} />
-      </div>
+      <StatusScreen loading logo={false} testId="status-settings-loading" title={t('title')} />
     );
   }
 
   if (settingsQuery.isError || !data) {
     return (
-      <div className="screen-center">
-        <p className="error-text">{t('loadError')}</p>
-        <button type="button" className="button" onClick={() => void settingsQuery.refetch()}>
-          {t('retry')}
-        </button>
-      </div>
+      <StatusScreen
+        logo={false}
+        testId="status-settings-error"
+        title={t('loadError')}
+        actions={[
+          {
+            label: t('retry'),
+            testId: 'settings-retry',
+            onClick: () => void settingsQuery.refetch(),
+          },
+        ]}
+      />
     );
   }
 

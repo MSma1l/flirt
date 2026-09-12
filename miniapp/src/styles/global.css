@@ -23,6 +23,10 @@
   --color-danger: #ef4444;
   --color-on-accent: #ffffff;
   --color-scrim: rgba(0, 0, 0, 0.6);
+  /* Aura de accent (`ACCENT_GLOW` din `mobile/theme/colors.ts`). Nu trece prin
+     `applyTheme`: e derivată din accent, iar accentul e de brand și nu se
+     schimbă niciodată după tema clientului. */
+  --color-accent-glow: rgba(255, 45, 120, 0.35);
 
   /*
    * Marginile de siguranță. `applyTheme` le suprascrie cu valorile RAPORTATE de

@@ -1,7 +1,11 @@
 {
+  "actions": {
+    "openInTelegram": "Open in Telegram"
+  },
   "app": {
     "connecting": "Connecting…",
-    "greeting": "Hi, {{name}}!"
+    "greeting": "Hi, {{name}}!",
+    "connectingBody": "This takes a second — we're checking your Telegram sign-in."
   },
   "errors": {
     "outside_telegram": {
@@ -27,6 +31,7 @@
   },
   "feed": {
     "loading": "Loading profiles…",
+    "loadingBody": "Looking for people who match you.",
     "error": "We couldn't load the profiles.",
     "empty": "No more profiles right now",
     "reload": "Find more",

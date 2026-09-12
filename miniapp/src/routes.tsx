@@ -108,9 +108,12 @@ export function AppRoutes() {
   if (isLoading && !data) {
     return (
       <div className="app-shell">
-        <div className="screen-center">
-          <div className="spinner" role="status" aria-label={t('app.connecting')} />
-        </div>
+        <StatusScreen
+          loading
+          testId="status-gate-loading"
+          title={t('app.connecting')}
+          body={t('app.connectingBody')}
+        />
       </div>
     );
   }
@@ -119,6 +122,7 @@ export function AppRoutes() {
     return (
       <div className="app-shell">
         <StatusScreen
+          testId="status-gate-error"
           title={t('errors.server.title')}
           body={t('errors.server.body')}
           actions={[

@@ -48,3 +48,54 @@ export function resolveApiUrl(env: RuntimeEnv): string {
 export const config = {
   apiUrl: resolveApiUrl(import.meta.env),
 };
+
+/* ————————————————————————————————————————————————————————————————————————
+ * Numele botului — singura cale prin care un utilizator ajuns pe pagină în
+ * afara Telegram se poate întoarce unde trebuie.
+ *
+ * Vine din `VITE_TELEGRAM_BOT_USERNAME`, injectat la build de
+ * `backend/scripts/build_miniapp.sh` (care îl ia din `TELEGRAM_BOT_USERNAME`).
+ * NU e hardcodat nicăieri: un nume greșit în bundle ar duce utilizatorul la un
+ * chat inexistent, iar el n-ar avea cum să-și dea seama de ce.
+ *
+ * REGULA: dacă variabila lipsește sau nu e un nume valid de bot, întoarcem
+ * `null` și interfața ASCUNDE butonul. Mai bine fără buton decât cu unul care
+ * duce la „user not found".
+ * ———————————————————————————————————————————————————————————————————————— */
+
+/** Telegram: 5–32 de caractere, litere/cifre/underscore, terminat în „bot". */
+const BOT_USERNAME_RE = /^[A-Za-z][A-Za-z0-9_]{3,31}$/;
+
+/**
+ * Curăță și validează numele botului.
+ * Acceptă și forma cu `@` sau adresa completă `https://t.me/nume`, fiindcă
+ * variabila de mediu e completată de om și oricare dintre ele e plauzibilă.
+ */
+export function resolveBotUsername(raw: string | undefined | null): string | null {
+  if (!raw) return null;
+  const trimmed = raw
+    .trim()
+    .replace(/^https?:\/\/(t|telegram)\.me\//i, '')
+    .replace(/^@/, '')
+    .replace(/\/+$/, '');
+  return BOT_USERNAME_RE.test(trimmed) ? trimmed : null;
+}
+
+/** Adresa chatului botului, sau `null` dacă numele nu e configurat. */
+export function botChatUrl(username: string | null): string | null {
+  return username ? `https://t.me/${username}` : null;
+}
+
+/**
+ * Numele botului din mediul de build.
+ * Funcție, nu constantă: testele pot înlocui `import.meta.env` (`vi.stubEnv`),
+ * iar o valoare citită la încărcarea modulului ar rămâne blocată pe prima.
+ */
+export function getBotUsername(): string | null {
+  return resolveBotUsername(import.meta.env.VITE_TELEGRAM_BOT_USERNAME);
+}
+
+/** Adresa chatului botului pentru build-ul curent, sau `null`. */
+export function getBotChatUrl(): string | null {
+  return botChatUrl(getBotUsername());
+}

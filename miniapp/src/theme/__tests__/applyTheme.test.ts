@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { darkTheme, lightTheme } from '@theme/colors';
 
-import { applyTheme, buildPalette, buildThemeVars } from '../applyTheme';
+import { applyTheme, buildPalette, buildThemeVars, PRODUCT_SCHEME } from '../applyTheme';
 import { cssVarColors, toCssVarName } from '../tokens';
 
 describe('buildPalette', () => {
@@ -103,5 +103,45 @@ describe('tokens', () => {
   it('cssVarColors are exact aceleași chei ca paleta mobilă', () => {
     expect(Object.keys(cssVarColors).sort()).toEqual(Object.keys(darkTheme).sort());
     expect(cssVarColors.success).toBe('var(--color-success)');
+  });
+});
+
+/**
+ * DEFECTUL RAPORTAT: adresa Mini App-ului deschisă în Chrome dădea o pagină
+ * ALBĂ, fără culorile produsului. În afara Telegram nu există nici schemă,
+ * nici `themeParams` — iar atunci tema trebuie să fie a NOASTRĂ, cea închisă.
+ */
+describe('tema fără niciun parametru de la Telegram', () => {
+  it('tema produsului e cea închisă', () => {
+    expect(PRODUCT_SCHEME).toBe('dark');
+  });
+
+  it('fără schemă și fără parametri, paleta e cea închisă a produsului', () => {
+    const palette = buildPalette(undefined, undefined);
+    expect(palette.bg).toBe(darkTheme.bg);
+    expect(palette.accent).toBe(darkTheme.accent);
+    expect(palette.textPrimary).toBe(darkTheme.textPrimary);
+  });
+
+  it('variabilele CSS se scriu și când nu primim nimic', () => {
+    const vars = buildThemeVars({});
+    expect(vars['--color-bg']).toBe(darkTheme.bg);
+    expect(vars['--color-accent']).toBe(darkTheme.accent);
+    expect(vars['--color-scheme']).toBe('dark');
+  });
+
+  it('`applyTheme()` fără argumente lasă pagina pe fundalul închis', () => {
+    const root = document.createElement('div');
+    applyTheme({}, root);
+
+    expect(root.style.getPropertyValue('--color-bg')).toBe(darkTheme.bg);
+    expect(root.style.getPropertyValue('--color-bg')).not.toBe(lightTheme.bg);
+    expect(root.dataset.colorScheme).toBe('dark');
+    expect(root.style.colorScheme).toBe('dark');
+  });
+
+  it('modul deschis apare DOAR dacă un client îl cere explicit', () => {
+    expect(buildPalette('light', {}).bg).toBe(lightTheme.bg);
+    expect(buildPalette(undefined, {}).bg).toBe(darkTheme.bg);
   });
 });

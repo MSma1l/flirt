@@ -8,6 +8,11 @@
  * o ruptură vizibilă exact în zona unde pagina noastră atinge chenarul
  * Telegram. Deci: culorile de „cameră" (fundal, suprafață, text, linii)
  * urmează clientul când acesta le trimite, iar ACCENTUL rămâne al nostru.
+ *
+ * ÎN AFARA TELEGRAM (pagina deschisă direct în browser) nu există nici schemă,
+ * nici parametri. Atunci NU cădem pe alb: se aplică integral tema produsului,
+ * cea ÎNCHISĂ — vezi `PRODUCT_SCHEME`. Asta a fost defectul raportat: adresa
+ * deschisă în Chrome arăta o pagină albă, fără culori și fără identitate.
  */
 import type { TelegramSafeAreaInset, TelegramThemeParams } from '@/telegram/types';
 
@@ -28,6 +33,12 @@ const TELEGRAM_OVERRIDES: Array<[keyof TelegramThemeParams, keyof ThemeColors]> 
   ['destructive_text_color', 'danger'],
 ];
 
+/**
+ * Schema IMPLICITĂ a produsului. FLIRT e o aplicație pe fundal închis; modul
+ * deschis apare doar dacă un client Telegram îl cere explicit.
+ */
+export const PRODUCT_SCHEME = 'dark' as const;
+
 /** Culoare validă? Telegram poate trimite `undefined` sau un șir gol. */
 function isColor(value: unknown): value is string {
   return typeof value === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value.trim());
@@ -42,13 +53,14 @@ function isColor(value: unknown): value is string {
 type MutablePalette = { -readonly [K in keyof ThemeColors]: string };
 
 export function buildPalette(
-  scheme: 'light' | 'dark',
-  params: TelegramThemeParams,
+  scheme: 'light' | 'dark' | undefined,
+  params: TelegramThemeParams | undefined,
 ): ThemeColors {
-  const base: MutablePalette = { ...(scheme === 'dark' ? darkTheme : lightTheme) };
+  const base: MutablePalette = { ...(scheme === 'light' ? lightTheme : darkTheme) };
+  const source = params ?? {};
 
   for (const [tgKey, ourKey] of TELEGRAM_OVERRIDES) {
-    const value = params[tgKey];
+    const value = source[tgKey];
     if (isColor(value)) base[ourKey] = value.trim();
   }
 
@@ -56,8 +68,10 @@ export function buildPalette(
 }
 
 export interface ThemeInput {
-  scheme: 'light' | 'dark';
-  params: TelegramThemeParams;
+  /** Lipsă = în afara Telegram → tema produsului (`PRODUCT_SCHEME`). */
+  scheme?: 'light' | 'dark' | undefined;
+  /** Lipsă = niciun parametru de la client → paleta rămâne a noastră. */
+  params?: TelegramThemeParams | undefined;
   /** Marginile raportate de Telegram (dispozitiv + zona de conținut). */
   safeArea?: TelegramSafeAreaInset;
   contentSafeArea?: TelegramSafeAreaInset;
@@ -69,8 +83,9 @@ export interface ThemeInput {
  * Toate variabilele CSS ale temei, ca obiect.
  * Funcție pură — testabilă fără DOM.
  */
-export function buildThemeVars(input: ThemeInput): Record<string, string> {
-  const palette = buildPalette(input.scheme, input.params);
+export function buildThemeVars(input: ThemeInput = {}): Record<string, string> {
+  const scheme = input.scheme ?? PRODUCT_SCHEME;
+  const palette = buildPalette(scheme, input.params);
   const vars: Record<string, string> = {};
 
   for (const [key, value] of Object.entries(palette)) {
@@ -91,19 +106,20 @@ export function buildThemeVars(input: ThemeInput): Record<string, string> {
     vars['--viewport-stable-height'] = `${input.stableHeight}px`;
   }
 
-  vars['--color-scheme'] = input.scheme;
+  vars['--color-scheme'] = scheme;
 
   return vars;
 }
 
 /** Scrie variabilele pe `<html>` și marchează schema pentru `color-scheme`. */
-export function applyTheme(input: ThemeInput, root?: HTMLElement): void {
+export function applyTheme(input: ThemeInput = {}, root?: HTMLElement): void {
   const target = root ?? (typeof document !== 'undefined' ? document.documentElement : null);
   if (!target) return;
 
+  const scheme = input.scheme ?? PRODUCT_SCHEME;
   for (const [name, value] of Object.entries(buildThemeVars(input))) {
     target.style.setProperty(name, value);
   }
-  target.dataset.colorScheme = input.scheme;
-  target.style.colorScheme = input.scheme;
+  target.dataset.colorScheme = scheme;
+  target.style.colorScheme = scheme;
 }

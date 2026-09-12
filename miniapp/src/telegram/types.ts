@@ -121,6 +121,10 @@ export interface TelegramWebApp {
   expand: () => void;
   close: () => void;
   isVersionAtLeast: (version: string) => boolean;
+  /** Deschide un link t.me ÎN clientul Telegram (nu în browser). Bot API 6.1+. */
+  openTelegramLink?: (url: string) => void;
+  /** Deschide un link extern în browser. */
+  openLink?: (url: string, options?: { try_instant_view?: boolean }) => void;
   setHeaderColor?: (color: string) => void;
   setBackgroundColor?: (color: string) => void;
   disableVerticalSwipes?: () => void;

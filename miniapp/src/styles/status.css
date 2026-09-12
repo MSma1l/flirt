@@ -1,0 +1,99 @@
+/*
+ * Ecranele de stare. Un singur set de reguli pentru toate stările, fiindcă un
+ * singur component le randează pe toate (`components/StatusScreen.tsx`).
+ *
+ * Două probleme concrete rezolvate aici:
+ *   1. pe DESKTOP textul se întindea pe toată lățimea ferestrei — de aici
+ *      `max-width` pe coloana de conținut;
+ *   2. pe TELEFON MIC (380px) butoanele alăturate se înghesuiau — de aici
+ *      coloana de acțiuni, cu butoane pe toată lățimea.
+ */
+
+.status-screen {
+  /* Marginile de siguranță vin de la `.app-shell`; aici adăugăm doar aer, ca
+     logoul să nu atingă antetul clientului Telegram pe ecrane joase. */
+  padding-block: var(--space-xl);
+}
+
+.status-screen__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-lg);
+  width: 100%;
+  /* Lungimea confortabilă de citire. Pe desktop ecranul rămâne o coloană
+     centrată, nu un rând de text lat cât fereastra. */
+  max-width: 360px;
+}
+
+.brand-logo {
+  display: block;
+  width: 160px;
+  height: auto;
+  max-width: 60%;
+  /* Aura roz de sub logo: aceeași culoare de accent, foarte difuză. Ea face
+     diferența dintre „pagină de eroare" și „ecran de aplicație". */
+  filter: drop-shadow(0 8px 28px var(--color-accent-glow));
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.status-screen__title {
+  margin: 0;
+}
+
+.status-screen__body {
+  margin: 0;
+  /* Explicația e secundară față de titlu; culoarea o spune fără să micșorăm
+     textul sub pragul lizibil. */
+  color: var(--color-text-secondary);
+  text-wrap: pretty;
+}
+
+.status-screen__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-sm);
+  width: 100%;
+  margin-top: var(--space-xs);
+}
+
+/* Butoanele de stare sunt pastile late: sunt singurul drum înainte din ecran,
+   deci nu au de ce să fie mici. `<a>` are nevoie de regulile de centrare pe
+   care `<button>` le primește implicit. */
+.status-screen__action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  text-align: center;
+  text-decoration: none;
+}
+
+.status-screen__action.button {
+  box-shadow: 0 6px 20px var(--color-accent-glow);
+}
+
+.status-screen__action.button--ghost {
+  box-shadow: none;
+}
+
+/* Ecrane foarte scunde (telefon în peisaj, tastatură deschisă): logoul e
+   primul lucru care se strânge, textul rămâne întreg. */
+@media (max-height: 560px) {
+  .brand-logo {
+    width: 112px;
+  }
+
+  .status-screen__inner {
+    gap: var(--space-md);
+  }
+}
+
+/* Telefoane înguste: fără margini suplimentare peste cele de siguranță. */
+@media (max-width: 400px) {
+  .status-screen__inner {
+    max-width: 100%;
+  }
+}

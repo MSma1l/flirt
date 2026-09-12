@@ -25,6 +25,7 @@ import { useNavigate } from 'react-router';
 import type { AnketaDraft } from '@mobile/features/anketa/types';
 import { type Language } from '@mobile/i18n/config';
 
+import { StatusScreen } from '@/components/StatusScreen';
 import { useTelegramMainButton } from '@/telegram/useTelegram';
 
 import { ChipGroup, Field } from './FormControls';
@@ -182,22 +183,35 @@ export function ProfileFormScreen() {
     [reference.data],
   );
 
+  // Stările „nu e nimic de arătat" trec toate prin acelasi component, ca să
+  // arate identic cu cele din `App.tsx` (logo, culori, acțiune) — vezi
+  // `components/StatusScreen.tsx`.
   if (reference.isLoading || existing.isLoading || !ready) {
     return (
-      <div className="screen-center">
-        <div className="spinner" role="status" aria-label={t('onboarding.loading')} />
-      </div>
+      <StatusScreen
+        loading
+        logo={false}
+        testId="status-form-loading"
+        title={t('onboarding.loading')}
+      />
     );
   }
 
   if (reference.isError) {
     return (
-      <div className="screen-center">
-        <p className="body-text">{t('onboarding.errors.referenceFailed')}</p>
-        <button type="button" className="button" onClick={() => void reference.refetch()}>
-          {t('actions.retry', { ns: 'common' })}
-        </button>
-      </div>
+      <StatusScreen
+        logo={false}
+        testId="status-form-error"
+        title={t('errors.network.title')}
+        body={t('onboarding.errors.referenceFailed')}
+        actions={[
+          {
+            label: t('actions.retry', { ns: 'common' }),
+            onClick: () => void reference.refetch(),
+            testId: 'form-retry',
+          },
+        ]}
+      />
     );
   }
 

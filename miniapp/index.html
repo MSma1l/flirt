@@ -8,6 +8,28 @@
     />
     <meta name="robots" content="noindex, nofollow" />
     <!--
+      Pictograma din fila browserului. Conteaza mai mult decat pare: pagina e
+      deschisa si IN AFARA Telegram (link direct), iar acolo o fila fara icon
+      arata a pagina abandonata. Sursele sunt copii optimizate ale
+      `mobile/assets/` — vezi `public/`.
+    -->
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#0D0D0F" />
+    <!--
+      Fundalul ÎNCHIS al produsului, scris inline ca sa fie activ de la primul
+      cadru. Fara el, browserul picteaza alb pana se descarca CSS-ul — exact
+      pagina alba raportata de proprietar.
+    -->
+    <style>
+      html,
+      body {
+        background: #0d0d0f;
+        color: #ffffff;
+        color-scheme: dark;
+      }
+    </style>
+    <!--
       SDK-ul Telegram trebuie să fie în <head>, ÎNAINTEA bundle-ului: el creează
       `window.Telegram.WebApp`, pe care puntea din `src/telegram/` îl citește la
       pornire. NU e pachet npm și NU intră în bundle — Telegram cere versiunea

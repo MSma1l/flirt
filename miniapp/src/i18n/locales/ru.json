@@ -1,7 +1,11 @@
 {
+  "actions": {
+    "openInTelegram": "Открыть в Telegram"
+  },
   "app": {
     "connecting": "Подключаем…",
-    "greeting": "Привет, {{name}}!"
+    "greeting": "Привет, {{name}}!",
+    "connectingBody": "Это займёт секунду — проверяем данные от Telegram."
   },
   "errors": {
     "outside_telegram": {
@@ -27,6 +31,7 @@
   },
   "feed": {
     "loading": "Загружаем анкеты…",
+    "loadingBody": "Ищем подходящих людей.",
     "error": "Не удалось загрузить анкеты.",
     "empty": "Анкет пока больше нет",
     "reload": "Искать ещё",

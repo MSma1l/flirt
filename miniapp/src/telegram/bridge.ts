@@ -125,8 +125,46 @@ export function getLanguageCode(): string | null {
   return getUnsafeUser()?.language_code ?? null;
 }
 
+/**
+ * Schema de culori a clientului.
+ *
+ * ÎN AFARA TELEGRAM întoarcem `dark`, NU `light`. Motivul e concret: fără client
+ * nu există nici `themeParams`, deci nimic nu ar ajusta paleta, iar o schemă
+ * `light` presupusă ar da pagina ALBĂ, nestilizată, pe care a văzut-o
+ * proprietarul deschizând adresa în Chrome. Tema produsului e cea închisă
+ * (`mobile/theme/colors.ts`), deci ea e valoarea implicită corectă.
+ */
 export function getColorScheme(): 'light' | 'dark' {
-  return safely((app) => (app.colorScheme === 'dark' ? 'dark' : 'light'), 'light');
+  return safely((app) => (app.colorScheme === 'light' ? 'light' : 'dark'), 'dark');
+}
+
+/**
+ * Deschide o adresă `t.me/...` acolo unde trebuie.
+ *
+ * În Telegram: prin `openTelegramLink`, care sare direct în chat fără să treacă
+ * prin browser (pe clienți vechi cădem pe `openLink`). În afara Telegram nu
+ * facem nimic — acolo butonul e o legătură `<a href>` obișnuită, iar browserul
+ * se ocupă singur.
+ *
+ * Întoarce `true` dacă puntea chiar a preluat deschiderea, ca apelantul să știe
+ * dacă mai trebuie să lase navigarea implicită să se producă.
+ */
+export function openTelegramLink(url: string): boolean {
+  const app = getWebApp();
+  if (!app) return false;
+  try {
+    if (typeof app.openTelegramLink === 'function') {
+      app.openTelegramLink(url);
+      return true;
+    }
+    if (typeof app.openLink === 'function') {
+      app.openLink(url);
+      return true;
+    }
+  } catch {
+    /* clientul a refuzat — lăsăm legătura obișnuită să funcționeze */
+  }
+  return false;
 }
 
 export function getThemeParams(): TelegramThemeParams {

@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 
 import '@/i18n';
 import '@/styles/global.css';
+import '@/styles/status.css';
 import '@/styles/feed.css';
 
 import { App } from '@/App';

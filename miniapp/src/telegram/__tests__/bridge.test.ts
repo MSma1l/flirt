@@ -6,6 +6,7 @@ import {
   compareVersions,
   disableVerticalSwipes,
   expand,
+  getColorScheme,
   getContentSafeAreaInset,
   getLanguageCode,
   getRawInitData,
@@ -17,6 +18,7 @@ import {
   isInsideTelegram,
   isVersionAtLeast,
   onEvent,
+  openTelegramLink,
   ready,
   showBackButton,
   showMainButton,
@@ -180,5 +182,53 @@ describe('compareVersions', () => {
     expect(compareVersions('6.10', '6.9')).toBe(1);
     expect(compareVersions('7.0', '7')).toBe(0);
     expect(compareVersions('6.9', '8.0')).toBe(-1);
+  });
+});
+
+/**
+ * Schema implicită și deschiderea linkurilor — ele fac diferența dintre pagina
+ * albă raportată de proprietar și un ecran al produsului cu drum de întoarcere.
+ */
+describe('schema de culori și linkurile către bot', () => {
+  it('în afara Telegram schema e cea ÎNCHISĂ a produsului, nu `light`', () => {
+    expect(getColorScheme()).toBe('dark');
+  });
+
+  it('în Telegram urmează clientul', () => {
+    installTelegramStub({ colorScheme: 'light' } as never);
+    expect(getColorScheme()).toBe('light');
+
+    installTelegramStub({ colorScheme: 'dark' } as never);
+    expect(getColorScheme()).toBe('dark');
+  });
+
+  it('în afara Telegram nu preia deschiderea linkului', () => {
+    expect(openTelegramLink('https://t.me/bot')).toBe(false);
+  });
+
+  it('în Telegram folosește `openTelegramLink`', () => {
+    const openTelegramLinkSpy = vi.fn();
+    installTelegramStub({ openTelegramLink: openTelegramLinkSpy } as never);
+
+    expect(openTelegramLink('https://t.me/bot')).toBe(true);
+    expect(openTelegramLinkSpy).toHaveBeenCalledWith('https://t.me/bot');
+  });
+
+  it('pe clienți fără `openTelegramLink` cade pe `openLink`', () => {
+    const openLink = vi.fn();
+    installTelegramStub({ openLink } as never);
+
+    expect(openTelegramLink('https://t.me/bot')).toBe(true);
+    expect(openLink).toHaveBeenCalledWith('https://t.me/bot');
+  });
+
+  it('un client care aruncă nu blochează legătura obișnuită', () => {
+    installTelegramStub({
+      openTelegramLink: () => {
+        throw new Error('nu e suportat');
+      },
+    } as never);
+
+    expect(openTelegramLink('https://t.me/bot')).toBe(false);
   });
 });
