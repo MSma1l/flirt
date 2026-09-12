@@ -93,13 +93,22 @@ export function ProfileFormScreen() {
   const [ready, setReady] = useState(false);
 
   // Valorile de start: ce e deja pe server, altfel ce ne dă Telegram.
+  //
+  // `existing.isError` OPREȘTE precompletarea. `fetchMyProfile` întoarce `null`
+  // DOAR pentru 404 („cont nou"); orice altceva (500, conexiune căzută) se
+  // propagă ca eroare. Fără verificarea de mai jos, un 500 arăta exact ca un
+  // cont nou: formular gol, fără niciun mesaj. Utilizatorul își retasta datele,
+  // iar la salvare `photos: existing.data?.photos ?? []` trimitea o listă GOALĂ
+  // către `PUT /profiles/me`, care REESCRIE lista — adică toate pozele deja
+  // urcate se ștergeau, dintr-o eroare de rețea. Pierdere de date dintr-o
+  // eroare tratată ca succes.
   useEffect(() => {
-    if (ready || existing.isLoading) return;
+    if (ready || existing.isLoading || existing.isError) return;
     const prefill = prefillFromTelegram(telegramIdentity(), language);
     const saved = existing.data ? profileToDraft(existing.data) : {};
     setDraft({ ...EMPTY_DRAFT, ...prefill, ...saved });
     setReady(true);
-  }, [existing.data, existing.isLoading, language, ready]);
+  }, [existing.data, existing.isError, existing.isLoading, language, ready]);
 
   const update = useCallback(<K extends keyof AnketaDraft>(key: K, value: AnketaDraft[K]) => {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -183,6 +192,29 @@ export function ProfileFormScreen() {
     [reference.data],
   );
 
+  // `existing.isError` intră AICI, nu pe drumul formularului gol: mai bine un
+  // ecran cu reîncercare decât un formular care pretinde că nu ai nimic salvat.
+  if (reference.isError || existing.isError) {
+    return (
+      <StatusScreen
+        logo={false}
+        testId="status-form-error"
+        title={t('errors.network.title')}
+        body={t('onboarding.errors.referenceFailed')}
+        actions={[
+          {
+            label: t('actions.retry', { ns: 'common' }),
+            onClick: () => {
+              if (reference.isError) void reference.refetch();
+              if (existing.isError) void existing.refetch();
+            },
+            testId: 'form-retry',
+          },
+        ]}
+      />
+    );
+  }
+
   // Stările „nu e nimic de arătat" trec toate prin acelasi component, ca să
   // arate identic cu cele din `App.tsx` (logo, culori, acțiune) — vezi
   // `components/StatusScreen.tsx`.
@@ -193,24 +225,6 @@ export function ProfileFormScreen() {
         logo={false}
         testId="status-form-loading"
         title={t('onboarding.loading')}
-      />
-    );
-  }
-
-  if (reference.isError) {
-    return (
-      <StatusScreen
-        logo={false}
-        testId="status-form-error"
-        title={t('errors.network.title')}
-        body={t('onboarding.errors.referenceFailed')}
-        actions={[
-          {
-            label: t('actions.retry', { ns: 'common' }),
-            onClick: () => void reference.refetch(),
-            testId: 'form-retry',
-          },
-        ]}
       />
     );
   }

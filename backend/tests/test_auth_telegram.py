@@ -116,12 +116,21 @@ async def test_valid_init_data_returns_tokens(client: AsyncClient):
     assert body["token_type"] == "bearer"
 
 
-async def test_signature_field_is_excluded_from_data_check_string(
+async def test_signature_field_is_part_of_the_signed_string(
     client: AsyncClient,
 ):
-    """`signature` (Ed25519) NU intră în șirul semnat cu HMAC.
+    """`signature` INTRĂ în `data_check_string`; doar `hash` se exclude.
 
-    Dacă ar fi inclus, orice initData modern trimis de Telegram ar fi respins.
+    Numele și explicația acestui test spuneau exact INVERS până acum, fiindcă
+    fuseseră scrise odată cu implementarea greșită. Testul trecea și așa (semna
+    cu aceeași presupunere ca acel cod), deci nu apăra nimic — iar pe date reale
+    verificarea cădea la fiecare client Telegram modern. Lăsat cu numele vechi,
+    următorul om care „repară codul ca să corespundă testului" reintroduce exact
+    defectul din producție.
+
+    Acum e o regresie adevărată: `_sign` include `signature`, deci dacă
+    implementarea l-ar exclude din nou, hash-urile nu s-ar mai potrivi și acest
+    test ar pica cu 401.
     """
     resp = await _login(client, _build_init_data(with_signature=True))
     assert resp.status_code == 200, resp.text

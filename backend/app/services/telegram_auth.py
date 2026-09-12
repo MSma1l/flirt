@@ -18,10 +18,11 @@ la Telegram. De aceea testele din `tests/test_auth_telegram.py` semnează cu
 algoritmul corect, nu prin refolosirea funcției de aici.
 
 `data_check_string` = toate câmpurile EXCEPTÂND `hash`, sortate
-alfabetic după cheie, în forma `cheie=valoare`, unite cu `\n`. `signature` e
-semnătura Ed25519 (validare de către terți) adăugată ulterior de Telegram și NU
-face parte din șirul verificat cu HMAC — dacă o includem, orice initData modern
-e respins.
+alfabetic după cheie, în forma `cheie=valoare`, unite cu `\n`. `signature` (semnătura
+Ed25519 pentru validarea de către terți) ESTE unul dintre acele câmpuri: Telegram
+îl acoperă cu HMAC ca pe oricare altul. Excluderea lui — greșeala pe care am
+făcut-o și am corectat-o, vezi `_EXCLUDED_FIELDS` — face ca ORICE initData de la
+un client Telegram modern să fie respins ca „semnătură invalidă".
 
 MODUL 'stub' (dev/teste) sare peste verificarea de hash, exact ca
 `auth_providers._decode_stub_token` pentru Google/Apple. Este refuzat în
@@ -441,7 +442,23 @@ def _get_redis():
     limiter = ratelimit._get_redis_limiter()
     if limiter is None:
         return None
-    return limiter._get_client()
+    try:
+        return limiter._get_client()
+    except Exception as exc:
+        # `_get_client()` face `import redis.asyncio` (dependență OPȚIONALĂ,
+        # extras `[live]`) și construiește pool-ul din URL. Ambele pot eșua:
+        # pachetul lipsă în imagine → ImportError, `REDIS_URL` scris greșit →
+        # ValueError. Fără această prindere, excepția urca până în rută și
+        # FIECARE login prin Telegram răspundea cu 500 — un Redis prost
+        # configurat oprea complet intrarea în aplicație, în loc să degradeze la
+        # protecția per proces (vezi `claim_init_data`).
+        log.warning(
+            "telegram anti-replay: clientul Redis nu poate fi creat, "
+            "cad pe store-ul in-memory",
+            extra={"error_type": type(exc).__name__},
+        )
+        ratelimit.reset_backend()
+        return None
 
 
 async def claim_init_data(data: TelegramInitData, *, ttl_seconds: int) -> None:

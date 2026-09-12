@@ -9,6 +9,7 @@ import { fireEvent, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router';
 
+import i18n from '@/i18n';
 import { renderWithProviders } from '@/test/harness';
 import { installTelegramStub } from '@/test/telegramStub';
 
@@ -31,15 +32,32 @@ describe('bara de taburi', () => {
 
     expect(screen.getByRole('navigation')).toBeInTheDocument();
     expect(screen.getAllByRole('link')).toHaveLength(TABS.length);
-    expect(screen.getByRole('link', { name: /Ankete/ })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Setări/ })).toBeInTheDocument();
+    // Eticheta se citește din catalog, nu se scrie în test: un test care își
+    // repetă traducerile nu verifică traducerea, ci se verifică pe sine.
+    for (const tab of TABS) {
+      expect(screen.getByRole('link', { name: new RegExp(i18n.t(tab.labelKey, { ns: 'miniapp' })) })).toBeInTheDocument();
+    }
   });
 
-  it('marchează tabul rutei curente', () => {
-    renderAt(<TabBar />, '/setari');
+  it('marchează tabul rutei curente, și doar pe acela', () => {
+    const primul = TABS[0]!;
+    const restul = TABS.slice(1);
+    renderAt(<TabBar />, primul.to);
 
-    expect(screen.getByRole('link', { name: /Setări/ })).toHaveClass('tab--active');
-    expect(screen.getByRole('link', { name: /Ankete/ })).not.toHaveClass('tab--active');
+    const activ = screen.getByRole('link', { name: new RegExp(i18n.t(primul.labelKey, { ns: 'miniapp' })) });
+    expect(activ).toHaveClass('tab--active');
+
+    for (const tab of restul) {
+      expect(
+        screen.getByRole('link', { name: new RegExp(i18n.t(tab.labelKey, { ns: 'miniapp' })) }),
+      ).not.toHaveClass('tab--active');
+    }
+  });
+
+  it('fiecare tab duce la o cale distinctă', () => {
+    // Un `to` duplicat ar face două taburi să se aprindă simultan, iar defectul
+    // s-ar vedea abia pe telefon.
+    expect(new Set(TABS.map((tab) => tab.to)).size).toBe(TABS.length);
   });
 });
 

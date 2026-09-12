@@ -1,0 +1,70 @@
+/*
+ * Fereastra de confirmare (`ConfirmModal.tsx`).
+ *
+ * Prefixul `cm-` e deliberat: componenta e importată din mai multe module
+ * (social, stories, tickets), iar un nume generic gen `.dialog` s-ar ciocni
+ * tăcut cu stilurile altui agent. Culorile vin din variabilele scrise de
+ * `theme/applyTheme.ts`, deci fereastra urmează tema clientului Telegram.
+ */
+
+.cm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xl);
+  background: var(--color-scrim);
+}
+
+.cm-box {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-xl);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.cm-title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.cm-body {
+  margin: 0;
+  font-size: 15px;
+  line-height: 21px;
+  color: var(--color-text-secondary);
+}
+
+.cm-actions {
+  display: flex;
+  gap: var(--space-md);
+  margin-top: var(--space-sm);
+}
+
+.cm-action {
+  flex: 1;
+  padding-left: var(--space-md);
+  padding-right: var(--space-md);
+}
+
+/* Acțiune ireversibilă: roșu, ca utilizatorul să vadă din reflex ce apasă. */
+.cm-action--danger {
+  background: var(--color-danger);
+  color: #ffffff;
+}
+
+.cm-action--danger:hover:not(:disabled),
+.cm-action--danger:active:not(:disabled) {
+  background: var(--color-danger);
+  filter: brightness(1.1);
+}

@@ -28,6 +28,15 @@ vi.mock('../chatApi', () => ({
 // Raportarea REUTILIZEAZĂ cererea din aplicația Expo; aici izolăm doar rețeaua.
 vi.mock('@mobile/features/moderation/reportApi', () => ({ sendReport: vi.fn() }));
 
+/**
+ * Bara AI de deasupra composerului întreabă serverul dacă funcția e pornită
+ * (`features/ai/aiSettings.ts`). Aici o scoatem din ecuație — starea implicită a
+ * contului e oricum OPRIT — ca testele conversației să nu atingă rețeaua.
+ * Integrarea ei reală e verificată în
+ * `src/features/ai/__tests__/chatIntegration.test.tsx`.
+ */
+vi.mock('@/features/ai', () => ({ AiAssistBar: () => null }));
+
 const { fetchChats, fetchMessagesPage, markRead, reactToMessage, sendMessage } =
   await import('../chatApi');
 const { sendReport } = await import('@mobile/features/moderation/reportApi');

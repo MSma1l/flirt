@@ -1,0 +1,182 @@
+/*
+ * Stilurile modulului social (Favorite + Lista de blocare).
+ *
+ * Prefixul `so-` ține clasele separate de restul aplicației: mai multe module
+ * au liste cu rânduri, iar un nume generic gen `.row` s-ar ciocni tăcut cu
+ * stilurile altui agent. Toate culorile și spațiile trec prin variabilele CSS
+ * scrise de `theme/applyTheme.ts` din paleta clientului Telegram — nicio
+ * valoare de culoare scrisă direct.
+ *
+ * Fișierul e importat din componente, nu din `main.tsx`: ecranele își aduc
+ * singure stilurile, ca să rămână de sine stătătoare.
+ */
+
+.so-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  /* Derularea o face zona de conținut a cadrului (`.app-shell__content`): un
+     al doilea container cu `overflow-y: auto` ar da două bare imbricate, iar
+     pe iOS impulsul de scroll s-ar pierde între ele. */
+  padding-bottom: var(--space-xxl);
+}
+
+.so-screen__title {
+  margin: var(--space-lg) 0 0;
+}
+
+/* Stare de încărcare / eroare / listă goală, comună celor două ecrane. */
+.so-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-lg);
+  padding: var(--space-xxl) 0;
+  text-align: center;
+}
+
+/* Eroare scrisă ÎN pagină (acțiune eșuată), nu ca ecran separat. */
+.so-error {
+  margin: 0;
+  text-align: center;
+}
+
+.so-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+}
+
+.so-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.so-section__title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 700;
+}
+
+.so-section__footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-md) 0;
+}
+
+.so-rows {
+  list-style: none;
+  margin: var(--space-sm) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.so-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  min-height: 44px;
+}
+
+.so-row__avatar {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-pill);
+  object-fit: cover;
+}
+
+.so-row__avatar--initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-tag-bg);
+  color: var(--color-accent);
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+}
+
+.so-row__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.so-row__name {
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* În lista de blocare numele e singur pe rând: ia tot spațiul rămas. */
+.so-row__name--wide {
+  flex: 1;
+  min-width: 0;
+}
+
+.so-row__city {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Acțiunea din dreapta rândului (♥ / ☆ / ★): țintă de atingere de 44px. */
+.so-row__action {
+  appearance: none;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--color-accent);
+  font-family: inherit;
+  font-size: 24px;
+  line-height: 28px;
+  min-width: 44px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.so-row__action:disabled {
+  cursor: default;
+}
+
+/* Steaua plină („e deja favorit") rămâne lizibilă, deși butonul e dezactivat. */
+.so-row__action[aria-pressed='true']:disabled {
+  color: var(--color-accent);
+  opacity: 1;
+}
+
+.so-row__button {
+  flex: 0 0 auto;
+  padding: 10px var(--space-lg);
+  font-size: 15px;
+  line-height: 20px;
+}
+
+/* Spinner mic, cât un rând de text, pentru butoanele ocupate. */
+.so-spinner--inline {
+  width: 18px;
+  height: 18px;
+  border-width: 2px;
+}

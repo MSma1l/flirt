@@ -1,0 +1,353 @@
+/*
+ * Stilurile modulului de bilete. Prefix `tk-`, ca să nu se calce cu alte module.
+ *
+ * Toate culorile, spațiile și razele trec prin variabilele CSS scrise de
+ * `theme/applyTheme.ts` din tema clientului Telegram — nicio valoare de culoare
+ * scrisă direct AICI. Singura excepție e în `QrCode.tsx` (alb/negru pe simbolul
+ * QR), unde e comentată și justificată: un cod trebuie să fie scanabil, nu
+ * asortat.
+ *
+ * Fișierul e importat din componentele proprii, nu din `main.tsx`.
+ */
+
+.tk-screen {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xxl);
+  padding: var(--space-md) 0 var(--space-xl);
+}
+
+.tk-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.tk-section__title {
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 700;
+  margin: 0;
+}
+
+/* Stare de încărcare / eroare / gol, comună secțiunilor. */
+.tk-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-lg);
+  padding: var(--space-xl) 0;
+  text-align: center;
+}
+
+.tk-link {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ——— Card (biletul propriu, datele de plată) ——— */
+
+.tk-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: var(--space-xl);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.tk-card--plain {
+  align-items: stretch;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+}
+
+/* ——— Codul QR ——— */
+
+.tk-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  align-self: stretch;
+}
+
+/* Rama albă = zona liniștită vizibilă. Fundalul alb e în SVG (vezi QrCode.tsx). */
+.tk-qr__frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.tk-qr__svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.tk-qr__code-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  align-self: stretch;
+}
+
+.tk-qr__code {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 16px;
+  line-height: 24px;
+  letter-spacing: 1px;
+  text-align: center;
+  overflow-wrap: anywhere;
+  color: var(--color-text-primary);
+  /* Codul trebuie să poată fi selectat și copiat manual. */
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ——— Badge de stare ——— */
+
+.tk-badge {
+  display: inline-block;
+  padding: 2px var(--space-md);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-hover);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.tk-badge--free,
+.tk-badge--approved {
+  color: var(--color-success);
+}
+
+.tk-badge--used,
+.tk-badge--rejected {
+  background: var(--color-tag-bg);
+  color: var(--color-danger);
+}
+
+.tk-badge--awaiting_payment {
+  color: var(--color-warning);
+}
+
+.tk-badge--payment_declared {
+  color: var(--color-link);
+}
+
+/* ——— Rândurile de comenzi ——— */
+
+.tk-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.tk-row {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  min-height: 44px;
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tk-row:active {
+  background: var(--color-surface-hover);
+}
+
+.tk-row--selected {
+  border-color: var(--color-accent);
+}
+
+.tk-row__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tk-row__title {
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tk-row__side {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-xs);
+}
+
+/* ——— Panoul de detaliu ——— */
+
+.tk-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  margin-top: var(--space-md);
+  padding: var(--space-lg);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-card);
+  background: var(--color-bg);
+}
+
+.tk-detail__head {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tk-detail__close {
+  min-height: 36px;
+  padding: var(--space-sm) var(--space-lg);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tk-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.tk-block__title {
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.tk-block__title--danger {
+  color: var(--color-danger);
+}
+
+/* ——— Datele de plată ——— */
+
+.tk-pay-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tk-pay-row__value {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+/* Valorile de plată trebuie selectabile: dacă butonul de copiere nu are ce
+   clipboard să folosească, omul le poate marca și copia cu degetul. */
+.tk-selectable {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.tk-mono {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+}
+
+.tk-copy {
+  flex: 0 0 auto;
+  appearance: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-accent);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  padding: var(--space-xs) var(--space-md);
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.tk-copy:active {
+  background: var(--color-surface-hover);
+}
+
+/* ——— Pașii de plată ——— */
+
+.tk-steps {
+  list-style: none;
+  counter-reset: tk-step;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.tk-steps__item {
+  counter-increment: tk-step;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+}
+
+/* Numărul e generat din contor, ca ordinea vizuală să nu se poată desincroniza
+   de ordinea reală a elementelor din listă. */
+.tk-steps__item::before {
+  content: counter(tk-step);
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 12px;
+  line-height: 26px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.tk-steps__text {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  line-height: 22px;
+  color: var(--color-text-primary);
+}

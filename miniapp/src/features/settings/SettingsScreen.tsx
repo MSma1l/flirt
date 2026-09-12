@@ -45,6 +45,7 @@ import {
 } from '@mobile/features/settings/settingsApi';
 
 import { StatusScreen } from '@/components/StatusScreen';
+import { AiSettingsSection } from '@/features/ai';
 
 import { ConfirmDialog } from '../profile/ConfirmDialog';
 import { fetchReference } from '../profile/profileApi';
@@ -452,6 +453,15 @@ export function SettingsScreen() {
           />
         ))}
       </section>
+
+      {/* ── Asistent AI ────────────────────────────────────────────────
+          Secțiunea se randează integral din `features/ai/`: rețeaua, stările și
+          textul de consimțământ stau acolo. Comutatorul folosește tot ruta de
+          setări (`PUT /settings/` cu `ai_enabled`), dar prin mapperul propriu —
+          `mobile/src/features/settings/settingsApi.ts`, reutilizat de restul
+          ecranului, nu cunoaște câmpul, iar acel fișier e sursă comună cu
+          aplicația nativă și nu se modifică de aici. */}
+      <AiSettingsSection />
 
       {/* ── Cont ───────────────────────────────────────────────────────── */}
       <section className="settings-section">

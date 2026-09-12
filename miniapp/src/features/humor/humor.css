@@ -1,0 +1,142 @@
+/*
+ * Stilurile Testului de umor. Toate culorile, spațiile și razele trec prin
+ * variabilele CSS scrise de `theme/applyTheme.ts` (paleta e comună cu aplicația
+ * nativă, din `mobile/theme/colors.ts`) — nicio culoare scrisă direct.
+ *
+ * Fișierul e importat din `HumorScreen.tsx`, nu din `main.tsx`: ecranul își
+ * aduce singur stilurile.
+ */
+
+.hm-screen {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-md) 0 var(--space-xl);
+  gap: var(--space-lg);
+}
+
+/* Stare de încărcare / eroare / gol / confirmare — centrată pe ecran. */
+.hm-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-lg);
+  padding: var(--space-xl) 0;
+  text-align: center;
+}
+
+.hm-emoji {
+  margin: 0;
+  font-size: 56px;
+  line-height: 64px;
+}
+
+.hm-saved {
+  margin: 0;
+  max-width: 320px;
+}
+
+/* ——— Progres ——— */
+
+.hm-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.hm-progress__text {
+  margin: 0;
+}
+
+.hm-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  /* Un quiz lung nu are voie să împingă cardul în afara ecranului: punctele
+     se rup pe mai multe rânduri în loc să lățească pagina. */
+  flex-wrap: wrap;
+}
+
+.hm-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border);
+}
+
+.hm-dot--done {
+  background: var(--color-accent);
+}
+
+/* Punctul curent e mai lat, ca pe mobil: ochiul găsește imediat unde se află. */
+.hm-dot--current {
+  width: 22px;
+  background: var(--color-accent);
+}
+
+/* ——— Cardul de glumă ——— */
+
+.hm-card-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Gluma poate fi lungă: cardul derulează în el, nu peste tot ecranul. */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.hm-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-lg);
+  padding: var(--space-xl);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  text-align: center;
+}
+
+.hm-card__emoji {
+  margin: 0;
+  font-size: 48px;
+  line-height: 56px;
+}
+
+.hm-card__text {
+  margin: 0;
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  /* Textul vine de la server: îl lăsăm să curgă, fără să-l tăiem. */
+  overflow-wrap: anywhere;
+}
+
+/* ——— Butoane ——— */
+
+.hm-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-md);
+  text-align: center;
+}
+
+/* Spinnerul are dimensiune fixă: fără asta ar sta lipit de marginea stângă. */
+.hm-actions .spinner {
+  align-self: center;
+}
+
+.hm-actions .error-text {
+  margin: 0;
+}

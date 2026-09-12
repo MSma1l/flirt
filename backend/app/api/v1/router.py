@@ -4,6 +4,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     admin,
     ads,
+    ai,
     auth,
     chat,
     events,
@@ -40,6 +41,7 @@ api_router.include_router(subscriptions.router, prefix="/subscriptions", tags=["
 api_router.include_router(push.router, prefix="/push", tags=["push"])
 api_router.include_router(ads.router, prefix="/ads", tags=["ads"])
 api_router.include_router(telegram.router, prefix="/telegram", tags=["telegram"])
+api_router.include_router(ai.router, prefix="/ai", tags=["ai"])
 # Panoul de administrare. `require_admin` NU se aplică aici, ci în interiorul
 # pachetului, pe fiecare sub-router (vezi `api/v1/admin/__init__.py`) — pentru că
 # `POST /admin/login` trebuie să rămână accesibil celui care încă nu are token.

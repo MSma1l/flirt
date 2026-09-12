@@ -35,6 +35,7 @@ import { compatColor, compatLabel } from '@mobile/features/feed/compat';
 import { hasHtml, LIMITS } from '@mobile/utils/validation';
 
 import { useAuthStore } from '@/auth/authStore';
+import { AiAssistBar } from '@/features/ai';
 import { cssVarColors } from '@/theme/tokens';
 
 import { BlockDialog } from './BlockDialog';
@@ -320,6 +321,15 @@ export function ChatScreen() {
       </header>
 
       {body}
+
+      {/* Bara AI stă ÎNTRE fir și composer, deasupra câmpului de scriere: acolo
+          se uită utilizatorul când se gândește ce să răspundă.
+          Se randează singură DOAR dacă funcția e pornită din setări — inclusiv
+          cererile spre `/ai` pleacă doar de acolo (vezi `features/ai/`).
+          `onInsert` scrie în ciorna locală și ATÂT. Nu există și nu trebuie să
+          existe o cale prin care sugestia să ajungă la `sendMutation`: un mesaj
+          trimis automat ar vorbi în numele utilizatorului. */}
+      <AiAssistBar chatId={chatId} otherUserId={otherUserId} onInsert={setDraft} />
 
       <form className="chat-composer" onSubmit={handleSubmit}>
         {draftError ? (

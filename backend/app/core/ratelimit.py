@@ -219,6 +219,21 @@ def disable_for_tests() -> None:
 
 
 def _under_pytest() -> bool:
+    """Rulăm sub pytest?
+
+    `PYTEST_CURRENT_TEST` e un semnal SLAB: e o simplă variabilă de mediu, iar
+    dacă ea ajunge în containerul de producție (un `.env` copiat dintr-un job de
+    CI, un `docker run -e` rămas dintr-o depanare), TOATĂ limitarea de cereri se
+    stinge — tăcut, fără nicio urmă în loguri, inclusiv pe `/admin/login`.
+    Comentariul de mai sus spunea „în producție nu există niciodată"; asta era o
+    presupunere, iar prețul ei ar fi fost brute-force nelimitat la nivel de
+    aplicație.
+
+    Așa că scurtătura pentru teste e legată de o setare EXPLICITĂ, nu de un
+    accident de mediu: în `ENVIRONMENT=production` ea nu există deloc.
+    """
+    if settings.environment == "production":
+        return False
     return bool(os.environ.get("PYTEST_CURRENT_TEST"))
 
 
@@ -235,8 +250,30 @@ def _active() -> bool:
 def client_ip(request: Request) -> str:
     """Determină IP-ul clientului, respectând `X-Forwarded-For` (reverse proxy).
 
-    RO: Nginx (vezi nginx.conf) setează `X-Forwarded-For`; luăm primul IP din
-    listă. Cădem pe `request.client.host` dacă antetul lipsește.
+    LUĂM ULTIMA INTRARE DIN LISTĂ, NU PRIMA. `X-Forwarded-For` e o listă pe care
+    ORICINE o poate începe: nginx-ul nostru e configurat cu
+    `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for` (vezi
+    `nginx/nginx.conf`), iar `$proxy_add_x_forwarded_for` înseamnă
+    „ce a trimis clientul, VIRGULĂ, IP-ul real al conexiunii". Deci antetul
+    ajuns la noi arată așa:
+
+        X-Forwarded-For: <orice a inventat clientul>, <IP-ul real>
+
+    Prima intrare e text scris de client. Luând-o pe aceea, cheia de rate
+    limiting devenea controlată de atacator: `X-Forwarded-For: 1.2.3.4` la o
+    cerere, `5.6.7.8` la următoarea — fiecare cu bucketul ei, deci plafonul nu
+    era atins NICIODATĂ. Practic limitarea din aplicație nu exista pentru cine
+    știa să trimită un antet, și tot ea ajungea și în jurnalul de audit al
+    panoului de admin, unde „IP-ul de la care s-a executat banul" era o valoare
+    aleasă de cel care a făcut cererea.
+
+    Ultima intrare e cea adăugată de PROXY-UL NOSTRU, adică adresa de pe care ne-a
+    ajuns efectiv conexiunea — singura din listă pe care clientul nu o poate
+    scrie. (Dacă vreodată apar DOUĂ proxy-uri în fața aplicației, ultima intrare
+    devine IP-ul primului proxy și regula trebuie recitită; cu un singur nginx,
+    ultima intrare e clientul.)
+
+    Cădem pe `request.client.host` dacă antetul lipsește.
 
     PUBLIC (nu `_client_ip`) pentru că îl folosește și jurnalul de audit al
     panoului de admin (`admin_service`): „de la ce IP s-a executat banul" trebuie
@@ -246,9 +283,10 @@ def client_ip(request: Request) -> str:
     """
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        first = forwarded.split(",")[0].strip()
-        if first:
-            return first
+        for candidate in reversed(forwarded.split(",")):
+            peer = candidate.strip()
+            if peer:
+                return peer
     if request.client and request.client.host:
         return request.client.host
     return "anonymous"

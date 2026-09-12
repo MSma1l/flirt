@@ -61,7 +61,17 @@
     "chats": "Messages",
     "profile": "Profile",
     "settings": "Settings",
-    "chat": "Conversation"
+    "chat": "Conversation",
+    "events": "Events",
+    "event": "Event",
+    "more": "Menu",
+    "stories": "Stories",
+    "humor": "Humor test",
+    "favorites": "Favorites",
+    "blocklist": "Blocklist",
+    "passport": "Flirt Passport",
+    "tickets": "My ticket",
+    "subscription": "Subscription"
   },
   "welcome": {
     "title": "Welcome to FLIRT",
@@ -127,5 +137,43 @@
     "remove": "Delete photo",
     "finish": "Done, take me in",
     "limits": "Up to {{max}} photos. We shrink them under {{size}} before sending."
+  },
+  "ai": {
+    "loading": "Checking…",
+    "retry": "Try again",
+    "close": "Close",
+    "settings": {
+      "title": "AI assistant",
+      "consent": "When this is on and you ask for a suggestion, the most recent messages from that conversation are sent to an external artificial-intelligence service, which proposes a few possible replies. The proposed texts stay with you: put one in the message box, ask for others, or ignore them. Nothing is ever sent on your behalf.",
+      "toggleLabel": "Turn on the AI assistant",
+      "stateOn": "On. Recent messages go to the external service only when you ask for a suggestion or for the chemistry explanation.",
+      "stateOff": "Off. Nothing from your conversations leaves the app.",
+      "loadError": "We couldn't tell whether the AI assistant is on.",
+      "saveError": "We couldn't save the setting. The switch shows the state on the server."
+    },
+    "suggestion": {
+      "ask": "✨ Suggest a reply",
+      "loading": "Writing a few options…",
+      "title": "Reply options",
+      "note": "Pick one and read it before you send it. No suggestion sends itself.",
+      "insert": "Put in message",
+      "again": "Other options"
+    },
+    "chemistry": {
+      "open": "Your chemistry",
+      "title": "Your chemistry",
+      "loading": "Asking for the explanation…",
+      "score": "Chemistry: {{score}}%"
+    },
+    "errors": {
+      "disabled": "The AI assistant is off. You can turn it on in Settings.",
+      "not_configured": "The AI assistant isn't available on the server right now. This isn't something you can fix — try later.",
+      "rate_limit": "Too many requests in a short time. Wait a minute and try again.",
+      "provider": "The AI service didn't answer. Try again in a few moments.",
+      "no_history": "This conversation is still too short to work from. Write a few messages and come back.",
+      "not_found": "This conversation or profile is no longer available.",
+      "network": "No connection to the server. Check your internet and try again.",
+      "unknown": "We couldn't get an answer. Try again."
+    }
   }
 }

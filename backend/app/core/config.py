@@ -325,6 +325,10 @@ class Settings(BaseSettings):
     # useri pot veni prin același NAT (operator mobil) — un prag de 5, ca la login,
     # ar bloca useri legitimi. Anti-brute-force real e semnătura HMAC, nu pragul.
     rate_limit_telegram_per_min: int = 20
+    # Rute AI (`/api/v1/ai/*`) / IP / minut. Prag PROPRIU pentru că fiecare apel
+    # costă bani reali la furnizorul extern — motivarea completă a cifrei e în
+    # `app/api/v1/ai.py`, lângă dependency-ul care o folosește.
+    rate_limit_ai_per_min: int = 10
     otp_request_per_hour: int = 5           # cereri OTP / telefon / oră
     otp_max_attempts: int = 5               # încercări verify / cod, apoi invalidare
     max_upload_bytes: int = 8_388_608       # 8 MB limită upload

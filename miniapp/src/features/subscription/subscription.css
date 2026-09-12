@@ -1,0 +1,167 @@
+/*
+ * Stilurile ecranului de abonamente. Toate culorile, spațiile și razele trec
+ * prin variabilele CSS scrise de `theme/applyTheme.ts` (paleta e comună cu
+ * aplicația nativă, din `mobile/theme/colors.ts`) — nicio culoare scrisă direct.
+ *
+ * Fișierul e importat din `SubscriptionScreen.tsx`, nu din `main.tsx`.
+ */
+
+.sb-screen {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  /* Lista de planuri e lungă: derulează ecranul, nu documentul (body-ul are
+     `overflow: hidden` — Mini App-ul e un ecran, nu o pagină). */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  gap: var(--space-lg);
+  padding: var(--space-md) 0 var(--space-xl);
+}
+
+.sb-title {
+  margin: 0;
+}
+
+/* Stare de încărcare / eroare / catalog gol. */
+.sb-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-lg);
+  padding: var(--space-xl) 0;
+  text-align: center;
+}
+
+/* Mesajul „plata nu se face aici": vizibil, dar nu alarmant — de aceea rama e
+   neutră, nu una de eroare. */
+.sb-notice {
+  margin: 0;
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+/* ——— Abonamentul curent ——— */
+
+.sb-current {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-tag-bg);
+}
+
+.sb-current__title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 700;
+}
+
+.sb-current__line {
+  margin: 0;
+}
+
+.sb-current__none {
+  margin: 0;
+}
+
+.sb-current__entitlements {
+  list-style: none;
+  margin: var(--space-xs) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ——— Planurile ——— */
+
+.sb-plans {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.sb-plan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-xl);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.sb-plan--active {
+  border-color: var(--color-accent);
+}
+
+.sb-plan__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.sb-plan__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.sb-plan__badge {
+  flex: 0 0 auto;
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 700;
+}
+
+.sb-plan__price {
+  margin: 0;
+  font-size: 24px;
+  line-height: 30px;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.sb-plan__features {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.sb-plan__feature {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+.sb-plan__check {
+  flex: 0 0 auto;
+  color: var(--color-success);
+  font-weight: 700;
+}
+
+.sb-plan__cta {
+  width: 100%;
+}

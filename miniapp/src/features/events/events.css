@@ -1,0 +1,327 @@
+/*
+ * Stilurile modulului de evenimente (listă, card, detaliu, hartă).
+ *
+ * Prefixul `ev-` e intenționat și obligatoriu: Mini App-ul e construit de mai
+ * mulți agenți în paralel, fiecare cu CSS-ul lui, iar un `.card` sau un `.map`
+ * generic s-ar ciocni de al altcuiva fără niciun avertisment la build.
+ *
+ * ZERO culori scrise direct: totul trece prin variabilele scrise de
+ * `theme/applyTheme.ts` din tema clientului Telegram. Asta include și markerul
+ * SVG al hărții — de aceea culoarea lui stă aici, într-o clasă, nu în opțiunile
+ * JS ale Leaflet (unde ar fi trebuit să fie o valoare fixă).
+ *
+ * Fișierul e importat din componentele proprii, nu din `main.tsx`.
+ */
+
+/* ——— Lista ——— */
+
+.ev-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.ev-list__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin: var(--space-md) 0 var(--space-lg);
+}
+
+.ev-list__passport {
+  flex: 0 0 auto;
+  color: var(--color-accent);
+  text-decoration: none;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+  /* Ținta de atingere minimă recomandată; linkul e scurt și ușor de ratat. */
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+.ev-list__items {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ev-list__link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Stare de încărcare / eroare / gol, comună listei și detaliului. */
+.ev-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-lg);
+  padding: var(--space-xl) 0;
+  text-align: center;
+}
+
+/* ——— Cardul ——— */
+
+.ev-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.ev-card__cover {
+  position: relative;
+  height: 140px;
+}
+
+.ev-card__cover-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ev-card__badge,
+.ev-card__going {
+  position: absolute;
+  top: var(--space-md);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 700;
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-pill);
+}
+
+.ev-card__badge {
+  left: var(--space-md);
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+}
+
+.ev-card__going {
+  right: var(--space-md);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.ev-card__body {
+  padding: var(--space-lg);
+}
+
+.ev-card__title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 700;
+  /* Două rânduri, ca `numberOfLines={2}` pe mobil: titlurile lungi nu au voie
+     să împingă data și locul în afara cardului. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ev-card__meta {
+  margin: var(--space-xs) 0 0;
+}
+
+.ev-card__attendees {
+  margin: var(--space-sm) 0 0;
+  color: var(--color-link);
+}
+
+/* ——— Detaliul ——— */
+
+.ev-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--space-lg) 0 var(--space-xxl);
+}
+
+.ev-detail__pill {
+  align-self: flex-start;
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-pill);
+  color: var(--color-on-accent);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 700;
+}
+
+.ev-detail__title {
+  margin: 0;
+}
+
+.ev-detail__date {
+  margin: 0;
+  color: var(--color-link);
+  font-weight: 700;
+}
+
+.ev-detail__desc {
+  margin: 0;
+  /* Descrierea vine de la organizator cu rândurile ei — o lăsăm să curgă. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ev-detail__attendees {
+  margin: 0;
+  color: var(--color-link);
+}
+
+.ev-detail__action {
+  width: 100%;
+}
+
+.ev-detail__error {
+  margin: calc(-1 * var(--space-sm)) 0 0;
+  text-align: center;
+}
+
+.ev-detail__stamp {
+  margin: 0;
+  text-align: center;
+  color: var(--color-success);
+  font-weight: 700;
+}
+
+/* ——— Promo ——— */
+
+.ev-promo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-lg);
+  border-radius: var(--radius-card);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.ev-promo__discount {
+  margin: 0;
+  font-weight: 700;
+}
+
+.ev-promo__code {
+  margin: 0;
+  font-size: 24px;
+  line-height: 30px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  /* Codul se citește cu voce tare la intrare — trebuie să poată fi și copiat. */
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.ev-promo__text,
+.ev-promo__hint {
+  margin: 0;
+}
+
+.ev-promo__hint {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* ——— Biletul online ——— */
+
+.ev-ticket {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.ev-ticket__status {
+  margin: 0;
+  font-weight: 700;
+}
+
+.ev-ticket__status--ok {
+  color: var(--color-success);
+}
+
+.ev-ticket__status--pending {
+  color: var(--color-warning);
+}
+
+/* ——— Harta ——— */
+
+.ev-map {
+  height: 180px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.ev-map--fallback {
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ev-map__city {
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.ev-map__canvas {
+  width: 100%;
+  height: 100%;
+}
+
+/*
+ * Markerul: un cerc SVG desenat de `L.circleMarker`, colorat DE AICI. Leaflet ar
+ * fi acceptat `color`/`fillColor` în opțiuni, dar acolo ar fi trebuit să fie
+ * valori fixe — iar paleta se schimbă odată cu tema clientului Telegram.
+ */
+.ev-map__marker {
+  stroke: var(--color-on-accent);
+  stroke-width: 3;
+  fill: var(--color-accent);
+  fill-opacity: 1;
+}
+
+/* Atribuția OSM (obligatorie prin licență) pe fundalul temei, nu pe alb. */
+.ev-map .leaflet-container {
+  background: var(--color-surface);
+  font-family: inherit;
+}
+
+.ev-map .leaflet-control-attribution {
+  font-size: 10px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+}
+
+.ev-map .leaflet-control-attribution a {
+  color: var(--color-link);
+}

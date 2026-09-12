@@ -63,8 +63,13 @@ function isRealTelegramPlatform(app: TelegramWebApp): boolean {
  * era tratată ca sesiune Telegram, prelua schema „deschis" implicită a
  * programului și ajungea albă, peste paleta închisă a produsului.
  *
- * Semnalul de încredere e `platform`: un client real spune „tdesktop", „android",
- * „ios", „web" etc., niciodată „unknown".
+ * `platform` e un semnal mai bun decât simpla prezență a obiectului — o pagină
+ * deschisă din greșeală în Chrome raportează „unknown" — dar NU e o dovadă:
+ * programul își ia `platform` din fragmentul adresei (`#tgWebAppPlatform=…`),
+ * pe care îl poate scrie oricine deschide pagina. Deci răspunsul de aici e „pare
+ * un client real", nu „este". Nicio decizie de SECURITATE nu se ia pe el
+ * (identitatea se verifică pe server, din `initData` semnat), iar pentru tema
+ * paginii `getColorScheme` mai cere și culorile clientului, nu doar cuvântul lui.
  */
 export function isInsideTelegram(): boolean {
   return getWebApp() !== null;
@@ -152,6 +157,23 @@ export function getLanguageCode(): string | null {
   return getUnsafeUser()?.language_code ?? null;
 }
 
+/** `#rgb` / `#rrggbb` — singura formă pe care Telegram o trimite. */
+function looksLikeColor(value: unknown): boolean {
+  return typeof value === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value.trim());
+}
+
+/**
+ * Clientul a trimis chiar paleta „camerei", nu doar un cuvânt?
+ *
+ * `bg_color` și `text_color` sunt cele două culori pe care un client Telegram
+ * real le pune ÎNTOTDEAUNA în `themeParams`. Prezența lor e dovada că schema
+ * raportată e însoțită de datele necesare ca să arate bine.
+ */
+function hasRoomColors(params: TelegramThemeParams | undefined): boolean {
+  if (!params) return false;
+  return looksLikeColor(params.bg_color) || looksLikeColor(params.text_color);
+}
+
 /**
  * Schema de culori a clientului.
  *
@@ -160,9 +182,26 @@ export function getLanguageCode(): string | null {
  * `light` presupusă ar da pagina ALBĂ, nestilizată, pe care a văzut-o
  * proprietarul deschizând adresa în Chrome. Tema produsului e cea închisă
  * (`mobile/theme/colors.ts`), deci ea e valoarea implicită corectă.
+ *
+ * MODUL DESCHIS SE ACCEPTĂ DOAR ÎMPREUNĂ CU PALETA CLIENTULUI. Poarta de mai
+ * sus (`platform`) nu e suficientă: programul `telegram-web-app.js` își citește
+ * TOATE câmpurile — `platform`, `version`, `initData`, `themeParams` — din
+ * fragmentul adresei (`#tgWebAppPlatform=…`), iar fragmentul îl scrie oricine
+ * deschide pagina. Deci „pare client real" rămâne o afirmație a paginii, nu un
+ * fapt.
+ *
+ * Condiția de aici nu mai e o ghicire de mediu, ci o verificare a DATELOR de
+ * care depinde rezultatul: trecem pe deschis numai dacă am primit și culorile
+ * cu care să-l desenăm. Dacă cineva pune `#tgWebAppPlatform=ios` fără paletă,
+ * pagina rămâne pe tema închisă a produsului în loc să devină albă — exact
+ * regresia raportată.
  */
 export function getColorScheme(): 'light' | 'dark' {
-  return safely((app) => (app.colorScheme === 'light' ? 'light' : 'dark'), 'dark');
+  return safely(
+    (app) =>
+      app.colorScheme === 'light' && hasRoomColors(app.themeParams) ? 'light' : 'dark',
+    'dark',
+  );
 }
 
 /**
@@ -262,6 +301,15 @@ export function showBackButton(onClick: () => void): () => void {
     app.BackButton.onClick(onClick);
     app.BackButton.show();
   } catch {
+    // `onClick` a REUȘIT, `show()` a picat: handlerul e deja înregistrat la
+    // client. Dacă am întoarce un no-op, apelantul ar primi o „curățare" care nu
+    // curăță nimic, iar handlerul ar supraviețui demontării ecranului — un tap
+    // pe butonul nativ ar declanșa acțiunea ecranului PRECEDENT. Îl desfacem.
+    try {
+      app.BackButton.offClick(onClick);
+    } catch {
+      /* clientul e deja indisponibil */
+    }
     return () => undefined;
   }
   return () => {
@@ -301,6 +349,16 @@ export function showMainButton(options: MainButtonOptions): () => void {
     else app.MainButton.hideProgress();
     app.MainButton.show();
   } catch {
+    // Vezi `showBackButton`: `onClick` se face ÎNAINTE de apelurile care pot
+    // pica, deci un eșec la mijloc lasă handlerul legat. Fără desfacerea de mai
+    // jos, `useTelegramMainButton` ar memora un no-op drept curățare și butonul
+    // principal ar rămâne legat la acțiunea ecranului părăsit — o singură
+    // apăsare ar executa ȘI trimiterea veche, ȘI pe cea nouă.
+    try {
+      app.MainButton.offClick(onClick);
+    } catch {
+      /* clientul e deja indisponibil */
+    }
     return () => undefined;
   }
   return () => {

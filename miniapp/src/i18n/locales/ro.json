@@ -61,7 +61,17 @@
     "chats": "Mesaje",
     "profile": "Profil",
     "settings": "Setări",
-    "chat": "Conversație"
+    "chat": "Conversație",
+    "events": "Evenimente",
+    "event": "Eveniment",
+    "more": "Meniu",
+    "stories": "Stories",
+    "humor": "Test de umor",
+    "favorites": "Favorite",
+    "blocklist": "Listă de blocare",
+    "passport": "Flirt Passport",
+    "tickets": "Biletul meu",
+    "subscription": "Abonament"
   },
   "welcome": {
     "title": "Bine ai venit la FLIRT",
@@ -127,5 +137,43 @@
     "remove": "Șterge poza",
     "finish": "Gata, intru în aplicație",
     "limits": "Maximum {{max}} poze. Le micșorăm automat sub {{size}} înainte de trimitere."
+  },
+  "ai": {
+    "loading": "Verificăm…",
+    "retry": "Încearcă din nou",
+    "close": "Închide",
+    "settings": {
+      "title": "Asistent AI",
+      "consent": "Când e pornit și ceri o sugestie, ultimele mesaje din acea conversație sunt trimise unui serviciu extern de inteligență artificială, care propune câteva variante de răspuns. Textele propuse rămân la tine: poți pune unul în câmpul de scriere, poți cere altele sau le poți ignora. Nimic nu se trimite în locul tău.",
+      "toggleLabel": "Pornește asistentul AI",
+      "stateOn": "Pornit. Mesajele recente ajung la serviciul extern doar atunci când ceri tu o sugestie sau explicația scorului de chimie.",
+      "stateOff": "Oprit. Nu trimitem nimic din conversațiile tale în afara aplicației.",
+      "loadError": "Nu am putut afla dacă asistentul AI e pornit.",
+      "saveError": "Nu am putut salva setarea. Comutatorul arată starea de pe server."
+    },
+    "suggestion": {
+      "ask": "✨ Sugerează un răspuns",
+      "loading": "Scriem câteva variante…",
+      "title": "Variante de răspuns",
+      "note": "Alege una și citește-o înainte s-o trimiți. Nicio sugestie nu pleacă singură.",
+      "insert": "Pune în mesaj",
+      "again": "Alte variante"
+    },
+    "chemistry": {
+      "open": "Chimia dintre voi",
+      "title": "Chimia dintre voi",
+      "loading": "Cerem explicația…",
+      "score": "Chimie: {{score}}%"
+    },
+    "errors": {
+      "disabled": "Asistentul AI e oprit. Îl poți porni din Setări.",
+      "not_configured": "Asistentul AI nu e disponibil pe server acum. Nu e ceva ce poți repara tu — încearcă mai târziu.",
+      "rate_limit": "Prea multe cereri într-un timp scurt. Așteaptă un minut și încearcă din nou.",
+      "provider": "Serviciul de inteligență artificială nu a răspuns. Încearcă peste câteva momente.",
+      "no_history": "Conversația e încă prea scurtă ca să avem de unde porni. Scrie câteva mesaje și revino.",
+      "not_found": "Conversația sau profilul nu mai sunt disponibile.",
+      "network": "Nu avem legătură cu serverul. Verifică internetul și încearcă din nou.",
+      "unknown": "Nu am putut obține un răspuns. Încearcă din nou."
+    }
   }
 }

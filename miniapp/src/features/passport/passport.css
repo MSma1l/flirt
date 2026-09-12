@@ -1,0 +1,131 @@
+/*
+ * Stilurile ecranului Flirt Passport.
+ *
+ * Prefixul `pp-` ține clasele separate de restul aplicației (mai multe module
+ * au „carduri" și „grile"). Culorile și spațiile vin din variabilele scrise de
+ * `theme/applyTheme.ts`, deci ecranul urmează tema clientului Telegram — nicio
+ * culoare scrisă direct.
+ */
+
+.pp-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  /* Derularea o face `.app-shell__content`; vezi comentariul din social.css. */
+  padding-bottom: var(--space-xxl);
+}
+
+.pp-screen__title {
+  margin: var(--space-lg) 0 0;
+}
+
+.pp-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-lg);
+  padding: var(--space-xxl) 0;
+  text-align: center;
+}
+
+.pp-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.pp-section__title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 700;
+}
+
+/* ——— Cardul de reduceri ——————————————————————————————————————— */
+
+.pp-discount {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  padding: var(--space-lg);
+  border-radius: var(--radius-card);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.pp-discount__badge {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pp-discount__entries {
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 700;
+}
+
+.pp-discount__hint {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* ——— Grila de ștampile ————————————————————————————————————————— */
+
+.pp-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  /* Două coloane ca pe mobil, dar `auto-fill` în loc de un număr fix: pe un
+     ecran îngust (sau cu font mărit din sistem) ștampilele trec singure pe o
+     coloană, în loc să-și taie titlul. */
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-md);
+}
+
+.pp-stamp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.pp-stamp__icon {
+  font-size: 28px;
+  line-height: 32px;
+}
+
+.pp-stamp__title {
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+  /* Titlul are voie să curgă pe două rânduri, apoi se taie: o ștampilă din
+     grilă trebuie să rămână de aceeași înălțime cu vecinele ei. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pp-stamp__city {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pp-stamp__date {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--color-link);
+}

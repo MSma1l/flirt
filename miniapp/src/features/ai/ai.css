@@ -1,0 +1,142 @@
+/*
+ * Stilurile funcțiilor AI: secțiunea din Setări și bara din conversație.
+ *
+ * Toate culorile și spațierile trec prin variabilele CSS scrise de
+ * `theme/applyTheme.ts`, deci urmează tema clientului Telegram. Nicio valoare de
+ * culoare scrisă direct.
+ *
+ * Fișierul e importat din componentele proprii (`AiSettingsSection`,
+ * `AiAssistBar`), nu din `main.tsx`: funcția își aduce singură stilurile și nu
+ * încarcă nimic în ecranele care nu o folosesc.
+ */
+
+/* Varianta mică a spinnerului global, pentru stări din interiorul unui ecran. */
+.spinner--sm {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}
+
+/* Un rând „stare": rotiță/eroare + text, fără să ocupe tot ecranul. */
+.ai-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+/* ——— Setări ——— */
+
+/*
+ * Textul de consimțământ. Aceeași mărime cu restul: e informația care decide
+ * dacă utilizatorul aprinde funcția, nu o notă de subsol. Chenarul îl separă
+ * vizual de celelalte rânduri de setări, ca să nu fie sărit cu privirea.
+ */
+.ai-consent {
+  margin: 0;
+  padding: var(--space-md);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: var(--color-tag-bg);
+}
+
+/* ——— Bara din conversație ——— */
+
+.ai-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0 0;
+}
+
+.ai-bar__actions {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.ai-bar__button {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Butoane secundare: nu au voie să concureze vizual cu „Trimite". */
+  min-height: 40px;
+  padding: 0 var(--space-md);
+  font-size: 14px;
+}
+
+.ai-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.ai-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.ai-panel__close {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 16px;
+  line-height: 22px;
+  /* Ținta de atingere minimă, chiar dacă semnul e mic. */
+  min-width: 44px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+/* Lista de sugestii: ruta întoarce mai multe, le arătăm pe toate. */
+.ai-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.ai-suggestion {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+}
+
+.ai-panel__text {
+  margin: 0;
+  /* Textul propus e text real: se poate selecta și copia. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.ai-panel__score {
+  margin: 0;
+  color: var(--color-accent);
+}
+
+.ai-panel__actions {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.ai-panel__error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  align-items: flex-start;
+}

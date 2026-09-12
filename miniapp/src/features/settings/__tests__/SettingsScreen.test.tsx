@@ -23,6 +23,17 @@ vi.mock('@mobile/features/settings/settingsApi', () => ({
   cancelAccountDeletion: vi.fn(),
 }));
 
+/**
+ * Secțiunea „Asistent AI" își aduce singură starea comutatorului, tot de pe
+ * `GET /settings/`, dar prin mapperul ei (cel reutilizat din Expo nu cunoaște
+ * `ai_enabled`) — vezi `features/ai/aiSettings.ts`. O înlocuim cu un marcaj ca
+ * testele ecranului să nu ajungă la rețea; comportamentul ei real e verificat în
+ * `src/features/ai/__tests__/AiSettingsSection.test.tsx`.
+ */
+vi.mock('@/features/ai', () => ({
+  AiSettingsSection: () => <div data-testid="ai-settings-section" />,
+}));
+
 vi.mock('../../profile/profileApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../profile/profileApi')>();
   return { ...actual, fetchReference: vi.fn() };

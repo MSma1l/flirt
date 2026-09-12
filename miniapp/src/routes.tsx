@@ -24,7 +24,14 @@ import { StatusScreen } from '@/components/StatusScreen';
 import { ChatListScreen } from '@/features/chat/ChatListScreen';
 import { CHAT_ROUTE_PATTERN } from '@/features/chat/chatRoutes';
 import { ChatScreen } from '@/features/chat/ChatScreen';
+import { EventScreen } from '@/features/events/EventScreen';
+import { EVENT_ROUTE_PATTERN, EVENTS_PATH } from '@/features/events/eventRoutes';
+import { EventsScreen } from '@/features/events/EventsScreen';
 import { SwipeDeck } from '@/features/feed/SwipeDeck';
+import { HUMOR_PATH } from '@/features/humor/humorRoutes';
+import { HumorScreen } from '@/features/humor/HumorScreen';
+import { PASSPORT_PATH } from '@/features/passport/passportRoutes';
+import { PassportScreen } from '@/features/passport/PassportScreen';
 import {
   CHATS_PATH,
   FEED_PATH,
@@ -40,6 +47,16 @@ import { useCurrentUser } from '@/features/onboarding/useCurrentUser';
 import { WelcomeScreen } from '@/features/onboarding/WelcomeScreen';
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { SettingsScreen } from '@/features/settings/SettingsScreen';
+import { BlocklistScreen } from '@/features/social/BlocklistScreen';
+import { FavoritesScreen } from '@/features/social/FavoritesScreen';
+import { BLOCKLIST_PATH, FAVORITES_PATH } from '@/features/social/socialRoutes';
+import { STORIES_PATH } from '@/features/stories/storyRoutes';
+import { StoriesScreen } from '@/features/stories/StoriesScreen';
+import { SUBSCRIPTION_PATH } from '@/features/subscription/subscriptionRoutes';
+import { SubscriptionScreen } from '@/features/subscription/SubscriptionScreen';
+import { TICKETS_PATH } from '@/features/tickets/ticketRoutes';
+import { TicketsScreen } from '@/features/tickets/TicketsScreen';
+import { MORE_PATH, MoreScreen } from '@/components/MoreScreen';
 
 /** Rutele aplicației normale, sub bara de taburi. */
 function CompletedRoutes() {
@@ -48,9 +65,10 @@ function CompletedRoutes() {
     <Routes>
       <Route element={<AppShell />}>
         <Route path={FEED_PATH} element={<SwipeDeck />} />
+        <Route path={EVENTS_PATH} element={<EventsScreen />} />
         <Route path={CHATS_PATH} element={<ChatListScreen />} />
         <Route path={PROFILE_PATH} element={<ProfileScreen />} />
-        <Route path={SETTINGS_PATH} element={<SettingsScreen />} />
+        <Route path={MORE_PATH} element={<MoreScreen />} />
       </Route>
       {/* O conversație e un ecran „în adâncime": fără taburi, cu butonul
           ÎNAPOI nativ al Telegramului legat de `DeepScreen`. */}
@@ -62,6 +80,27 @@ function CompletedRoutes() {
           </DeepScreen>
         }
       />
+      {/* Ecrane „în adâncime": deschise dintr-un tab sau din meniu, fără bara de
+          taburi, cu butonul ÎNAPOI nativ al Telegramului legat de `DeepScreen`. */}
+      {(
+        [
+          [EVENT_ROUTE_PATTERN, 'nav.event', <EventScreen key="ev" />],
+          [STORIES_PATH, 'nav.stories', <StoriesScreen key="st" />],
+          [HUMOR_PATH, 'nav.humor', <HumorScreen key="hu" />],
+          [FAVORITES_PATH, 'nav.favorites', <FavoritesScreen key="fa" />],
+          [BLOCKLIST_PATH, 'nav.blocklist', <BlocklistScreen key="bl" />],
+          [PASSPORT_PATH, 'nav.passport', <PassportScreen key="pa" />],
+          [TICKETS_PATH, 'nav.tickets', <TicketsScreen key="ti" />],
+          [SUBSCRIPTION_PATH, 'nav.subscription', <SubscriptionScreen key="su" />],
+          [SETTINGS_PATH, 'nav.settings', <SettingsScreen key="se" />],
+        ] as const
+      ).map(([path, titleKey, element]) => (
+        <Route
+          key={path}
+          path={path}
+          element={<DeepScreen title={t(titleKey)}>{element}</DeepScreen>}
+        />
+      ))}
       <Route path="*" element={<Navigate to={FEED_PATH} replace />} />
     </Routes>
   );

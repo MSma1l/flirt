@@ -231,8 +231,15 @@ describe('schema de culori și linkurile către bot', () => {
     expect(getColorScheme()).toBe('dark');
   });
 
-  it('în Telegram urmează clientul', () => {
-    installTelegramStub({ colorScheme: 'light' } as never);
+  it('în Telegram urmează clientul, când acesta trimite și paleta', () => {
+    // Un client real pe temă deschisă trimite ÎNTOTDEAUNA `themeParams`.
+    // Cazul „deschis, dar fără nicio culoare" nu vine de la un client real —
+    // vezi `bridgeHardening.test.ts`, unde e tratat ca ceea ce este: o adresă
+    // deschisă în browser cu fragmentul scris de mână.
+    installTelegramStub({
+      colorScheme: 'light',
+      themeParams: { bg_color: '#ffffff', text_color: '#000000' },
+    } as never);
     expect(getColorScheme()).toBe('light');
 
     installTelegramStub({ colorScheme: 'dark' } as never);

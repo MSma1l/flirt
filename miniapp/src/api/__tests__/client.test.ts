@@ -207,3 +207,56 @@ describe('protecția anti-buclă', () => {
     expect(adapter).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('refresh-ul supraviețuiește unei reîncărcări a paginii', () => {
+  // Regresie pentru un blocaj real: Telegram trimite ACELAȘI initData pe toată
+  // durata unei lansări, iar serverul consumă fiecare semnătură o singură dată.
+  // O reîncărcare golea memoria, aplicația retrimitea aceeași semnătură, serverul
+  // o respingea ca deja folosită, iar utilizatorul rămânea blocat pe „sesiune
+  // expirată" până închidea complet Mini App-ul.
+  beforeEach(() => {
+    tokenStore.clear();
+    window.sessionStorage.clear();
+  });
+
+  it('păstrează refresh-ul în sessionStorage, nu în localStorage', () => {
+    tokenStore.setTokens('acces', 'reimprospatare');
+
+    expect(window.sessionStorage.getItem('flirt.refresh')).toBe('reimprospatare');
+    expect(window.localStorage.getItem('flirt.refresh')).toBeNull();
+  });
+
+  it('regăsește refresh-ul după ce memoria s-a golit', () => {
+    tokenStore.setTokens('acces', 'reimprospatare');
+    tokenStore.setAccess(null);
+    // Reîncărcarea paginii: modulul se reevaluează, memoria e goală. Simulăm
+    // scriind direct în stocare și citind prin API-ul public.
+    window.sessionStorage.setItem('flirt.refresh', 'de-pe-disc');
+
+    expect(tokenStore.getRefresh()).toBe('reimprospatare');
+  });
+
+  it('curățarea șterge și din stocare, nu doar din memorie', () => {
+    tokenStore.setTokens('acces', 'reimprospatare');
+    tokenStore.clear();
+
+    expect(window.sessionStorage.getItem('flirt.refresh')).toBeNull();
+    expect(tokenStore.getRefresh()).toBeNull();
+  });
+
+  it('nu aruncă dacă stocarea e blocată', () => {
+    const original = Object.getOwnPropertyDescriptor(window, 'sessionStorage');
+    Object.defineProperty(window, 'sessionStorage', {
+      configurable: true,
+      get() {
+        throw new Error('stocare blocată');
+      },
+    });
+
+    expect(() => tokenStore.setTokens('a', 'b')).not.toThrow();
+    expect(() => tokenStore.getRefresh()).not.toThrow();
+    expect(tokenStore.getRefresh()).toBe('b');
+
+    if (original) Object.defineProperty(window, 'sessionStorage', original);
+  });
+});

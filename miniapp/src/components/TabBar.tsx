@@ -19,11 +19,16 @@ export interface TabItem {
 }
 
 /** Taburile de nivel întâi. Ordinea e cea din produs: căutare → relație → tine. */
+// Cinci destinații, alese după cât de des ajunge un utilizator la ele, nu după
+// importanța lor în specificație. Evenimentele sunt un pilon al produsului, deci
+// merită un tab. Setările au trecut în meniu: se intră acolo rar, iar un tab
+// permanent pentru ele ar fi luat locul a ceva folosit zilnic.
 export const TABS: TabItem[] = [
   { to: '/feed', labelKey: 'nav.feed', icon: '♥' },
+  { to: '/events', labelKey: 'nav.events', icon: '★' },
   { to: '/mesaje', labelKey: 'nav.chats', icon: '✉' },
   { to: '/profil', labelKey: 'nav.profile', icon: '☺' },
-  { to: '/setari', labelKey: 'nav.settings', icon: '⚙' },
+  { to: '/meniu', labelKey: 'nav.more', icon: '≡' },
 ];
 
 export function TabBar() {
