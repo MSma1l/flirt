@@ -56,7 +56,7 @@ import { SUBSCRIPTION_PATH } from '@/features/subscription/subscriptionRoutes';
 import { SubscriptionScreen } from '@/features/subscription/SubscriptionScreen';
 import { TICKETS_PATH } from '@/features/tickets/ticketRoutes';
 import { TicketsScreen } from '@/features/tickets/TicketsScreen';
-import { VerificationScreen } from '@/features/verification/VerificationScreen';
+import { VerificationGate } from '@/features/verification/VerificationGate';
 import { VERIFICATION_PATH } from '@/features/verification/verificationRoutes';
 import { MORE_PATH, MoreScreen } from '@/components/MoreScreen';
 
@@ -105,12 +105,17 @@ function CompletedRoutes() {
       ))}
       {/* Verificarea prin selfie: ecran „în adâncime", deschis din profil.
           Titlul vine din namespace-ul `verification` al cataloagelor mobile
-          (deja tradus), nu din `miniapp`, de aceea nu intră în lista de mai sus. */}
+          (deja tradus), nu din `miniapp`, de aceea nu intră în lista de mai sus.
+
+          Ruta rămâne ÎNREGISTRATĂ chiar și când funcția e oprită pe server, iar
+          `VerificationGate` decide ce se montează: fluxul, sau un mesaj scurt
+          cu drum înapoi spre profil. Dacă am fi scos ruta, un link vechi ar fi
+          căzut pe `*` și ar fi aruncat utilizatorul în feed, fără explicație. */}
       <Route
         path={VERIFICATION_PATH}
         element={
           <DeepScreen title={t('verification:title')}>
-            <VerificationScreen />
+            <VerificationGate />
           </DeepScreen>
         }
       />

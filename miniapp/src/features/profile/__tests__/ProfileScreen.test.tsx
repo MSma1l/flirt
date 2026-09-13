@@ -16,6 +16,24 @@ import { renderWithProviders } from '@/test/harness';
 import { ProfileScreen } from '../ProfileScreen';
 import type { MyProfileFull, Reference } from '../profileApi';
 
+/**
+ * Capabilitățile sunt mock-uite la nivel de hook, nu de rețea: ecranul trebuie
+ * să decidă SINCRON dacă arată intrarea către verificare, altfel testele ar
+ * depinde de ordinea în care se rezolvă două cereri fără legătură între ele.
+ * Normalizarea răspunsului real e testată în `features/capabilities/__tests__`.
+ */
+vi.mock('@/features/capabilities', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/features/capabilities')>();
+  return { ...actual, useCapability: vi.fn() };
+});
+
+const { useCapability } = await import('@/features/capabilities');
+
+/** Serverul spune dacă verificarea prin selfie e disponibilă cu adevărat. */
+function setVerificationAvailable(enabled: boolean, isLoading = false) {
+  vi.mocked(useCapability).mockReturnValue({ enabled, isLoading, isError: false });
+}
+
 vi.mock('../profileApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../profileApi')>();
   return {
@@ -79,6 +97,7 @@ const PROFILE: MyProfileFull = {
 };
 
 beforeEach(() => {
+  setVerificationAvailable(true);
   vi.mocked(fetchMyProfile).mockResolvedValue(PROFILE);
   vi.mocked(fetchReference).mockResolvedValue(REFERENCE);
   vi.mocked(saveProfile).mockResolvedValue(PROFILE);
@@ -147,6 +166,42 @@ describe('încărcare și vizualizare', () => {
     await renderProfile();
     const cta = screen.getByTestId('verify-cta');
     expect(cta).toHaveAttribute('href', VERIFICATION_PATH);
+  });
+
+  /**
+   * Verificarea prin selfie era desfășurată cu providerul `stub` pe server:
+   * întorcea „verificat" pentru oricine. Cât timp funcția nu e reală, intrarea
+   * spre ea nu are voie să apară pe profil — un buton care promite o insignă de
+   * încredere fără să o merite e mai rău decât lipsa funcției.
+   */
+  describe('verificarea oprită pe server', () => {
+    it('nu arată nici indiciul, nici butonul către flux', async () => {
+      setVerificationAvailable(false);
+      vi.mocked(fetchMyProfile).mockResolvedValue({ ...PROFILE, verified: false });
+      await renderProfile();
+
+      expect(screen.queryByTestId('unverified-hint')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('verify-cta')).not.toBeInTheDocument();
+      // Restul profilului rămâne întreg — ascundem o funcție, nu un ecran.
+      expect(screen.getByTestId('start-edit')).toBeInTheDocument();
+    });
+
+    it('PĂSTREAZĂ badge-ul conturilor deja verificate', async () => {
+      // Oprirea privește câștigarea insignei de acum înainte, nu retragerea
+      // celor deja acordate: statutul e al serverului, nu al clientului.
+      setVerificationAvailable(false);
+      await renderProfile();
+
+      expect(screen.getByTestId('verified-badge')).toBeInTheDocument();
+    });
+
+    it('ascunde intrarea și cât timp serverul încă nu a răspuns', async () => {
+      setVerificationAvailable(false, true);
+      vi.mocked(fetchMyProfile).mockResolvedValue({ ...PROFILE, verified: false });
+      await renderProfile();
+
+      expect(screen.queryByTestId('verify-cta')).not.toBeInTheDocument();
+    });
   });
 
   it('arată eroarea de încărcare și permite reîncercarea', async () => {

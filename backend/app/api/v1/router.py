@@ -6,6 +6,7 @@ from app.api.v1 import (
     ads,
     ai,
     auth,
+    capabilities,
     chat,
     events,
     feed,
@@ -24,6 +25,10 @@ from app.api.v1 import (
 )
 
 api_router = APIRouter()
+# Ce funcții merg cu adevărat pe acest server (public, fără token: clientul are
+# nevoie de răspuns pe ecranul de login). Ruta își declară calea absolută
+# `/capabilities` → fără prefix.
+api_router.include_router(capabilities.router)
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(profiles.router, prefix="/profiles", tags=["profiles"])
 api_router.include_router(feed.router, prefix="/feed", tags=["feed"])

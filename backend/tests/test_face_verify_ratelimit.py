@@ -15,14 +15,24 @@ from app.core.config import settings
 from tests.test_upload_security import API, _make_user
 
 
+@pytest.fixture
+def rate_limit_on():
+    """Convenția proiectului: reactivează limitarea ȘI golește contorul.
+
+    Golirea nu e cosmetică. Alte teste lovesc aceeași rută de pe aceeași adresă,
+    iar fără reset contorul intră plin în test și pragul lovește prematur — exact
+    eșecul care apărea doar în suita completă, nu și la rulare izolată.
+    """
+    ratelimit.enable_for_tests()
+    yield
+    ratelimit.disable_for_tests()
+
+
 @pytest.mark.asyncio
-async def test_verify_face_are_prag_de_cereri(client, monkeypatch):
+async def test_verify_face_are_prag_de_cereri(client, rate_limit_on, monkeypatch):
     """A treia cerere, cu pragul pus pe 2, primește 429."""
     headers = await _make_user(client, "face-rl@example.com")
-
     monkeypatch.setattr(settings, "rate_limit_face_verify_per_hour", 2)
-    monkeypatch.setattr(settings, "rate_limit_enabled", True)
-    monkeypatch.setattr(ratelimit, "_under_pytest", lambda: False)
 
     coduri = [
         (await client.post(f"{API}/profiles/verify-face", json={}, headers=headers)).status_code

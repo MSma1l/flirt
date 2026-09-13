@@ -8,6 +8,56 @@ from pydantic import AliasChoices, BeforeValidator, Field, field_validator, mode
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+# === Integrări care pot rămâne în MOD DE DEZVOLTARE („stub") în producție =====
+#
+# REGULA, scrisă o singură dată ca să nu fie rescrisă la fiecare intrare: o
+# integrare are voie să ruleze în modul de dezvoltare în producție DOAR dacă
+# funcția pe care o deservește e declarată INDISPONIBILĂ către client
+# (`GET /api/v1/capabilities` → `false`) și nu e servită cu un rezultat
+# fabricat. Un stub care întoarce „da" în producție e mai rău decât o funcție
+# lipsă: utilizatorul nu are cum să afle că răspunsul e inventat.
+#
+# Produsul rulează azi ca Telegram Mini App. De aici, integrarea cu integrarea:
+#
+#  SOCIAL_AUTH_MODE / OTP_MODE — identitatea vine din `initData` semnat de
+#    Telegram (verificat HMAC în `services/telegram_auth.py`), nu din Google,
+#    Apple sau SMS. CONDIȚIA care face relaxarea sigură, verificată efectiv mai
+#    jos: `TELEGRAM_AUTH_MODE` trebuie să fie 'live'. Adică relaxăm două surse
+#    de identitate DOAR pentru că EXISTĂ una reală, verificată criptografic;
+#    dacă nici ea nu e reală, producția ar rămâne fără NICIO autentificare
+#    adevărată și pornirea trebuie să cadă.
+#
+#  BILLING_PROVIDER — proprietarul a scos plățile native din scop: Mini App-ul
+#    nu vinde nimic, deci nu există plată de verificat. CONDIȚIA: `payments`
+#    raportat `false`, ca ecranele de cumpărare să nu fie afișate deloc.
+#
+#  PUSH_PROVIDER — în Telegram notificarea pleacă prin BOT
+#    (`services/telegram_bot.py`), nu prin APNs/FCM. Mecanismul nativ nu mai
+#    deservește nicio funcție, iar stub-ul lui nu fabrică niciun rezultat: nu
+#    confirmă nicio livrare, doar loghează. CONDIȚIA: `push_notifications`
+#    raportat `false`, ca să nu existe în client un comutator „primesc
+#    notificări" care n-ar face nimic.
+#
+#  FACE_VERIFY_PROVIDER — cazul cel mai periculos, singurul care MINTE activ:
+#    stub-ul întoarce (True, 99.0) pentru ORICINE, fără să compare nimic — o
+#    insignă de încredere („profil verificat") câștigată fără verificare.
+#    CONDIȚIA care face relaxarea sigură: ruta `POST /profiles/verify-face`
+#    REFUZĂ explicit în producție cu providerul de dezvoltare (503), în loc să
+#    acorde insigna — vezi `app/api/v1/profiles.py`. Fără acel refuz, această
+#    intrare trebuie ștearsă de aici.
+#
+# NU se relaxează (și rămân motive de eșec la pornire): STORAGE_PROVIDER —
+# pozele sunt inima produsului, iar stub-ul întoarce URL-uri care nu există; și
+# GEO_PROVIDER — fără el distanța și raza de căutare devin TĂCUT inoperante.
+DEV_MODE_ALLOWED_IN_PRODUCTION: dict[str, str] = {
+    "SOCIAL_AUTH_MODE": "social_login",
+    "OTP_MODE": "phone_login",
+    "BILLING_PROVIDER": "payments",
+    "FACE_VERIFY_PROVIDER": "face_verification",
+    "PUSH_PROVIDER": "push_notifications",
+}
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         # Fișierul de mediu e configurabil ca TESTELE să-l poată dezactiva
@@ -509,6 +559,40 @@ class Settings(BaseSettings):
                 self.storage_base_url = self.storage_base_url.rstrip("/") + "/media"
         return self
 
+    # === Capabilități de PRODUS — sursa unică de adevăr pentru /capabilities ==
+    # Cheile sunt FUNCȚII DE PRODUS, nu integrări: clientul întreabă „pot arăta
+    # butonul de verificare facială?", nu „ce provider aveți". Valorile sunt
+    # doar `true`/`false` — niciun nume de provider, nicio versiune, niciun
+    # detaliu de infrastructură. Un atacator nu află de aici nimic în plus față
+    # de ce ar afla apăsând butonul respectiv.
+    #
+    # „Disponibil" înseamnă AICI: răspunsul funcției e real. Un provider în
+    # modul de dezvoltare raportează `false` în ORICE mediu, inclusiv local —
+    # clientul de dezvoltare trebuie să vadă exact ce vede cel de producție, ca
+    # diferența să iasă la testare, nu pe utilizatori reali.
+    #
+    # Ce NU e aici, deliberat: moderarea foto și pragurile anti-abuz. Nu sunt
+    # funcții pe care clientul le arată sau le ascunde, ci controale interne de
+    # siguranță — „moderarea e oprită" ar fi un pont pentru un atacator, nu un
+    # serviciu pentru un client.
+    @property
+    def capabilities(self) -> dict[str, bool]:
+        """Ce funcții de produs merg CU ADEVĂRAT pe acest server."""
+        return {
+            # Autentificare: pe unde se poate intra.
+            "telegram_login": self.telegram_auth_mode != "stub",
+            "social_login": self.social_auth_mode != "stub",
+            "phone_login": self.otp_mode != "stub",
+            # Profil și căutare.
+            "photo_upload": self.storage_provider != "stub",
+            "face_verification": self.face_verify_provider != "stub",
+            "distance_search": self.geo_provider != "stub",
+            # Funcții opționale.
+            "payments": self.billing_provider != "stub",
+            "push_notifications": self.push_provider != "stub",
+            "ai_assistant": self.ai_provider != "stub",
+        }
+
     @model_validator(mode="after")
     def _guard_production(self) -> "Settings":
         # RO: în producție NU pornim cu default-uri nesigure. În dev/staging trecem.
@@ -546,8 +630,12 @@ class Settings(BaseSettings):
             problems.append("JWT_PUBLIC_KEY este gol")
 
         # RO: în producție NU acceptăm integrări în modul 'stub' — ar însemna
-        # verificări false (social login, OTP, plăți, KYC facial, storage, push).
-        # EN: reject any integration left in 'stub' mode for production.
+        # verificări false (storage, geo) sau funcții care pretind că merg.
+        # EXCEPȚIILE sunt ENUMERATE în `DEV_MODE_ALLOWED_IN_PRODUCTION` (motivarea
+        # fiecăreia e acolo, lângă listă) și fiecare are o condiție verificată mai
+        # jos. Orice integrare care NU e pe listă oprește pornirea, ca înainte.
+        # EN: reject any integration left in 'stub' mode for production, except
+        # the explicitly listed ones whose product feature is declared OFF.
         stub_integrations = {
             "SOCIAL_AUTH_MODE": self.social_auth_mode,
             "OTP_MODE": self.otp_mode,
@@ -561,9 +649,40 @@ class Settings(BaseSettings):
             # din Compatibility Score deveneau inoperante, fără nicio eroare.
             "GEO_PROVIDER": self.geo_provider,
         }
+        capabilities = self.capabilities
         for name, value in stub_integrations.items():
-            if value == "stub":
+            if value != "stub":
+                continue
+            capability = DEV_MODE_ALLOWED_IN_PRODUCTION.get(name)
+            if capability is None:
                 problems.append(f"{name} este în modul 'stub' (nesigur în producție)")
+                continue
+            # Plasa de siguranță a relaxării. Integrarea are voie să stea în modul
+            # de dezvoltare exact cât timp funcția pe care o deservește e declarată
+            # INDISPONIBILĂ clientului. Verificarea pare redundantă azi (ambele se
+            # calculează din același câmp), dar e singurul loc care leagă cele două
+            # adevăruri: dacă cineva schimbă mai târziu `capabilities` ca să
+            # raporteze `true` cu providerul tot pe stub, pornirea cade AICI, nu
+            # ajunge la utilizatori o funcție care pretinde că merge.
+            if capabilities.get(capability) is not False:
+                problems.append(
+                    f"{name} este în modul 'stub', dar funcția '{capability}' e "
+                    "raportată clientului ca DISPONIBILĂ (ar fi un rezultat fals)"
+                )
+
+        # Condiția care face relaxarea identității sigură: dacă renunțăm la Google,
+        # Apple și SMS, singura sursă de identitate rămasă (Telegram) TREBUIE să fie
+        # cea reală, cu verificare de semnătură. Altfel producția n-ar avea nicio
+        # autentificare adevărată — exact ce trebuie să oprească pornirea.
+        if (
+            self.social_auth_mode == "stub" or self.otp_mode == "stub"
+        ) and self.telegram_auth_mode != "live":
+            problems.append(
+                "SOCIAL_AUTH_MODE/OTP_MODE sunt în modul 'stub' (acceptat doar în "
+                "Mini App, unde identitatea vine de la Telegram), dar "
+                "TELEGRAM_AUTH_MODE nu e 'live': nu ar rămâne nicio sursă de "
+                "identitate verificată criptografic"
+            )
 
         # RO: modul 'live' fără CHEI e la fel de rău ca stub-ul — doar că eșuează
         # mai târziu și mai urât: aplicația pornește „sănătoasă" și crapă abia la

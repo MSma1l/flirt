@@ -271,7 +271,33 @@ async def verify_face(request: Request, db: DbDep, user: UserDep) -> FaceVerifyO
     Acceptă fie un fișier (multipart, câmp 'file'), fie un body JSON simplu
     (mod stub — conținutul nu contează). Setează `Profile.verified` și întoarce
     `{verified, similarity}`.
+
+    În producție cu providerul în modul de dezvoltare REFUZĂ (503), fiindcă
+    acolo stub-ul ar acorda insigna „verificat" oricui — vezi mai jos.
     """
+    # Insigna „profil verificat" e o promisiune făcută CELORLALȚI utilizatori:
+    # ei decid cu cine se întâlnesc și pe baza ei. Providerul de dezvoltare
+    # întoarce (True, 99.0) pentru ORICINE, fără să compare nimic — deci în
+    # producție ar fabrica exact acea promisiune, iar cel înșelat nu e cel care
+    # apasă butonul, ci persoana din fața lui. Refuzăm explicit; funcția e deja
+    # declarată indisponibilă în `GET /capabilities` (`face_verification:false`),
+    # iar refuzul de aici e plasa pentru un client care întreabă oricum.
+    #
+    # 503, nu 4xx: nu e nimic greșit în cererea userului — el n-are ce corecta,
+    # iar un 4xx l-ar trimite să repare ce nu depinde de el. Nu 501 (acela spune
+    # „serverul nu implementează asta", dar codul EXISTĂ și pornește cu o cheie
+    # reală de provider) și nu 200 cu `verified:false`, care s-ar citi ca „nu
+    # semeni cu pozele tale" — o minciună la fel de gravă, doar în cealaltă
+    # direcție. 503 = funcția nu se servește acum pe acest server.
+    #
+    # Doar în producție: în dezvoltare și staging stub-ul rămâne cum e, altfel
+    # fluxul de verificare n-ar mai putea fi testat nicăieri.
+    if settings.environment == "production" and not settings.capabilities["face_verification"]:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Verificarea facială nu este disponibilă pe acest server.",
+        )
+
     content_type = request.headers.get("content-type", "")
 
     if content_type.startswith("multipart/form-data"):

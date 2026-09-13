@@ -1,4 +1,10 @@
-/** Verificarea prin selfie (TZ 2.2): captură, micșorare, trimitere, verdict. */
+/**
+ * Verificarea prin selfie (TZ 2.2): captură, micșorare, trimitere, verdict.
+ *
+ * INTRAREA în flux e `VerificationGate`, nu `VerificationScreen`: poarta
+ * întreabă serverul dacă funcția e reală și abia apoi montează fluxul.
+ */
+export { VerificationGate } from './VerificationGate';
 export { VerificationScreen } from './VerificationScreen';
 export { VERIFICATION_PATH } from './verificationRoutes';
 export { FaceVerifyError, verifyFace } from './faceVerifyApi';

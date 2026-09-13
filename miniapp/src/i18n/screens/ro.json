@@ -124,6 +124,8 @@
     "reviewNote": "Exact poza asta pleacă la verificare. Dacă nu îți convine, fă alta.",
     "successBody": "Gata. Badge-ul apare de acum pe profilul tău.",
     "failTitle": "Verificarea nu a reușit",
+    "unavailableTitle": "Verificarea nu este disponibilă",
+    "unavailableBody": "Verificarea prin selfie este oprită deocamdată. O redeschidem când funcționează așa cum trebuie, iar până atunci nimic din profilul tău nu se schimbă.",
     "tipsTitle": "Ce poți încerca",
     "tips": {
       "light": "Stai cu fața spre lumină, nu cu spatele la fereastră.",

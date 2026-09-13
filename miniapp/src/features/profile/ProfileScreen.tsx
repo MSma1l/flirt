@@ -25,6 +25,7 @@ import { Link } from 'react-router';
 import { DEFAULT_LANGUAGE, normalizeLanguage } from '@mobile/i18n/config';
 
 import { StatusScreen } from '@/components/StatusScreen';
+import { CAPABILITY, useCapability } from '@/features/capabilities';
 import { VERIFICATION_PATH } from '@/features/verification/verificationRoutes';
 
 import { PhotoManager, type PhotoTile } from './PhotoManager';
@@ -92,6 +93,10 @@ export function ProfileScreen() {
   const language = normalizeLanguage(i18n.language) ?? DEFAULT_LANGUAGE;
   const queryClient = useQueryClient();
   const photoErrorText = usePhotoErrorText();
+
+  // Verificarea prin selfie are voie să apară DOAR dacă serverul o declară
+  // disponibilă. Cât timp nu știm (sau ruta nu răspunde), `enabled` e `false`.
+  const { enabled: verificationEnabled } = useCapability(CAPABILITY.faceVerification);
 
   const profileQuery = useQuery({ queryKey: ['my-profile'], queryFn: fetchMyProfile });
   const referenceQuery = useQuery({
@@ -285,13 +290,22 @@ export function ProfileScreen() {
           un text care spune „poți fi verificat" fără niciun buton e o
           fundătură, iar fluxul n-avea până acum nicio intrare în Mini App.
           Contul deja verificat NU primește butonul: nu are de ce să treacă a
-          doua oară prin selfie. */}
+          doua oară prin selfie.
+
+          BADGE-UL NU DEPINDE DE CAPABILITATE. Un cont verificat cândva rămâne
+          verificat chiar dacă funcția e oprită acum: oprirea privește câștigarea
+          insignei de aici înainte, nu retragerea celor deja acordate — statutul e
+          al serverului, iar clientul n-are dreptul să-l șteargă de pe ecran.
+
+          INDICIUL, în schimb, dispare complet cât timp serverul spune că funcția
+          nu e disponibilă. Un text care promite o insignă plus un buton care
+          duce într-o fundătură ar fi exact minciuna pe care o închidem. */}
       {profile ? (
         profile.verified ? (
           <p className="profile-verified" data-testid="verified-badge">
             {t('verification:verified')}
           </p>
-        ) : (
+        ) : verificationEnabled ? (
           <div className="profile-verify" data-testid="unverified-hint">
             <p className="caption">{t('verification:intro')}</p>
             <Link
@@ -302,7 +316,7 @@ export function ProfileScreen() {
               {t('verification:start')}
             </Link>
           </div>
-        )
+        ) : null
       ) : null}
 
       {!editing && profile ? (

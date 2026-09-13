@@ -87,13 +87,14 @@ def test_production_all_live_ok():
 @pytest.mark.parametrize(
     "override",
     [
+        # Identitatea: stub-ul e acceptat DOAR alături de Telegram în mod real.
+        # `_prod_kwargs` nu pune Telegram pe 'live', deci aici tot trebuie să cadă.
         {"social_auth_mode": "stub"},
         {"otp_mode": "stub"},
-        {"billing_provider": "stub"},
-        {"face_verify_provider": "stub"},
+        # NEelaxabile, oricât: fără stocare reală pozele sunt adrese care nu există,
+        # iar fără geocoder distanța și raza de căutare devin TĂCUT inoperante.
         {"storage_provider": "stub"},
-        {"push_provider": "stub"},
-        {"geo_provider": "stub"},          # lipsea din guard: geocoder fals în prod
+        {"geo_provider": "stub"},
         {"s3_bucket": ""},                 # provider live, cheie goală
         {"twilio_auth_token": ""},         # idem
         {"debug": True},
@@ -103,6 +104,55 @@ def test_production_all_live_ok():
 def test_production_unsafe_raises(override):
     with pytest.raises(ValidationError):
         Settings(**_prod_kwargs(**override))
+
+
+# --------------------------------------------------------------------------- #
+# 1b. Relaxarea controlată a modului de dezvoltare în producție
+# --------------------------------------------------------------------------- #
+#
+# Trei integrări au voie să rămână în mod de dezvoltare în producție, pentru că
+# funcțiile lor nu se mai folosesc în Telegram Mini App. Dar relaxarea are o
+# condiție, și ea e tot ce stă între noi și o funcție care MINTE: funcția trebuie
+# declarată INDISPONIBILĂ clientului. Verificarea facială e cazul extrem — în mod
+# de dezvoltare acordă insigna „profil verificat" oricui, fără să compare nimic.
+
+
+@pytest.mark.parametrize(
+    "override, capability",
+    [
+        ({"billing_provider": "stub"}, "payments"),
+        ({"face_verify_provider": "stub"}, "face_verification"),
+        ({"push_provider": "stub"}, "push_notifications"),
+    ],
+)
+def test_relaxed_stub_porneste_dar_declara_functia_indisponibila(override, capability):
+    """Pornirea reușește, ȘI clientul află că funcția nu merge."""
+    s = Settings(**_prod_kwargs(**override))
+    assert s.capabilities[capability] is False, (
+        f"'{capability}' e servită de un provider în mod de dezvoltare, deci "
+        "trebuie raportată clientului ca INDISPONIBILĂ"
+    )
+
+
+def test_relaxarea_cade_daca_functia_ar_fi_raportata_disponibila(monkeypatch):
+    """Plasa de siguranță: dacă declarația și realitatea se despart, pornirea cade.
+
+    Scenariul de eșec pe care îl apără: cineva modifică mai târziu calculul
+    capabilităților ca să raporteze `true`, providerul rămâne pe stub, iar
+    utilizatorii primesc o insignă de încredere câștigată fără verificare — fără
+    ca nimic să eșueze vizibil.
+    """
+    real = Settings.capabilities.fget
+
+    def minte(self):
+        valori = real(self)
+        valori["face_verification"] = True
+        return valori
+
+    monkeypatch.setattr(Settings, "capabilities", property(minte))
+
+    with pytest.raises(ValidationError, match="rezultat fals"):
+        Settings(**_prod_kwargs(face_verify_provider="stub"))
 
 
 # --------------------------------------------------------------------------- #

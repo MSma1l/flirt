@@ -121,6 +121,8 @@
     "reviewNote": "This exact photo goes for verification. Take another one if you are not happy with it.",
     "successBody": "Done. The badge now shows on your profile.",
     "failTitle": "Verification did not go through",
+    "unavailableTitle": "Verification is unavailable",
+    "unavailableBody": "Selfie verification is switched off for now. We will turn it back on once it works the way it should; until then nothing on your profile changes.",
     "tipsTitle": "What you can try",
     "tips": {
       "light": "Face a light source, do not stand with your back to a window.",
