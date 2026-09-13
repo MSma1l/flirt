@@ -1,0 +1,224 @@
+/*
+ * Stilurile programului de fidelitate: cardul de treaptă, bara de progres,
+ * câmpul de invitație și prețul cu reducere.
+ *
+ * Prefixul `ly-` ține clasele separate de `pp-` (passport) și `ev-` (evenimente):
+ * componentele de aici se montează ÎN ecranele acelora, deci numele nu au voie
+ * să se suprapună. Nicio culoare scrisă direct — toate vin din variabilele pe
+ * care `theme/applyTheme.ts` le ia din tema clientului Telegram.
+ */
+
+.ly-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.ly-section__title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 700;
+}
+
+.ly-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-lg) 0;
+  text-align: center;
+}
+
+/* ——— Cardul treptei ——————————————————————————————————————————— */
+
+.ly-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.ly-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.ly-card__tier {
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 700;
+}
+
+.ly-card__discount {
+  padding: 2px var(--space-sm);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 700;
+}
+
+.ly-card__stamps {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.ly-card__max {
+  margin: 0;
+  color: var(--color-success);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+/* ——— Bara de progres ————————————————————————————————————————— */
+
+.ly-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.ly-progress__track {
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-hover);
+  overflow: hidden;
+}
+
+.ly-progress__fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  /* Umplerea se animează doar dacă utilizatorul nu a cerut mai puțină mișcare. */
+  transition: width 240ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ly-progress__fill {
+    transition: none;
+  }
+}
+
+.ly-progress__text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+.ly-progress__reward {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* ——— Codul de invitație ——————————————————————————————————————— */
+
+.ly-invite {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.ly-invite__label {
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+}
+
+.ly-invite__hint {
+  margin: 0;
+}
+
+.ly-invite__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+.ly-invite__input {
+  flex: 1 1 160px;
+  /* Codurile sunt majuscule fără litere ambigue; cifrele și literele se citesc
+     mai ușor la o distanță constantă între caractere. */
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ly-invite__submit {
+  flex: 0 0 auto;
+}
+
+.ly-invite__msg {
+  margin: var(--space-xs) 0 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.ly-invite__msg--ok {
+  color: var(--color-success);
+}
+
+/* ——— Prețul cu reducere ——————————————————————————————————————— */
+
+.ly-price {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-card);
+  background: var(--color-tag-bg);
+}
+
+.ly-price__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.ly-price__final {
+  font-size: 24px;
+  line-height: 30px;
+  font-weight: 800;
+}
+
+.ly-price__base {
+  color: var(--color-text-secondary);
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.ly-price__badge {
+  padding: 2px var(--space-sm);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 700;
+}
+
+.ly-price__reason {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.ly-price__capped {
+  margin: 0;
+}

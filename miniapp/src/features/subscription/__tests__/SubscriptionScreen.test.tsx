@@ -130,7 +130,9 @@ describe('catalogul de planuri', () => {
     renderWithProviders(<SubscriptionScreen />);
 
     expect(await screen.findByTestId('subscription-entries')).toHaveTextContent(
-      'Intrări rămase: 2 din 5',
+      // Contorul reutilizează cheia cu plural din Flirt Passport
+      // (`profile:passport.discountCard.entriesLeft`), deci fraza e a ei.
+      '2 intrări rămase din 5',
     );
   });
 });

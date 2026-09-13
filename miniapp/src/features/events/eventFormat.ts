@@ -6,22 +6,24 @@
  * pot fi reutilizate prin `@mobile/` — le rescriem aici, dar cu ACELEAȘI reguli,
  * ca data unui eveniment să arate identic în ambele aplicații.
  *
- * Etichetele tipurilor de eveniment sunt în română, exact ca pe mobil: în
- * cataloagele i18n (`mobile/src/i18n/locales/<lang>/events.json`) NU există chei
- * pentru ele, iar sarcina interzice atât modificarea cataloagelor mobile, cât și
- * pe a celui local. Cheile lipsă sunt raportate separat.
+ * Etichetele tipurilor de eveniment NU există în cataloagele mobile
+ * (`mobile/src/i18n/locales/<lang>/events.json`), deci stau în catalogul propriu
+ * al Mini App-ului, sub `screens:events.kind.*`. Funcțiile nu sunt componente,
+ * deci citesc din instanța globală `i18n`, exact ca `formatEventDate` de mai jos.
  */
 import i18n from '@/i18n';
 
-/** Eticheta afișată pentru un tip de eveniment. */
+/** Eticheta afișată pentru un tip de eveniment, în limba interfeței. */
 export function kindLabel(kind: string): string {
   switch (kind) {
     case 'flirt_party':
-      return 'Flirt Party';
+      // Numele produsului nu se traduce; cheia există totuși în toate limbile,
+      // ca textul să treacă prin aceeași cale ca restul etichetelor.
+      return i18n.t('screens:events.kind.flirt_party');
     case 'concert':
-      return 'Concert';
+      return i18n.t('screens:events.kind.concert');
     default:
-      return 'Eveniment';
+      return i18n.t('screens:events.kind.other');
   }
 }
 

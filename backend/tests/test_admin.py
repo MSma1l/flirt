@@ -21,6 +21,12 @@ from app.models.admin import AdminAuditLog
 from app.models.billing import Subscription
 from app.models.chat import Chat, Message
 from app.models.event import Event, EventAttendance
+from app.models.ticket_order import (
+    STATUS_APPROVED,
+    STATUS_AWAITING_PAYMENT,
+    STATUS_REJECTED,
+    TicketOrder,
+)
 from app.models.moderation import Report
 from app.models.profile import Profile
 from app.models.swipe import Like, Match
@@ -741,6 +747,121 @@ async def test_delete_event_removes_attendances(client, db_session):
         )
     ).scalars().all()
     assert orphans == [], "Participări orfane către un eveniment inexistent."
+
+
+@pytest.mark.asyncio
+async def test_event_out_counts_ticket_orders(client, db_session):
+    """Lista de admin spune câte BILETE sunt comandate, nu doar câți participanți.
+
+    Confirmarea de ștergere din panou se scrie din cifrele astea: un eveniment cu
+    bilete plătite nu trebuie să se șteargă „din reflex". Comenzile RESPINSE nu se
+    numără — nu reprezintă nici bani, nici o promisiune făcută cuiva.
+    """
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
+
+    ev = Event(
+        title="Cu bilete",
+        starts_at=datetime.now(timezone.utc) + timedelta(days=3),
+        city="Chișinău",
+        kind="flirt_party",
+        ticket_price=150.0,
+        ticket_currency="lei",
+    )
+    db_session.add(ev)
+    await db_session.flush()
+    for status_value in (
+        STATUS_AWAITING_PAYMENT,
+        STATUS_APPROVED,
+        STATUS_APPROVED,
+        STATUS_REJECTED,
+    ):
+        db_session.add(
+            TicketOrder(
+                user_id=admin.id,
+                event_id=ev.id,
+                price=150.0,
+                currency="lei",
+                reference="U-DEADBEEF",
+                status=status_value,
+            )
+        )
+    db_session.add(EventAttendance(event_id=ev.id, user_id=admin.id, going=True))
+    await db_session.commit()
+
+    resp = await client.get(f"{ADMIN}/events", headers=headers)
+    assert resp.status_code == 200, resp.text
+    row = next(e for e in resp.json() if e["id"] == str(ev.id))
+    assert row["attendee_count"] == 1
+    assert row["ticket_order_count"] == 3, "Comanda respinsă nu trebuie numărată."
+    assert row["ticket_approved_count"] == 2
+
+    # Un eveniment fără comenzi rămâne pe zero (nu None): panoul afișează cifre.
+    resp = await client.post(
+        f"{ADMIN}/events",
+        json={
+            "title": "Fără bilete",
+            "starts_at": (
+                datetime.now(timezone.utc) + timedelta(days=2)
+            ).isoformat(),
+            "city": "Chișinău",
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["ticket_order_count"] == 0
+    assert resp.json()["ticket_approved_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_event_removes_ticket_orders(client, db_session):
+    """Ștergerea evenimentului nu lasă COMENZI DE BILET orfane.
+
+    Comenzile sunt al treilea copil al evenimentului, adăugat după ce ștergerea
+    explicită a participărilor și ștampilelor era deja scrisă. Pe SQLite (unde
+    rulează testele) cheile externe sunt oprite, deci rândurile rămâneau agățate
+    de un eveniment inexistent și spărgeau coada de comenzi a adminului.
+    """
+    headers, admin = await _make_admin(client, db_session, "admin@flrt.md")
+
+    ev = Event(
+        title="De șters",
+        starts_at=datetime.now(timezone.utc) + timedelta(days=1),
+        city="Chișinău",
+        kind="other",
+        ticket_price=100.0,
+    )
+    db_session.add(ev)
+    await db_session.flush()
+    db_session.add(
+        TicketOrder(
+            user_id=admin.id,
+            event_id=ev.id,
+            price=100.0,
+            currency="lei",
+            reference="U-DEADBEEF",
+            status=STATUS_APPROVED,
+        )
+    )
+    await db_session.commit()
+    event_id = ev.id
+
+    resp = await client.delete(f"{ADMIN}/events/{event_id}", headers=headers)
+    assert resp.status_code == 204, resp.text
+
+    orphans = (
+        await db_session.execute(
+            select(TicketOrder).where(TicketOrder.event_id == event_id)
+        )
+    ).scalars().all()
+    assert orphans == [], "Comenzi de bilet orfane către un eveniment inexistent."
+
+    # Auditul păstrează CE s-a pierdut (cifrele dispar odată cu rândurile).
+    log = (
+        await db_session.execute(
+            select(AdminAuditLog).where(AdminAuditLog.target_id == event_id)
+        )
+    ).scalars().all()
+    assert any(entry.meta and entry.meta.get("ticket_orders") == 1 for entry in log)
 
 
 @pytest.mark.asyncio

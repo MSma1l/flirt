@@ -375,6 +375,41 @@ class Settings(BaseSettings):
     # Fereastra „user activ" din dashboard (zile de la `last_active_at`).
     admin_active_window_days: int = 7
 
+    # === Fidelitate (Flirt Passport) + invitații speciale ======================
+    # ATENȚIE: valorile de aici sunt DOAR SEMINȚELE folosite la crearea rândului
+    # singleton `loyalty_settings`. Sursa de adevăr în rulare e rândul din baza de
+    # date, editabil din panoul de admin — un prag de marketing nu are voie să
+    # ceară nici măcar un restart de container ca să fie schimbat.
+    #
+    # Format: `cod:nume:ștampile_minime:procent_reducere`, trepte separate prin
+    # virgulă, în orice ordine (serviciul le sortează după prag).
+    #
+    # DE CE 3 / 6 / 12: primul prag trebuie să fie atins de un utilizator normal
+    # într-un sezon (evenimentele sunt la câteva săptămâni), altfel recompensa e
+    # teoretică și nu schimbă comportamentul nimănui. De acolo, pragul se dublează
+    # la fiecare treaptă, iar reducerea NU se dublează (5 → 10 → 15): efortul
+    # crește mai repede decât costul, deci programul rămâne plătibil oricât de
+    # fideli devin userii.
+    loyalty_tiers: str = "bronze:Bronze:3:5,silver:Silver:6:10,gold:Gold:12:15"
+    # Plafonul ABSOLUT al reducerii totale pe un bilet (0..100). Ultima plasă
+    # între o greșeală de configurare (un promo scris „90" în loc de „9") și un
+    # bilet dat pe gratis.
+    loyalty_max_total_discount_percent: int = 30
+    # Lungimea codului de invitație generat pe server. Alfabetul are 32 de
+    # simboluri fără caractere ambigue (fără 0/O/1/I), deci 5 biți pe caracter:
+    # 12 caractere ≈ 60 de biți de entropie — un cod nu poate fi ghicit nici cu
+    # miliarde de încercări, iar ruta de folosire e oricum limitată ca rată.
+    loyalty_invite_code_length: int = 12
+    # Câte folosiri poate avea cel mult o invitație (un typo „10000" nu are voie
+    # să devină o intrare liberă pentru tot orașul).
+    loyalty_invite_max_uses_cap: int = 500
+    # Cât de departe în viitor poate fi pusă expirarea unei invitații (zile).
+    loyalty_invite_max_days: int = 365
+    # Încercări de folosire a unui cod de invitație / IP / minut. Prag mic și
+    # intenționat: singurul motiv pentru care cineva trimite coduri în rafală e
+    # că le GHICEȘTE — un om care a primit o invitație o introduce o dată.
+    rate_limit_invite_redeem_per_min: int = 10
+
     @property
     def allowed_image_types_set(self) -> set[str]:
         return {t.strip() for t in self.allowed_image_types.split(",") if t.strip()}

@@ -1,0 +1,222 @@
+/*
+ * Bara de povești (cercurile orizontale) și învelișul pe tot ecranul al
+ * vizualizatorului. Fișier separat de `stories.css` fiindcă bara nu mai
+ * aparține unui singur ecran: stă în capul feedului de ankete, deasupra
+ * cărților de swipe.
+ *
+ * Toate culorile și spațiile trec prin variabilele scrise de
+ * `theme/applyTheme.ts` — nicio valoare de culoare scrisă direct.
+ */
+
+/* ——— Bara orizontală de grupuri ——————————————————————————————— */
+
+.st-bar {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--space-md);
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* Bara nu are voie să crească pe verticală: ar mânca deck-ul de sub ea. */
+  flex: 0 0 auto;
+  padding: var(--space-xs) 0;
+
+  /*
+   * GESTURI. `pan-x` spune browserului că aici există UN SINGUR gest valid —
+   * derularea orizontală. Fără el, pe telefon un drag pe diagonală ar fi
+   * interpretat și ca scroll vertical al paginii, iar cardul de dedesubt (care
+   * ascultă și verticala) ar primi un gest pe jumătate.
+   * `overscroll-behavior-x: contain` oprește lanțul: ajunsă la capăt, bara NU
+   * mai pasează derularea mai departe, deci nu declanșează gestul de „înapoi"
+   * al clientului și nu mișcă ecranul.
+   */
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+
+  /* Bara de derulare ar tăia din înălțime pe desktop; degetul n-are nevoie de ea. */
+  scrollbar-width: none;
+}
+
+.st-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.st-bar__item {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  width: 72px;
+  flex: 0 0 auto;
+  padding: 0;
+  cursor: pointer;
+}
+
+.st-bar__ring {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--color-accent);
+  background: var(--color-tag-bg);
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 700;
+}
+
+/* Nevăzut = inel de accent gros, cu aură. Văzut = contur stins, prezent dar
+   retras. Diferența trebuie să se citească dintr-o privire, fără text. */
+.st-bar__ring--unseen {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-accent-glow);
+}
+
+.st-bar__ring--seen {
+  border-color: var(--color-border);
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
+}
+
+.st-bar__ring--add {
+  border-style: dashed;
+  color: var(--color-accent);
+  font-size: 24px;
+  line-height: 30px;
+}
+
+.st-bar__item--active .st-bar__ring {
+  box-shadow: 0 0 0 3px var(--color-accent-glow);
+}
+
+.st-bar__name {
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.st-bar__count {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+/* ——— Varianta din capul feedului ————————————————————————————— */
+
+/*
+ * Aici bara concurează cu cardul pentru înălțime, deci e mai strânsă. Cifrele nu
+ * sunt cosmetice: la 380x640 (telefonul mic de referință) cardul trebuie să
+ * rămână uzabil după ce bara, indiciul de gesturi și bara de taburi și-au luat
+ * partea.
+ */
+.st-bar--feed {
+  gap: var(--space-sm);
+  padding-top: 0;
+  padding-bottom: var(--space-xs);
+  /* PLAFON, nu o sugestie: cardul de sub bară primește tot ce rămâne, deci
+     bugetul barei trebuie să fie o CIFRĂ, nu „cât iese".
+     56 (inel) + 4 (spațiu) + 18 (un rând de nume) + 4 (padding) = 82px. */
+  max-height: 84px;
+}
+
+.st-bar--feed .st-bar__item {
+  width: 64px;
+}
+
+.st-bar--feed .st-bar__ring {
+  width: 56px;
+  height: 56px;
+  font-size: 18px;
+  line-height: 24px;
+}
+
+.st-bar--feed .st-bar__name {
+  max-width: 64px;
+}
+
+/* Numărul de povești dispare în capul feedului: acolo fiecare rând de text se
+   plătește în înălțimea cardului, iar câte povești are cineva se vede oricum în
+   indicatoarele de progres din vizualizator. */
+.st-bar--feed .st-bar__count {
+  display: none;
+}
+
+/* Fără nicio poveste, bara e DOAR cercul de adăugare — și atunci n-are de ce să
+   ocupe cât o bară plină. Lipsa poveștilor e normală, nu o eroare: niciun
+   mesaj, niciun spațiu gol. */
+.st-bar--feed[data-state='empty'] .st-bar__ring,
+.st-bar--feed[data-state='error'] .st-bar__ring {
+  width: 44px;
+  height: 44px;
+  font-size: 18px;
+  line-height: 24px;
+}
+
+/* Ecran JOS (telefon mic în peisaj, tastatură deschisă, client Telegram cu
+   antet mare): numele de sub cercuri dispar primele, ele sunt redundante față
+   de inițiala din cerc. Cardul e conținutul, bara e navigația. */
+@media (max-height: 660px) {
+  .st-bar--feed .st-bar__ring {
+    width: 44px;
+    height: 44px;
+    font-size: 16px;
+    line-height: 20px;
+  }
+
+  .st-bar--feed .st-bar__name,
+  .st-bar--feed .st-bar__count {
+    display: none;
+  }
+
+  .st-bar--feed .st-bar__item {
+    width: 48px;
+  }
+
+  /* Pe ecran jos bara costă 48 + 4 = 52px, și atât. La 380x480 (telefonul mic
+     în cel mai prost caz) rămân peste 300px pentru card — uzabil. */
+  .st-bar--feed {
+    max-height: 52px;
+  }
+}
+
+/* ——— Vizualizatorul peste tot ecranul ————————————————————————— */
+
+/*
+ * Povestea se vede PESTE tot ecranul, nu într-o filă separată: la închidere
+ * utilizatorul se întoarce exact în teancul de cărți pe care îl răsfoia, fiindcă
+ * feedul nu s-a demontat nicio clipă (vezi `StoriesStrip.tsx`).
+ */
+.st-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: var(--color-bg);
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+  padding-left: max(var(--safe-left), var(--space-lg));
+  padding-right: max(var(--safe-right), var(--space-lg));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.st-overlay__panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: var(--space-md);
+  padding-block: var(--space-md);
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+}

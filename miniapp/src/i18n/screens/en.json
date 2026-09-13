@@ -1,0 +1,112 @@
+{
+  "events": {
+    "loadError": "Couldn’t load events.",
+    "empty": "No events right now — check back soon!",
+    "open": "Open {{title}}",
+    "goingBadge": "Going",
+    "kind": {
+      "flirt_party": "Flirt Party",
+      "concert": "Concert",
+      "other": "Event"
+    },
+    "map": {
+      "location": "Location: {{city}}",
+      "locationUnavailable": "Location unavailable",
+      "titled": "Venue map: {{title}}",
+      "untitled": "Venue map"
+    }
+  },
+  "stories": {
+    "title": "Stories",
+    "replySent": "Sent ✓",
+    "deleteBody": "The story will be deleted for good.",
+    "serverTooLarge": "The photo is too large for the server (the limit is {{limit}}). Pick another one.",
+    "image": {
+      "notAnImage": "You can only post a photo (JPEG, PNG or WEBP). Pick another file.",
+      "decodeFailed": "Couldn’t process the photo. Some formats (HEIC, the iPhone default, for one) can’t be opened here. Pick another photo or save it as JPEG.",
+      "tooLarge": "The photo is still too large ({{size}}) even after resizing, and the limit is {{limit}}. Pick another one."
+    },
+    "barLabel": "Friends' stories",
+    "unseenHint": "has unseen stories"
+  },
+  "subscription": {
+    "notice": "Paying inside Telegram isn’t available yet. You can buy a subscription in the FLIRT mobile app; here you can see the plans and your current status.",
+    "buyInApp": "Available in the mobile app",
+    "emptyPlans": "No subscription plans are available right now.",
+    "none": "You don’t have an active subscription.",
+    "status": "Status: {{status}}",
+    "statusExpired": "Expired",
+    "statusCancelled": "Cancelled",
+    "validUntil": "Valid until {{date}}",
+    "eventDiscount": "Event discounts"
+  },
+  "tickets": {
+    "ordersTitle": "My ticket orders",
+    "ordersLoadError": "Couldn’t load your ticket orders.",
+    "ordersEmpty": "You have no ticket orders. Tickets are bought from the event page.",
+    "seeEvents": "See events",
+    "copy": "Copy",
+    "copied": "Copied",
+    "declareConfirm": {
+      "title": "Did you send the transfer?",
+      "body": "Only confirm once the money has left your account. We check payments by hand."
+    }
+  },
+  "social": {
+    "unblockConfirm": "Unblock {{name}}? They’ll be able to see you and message you again.",
+    "removeFavoriteConfirm": "Remove them from favorites? You can add them back any time."
+  },
+  "loyalty": {
+    "title": "My tier",
+    "tierLabel": "{{tier}} tier",
+    "noTier": "No tier yet",
+    "tierDiscount": "−{{percent}}% on tickets",
+    "stampsCount_one": "{{count}} stamp collected",
+    "stampsCount_other": "{{count}} stamps collected",
+    "toNext_one": "{{count}} more stamp to the next tier",
+    "toNext_other": "{{count}} more stamps to the next tier",
+    "nextReward": "The {{tier}} tier gives you −{{percent}}% on tickets.",
+    "progressLabel": "Progress to the {{tier}} tier",
+    "maxTier": "You are on the top tier. There is nothing above it — your discount is already the largest one.",
+    "errors": {
+      "network": "You are offline. Check your connection and try again.",
+      "server": "The server didn’t answer. Try again in a little while."
+    },
+    "invite": {
+      "label": "Invitation code",
+      "hint": "Got a code from the organiser? Type it here — lowercase letters, spaces and dashes are fixed automatically.",
+      "placeholder": "Code, e.g. ABCD2345",
+      "submit": "Use the code",
+      "sending": "Sending…",
+      "success": "Done! You get −{{percent}}% for “{{event}}”.",
+      "successNoDiscount": "Done! Your invitation to “{{event}}” is active.",
+      "already": "You already have this invitation to “{{event}}” (−{{percent}}%). No new use was spent.",
+      "errors": {
+        "not_found": "There is no such code. Check the letters and digits, then try again.",
+        "expired": "The invitation has run out of time. Ask the organiser for a new one.",
+        "exhausted": "The invitation has already been used by everyone it was meant for.",
+        "revoked": "The organiser withdrew this invitation.",
+        "unusable": "The invitation can no longer be used.",
+        "tier_too_low_one": "The invitation needs at least {{count}} Flirt Passport stamp. Go to one more event and try again.",
+        "tier_too_low_other": "The invitation needs at least {{count}} Flirt Passport stamps. Go to a few more events and try again.",
+        "tierUnknownThreshold": "The invitation needs more Flirt Passport stamps than you have right now.",
+        "rate_limit": "Too many attempts. Wait a minute and try again.",
+        "network": "You are offline. The code never left — check your connection and try again.",
+        "server": "The server didn’t answer. Try again in a little while.",
+        "unknown": "The code couldn’t be used. Try again."
+      }
+    },
+    "price": {
+      "off": "−{{percent}}% off",
+      "a11y": "Your price is {{price}} instead of {{base}}, {{percent}} percent less",
+      "capped": "The discount is capped at {{percent}}%.",
+      "reason": {
+        "loyaltyTier": "Price with your {{tier}} tier discount (−{{percent}}%).",
+        "loyalty": "Price with your loyalty discount (−{{percent}}%).",
+        "promo": "Price with the event promo discount (−{{percent}}%).",
+        "invite": "Price with your invitation discount (−{{percent}}%).",
+        "other": "Discounted price (−{{percent}}%)."
+      }
+    }
+  }
+}

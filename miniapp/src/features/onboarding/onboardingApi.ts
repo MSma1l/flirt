@@ -48,19 +48,48 @@ function serverDetail(error: AxiosError): string | null {
   return typeof data?.detail === 'string' && data.detail.trim() ? data.detail : null;
 }
 
+/**
+ * Stările în care `detail` e o eroare de VALIDARE — un text scris pentru
+ * utilizator, care îi spune exact ce are de reparat.
+ *
+ * De ce doar astea: pe restul stărilor `detail` e scris pentru DEZVOLTATOR, sau
+ * poate ajunge să fie. Un 500 nu are nimic acționabil de spus unui om, iar orice
+ * detaliu atașat vreodată unei erori interne (urma unei excepții, numele unei
+ * coloane, adresa unui serviciu intern) ar ajunge direct în pagină. Azi backendul
+ * nu scurge nimic acolo — dar asta e o proprietate a backendului de AZI, nu o
+ * garanție, iar clientul nu are cum să verifice conținutul înainte să-l afișeze.
+ * Deci inversăm regula: afișăm doar ce e declarat util, restul primește textul
+ * nostru.
+ *
+ * `backend/app/api/v1/profiles.py` ridică 422 pentru tot ce ține de validare
+ * (tip de fișier, număr de poze, moderarea pozei, câmpuri lipsă); 400 e inclus
+ * pentru rutele care aleg codul generic de „cerere greșită".
+ */
+const VALIDATION_STATUSES: readonly number[] = [400, 422];
+
 /** Traduce orice eșec de rețea într-un mesaj pe care ecranul îl poate arăta. */
 export function apiErrorMessage(error: unknown, fallbackKey: string): ApiMessage {
   const axiosError = error as AxiosError;
   if (!axiosError?.isAxiosError) return { key: fallbackKey };
   if (!axiosError.response) return { key: 'onboarding.errors.network' };
-  if (axiosError.response.status === 413) {
+
+  const status = axiosError.response.status;
+  if (status === 413) {
     return {
       key: 'onboarding.errors.photoTooLarge',
       params: { limit: formatMb(PHOTO_LIMITS.maxUploadBytes) },
     };
   }
-  const detail = serverDetail(axiosError);
-  if (detail) return { text: detail };
+
+  if (VALIDATION_STATUSES.includes(status)) {
+    // `serverDetail` întoarce `null` și când `detail` nu e text — cazul 422
+    // generat de schema FastAPI, unde e o LISTĂ de erori de câmp. Acolo cade tot
+    // pe mesajul nostru, care e oricum mai lizibil decât „body.name: field
+    // required".
+    const detail = serverDetail(axiosError);
+    if (detail) return { text: detail };
+  }
+
   return { key: fallbackKey };
 }
 

@@ -27,7 +27,10 @@ import { fetchBlocks, unblock, type BlockedUser } from './socialApi';
 import './social.css';
 
 export function BlocklistScreen() {
-  const { t } = useTranslation('settings');
+  // `settings` e catalogul mobil REUTILIZAT (titlu, „Deblochează", erori);
+  // `screens` e catalogul propriu, pentru întrebarea de confirmare, care pe
+  // nativ nu există (acolo deblocarea e directă).
+  const { t } = useTranslation(['settings', 'screens']);
   const queryClient = useQueryClient();
 
   /** Persoana pentru care s-a cerut deblocarea (`null` = fără dialog). */
@@ -73,14 +76,14 @@ export function BlocklistScreen() {
     },
   });
 
-  const title = <h1 className="title so-screen__title">{t('blocklist.title')}</h1>;
+  const title = <h1 className="title so-screen__title">{t('settings:blocklist.title')}</h1>;
 
   if (isLoading) {
     return (
       <div className="so-screen">
         {title}
         <div className="so-state">
-          <div className="spinner" role="status" aria-label={t('blocklist.title')} />
+          <div className="spinner" role="status" aria-label={t('settings:blocklist.title')} />
         </div>
       </div>
     );
@@ -93,14 +96,14 @@ export function BlocklistScreen() {
       <div className="so-screen">
         {title}
         <div className="so-state" data-testid="blocklist-error">
-          <p className="error-text">{t('blocklist.loadError')}</p>
+          <p className="error-text">{t('settings:blocklist.loadError')}</p>
           <button
             type="button"
             className="button"
             disabled={isFetching}
             onClick={() => void refetch()}
           >
-            {t('retry')}
+            {t('settings:retry')}
           </button>
         </div>
       </div>
@@ -118,14 +121,14 @@ export function BlocklistScreen() {
           className="spinner"
           role="status"
           data-testid="blocks-loading-more"
-          aria-label={t('blocklist.loadMore')}
+          aria-label={t('settings:blocklist.loadMore')}
         />
       </div>
     ) : (
       <div className="so-section__footer">
         {isFetchNextPageError ? (
           <p className="error-text so-error" data-testid="blocks-load-more-error">
-            {t('blocklist.loadMoreError')}
+            {t('settings:blocklist.loadMoreError')}
           </p>
         ) : null}
         <button
@@ -134,7 +137,7 @@ export function BlocklistScreen() {
           data-testid="blocks-load-more"
           onClick={() => void fetchNextPage()}
         >
-          {isFetchNextPageError ? t('retry') : t('blocklist.loadMore')}
+          {isFetchNextPageError ? t('settings:retry') : t('settings:blocklist.loadMore')}
         </button>
       </div>
     );
@@ -146,13 +149,13 @@ export function BlocklistScreen() {
 
       {failed ? (
         <p className="error-text so-error" data-testid="blocklist-unblock-error">
-          {t('blocklist.unblockErrorBody')}
+          {t('settings:blocklist.unblockErrorBody')}
         </p>
       ) : null}
 
       {blocks.length === 0 ? (
         <div className="so-state" data-testid="blocklist-empty">
-          <p className="body-text">{t('blocklist.empty')}</p>
+          <p className="body-text">{t('settings:blocklist.empty')}</p>
         </div>
       ) : (
         <>
@@ -173,7 +176,7 @@ export function BlocklistScreen() {
                       setPending(item);
                     }}
                   >
-                    {t('blocklist.unblock')}
+                    {t('settings:blocklist.unblock')}
                   </button>
                 </li>
               );
@@ -185,15 +188,11 @@ export function BlocklistScreen() {
 
       <ConfirmModal
         open={pending !== null}
-        title={t('blocklist.unblock')}
-        /* Întrebarea n-are cheie în catalogul mobil, iar cataloagele nu se
-           modifică din Mini App: o scriem în română, ca pe mobil. */
+        title={t('settings:blocklist.unblock')}
         body={
-          pending
-            ? `Îl deblochezi pe ${pending.name}? Va putea din nou să te vadă și să-ți scrie.`
-            : undefined
+          pending ? t('screens:social.unblockConfirm', { name: pending.name }) : undefined
         }
-        confirmLabel={t('blocklist.unblock')}
+        confirmLabel={t('settings:blocklist.unblock')}
         busy={unblockMutation.isPending}
         onCancel={() => setPending(null)}
         onConfirm={() => {

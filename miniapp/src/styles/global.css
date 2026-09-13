@@ -192,9 +192,27 @@ body {
   }
 }
 
+/* --- Iconițe --------------------------------------------------------------- */
+/*
+ * Desenele din `components/icons` NU au dimensiune în marcaj: o primesc de aici,
+ * ca aceeași iconiță să fie 22px în bara de taburi și 20px în meniu fără o a
+ * doua componentă. Regula de bază nu e opțională: un `<svg>` fără `width` și
+ * `height` cade pe 300×150, implicitul din specificația SVG.
+ */
+.icon {
+  display: block;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  /* Grosimea e și atribut în marcaj (vezi `Icon.tsx`); aici o repetăm ca să
+     poată fi animată la schimbarea stării — un atribut nu se tranziționează. */
+  stroke-width: 1.75;
+}
+
 /* --- Meniul „Mai multe" --------------------------------------------------- */
 /* Listă simplă de destinații. Fără carduri și fără decor: e un index, iar un
-   index se citește cu ochiul, nu se admiră. */
+   index se citește cu ochiul, nu se admiră. Singurul accent e plăcuța iconiței,
+   care dă rândului un punct de sprijin pentru ochi la derulare rapidă. */
 .more-screen {
   padding: var(--space-md);
 }
@@ -216,8 +234,8 @@ body {
 .more-item {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
-  padding: 14px var(--space-md);
+  gap: var(--space-md);
+  padding: 11px var(--space-md);
   color: var(--color-text-primary);
   text-decoration: none;
   border-bottom: 1px solid var(--color-border);
@@ -231,11 +249,38 @@ body {
   background: var(--color-surface-hover);
 }
 
+/*
+ * Plăcuța iconiței: pătrat rotunjit în roz-ul de accent pe fundalul de etichetă,
+ * aceeași pereche de culori ca insignele produsului. Dimensiunea e fixă, deci
+ * toate iconițele din listă încep pe aceeași verticală, oricât de lată e forma.
+ */
 .more-item__icon {
-  width: 24px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+  background: var(--color-tag-bg);
   color: var(--color-accent);
-  font-size: 18px;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    transform 140ms ease;
+}
+
+.more-item__icon .icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* Apăsarea „apasă" plăcuța. 140ms și doar o scalare: nimic nu se redimensionează
+   în jur, deci rândul nu sare. */
+.more-item:active .more-item__icon {
+  transform: scale(0.92);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
 }
 
 .more-item__label {
@@ -243,6 +288,23 @@ body {
 }
 
 .more-item__chevron {
+  width: 18px;
+  height: 18px;
   color: var(--color-text-secondary);
-  font-size: 20px;
+}
+
+/*
+ * Cine a cerut sistemului mai puțină mișcare nu primește niciuna. Nu o animație
+ * mai lentă — niciuna: „reduce" e o preferință de accesibilitate, nu de gust.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .icon,
+  .more-item,
+  .more-item__icon {
+    transition: none;
+  }
+
+  .more-item:active .more-item__icon {
+    transform: none;
+  }
 }

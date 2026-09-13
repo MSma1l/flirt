@@ -149,6 +149,14 @@ export interface AdminEvent {
   ticket_price: number | null;
   /** Moneda biletului (implicit „lei"). Are sens doar când `ticket_price` e setat. */
   ticket_currency: string | null;
+  /**
+   * Comenzi de bilet NErespinse (în așteptare + aprobate). Read-only, calculat de
+   * backend. Există pentru confirmarea de ștergere: adminul trebuie să vadă CE
+   * pierde înainte să apese, nu după.
+   */
+  ticket_order_count: number;
+  /** Din cele de mai sus, biletele deja APROBATE (bani încasați). Read-only. */
+  ticket_approved_count: number;
 }
 
 /** Payload de creare/editare — exact câmpurile scriibile ale modelului `Event`. */
@@ -341,6 +349,89 @@ export interface PaymentSettings {
   bank_iban: string;
   bank_name: string;
   instructions: string;
+}
+
+/* ---------------- Fidelitate: trepte ---------------- */
+
+/**
+ * O treaptă de fidelitate (`TierOut` / `TierIn` din `backend/app/schemas/loyalty.py`).
+ *
+ * `min_stamps` = de la câte EVENIMENTE cu check-in începe treapta;
+ * `discount_percent` = reducerea pe care o dă treapta la biletul online.
+ */
+export interface LoyaltyTier {
+  code: string;
+  name: string;
+  min_stamps: number;
+  discount_percent: number;
+}
+
+/** `TiersOut` — configurarea curentă (rândul singleton `loyalty_settings`). */
+export interface LoyaltyTiers {
+  tiers: LoyaltyTier[];
+  /** Plafonul ABSOLUT al reducerii aplicate unui bilet (0..100). */
+  max_total_discount_percent: number;
+  updated_at: IsoDateTime;
+}
+
+/**
+ * `TiersIn` — payload-ul lui `PUT /admin/loyalty/tiers`.
+ *
+ * Se trimite scara ÎNTREAGĂ, nu treaptă cu treaptă (vezi docstring-ul schemei):
+ * lista goală înseamnă explicit „program de fidelitate oprit".
+ */
+export interface LoyaltyTiersInput {
+  tiers: LoyaltyTier[];
+  max_total_discount_percent: number;
+}
+
+/* ---------------- Fidelitate: invitații ---------------- */
+
+/** Starea calculată de backend (`services/loyalty._invite_status`). */
+export type InviteStatus = 'active' | 'exhausted' | 'expired' | 'revoked';
+
+/** `AdminInviteOut` — o invitație cu starea folosirii. */
+export interface LoyaltyInvite {
+  id: Uuid;
+  event_id: Uuid;
+  event_title: string;
+  /**
+   * Codul de acces. Expus DOAR pe rutele de admin — și, intenționat, NU scris în
+   * jurnalul de audit de către backend (`meta` din `loyalty.invite.create` nu îl
+   * conține). Panoul respectă aceeași regulă: codul apare unde adminul trebuie
+   * să-l copieze, nu în mesaje de confirmare sau în alte ecrane.
+   */
+  code: string;
+  max_uses: number;
+  used_count: number;
+  uses_left: number;
+  expires_at: IsoDateTime;
+  /** Codul treptei minime cerute la emitere (doar etichetă). `null` = fără cerință. */
+  min_tier: string | null;
+  /** Pragul în ștampile, SNAPSHOT la emitere — sursa de adevăr la folosire. */
+  min_stamps_required: number | null;
+  /** Reducere suplimentară dată de invitație (0..100). `null` = doar acces. */
+  discount_percent: number | null;
+  note: string | null;
+  revoked_at: IsoDateTime | null;
+  created_at: IsoDateTime;
+  status: InviteStatus;
+}
+
+/**
+ * `InviteIn` — payload-ul lui `POST /admin/loyalty/invites`.
+ *
+ * `code` NU e un câmp: codul se generează pe SERVER (`secrets`), tocmai ca un
+ * admin să nu poată alege „VIP2026".
+ */
+export interface InviteInput {
+  event_id: Uuid;
+  max_uses: number;
+  expires_at: IsoDateTime;
+  /** Codul unei trepte configurate. `null` = fără cerință de treaptă. */
+  min_tier: string | null;
+  discount_percent: number | null;
+  note: string | null;
 }
 
 /* ---------------- Paginare ---------------- */

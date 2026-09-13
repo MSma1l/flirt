@@ -57,7 +57,12 @@ from app.models.moderation import Report
 from app.models.profile import Profile
 from app.models.session import RefreshSession
 from app.models.swipe import Like, Match
-from app.models.ticket_order import STATUS_PAYMENT_DECLARED, TicketOrder
+from app.models.ticket_order import (
+    STATUS_APPROVED,
+    STATUS_PAYMENT_DECLARED,
+    STATUS_REJECTED,
+    TicketOrder,
+)
 from app.models.user import ROLE_ADMIN, User
 from app.schemas.admin import (
     AdminEventIn,
@@ -1382,7 +1387,40 @@ async def _attendee_counts(
     return {event_id: count for event_id, count in rows}
 
 
-def _to_event_out(event: Event, attendees: int) -> AdminEventOut:
+async def _ticket_order_counts(
+    db: AsyncSession, event_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, tuple[int, int]]:
+    """Comenzi de bilet per eveniment: `(nerespinse, aprobate)`.
+
+    Un query pentru toată pagina, ca la participanți (fără N+1). Comenzile
+    RESPINSE nu se numără: nu reprezintă nici bani, nici o promisiune făcută
+    cuiva, deci nu au ce căuta în avertismentul de ștergere.
+    """
+    if not event_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(
+                TicketOrder.event_id,
+                func.count(),
+                func.sum(case((TicketOrder.status == STATUS_APPROVED, 1), else_=0)),
+            )
+            .where(
+                TicketOrder.event_id.in_(event_ids),
+                TicketOrder.status != STATUS_REJECTED,
+            )
+            .group_by(TicketOrder.event_id)
+        )
+    ).all()
+    return {event_id: (int(total), int(approved or 0)) for event_id, total, approved in rows}
+
+
+def _to_event_out(
+    event: Event,
+    attendees: int,
+    ticket_orders: int = 0,
+    ticket_approved: int = 0,
+) -> AdminEventOut:
     return AdminEventOut(
         id=event.id,
         title=event.title,
@@ -1400,6 +1438,8 @@ def _to_event_out(event: Event, attendees: int) -> AdminEventOut:
         ticket_price=event.ticket_price,
         ticket_currency=event.ticket_currency,
         attendee_count=attendees,
+        ticket_order_count=ticket_orders,
+        ticket_approved_count=ticket_approved,
         created_at=event.created_at,
     )
 
@@ -1440,8 +1480,13 @@ async def list_events(
     if not events:
         return [], None
 
-    counts = await _attendee_counts(db, [e.id for e in events])
-    items = [_to_event_out(e, counts.get(e.id, 0)) for e in events]
+    ids = [e.id for e in events]
+    counts = await _attendee_counts(db, ids)
+    orders = await _ticket_order_counts(db, ids)
+    items = [
+        _to_event_out(e, counts.get(e.id, 0), *orders.get(e.id, (0, 0)))
+        for e in events
+    ]
     return items, encode_cursor(events[-1].id) if has_more else None
 
 
@@ -1529,7 +1574,10 @@ async def update_event(
     await db.refresh(event)
 
     counts = await _attendee_counts(db, [event.id])
-    return _to_event_out(event, counts.get(event.id, 0))
+    orders = await _ticket_order_counts(db, [event.id])
+    return _to_event_out(
+        event, counts.get(event.id, 0), *orders.get(event.id, (0, 0))
+    )
 
 
 async def delete_event(
@@ -1550,10 +1598,23 @@ async def delete_event(
         )
 
     title = event.title
+    # Câți oameni și câte bilete pierd evenimentul — se scriu în audit ÎNAINTE de
+    # ștergere, altfel informația dispare odată cu rândurile.
+    attendees = (await _attendee_counts(db, [event_id])).get(event_id, 0)
+    orders, approved = (await _ticket_order_counts(db, [event_id])).get(
+        event_id, (0, 0)
+    )
+
     await db.execute(delete(EventAttendance).where(EventAttendance.event_id == event_id))
     await db.execute(
         delete(FlirtPassportStamp).where(FlirtPassportStamp.event_id == event_id)
     )
+    # Comenzile de bilet sunt al TREILEA copil al evenimentului, adăugat după ce
+    # ștergerea de mai sus era deja scrisă — și uitat aici. Pe Postgres cădeau
+    # oricum prin `ON DELETE CASCADE`, dar pe SQLite (unde rulează testele)
+    # rămâneau orfane și spărgeau coada de comenzi, care cere un eveniment
+    # existent pentru fiecare rând. Explicit = același comportament peste tot.
+    await db.execute(delete(TicketOrder).where(TicketOrder.event_id == event_id))
     await db.delete(event)
 
     audit(
@@ -1562,7 +1623,12 @@ async def delete_event(
         ACTION_EVENT_DELETE,
         target_type="event",
         target_id=event_id,
-        meta={"title": title},
+        meta={
+            "title": title,
+            "attendees": attendees,
+            "ticket_orders": orders,
+            "ticket_orders_approved": approved,
+        },
         ip=ip,
     )
     await db.commit()

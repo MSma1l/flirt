@@ -14,6 +14,13 @@
  *
  * Direcțiile sunt identice cu cele din aplicația nativă:
  *   stânga = dislike · dreapta = like · sus = super like · jos = undo
+ *
+ * În capul ecranului stă bara de povești (`StoriesStrip`), ca pe nativ
+ * (`mobile/app/(tabs)/ankete.tsx`). Ea derulează pe orizontală, iar cardul
+ * ascultă gesturi pe ambele axe — două lucruri care se fură unul pe altul dacă
+ * le lași. Izolarea e scrisă la ambele capete: bara își marchează zona și
+ * oprește propagarea (`StoriesBar.tsx`), iar cardul ignoră orice gest pornit
+ * într-o zonă străină (`onPointerDown`, mai jos).
  */
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -29,6 +36,7 @@ import {
 import type { FeedCard, SwipeAction } from '@mobile/features/feed/types';
 
 import { StatusScreen, type StatusAction } from '@/components/StatusScreen';
+import { StoriesStrip } from '@/features/stories/StoriesStrip';
 import { haptic } from '@/telegram/bridge';
 
 import { ProfileCardView } from './ProfileCardView';
@@ -72,11 +80,40 @@ export function SwipeDeck() {
   const cards = data ?? [];
   const current = cards[index];
 
-  // Feed nou → pornim iar de la primul card (la fel ca pe nativ).
+  /** Lista pentru care `index` a fost calculat ultima dată. */
+  const placedForRef = useRef<FeedCard[] | undefined>(undefined);
+  /** Userul a cerut explicit un deck nou („Caută mai multe") → de la primul card. */
+  const restartRef = useRef(false);
+
+  /**
+   * A venit o listă nouă: ne ținem de CARDUL pe care stătea userul, nu de
+   * poziție. Regula e cea din aplicația nativă (`mobile/app/(tabs)/ankete.tsx`),
+   * și contează mai mult de când poveștile se deschid din capul feedului:
+   * `data` e o referință NOUĂ la fiecare refetch de fundal (fereastra revine în
+   * față după ce userul a privit o poveste), chiar dacă vin exact aceleași
+   * carduri. Un `setIndex(0)` legat de referință îl arunca pe user înapoi la
+   * primul card în mijlocul răsfoirii.
+   */
   useEffect(() => {
-    setIndex(0);
+    if (!data || placedForRef.current === data) return;
+    const previous = placedForRef.current;
+    placedForRef.current = data;
+
+    const anchor = restartRef.current ? null : (previous?.[index]?.userId ?? null);
+    const next = restartRef.current
+      ? 0
+      : anchor === null
+        ? Math.min(index, data.length)
+        : Math.max(
+            0,
+            data.findIndex((card) => card.userId === anchor),
+          );
+    restartRef.current = false;
+
+    if (next === index) return;
+    setIndex(next);
     setOffset(ORIGIN);
-  }, [data]);
+  }, [data, index]);
 
   const resetCard = useCallback(() => {
     setSettling(true);
@@ -112,6 +149,19 @@ export function SwipeDeck() {
         setSwipeCount((c) => Math.max(0, c - 1));
         setIndex((i) => Math.max(0, i - 1));
         setOffset(ORIGIN);
+      } else {
+        // REFUZ, nu eșec: `POST /feed/undo` răspunde 200 cu `undone: false`
+        // (`backend/app/services/feed_service.py::undo_last_swipe`) când nu
+        // găsește niciun `Like` al userului — singurul caz în care refuză.
+        // Se întâmplă real: swipe-urile numărate aici sunt DOAR cele din
+        // sesiunea curentă, iar ultimul like poate să nu mai existe pe server
+        // (anulat de pe alt dispozitiv, sau șters odată cu contul celui plăcut).
+        // Fără ramura asta, utilizatorul apăsa „Anulează", cardul nu revenea și
+        // pe ecran nu apărea NIMIC.
+        setActionError(t('feed.undoNothing'));
+        // Serverul e sursa de adevăr: dacă el nu are ce anula, nici noi nu mai
+        // arătăm butonul de undo.
+        setSwipeCount(0);
       }
     } catch {
       setActionError(t('feed.undoFailed'));
@@ -156,6 +206,12 @@ export function SwipeDeck() {
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (busy) return;
+    // Gestul a pornit în altă zonă (bara de povești)? Atunci nu e al cardului.
+    // Garda e explicită, nu bazată pe faptul — azi adevărat — că bara nu e un
+    // descendent al cardului: dacă mâine cineva mută bara peste card, cardul tot
+    // nu-i fură derularea, iar testul de izolare rămâne valabil.
+    const zone = (event.target as Element | null)?.closest?.('[data-gesture-zone]') ?? null;
+    if (zone !== null && zone !== event.currentTarget) return;
     dragStart.current = {
       x: event.clientX,
       y: event.clientY,
@@ -257,6 +313,9 @@ export function SwipeDeck() {
         label: t('feed.reload'),
         testId: 'deck-reload',
         onClick: () => {
+          // Cerere explicită de deck nou: reperul de mai sus n-are ce căuta
+          // aici, altfel ne-ar duce înapoi la cardul de dinainte.
+          restartRef.current = true;
           setIndex(0);
           void refetch();
         },
@@ -273,15 +332,21 @@ export function SwipeDeck() {
     }
 
     return (
-      <StatusScreen
-        testId="status-feed-empty"
-        title={t('feed.empty')}
-        body={t('feed.emptyBody')}
-        actions={actions}
-      >
-        {errorText}
-        {matchModal}
-      </StatusScreen>
+      <>
+        {/* Poveștile rămân la locul lor și când nu mai sunt ankete: ele sunt
+            conținut proaspăt, exact ce mai are de făcut userul aici. La fel pe
+            nativ, în ramura de deck gol din `app/(tabs)/ankete.tsx`. */}
+        <StoriesStrip />
+        <StatusScreen
+          testId="status-feed-empty"
+          title={t('feed.empty')}
+          body={t('feed.emptyBody')}
+          actions={actions}
+        >
+          {errorText}
+          {matchModal}
+        </StatusScreen>
+      </>
     );
   }
 
@@ -289,10 +354,13 @@ export function SwipeDeck() {
 
   return (
     <>
+      <StoriesStrip />
+
       <div className="deck">
         <div
           className={settling ? 'deck__card deck__card--settling' : 'deck__card'}
           data-testid="deck-card"
+          data-gesture-zone="deck"
           style={{
             transform: `translate(${offset.x}px, ${offset.y}px) rotate(${rotation}deg)`,
           }}

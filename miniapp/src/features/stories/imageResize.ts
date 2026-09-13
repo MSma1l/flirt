@@ -25,6 +25,7 @@
  * `createImageBitmap`, nici `canvas.toBlob`, deci fără injecție bucla de trepte —
  * singura logică ce merită testată — ar fi netestabilă.
  */
+import i18n from '@/i18n';
 
 /** Limitele serverului pentru media de story (`backend/app/core/config.py`). */
 export const STORY_IMAGE_LIMITS = {
@@ -76,30 +77,35 @@ export function formatMb(bytes: number): string {
 }
 
 /**
- * Mesajele de eroare sunt scrise ÎN ROMÂNĂ aici, nu luate din catalog:
- * catalogul `stories` (ro/ru/en) NU are chei pentru „fișier prea mare
- * după micșorare", „tip nepermis" sau „poză ilizibilă" (vezi raportul), iar
- * sarcina interzice modificarea cataloagelor. Modulul e cod pur, chemat în afara
- * randării, unde `t` oricum nu există.
+ * Mesajele de eroare vin din catalogul propriu al Mini App-ului
+ * (`screens:stories.image.*`): cataloagele mobile NU au chei pentru „tip
+ * nepermis", „poză ilizibilă" sau „prea mare după micșorare", iar sarcina
+ * interzice modificarea lor.
+ *
+ * Modulul e cod pur, chemat în afara randării, deci nu poate folosi hook-ul
+ * `useTranslation`. Citește din instanța globală `i18n` — aceeași soluție ca în
+ * `features/events/eventFormat.ts`. Sunt FUNCȚII, nu constante: o constantă s-ar
+ * evalua o singură dată, la import, și ar îngheța limba de la pornire.
  */
-export const NOT_AN_IMAGE_MESSAGE =
-  'Poți publica doar o poză (JPEG, PNG sau WEBP). Alege alt fișier.';
+export function notAnImageMessage(): string {
+  return i18n.t('screens:stories.image.notAnImage');
+}
 
 /**
  * Cazul real din spatele acestui mesaj: HEIC/HEIF, formatul implicit al
  * iPhone-ului, pe care majoritatea browserelor nu îl deschid. Utilizatorul
  * trebuie să afle CE are de făcut, nu doar că „ceva n-a mers".
  */
-export const DECODE_FAILED_MESSAGE =
-  'Nu am putut procesa poza. Unele formate (de exemplu HEIC, cel implicit pe ' +
-  'iPhone) nu pot fi deschise aici. Alege altă poză sau salveaz-o ca JPEG.';
+export function decodeFailedMessage(): string {
+  return i18n.t('screens:stories.image.decodeFailed');
+}
 
 /** Mesaj când nici la ultima treaptă poza nu intră sub limita serverului. */
 export function tooLargeMessage(sizeBytes: number, maxBytes: number): string {
-  return (
-    `Poza rămâne prea mare (${formatMb(sizeBytes)}) chiar și după micșorare, ` +
-    `iar limita este ${formatMb(maxBytes)}. Alege altă poză.`
-  );
+  return i18n.t('screens:stories.image.tooLarge', {
+    size: formatMb(sizeBytes),
+    limit: formatMb(maxBytes),
+  });
 }
 
 /**
@@ -155,14 +161,14 @@ export async function prepareStoryImage<T extends DecodedImage>(
   } = STORY_COMPRESSION,
 ): Promise<PreparedStoryImage> {
   if (!looksLikeImage(file.type)) {
-    return { ok: false, reason: 'type', message: NOT_AN_IMAGE_MESSAGE };
+    return { ok: false, reason: 'type', message: notAnImageMessage() };
   }
 
   let image: T;
   try {
     image = await io.decode(file);
   } catch {
-    return { ok: false, reason: 'decode', message: DECODE_FAILED_MESSAGE };
+    return { ok: false, reason: 'decode', message: decodeFailedMessage() };
   }
 
   counter += 1;
@@ -203,7 +209,7 @@ export async function prepareStoryImage<T extends DecodedImage>(
         );
         // Encoder indisponibil (browser fără `toBlob`, canvas fără context):
         // tratat ca poză ilizibilă, cu același mesaj acționabil.
-        if (!blob) return { ok: false, reason: 'decode', message: DECODE_FAILED_MESSAGE };
+        if (!blob) return { ok: false, reason: 'decode', message: decodeFailedMessage() };
 
         if (blob.size <= limits.maxUploadBytes) {
           return {
@@ -253,14 +259,17 @@ async function decodeInBrowser(file: Blob): Promise<BrowserImage> {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image();
       el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error('imagine ilizibilă'));
+      // Mesaj tehnic, în engleză, DELIBERAT: eroarea asta nu ajunge niciodată pe
+      // ecran — apelantul o prinde și o înlocuiește cu `decodeFailedMessage()`,
+      // care e tradus. Un text românesc aici ar fi doar un șir de tradus degeaba.
+      el.onerror = () => reject(new Error('story image: decode failed'));
       el.src = url;
     });
     const width = img.naturalWidth || img.width;
     const height = img.naturalHeight || img.height;
     if (!width || !height) {
       URL.revokeObjectURL(url);
-      throw new Error('imagine fără dimensiuni');
+      throw new Error('story image: missing dimensions');
     }
     return {
       width,

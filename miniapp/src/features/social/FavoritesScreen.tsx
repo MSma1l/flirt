@@ -82,7 +82,9 @@ interface Section {
 }
 
 export function FavoritesScreen() {
-  const { t } = useTranslation('social');
+  // `social` e catalogul mobil REUTILIZAT; `screens` e catalogul propriu, pentru
+  // întrebarea de confirmare (pe nativ eliminarea nu cere confirmare).
+  const { t } = useTranslation(['social', 'screens']);
   const queryClient = useQueryClient();
 
   /** Profilul pentru care s-a cerut scoaterea din favorite (`null` = fără dialog). */
@@ -138,9 +140,9 @@ export function FavoritesScreen() {
   if (favoritesQuery.isLoading || likesQuery.isLoading) {
     return (
       <div className="so-screen">
-        <h1 className="title so-screen__title">{t('favorites.title')}</h1>
+        <h1 className="title so-screen__title">{t('social:favorites.title')}</h1>
         <div className="so-state">
-          <div className="spinner" role="status" aria-label={t('favorites.title')} />
+          <div className="spinner" role="status" aria-label={t('social:favorites.title')} />
         </div>
       </div>
     );
@@ -156,9 +158,9 @@ export function FavoritesScreen() {
   if (nothingToShow) {
     return (
       <div className="so-screen">
-        <h1 className="title so-screen__title">{t('favorites.title')}</h1>
+        <h1 className="title so-screen__title">{t('social:favorites.title')}</h1>
         <div className="so-state" data-testid="favorites-error">
-          <p className="error-text">{t('favorites.loadError')}</p>
+          <p className="error-text">{t('social:favorites.loadError')}</p>
           <button
             type="button"
             className="button"
@@ -168,7 +170,7 @@ export function FavoritesScreen() {
               void likesQuery.refetch();
             }}
           >
-            {t('favorites.retry')}
+            {t('social:favorites.retry')}
           </button>
         </div>
       </div>
@@ -184,8 +186,8 @@ export function FavoritesScreen() {
   const allSections: Section[] = [
     {
       key: 'likes',
-      title: t('favorites.sections.likesTitle'),
-      hint: t('favorites.sections.likesHint'),
+      title: t('social:favorites.sections.likesTitle'),
+      hint: t('social:favorites.sections.likesHint'),
       items: likes,
       hasMore: likesQuery.hasNextPage,
       loadingMore: likesQuery.isFetchingNextPage,
@@ -194,8 +196,8 @@ export function FavoritesScreen() {
     },
     {
       key: 'favorites',
-      title: t('favorites.sections.favoritesTitle'),
-      hint: t('favorites.sections.favoritesHint'),
+      title: t('social:favorites.sections.favoritesTitle'),
+      hint: t('social:favorites.sections.favoritesHint'),
       items: favorites,
       hasMore: favoritesQuery.hasNextPage,
       loadingMore: favoritesQuery.isFetchingNextPage,
@@ -216,7 +218,7 @@ export function FavoritesScreen() {
           <button
             type="button"
             className="so-row__action"
-            aria-label={t('favorites.remove', { name: item.name })}
+            aria-label={t('social:favorites.remove', { name: item.name })}
             disabled={removing}
             data-testid={`favorite-remove-${item.targetUserId}`}
             onClick={() => {
@@ -242,8 +244,8 @@ export function FavoritesScreen() {
           className="so-row__action"
           aria-label={
             isFavorite
-              ? t('favorites.already', { name: item.name })
-              : t('favorites.add', { name: item.name })
+              ? t('social:favorites.already', { name: item.name })
+              : t('social:favorites.add', { name: item.name })
           }
           aria-pressed={isFavorite}
           disabled={isFavorite || adding}
@@ -273,7 +275,7 @@ export function FavoritesScreen() {
             className="spinner"
             role="status"
             data-testid={`${section.key}-loading-more`}
-            aria-label={t('favorites.loadMore')}
+            aria-label={t('social:favorites.loadMore')}
           />
         </div>
       );
@@ -282,7 +284,7 @@ export function FavoritesScreen() {
       <div className="so-section__footer">
         {section.failedMore ? (
           <p className="error-text so-error" data-testid={`${section.key}-load-more-error`}>
-            {t('favorites.loadMoreError')}
+            {t('social:favorites.loadMoreError')}
           </p>
         ) : null}
         <button
@@ -291,7 +293,7 @@ export function FavoritesScreen() {
           data-testid={`${section.key}-load-more`}
           onClick={section.loadMore}
         >
-          {section.failedMore ? t('favorites.retry') : t('favorites.loadMore')}
+          {section.failedMore ? t('social:favorites.retry') : t('social:favorites.loadMore')}
         </button>
       </div>
     );
@@ -299,23 +301,23 @@ export function FavoritesScreen() {
 
   return (
     <div className="so-screen">
-      <h1 className="title so-screen__title">{t('favorites.title')}</h1>
+      <h1 className="title so-screen__title">{t('social:favorites.title')}</h1>
 
       {removeFailed ? (
         <p className="error-text so-error" data-testid="favorites-remove-error">
-          {t('favorites.removeErrorBody')}
+          {t('social:favorites.removeErrorBody')}
         </p>
       ) : null}
       {addFailed ? (
         <p className="error-text so-error" data-testid="favorites-add-error">
-          {t('favorites.addErrorBody')}
+          {t('social:favorites.addErrorBody')}
         </p>
       ) : null}
 
       {sections.length === 0 ? (
         <div className="so-state" data-testid="favorites-empty">
-          <p className="body-text">{t('favorites.empty')}</p>
-          <p className="caption">{t('favorites.emptyHint')}</p>
+          <p className="body-text">{t('social:favorites.empty')}</p>
+          <p className="caption">{t('social:favorites.emptyHint')}</p>
         </div>
       ) : (
         <div className="so-sections">
@@ -334,12 +336,10 @@ export function FavoritesScreen() {
         open={pendingRemove !== null}
         title={
           pendingRemove
-            ? t('favorites.remove', { name: pendingRemove.name })
-            : t('favorites.title')
+            ? t('social:favorites.remove', { name: pendingRemove.name })
+            : t('social:favorites.title')
         }
-        /* Textul întrebării nu are cheie în catalogul mobil, iar cataloagele nu
-           se modifică din Mini App: îl scriem în română, ca pe mobil. */
-        body="Îl scoți din lista de favorite? Îl poți adăuga oricând la loc."
+        body={t('screens:social.removeFavoriteConfirm')}
         busy={removeMutation.isPending}
         onCancel={() => setPendingRemove(null)}
         onConfirm={() => {

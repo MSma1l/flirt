@@ -9,6 +9,14 @@ interface ImportMetaEnv {
    * „Deschide în Telegram" nu se afișează deloc.
    */
   readonly VITE_TELEGRAM_BOT_USERNAME?: string;
+  /**
+   * Paginile legale. Opționale: când lipsesc, se derivă din `VITE_API_URL`,
+   * fiindcă backendul le servește pe același host (`/legal/*`). Vezi
+   * `resolveLegalUrls` din `config.ts`.
+   */
+  readonly VITE_TERMS_URL?: string;
+  readonly VITE_PRIVACY_URL?: string;
+  readonly VITE_SUPPORT_URL?: string;
 }
 
 interface ImportMeta {

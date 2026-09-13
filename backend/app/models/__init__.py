@@ -30,3 +30,8 @@ from app.models.ticket_order import (  # noqa: F401
     PaymentSettings,
     TicketOrder,
 )
+from app.models.loyalty import (  # noqa: F401
+    LoyaltyInvite,
+    LoyaltyInviteRedemption,
+    LoyaltySettings,
+)

@@ -25,7 +25,9 @@ export interface EventCardProps {
 }
 
 function EventCardBase({ event }: EventCardProps) {
-  const { t } = useTranslation('events');
+  // `events` e catalogul mobil reutilizat (participanți), `screens` cel local
+  // (badge-ul „Mergi" și etichetele de tip, care nu există pe mobil).
+  const { t } = useTranslation(['events', 'screens']);
 
   return (
     <article className="ev-card" data-testid="event-card">
@@ -49,7 +51,9 @@ function EventCardBase({ event }: EventCardProps) {
 
         <span className="ev-card__badge">{kindLabel(event.kind)}</span>
 
-        {event.iAmGoing ? <span className="ev-card__going">Mergi</span> : null}
+        {event.iAmGoing ? (
+          <span className="ev-card__going">{t('screens:events.goingBadge')}</span>
+        ) : null}
       </div>
 
       <div className="ev-card__body">
@@ -59,7 +63,7 @@ function EventCardBase({ event }: EventCardProps) {
           {event.venue} · {event.city}
         </p>
         <p className="caption ev-card__attendees">
-          {t('detail.attendees', { n: event.attendeeCount })}
+          {t('events:detail.attendees', { n: event.attendeeCount })}
         </p>
       </div>
     </article>

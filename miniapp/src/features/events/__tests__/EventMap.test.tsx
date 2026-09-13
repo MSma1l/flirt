@@ -13,6 +13,12 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+// Componenta își ia etichetele de accesibilitate din catalog, iar aici nu
+// folosim `renderWithProviders` (harta trebuie testată cu Leaflet-ul adevărat,
+// fără cadrul de React Query). Importul inițializează instanța i18n, altfel
+// `useTranslation` ar întoarce cheia în locul textului.
+import '@/i18n';
+
 import { EventMap, hasValidCoords } from '../EventMap';
 
 describe('hasValidCoords', () => {

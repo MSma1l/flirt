@@ -15,12 +15,17 @@ import { api } from '@/api/client';
 import { useAuthStore } from '@/auth/authStore';
 import { App, errorActions } from '@/App';
 import { StatusScreen } from '@/components/StatusScreen';
-import { botChatUrl, resolveBotUsername } from '@/config';
+import { botChatUrl, config, getLegalUrls, resolveBotUsername } from '@/config';
 import { telegramBotAction } from '@/telegram/botLink';
 import { renderWithProviders } from '@/test/harness';
 import { installTelegramStub } from '@/test/telegramStub';
 
 const BOT = 'flirt_md_bot';
+
+/** Originea de pe care backendul servește `/legal/*` în build-ul de test. */
+function legalOrigin(): string {
+  return new URL(config.apiUrl).origin;
+}
 
 function withBot(username: string | undefined) {
   if (username === undefined) vi.stubEnv('VITE_TELEGRAM_BOT_USERNAME', '');
@@ -180,7 +185,11 @@ describe('StatusScreen', () => {
 /* ——————————————————— acțiunile fiecărei stări ——————————————————— */
 
 describe('acțiunile stărilor de autentificare', () => {
-  const labels = { retry: 'Încearcă din nou', openTelegram: 'Deschide în Telegram' };
+  const labels = {
+    retry: 'Încearcă din nou',
+    openTelegram: 'Deschide în Telegram',
+    support: 'Scrie-ne',
+  };
 
   it('„în afara Telegram": DOAR butonul spre Telegram, fără reîncercare', () => {
     withBot(BOT);
@@ -216,6 +225,19 @@ describe('acțiunile stărilor de autentificare', () => {
     }
   });
 
+  it('„cont interzis": NICIUN buton de reîncercare — 403 se repetă la infinit', () => {
+    withBot(BOT);
+    const retry = vi.fn();
+    const actions = errorActions('banned', labels, retry);
+
+    expect(actions.some((a) => a.testId === 'auth-retry')).toBe(false);
+    // Nici măcar butonul spre Telegram: redeschiderea din chat dă tot 403.
+    expect(actions.some((a) => a.href === `https://t.me/${BOT}`)).toBe(false);
+    // Dar nu e o fundătură: rămâne adresa de suport, singura cale de contestare.
+    expect(actions[0]?.href).toBe(`${legalOrigin()}/legal/support`);
+    expect(actions[0]?.testId).toBe('auth-support');
+  });
+
   it('reîncercarea chiar cheamă autentificarea', async () => {
     withBot(BOT);
     const retry = vi.fn();
@@ -228,8 +250,19 @@ describe('acțiunile stărilor de autentificare', () => {
 });
 
 describe('fiecare stare arată a produs și are o ieșire', () => {
-  const labels = { retry: 'Încearcă din nou', openTelegram: 'Deschide în Telegram' };
-  const KINDS = ['outside_telegram', 'expired', 'invalid', 'network', 'server'] as const;
+  const labels = {
+    retry: 'Încearcă din nou',
+    openTelegram: 'Deschide în Telegram',
+    support: 'Scrie-ne',
+  };
+  const KINDS = [
+    'outside_telegram',
+    'expired',
+    'invalid',
+    'network',
+    'server',
+    'banned',
+  ] as const;
 
   it.each(KINDS)('starea „%s": logo, titlu, explicație și cel puțin o acțiune', (kind) => {
     withBot(BOT);
@@ -245,8 +278,8 @@ describe('fiecare stare arată a produs și are o ieșire', () => {
     expect(screen.getByRole('heading', { level: 1, name: `titlu ${kind}` })).toBeInTheDocument();
     expect(screen.getByText(`explicație ${kind}`)).toBeInTheDocument();
     // Regula: niciun ecran fără ieșire.
-    expect(screen.getAllByRole(kind === 'outside_telegram' ? 'link' : 'button').length)
-      .toBeGreaterThan(0);
+    const asLink = kind === 'outside_telegram' || kind === 'banned';
+    expect(screen.getAllByRole(asLink ? 'link' : 'button').length).toBeGreaterThan(0);
     unmount();
   });
 
@@ -303,5 +336,35 @@ describe('aplicația deschisă în afara Telegram', () => {
 
     expect(await screen.findByTestId('status-outside_telegram')).toBeInTheDocument();
     expect(screen.queryByTestId('open-in-telegram')).not.toBeInTheDocument();
+  });
+});
+
+/* ————————————————— contul interzis, capăt la capăt ————————————————— */
+
+describe('contul interzis de moderare', () => {
+  beforeEach(() => {
+    useAuthStore.setState({ status: 'error', user: null, error: 'banned', optimisticName: null });
+  });
+
+  it('are ecran propriu, fără buton de reîncercare', async () => {
+    withBot(BOT);
+    // Fără `window.Telegram`, `signIn()` din `App` ar suprascrie starea cu
+    // „outside_telegram"; punem stubul ca autentificarea să ajungă la server.
+    installTelegramStub();
+    vi.spyOn(api, 'post').mockRejectedValue(
+      Object.assign(new Error('403'), {
+        isAxiosError: true,
+        response: { status: 403, data: { detail: 'Account is banned' } },
+      }),
+    );
+
+    renderWithProviders(<App />);
+
+    expect(await screen.findByTestId('status-banned')).toBeInTheDocument();
+    expect(screen.queryByTestId('auth-retry')).not.toBeInTheDocument();
+    expect(screen.getByTestId('auth-support')).toHaveAttribute(
+      'href',
+      getLegalUrls().supportUrl ?? '',
+    );
   });
 });

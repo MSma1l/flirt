@@ -50,12 +50,24 @@ test = [
     "testcontainers[postgres]>=4.0",
     "boto3>=1.34",
     "redis>=5.0",
+    # Parserul oficial de configurații nginx (NGINX Inc.). Îl folosesc testele care
+    # verifică zonele de limitare din `nginx/nginx.conf` — fără el acele teste se
+    # sar tăcut în CI, adică exact acolo unde ar trebui să prindă o greșeală.
+    # NU înlocuiește `nginx -t`, care rulează la pornirea containerului: parserul
+    # verifică structura și numărul de argumente, nu existența fiecărei directive.
+    "crossplane>=0.5",
 ]
 # Dependențe pentru integrările LIVE (producție). Instalează: pip install .[live]
 live = [
     "httpx>=0.27",
     "boto3>=1.34",
     "redis>=5.0",
+    # Parserul oficial de configurații nginx (NGINX Inc.). Îl folosesc testele care
+    # verifică zonele de limitare din `nginx/nginx.conf` — fără el acele teste se
+    # sar tăcut în CI, adică exact acolo unde ar trebui să prindă o greșeală.
+    # NU înlocuiește `nginx -t`, care rulează la pornirea containerului: parserul
+    # verifică structura și numărul de argumente, nu existența fiecărei directive.
+    "crossplane>=0.5",
 ]
 
 [tool.pytest.ini_options]

@@ -12,6 +12,10 @@
 /** Forma minimă de mediu de care avem nevoie. Separată, ca să fie testabilă. */
 export interface RuntimeEnv {
   VITE_API_URL?: string | undefined;
+  /** Suprascrieri pentru paginile legale (vezi `resolveLegalUrls`). */
+  VITE_TERMS_URL?: string | undefined;
+  VITE_PRIVACY_URL?: string | undefined;
+  VITE_SUPPORT_URL?: string | undefined;
   DEV?: boolean;
 }
 
@@ -48,6 +52,89 @@ export function resolveApiUrl(env: RuntimeEnv): string {
 export const config = {
   apiUrl: resolveApiUrl(import.meta.env),
 };
+
+/* ————————————————————————————————————————————————————————————————————————
+ * PAGINILE LEGALE — termeni, confidențialitate, suport.
+ *
+ * Există deja, servite de backend din `backend/app/api/legal.py`: un router cu
+ * prefixul `/legal`, montat la RĂDĂCINĂ (nu sub `api_v1_prefix`), fără nicio
+ * dependență de autentificare. Aceleași pagini pe care le folosește și
+ * aplicația nativă (`mobile/src/config.ts` → `config.legal`).
+ *
+ * DE CE LE DERIVĂM din adresa API, în loc să le scriem de mână: adresa API e
+ * deja obligatorie și validată, iar paginile stau pe ACELAȘI host (build-ul
+ * compune `VITE_API_URL="https://$DOMAIN$API_V1_PREFIX"` — vezi
+ * `backend/scripts/build_miniapp.sh`). O a doua constantă hardcodată ar putea
+ * rămâne în urmă la o schimbare de domeniu și ar trimite utilizatorul — și
+ * recenzentul din magazin — la o pagină moartă.
+ *
+ * Suprascrierile din mediu rămân posibile pentru ziua în care documentele vor
+ * fi găzduite pe site-ul public, nu pe API.
+ * ———————————————————————————————————————————————————————————————————————— */
+
+/** Adresele documentelor legale. `null` = nu avem o adresă în care să credem. */
+export interface LegalUrls {
+  termsUrl: string | null;
+  privacyUrl: string | null;
+  supportUrl: string | null;
+}
+
+/** Rutele exacte din `backend/app/api/legal.py`. */
+const LEGAL_PATHS = {
+  termsUrl: '/legal/terms',
+  privacyUrl: '/legal/privacy',
+  supportUrl: '/legal/support',
+} as const;
+
+/**
+ * O suprascriere acceptată doar dacă e o adresă web absolută.
+ * `javascript:` și prietenii nu au ce căuta într-un `href` construit din mediu.
+ */
+function webUrl(raw: string | undefined): string | null {
+  const trimmed = raw?.trim();
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Adresele paginilor legale pentru o adresă API dată.
+ * Pură și exportată separat de `config`, ca testele să o poată chema cu medii
+ * fabricate. Când originea nu se poate deduce (adresă relativă), întoarce
+ * `null`-uri, iar interfața ascunde legăturile — aceeași regulă ca la butonul
+ * botului: mai bine niciun link decât unul rupt.
+ */
+export function resolveLegalUrls(apiUrl: string, env: RuntimeEnv = {}): LegalUrls {
+  let origin: string | null = null;
+  try {
+    origin = new URL(apiUrl).origin;
+  } catch {
+    origin = null;
+  }
+
+  const pick = (override: string | undefined, path: string): string | null =>
+    webUrl(override) ?? (origin ? `${origin}${path}` : null);
+
+  return {
+    termsUrl: pick(env.VITE_TERMS_URL, LEGAL_PATHS.termsUrl),
+    privacyUrl: pick(env.VITE_PRIVACY_URL, LEGAL_PATHS.privacyUrl),
+    supportUrl: pick(env.VITE_SUPPORT_URL, LEGAL_PATHS.supportUrl),
+  };
+}
+
+/**
+ * Adresele legale ale build-ului curent.
+ * Funcție, nu constantă — exact ca `getBotUsername()`: testele înlocuiesc
+ * `import.meta.env` cu `vi.stubEnv`, iar o valoare citită la încărcarea
+ * modulului ar rămâne blocată pe prima.
+ */
+export function getLegalUrls(): LegalUrls {
+  return resolveLegalUrls(config.apiUrl, import.meta.env);
+}
 
 /* ————————————————————————————————————————————————————————————————————————
  * Numele botului — singura cale prin care un utilizator ajuns pe pagină în

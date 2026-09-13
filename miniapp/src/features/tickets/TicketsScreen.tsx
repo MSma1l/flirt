@@ -214,6 +214,7 @@ function PayRow({
   onCopy: (key: string, value: string) => void;
   testId?: string;
 }) {
+  const { t } = useTranslation('screens');
   const copied = copiedKey === copyKey;
   return (
     <div className="tk-pay-row">
@@ -228,8 +229,9 @@ function PayRow({
           onClick={() => onCopy(copyKey, value)}
           data-testid={`copy-${copyKey}`}
         >
-          {/* Chei i18n inexistente pentru copiere — text în română, raportat. */}
-          {copied ? 'Copiat' : 'Copiază'}
+          {/* Cataloagele mobile n-au chei pentru copiere (pe nativ nu există
+              butonul), deci vin din catalogul propriu al Mini App-ului. */}
+          {copied ? t('tickets.copied') : t('tickets.copy')}
         </button>
       </div>
     </div>
@@ -357,7 +359,7 @@ function OrderDetailPanel({
   onSelect: (id: string) => void;
   onClose: () => void;
 }) {
-  const { t } = useTranslation(['social', 'common']);
+  const { t } = useTranslation(['social', 'common', 'screens']);
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
 
@@ -483,12 +485,11 @@ function OrderDetailPanel({
        * în coada de verificare a adminului și nu se poate lua înapoi. Deci cerem
        * o confirmare deliberată — prin ConfirmModal, nu prin `confirm()`, care
        * îngheață WebView-ul Telegram.
-       * Chei i18n inexistente pentru textul confirmării — în română, raportate.
        */}
       <ConfirmModal
         open={confirming}
-        title="Ai făcut transferul?"
-        body="Confirmă doar după ce banii au plecat din contul tău. Verificăm plata manual."
+        title={t('screens:tickets.declareConfirm.title')}
+        body={t('screens:tickets.declareConfirm.body')}
         confirmLabel={t('social:ticket.pay.declare')}
         busy={declare.isPending}
         onConfirm={() => declare.mutate()}
@@ -502,7 +503,7 @@ function OrderDetailPanel({
 /* -------------------------------------------------------------- lista + ecran */
 
 function OrdersSection() {
-  const { t } = useTranslation('social');
+  const { t } = useTranslation(['social', 'screens']);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const { data, isPending, isError, refetch, isFetching } = useQuery<TicketOrderListItem[]>({
@@ -519,32 +520,29 @@ function OrdersSection() {
   if (isPending) {
     body = (
       <div className="tk-state">
-        {/* Cheie i18n inexistentă pentru titlul secțiunii — română, raportată. */}
-        <div className="spinner" role="status" aria-label="Comenzile mele de bilete" />
+        <div className="spinner" role="status" aria-label={t('screens:tickets.ordersTitle')} />
       </div>
     );
   } else if (isError) {
     body = (
       <div className="tk-state" data-testid="orders-error">
-        <p className="error-text">Nu am putut încărca comenzile de bilete.</p>
+        <p className="error-text">{t('screens:tickets.ordersLoadError')}</p>
         <button
           type="button"
           className="button"
           disabled={isFetching}
           onClick={() => void refetch()}
         >
-          {t('ticket.retry')}
+          {t('social:ticket.retry')}
         </button>
       </div>
     );
   } else if (orders.length === 0) {
     body = (
       <div className="tk-state" data-testid="orders-empty">
-        <p className="body-text">
-          Nu ai nicio comandă de bilet. Biletele se cumpără din pagina evenimentului.
-        </p>
+        <p className="body-text">{t('screens:tickets.ordersEmpty')}</p>
         <Link className="button button--ghost tk-link" to={EVENTS_PATH}>
-          Vezi evenimentele
+          {t('screens:tickets.seeEvents')}
         </Link>
       </div>
     );
@@ -575,7 +573,7 @@ function OrdersSection() {
 
   return (
     <section className="tk-section">
-      <h2 className="tk-section__title">Comenzile mele de bilete</h2>
+      <h2 className="tk-section__title">{t('screens:tickets.ordersTitle')}</h2>
       {body}
     </section>
   );

@@ -16,6 +16,7 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
 import { PASSPORT_PATH } from '@/features/passport/passportRoutes';
@@ -27,6 +28,11 @@ import { fetchEvents, type EventItem } from './eventsApi';
 import './events.css';
 
 export function EventsScreen() {
+  // `settings` și `events` sunt cataloagele mobile REUTILIZATE (titlul ecranului,
+  // „Flirt Passport", „Reîncearcă"); `screens` e catalogul propriu Mini App-ului,
+  // pentru textele care nu există pe mobil.
+  const { t } = useTranslation(['screens', 'settings', 'events']);
+
   const { data, isPending, isError, refetch, isFetching } = useQuery<EventItem[]>({
     queryKey: ['events'],
     queryFn: fetchEvents,
@@ -38,27 +44,27 @@ export function EventsScreen() {
   if (isPending) {
     body = (
       <div className="ev-state">
-        <div className="spinner" role="status" aria-label="Evenimente" />
+        <div className="spinner" role="status" aria-label={t('settings:links.events')} />
       </div>
     );
   } else if (isError) {
     body = (
       <div className="ev-state" data-testid="events-error">
-        <p className="error-text">Nu am putut încărca evenimentele.</p>
+        <p className="error-text">{t('screens:events.loadError')}</p>
         <button
           type="button"
           className="button button--ghost"
           disabled={isFetching}
           onClick={() => void refetch()}
         >
-          Reîncearcă
+          {t('events:detail.retry')}
         </button>
       </div>
     );
   } else if (events.length === 0) {
     body = (
       <div className="ev-state" data-testid="events-empty">
-        <p className="body-text">Niciun eveniment momentan — revino curând!</p>
+        <p className="body-text">{t('screens:events.empty')}</p>
       </div>
     );
   } else {
@@ -69,7 +75,7 @@ export function EventsScreen() {
             <Link
               className="ev-list__link"
               to={eventPath(event.id)}
-              aria-label={`Deschide ${event.title}`}
+              aria-label={t('screens:events.open', { title: event.title })}
             >
               <EventCard event={event} />
             </Link>
@@ -82,9 +88,9 @@ export function EventsScreen() {
   return (
     <div className="ev-list">
       <div className="ev-list__header">
-        <h1 className="title">Evenimente</h1>
+        <h1 className="title">{t('settings:links.events')}</h1>
         <Link className="ev-list__passport" to={PASSPORT_PATH}>
-          Flirt Passport ›
+          {t('settings:links.passport')} ›
         </Link>
       </div>
       {body}

@@ -30,6 +30,12 @@ const AdsPage = lazy(() => import('./pages/AdsPage').then((m) => ({ default: m.A
 const TicketOrdersPage = lazy(() =>
   import('./pages/TicketOrdersPage').then((m) => ({ default: m.TicketOrdersPage })),
 );
+const LoyaltyPage = lazy(() =>
+  import('./pages/LoyaltyPage').then((m) => ({ default: m.LoyaltyPage })),
+);
+const InvitesPage = lazy(() =>
+  import('./pages/InvitesPage').then((m) => ({ default: m.InvitesPage })),
+);
 
 export function App(): JSX.Element {
   return (
@@ -50,6 +56,9 @@ export function App(): JSX.Element {
           <Route path="/subscriptions" element={<SubscriptionsPage />} />
           <Route path="/ads" element={<AdsPage />} />
           <Route path="/ticket-orders" element={<TicketOrdersPage />} />
+          <Route path="/loyalty" element={<LoyaltyPage />} />
+          {/* `/invites?event=<id>` — venind din tabelul de evenimente, filtrat. */}
+          <Route path="/invites" element={<InvitesPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

@@ -19,6 +19,10 @@ import type {
   BanUserBody,
   EventInput,
   GrantSubscriptionBody,
+  InviteInput,
+  LoyaltyInvite,
+  LoyaltyTiers,
+  LoyaltyTiersInput,
   Page,
   PaymentSettings,
   ResolveAction,
@@ -206,6 +210,63 @@ export function fetchAdSettings(): Promise<AdSettings> {
 
 export function updateAdSettings(body: AdSettings): Promise<AdSettings> {
   return apiFetch<AdSettings>('/admin/ads/settings', { method: 'PUT', body: { ...body } });
+}
+
+/* -------------------- Fidelitate: trepte ---------------------------- */
+
+/**
+ * Scara de trepte + plafonul de reducere.
+ *
+ * Rândul e SINGLETON și creat leneș pe backend din `Settings.LOYALTY_TIERS`, deci
+ * ruta nu întoarce niciodată 404: prima citire din panou materializează
+ * configurarea de pornire.
+ */
+export function fetchLoyaltyTiers(): Promise<LoyaltyTiers> {
+  return apiFetch<LoyaltyTiers>('/admin/loyalty/tiers');
+}
+
+/**
+ * Rescrie TOATĂ scara (`PUT`, nu `PATCH` pe o treaptă).
+ *
+ * Backendul NORMALIZEAZĂ ce primește: sortează crescător după `min_stamps` și
+ * ELIMINĂ TĂCUT treptele cu cod duplicat (`_normalize_tiers`). De aceea panoul
+ * respinge dinainte ordinea greșită și codurile duplicate — altfel adminul ar
+ * primi 200 și ar pierde o treaptă fără să afle (vezi `lib/loyaltyForm.ts`).
+ */
+export function updateLoyaltyTiers(body: LoyaltyTiersInput): Promise<LoyaltyTiers> {
+  return apiFetch<LoyaltyTiers>('/admin/loyalty/tiers', { method: 'PUT', body: { ...body } });
+}
+
+/* -------------------- Fidelitate: invitații -------------------------- */
+
+/**
+ * Invitațiile, cele mai recente primele. Filtru opțional pe eveniment
+ * (`?event_id=`) — filtrarea se face pe SERVER, ca lista unui eveniment să nu
+ * depindă de câte pagini a apucat panoul să încarce.
+ */
+export function fetchInvites(params: {
+  eventId?: Uuid;
+  cursor?: string;
+} = {}): Promise<Page<LoyaltyInvite>> {
+  return apiPage<LoyaltyInvite>('/admin/loyalty/invites', {
+    query: { event_id: params.eventId, cursor: params.cursor },
+  });
+}
+
+/** Emite o invitație. Codul vine în răspuns — e singura dată când apare „nou". */
+export function createInvite(input: InviteInput): Promise<LoyaltyInvite> {
+  return apiFetch<LoyaltyInvite>('/admin/loyalty/invites', {
+    method: 'POST',
+    body: { ...input },
+  });
+}
+
+/**
+ * Revocare SOFT și idempotentă: folosirile deja consumate rămân valabile, codul
+ * nu mai poate fi folosit de nimeni altcineva. Răspunsul e invitația actualizată.
+ */
+export function revokeInvite(id: Uuid): Promise<LoyaltyInvite> {
+  return apiFetch<LoyaltyInvite>(`/admin/loyalty/invites/${id}/revoke`, { method: 'POST' });
 }
 
 /* --------------------------- Comenzi bilete ------------------------- */

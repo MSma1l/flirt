@@ -29,6 +29,7 @@
  * Fără coordonate valide, cade elegant pe caseta cu orașul — exact ca pe mobil.
  */
 import { useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as L from 'leaflet';
 
 import 'leaflet/dist/leaflet.css';
@@ -74,6 +75,7 @@ export function hasValidCoords(lat?: number | null, lng?: number | null): boolea
 }
 
 export function EventMap({ lat, lng, title, city }: EventMapProps) {
+  const { t } = useTranslation('screens');
   const containerRef = useRef<HTMLDivElement>(null);
   const valid = hasValidCoords(lat, lng);
 
@@ -122,7 +124,9 @@ export function EventMap({ lat, lng, title, city }: EventMapProps) {
       <div
         className="ev-map ev-map--fallback"
         role="img"
-        aria-label={city ? `Locație: ${city}` : 'Locație indisponibilă'}
+        aria-label={
+          city ? t('events.map.location', { city }) : t('events.map.locationUnavailable')
+        }
         data-testid="event-map-fallback"
       >
         <span className="ev-map__city">📍 {city}</span>
@@ -134,7 +138,7 @@ export function EventMap({ lat, lng, title, city }: EventMapProps) {
     <div
       className="ev-map"
       role="img"
-      aria-label={title ? `Harta locației: ${title}` : 'Harta locației'}
+      aria-label={title ? t('events.map.titled', { title }) : t('events.map.untitled')}
       data-testid="event-map"
     >
       <div className="ev-map__canvas" ref={containerRef} />

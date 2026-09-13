@@ -26,6 +26,11 @@ export type AuthErrorKind =
   | 'expired'
   /** Semnătura nu se verifică: date fabricate sau alt bot. */
   | 'invalid'
+  /**
+   * Contul e interzis de moderare. Diferit de toate celelalte printr-un lucru:
+   * NU există reîncercare care să reușească vreodată.
+   */
+  | 'banned'
   /** Cererea nu a ajuns la server. */
   | 'network'
   /** Serverul a răspuns cu eroare (5xx) sau ceva neașteptat. */
@@ -45,6 +50,13 @@ function serverDetail(error: AxiosError): string {
 }
 
 /**
+ * Cuvintele care arată că răspunsul vorbește despre `initData`, nu despre cont.
+ * Sunt IDENTIFICATORI tehnici din backend („init data", „signature", „hash"),
+ * nu fraze adresate utilizatorului — de aceea nu se traduc odată cu mesajele.
+ */
+const INIT_DATA_WORDS = /(expir|invalid|malformed|signature|hash|init[ _]?data)/;
+
+/**
  * Traduce o eroare axios într-un motiv pe care interfața îl poate explica.
  *
  * 401 poate însemna două lucruri foarte diferite: date EXPIRATE (utilizatorul a
@@ -52,6 +64,8 @@ function serverDetail(error: AxiosError): string {
  * (semnătură greșită — nu se rezolvă prin reîncercare). Le separăm după textul
  * backendului, iar când acesta nu e explicit presupunem „expirat", varianta cu
  * soluție pentru utilizator.
+ *
+ * 403 e a treia categorie, și e categoric alta: CONT INTERZIS.
  */
 export function classifyAuthError(error: unknown): AuthErrorKind {
   const axiosError = error as AxiosError;
@@ -59,6 +73,34 @@ export function classifyAuthError(error: unknown): AuthErrorKind {
   if (!axiosError.response) return 'network';
 
   const status = axiosError.response.status;
+
+  /* ——— Cont interzis ———
+   * SEMNALUL E CODUL DE STARE, NU TEXTUL. Backendul ridică 403 pentru un cont
+   * banat în exact două locuri de pe drumul nostru:
+   *   `backend/app/services/auth_service.py` → `_BANNED_EXC` (login_with_telegram)
+   *   `backend/app/core/deps.py`             → `_banned_exc` (get_current_user)
+   * ambele cu `detail = "Account is banned"`. O potrivire pe textul ăla ar fi o
+   * bombă cu ceas: mesajele se traduc (backendul are deja `detail`-uri în
+   * română pe alte rute), iar prima traducere ar readuce bucla infinită.
+   *
+   * Codul, în schimb, e parte din contractul HTTP și e ALES DELIBERAT în
+   * backend, cu motivul scris acolo: „Cont banat: 403, nu 401 — token-ul E
+   * valid, dar contul nu mai are voie. Un 401 ar face clientul să încerce la
+   * nesfârșit un refresh care nu rezolvă nimic." Adică: 401 = „dovedește-ți
+   * încă o dată identitatea" (are sens să reîncerci cu `initData` proaspăt),
+   * 403 = „identitatea e clară, accesul e refuzat" (nicio reîncercare nu
+   * schimbă răspunsul).
+   *
+   * Verificarea de conținut de mai jos e o portiță în sens INVERS, nu o
+   * condiție: dacă vreodată un 403 va vorbi despre `initData`, îl lăsăm să
+   * cadă în clasificarea după text, ca utilizatorul să primească ecranul cu
+   * reîncercare. Cuvintele căutate sunt identificatori tehnici, nu fraze
+   * traductibile.
+   */
+  if (status === 403 && !INIT_DATA_WORDS.test(serverDetail(axiosError).toLowerCase())) {
+    return 'banned';
+  }
+
   if (status === 401 || status === 403 || status === 400 || status === 422) {
     const detail = serverDetail(axiosError).toLowerCase();
     // Mesajele backendului: „Telegram init data expired",

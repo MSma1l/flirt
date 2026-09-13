@@ -29,18 +29,26 @@
 }
 
 .tab {
+  /* `relative` pentru indicatorul tabului activ, care e poziționat absolut ca
+     apariția lui să nu împingă eticheta. */
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
-  /* 44px = ținta minimă de atingere; sub ea, tabul se ratează cu degetul. */
+  /* 44px = ținta minimă de atingere; sub ea, tabul se ratează cu degetul.
+     Spațiul de jos e MEREU rezervat pentru indicator, și la taburile inactive:
+     altfel bara și-ar schimba înălțimea la fiecare schimbare de tab. */
   min-height: 44px;
-  padding: var(--space-xs) var(--space-sm);
+  padding: 5px var(--space-sm) 9px;
   border-radius: var(--radius-pill);
   color: var(--color-text-secondary);
   text-decoration: none;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease;
 }
 
 .tab--active {
@@ -49,14 +57,82 @@
 }
 
 .tab__icon {
-  font-size: 18px;
-  line-height: 20px;
+  display: block;
+  transition: transform 140ms ease;
+}
+
+/* Apăsarea strânge doar desenul, nu și eticheta: un `transform` nu reașază
+   nimic în jur, deci rândul de taburi stă pe loc. */
+.tab:active .tab__icon {
+  transform: scale(0.88);
+}
+
+/*
+ * AL DOILEA SEMNAL al tabului activ, cel care nu depinde de culoare: linia
+ * desenului se îngroașă de la 1.75 la 2.5. Diferența se vede și pe un ecran
+ * alb-negru. Valoarea e și atribut în marcaj (`Icon.tsx`), ca semnalul să existe
+ * înainte ca foaia de stil să se încarce; aici o repetăm doar ca să o putem
+ * tranziționa.
+ */
+.tab--active .icon {
+  stroke-width: 2.5;
 }
 
 .tab__label {
   font-size: 11px;
   line-height: 14px;
   font-weight: 700;
+}
+
+/*
+ * AL TREILEA SEMNAL: bara de sub etichetă. Stă mereu în DOM (vezi `TabBar.tsx`),
+ * strânsă la 20% și transparentă; la activare se deschide. Nimic nu se
+ * reașază — doar `transform` și `opacity`, cele două proprietăți pe care
+ * browserul le animă fără să recalculeze aranjarea paginii.
+ */
+.tab__indicator {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  width: 16px;
+  height: 3px;
+  margin-left: -8px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  opacity: 0;
+  transform: scaleX(0.2);
+  transition:
+    opacity 140ms ease,
+    transform 160ms ease;
+}
+
+.tab__indicator[data-active='true'] {
+  opacity: 1;
+  transform: none;
+}
+
+/* Navigare de la tastatură: conturul trebuie să rămână vizibil pe pastilă. */
+.tab:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+/* Cine a cerut sistemului mai puțină mișcare nu primește niciuna: indicatorul
+   apare instantaneu, în starea lui finală. */
+@media (prefers-reduced-motion: reduce) {
+  .tab,
+  .tab__icon,
+  .tab__indicator {
+    transition: none;
+  }
+
+  .tab:active .tab__icon {
+    transform: none;
+  }
+
+  .tab__indicator[data-active='true'] {
+    transform: none;
+  }
 }
 
 /* ——— Antetul ecranelor în adâncime ——————————————————————————— */
@@ -131,4 +207,18 @@
   color: var(--color-accent);
   font-size: 36px;
   font-weight: 800;
+}
+
+/* Termenii și confidențialitatea: prezenți, dar în plan secund — sunt o
+   obligație legală, nu acțiunea ecranului. Ținta de atingere rămâne însă
+   suficient de mare pentru un deget (min. 44px pe înălțimea rândului). */
+.welcome__legal {
+  margin-top: 4px;
+  line-height: 44px;
+}
+
+.welcome__legal a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  padding: 12px 2px;
 }

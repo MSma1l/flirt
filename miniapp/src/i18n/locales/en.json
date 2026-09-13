@@ -1,6 +1,7 @@
 {
   "actions": {
-    "openInTelegram": "Open in Telegram"
+    "openInTelegram": "Open in Telegram",
+    "contactSupport": "Contact support"
   },
   "app": {
     "connecting": "Connecting…",
@@ -27,6 +28,10 @@
     "server": {
       "title": "Server not responding",
       "body": "Something went wrong on our side. Please try again in a moment."
+    },
+    "banned": {
+      "title": "Account blocked",
+      "body": "Moderators blocked your account for breaking the rules. Trying again will not help: access stays closed. If you believe this is a mistake, contact support."
     }
   },
   "feed": {
@@ -53,7 +58,8 @@
       "body": "You and {{name}} like each other.",
       "continue": "Continue"
     },
-    "emptyBody": "This isn't an error: there really is nobody left to show right now. Come back later or widen your filters in Settings."
+    "emptyBody": "This isn't an error: there really is nobody left to show right now. Come back later or widen your filters in Settings.",
+    "undoNothing": "Nothing to undo: the server has no swipes of yours."
   },
   "nav": {
     "label": "Main navigation",
@@ -78,7 +84,8 @@
     "titleNamed": "Welcome, {{name}}!",
     "body": "Your account already exists — you signed in with Telegram. All that's left is your profile, so others have something to see.",
     "cta": "Continue with Telegram",
-    "note": "No password, no SMS code. We start from your Telegram name and photo — you can change both."
+    "note": "No password, no SMS code. We start from your Telegram name and photo — you can change both.",
+    "legalNote": "By continuing you accept the Terms of Use and the Privacy Policy:"
   },
   "onboarding": {
     "title": "Your profile",
@@ -175,5 +182,10 @@
       "network": "No connection to the server. Check your internet and try again.",
       "unknown": "We couldn't get an answer. Try again."
     }
+  },
+  "legal": {
+    "terms": "Terms",
+    "privacy": "Privacy",
+    "support": "Support"
   }
 }

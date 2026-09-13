@@ -15,12 +15,20 @@
  * Ecranul NU se golește la o eroare de acțiune: datele evenimentului rămân pe
  * loc, se adaugă doar mesajul. Doar eroarea de ÎNCĂRCARE înlocuiește conținutul,
  * fiindcă atunci chiar nu avem ce arăta.
+ *
+ * PREȚUL BILETULUI e singurul lucru pe care ecranul NU-l ia din `Event`: pentru
+ * un utilizator cu ștampile, cu promo sau cu o invitație, prețul de listă e o
+ * minciună. Cotația vine de la `GET /loyalty/events/{id}/ticket-quote`, calculată
+ * integral pe server (`features/loyalty`). Dacă ruta nu răspunde — eveniment fără
+ * bilet online, rețea căzută —, butonul cade înapoi pe prețul de listă: mai bine
+ * prețul întreg decât niciun preț.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router';
 
+import { TicketPriceBlock, useRefreshLoyalty, useTicketQuote } from '@/features/loyalty';
 import { TICKETS_PATH } from '@/features/tickets/ticketRoutes';
 
 import { EventMap } from './EventMap';
@@ -75,6 +83,11 @@ export function EventScreen() {
     queryFn: fetchMyTicketOrders,
   });
 
+  // Cotația se cere DOAR pentru evenimentele care vând bilete online; pentru
+  // restul ruta ar răspunde 400, iar un 400 previzibil nu e informație.
+  const { data: quote } = useTicketQuote(eventId, data?.ticketPrice != null);
+  const refreshLoyalty = useRefreshLoyalty();
+
   /** Comanda de bilet cea mai relevantă pentru acest eveniment (dacă există). */
   const myOrder = useMemo<TicketOrder | null>(() => {
     const forEvent = (myOrders ?? []).filter((o) => o.eventId === eventId);
@@ -106,7 +119,9 @@ export function EventScreen() {
     mutationFn: () => checkin(eventId),
     onSuccess: () => {
       setStampMessage(t('detail.stamp'));
-      void queryClient.invalidateQueries({ queryKey: ['passport'] });
+      // O ștampilă nouă poate urca treapta, iar treapta schimbă prețul: nu doar
+      // passportul se învechește, ci și cotațiile deja aduse.
+      refreshLoyalty();
     },
   });
 
@@ -175,19 +190,27 @@ export function EventScreen() {
     );
   } else if (event.ticketPrice != null) {
     // Fără comandă activă, dar evenimentul vinde bilete online.
+    //
+    // Prețul de pe buton e CEL AL UTILIZATORULUI, când serverul ni l-a spus.
+    // Nu se recalculează nimic aici: `quote.finalPrice` e exact suma pe care o
+    // va înscrie backendul pe comandă. Fără cotație (rețea, rută indisponibilă)
+    // rămâne prețul de listă din `Event`.
     ticketSection = (
-      <button
-        type="button"
-        className="button ev-detail__action"
-        data-testid="buy-ticket-btn"
-        disabled={buyMutation.isPending}
-        onClick={() => buyMutation.mutate()}
-      >
-        {t('detail.buyTicket', {
-          price: event.ticketPrice,
-          currency: event.ticketCurrency ?? 'lei',
-        })}
-      </button>
+      <>
+        {quote ? <TicketPriceBlock quote={quote} /> : null}
+        <button
+          type="button"
+          className="button ev-detail__action"
+          data-testid="buy-ticket-btn"
+          disabled={buyMutation.isPending}
+          onClick={() => buyMutation.mutate()}
+        >
+          {t('detail.buyTicket', {
+            price: quote ? quote.finalPrice : event.ticketPrice,
+            currency: quote ? quote.currency : (event.ticketCurrency ?? 'lei'),
+          })}
+        </button>
+      </>
     );
   }
 

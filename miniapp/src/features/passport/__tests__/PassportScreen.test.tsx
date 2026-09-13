@@ -20,7 +20,21 @@ vi.mock('../passportApi', () => ({
   fetchMySubscription: vi.fn(),
 }));
 
+/**
+ * Ecranul montează și secțiunea de fidelitate (`features/loyalty`), care își
+ * face propriile cereri. O mockăm la nivelul modulului de rețea al acelui
+ * modul: aici testăm passportul, nu treptele. Implicit răspunde „program
+ * neconfigurat" (`tiers: []`), starea în care secțiunea nu randează nimic —
+ * exact fundalul neutru de care au nevoie testele de mai jos.
+ */
+vi.mock('@/features/loyalty/loyaltyApi', () => ({
+  fetchLoyaltyStatus: vi.fn(),
+  redeemInvite: vi.fn(),
+  fetchTicketQuote: vi.fn(),
+}));
+
 const { fetchMySubscription, fetchPassport } = await import('../passportApi');
+const { fetchLoyaltyStatus } = await import('@/features/loyalty/loyaltyApi');
 
 const STAMPS: PassportStamp[] = [
   {
@@ -58,6 +72,15 @@ const PREMIUM: Subscription = {
 beforeEach(() => {
   vi.mocked(fetchPassport).mockResolvedValue(STAMPS);
   vi.mocked(fetchMySubscription).mockResolvedValue(null);
+  vi.mocked(fetchLoyaltyStatus).mockResolvedValue({
+    stamps: 2,
+    tier: null,
+    discountPercent: 0,
+    nextTier: null,
+    stampsToNextTier: null,
+    tiers: [],
+    maxTotalDiscountPercent: 0,
+  });
 });
 
 describe('ștampile', () => {
@@ -85,7 +108,9 @@ describe('stări oneste', () => {
     vi.mocked(fetchPassport).mockReturnValue(new Promise<PassportStamp[]>(() => {}));
     renderWithProviders(<PassportScreen />);
 
-    expect(screen.getByRole('status')).toBeInTheDocument();
+    // Două indicatoare la prima randare: ștampilele și treapta de fidelitate,
+    // fiecare cu cererea lui.
+    expect(screen.getAllByRole('status').length).toBeGreaterThan(0);
     expect(screen.queryByTestId('passport-empty')).not.toBeInTheDocument();
   });
 

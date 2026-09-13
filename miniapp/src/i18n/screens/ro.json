@@ -1,0 +1,115 @@
+{
+  "events": {
+    "loadError": "Nu am putut încărca evenimentele.",
+    "empty": "Niciun eveniment momentan — revino curând!",
+    "open": "Deschide {{title}}",
+    "goingBadge": "Mergi",
+    "kind": {
+      "flirt_party": "Flirt Party",
+      "concert": "Concert",
+      "other": "Eveniment"
+    },
+    "map": {
+      "location": "Locație: {{city}}",
+      "locationUnavailable": "Locație indisponibilă",
+      "titled": "Harta locației: {{title}}",
+      "untitled": "Harta locației"
+    }
+  },
+  "stories": {
+    "title": "Povești",
+    "replySent": "Trimis ✓",
+    "deleteBody": "Povestea va fi ștearsă definitiv.",
+    "serverTooLarge": "Poza e prea mare pentru server (limita este {{limit}}). Alege altă poză.",
+    "image": {
+      "notAnImage": "Poți publica doar o poză (JPEG, PNG sau WEBP). Alege alt fișier.",
+      "decodeFailed": "Nu am putut procesa poza. Unele formate (de exemplu HEIC, cel implicit pe iPhone) nu pot fi deschise aici. Alege altă poză sau salveaz-o ca JPEG.",
+      "tooLarge": "Poza rămâne prea mare ({{size}}) chiar și după micșorare, iar limita este {{limit}}. Alege altă poză."
+    },
+    "barLabel": "Poveștile prietenilor",
+    "unseenHint": "are povești nevăzute"
+  },
+  "subscription": {
+    "notice": "Plata nu este disponibilă în Telegram deocamdată. Abonamentul poate fi cumpărat din aplicația mobilă FLIRT, iar aici vezi planurile și starea lui.",
+    "buyInApp": "Disponibil în aplicația mobilă",
+    "emptyPlans": "Nu există planuri de abonament disponibile momentan.",
+    "none": "Nu ai un abonament activ.",
+    "status": "Stare: {{status}}",
+    "statusExpired": "Expirat",
+    "statusCancelled": "Anulat",
+    "validUntil": "Valabil până la {{date}}",
+    "eventDiscount": "Reduceri la evenimente"
+  },
+  "tickets": {
+    "ordersTitle": "Comenzile mele de bilete",
+    "ordersLoadError": "Nu am putut încărca comenzile de bilete.",
+    "ordersEmpty": "Nu ai nicio comandă de bilet. Biletele se cumpără din pagina evenimentului.",
+    "seeEvents": "Vezi evenimentele",
+    "copy": "Copiază",
+    "copied": "Copiat",
+    "declareConfirm": {
+      "title": "Ai făcut transferul?",
+      "body": "Confirmă doar după ce banii au plecat din contul tău. Verificăm plata manual."
+    }
+  },
+  "social": {
+    "unblockConfirm": "Îl deblochezi pe {{name}}? Va putea din nou să te vadă și să-ți scrie.",
+    "removeFavoriteConfirm": "Îl scoți din lista de favorite? Îl poți adăuga oricând la loc."
+  },
+  "loyalty": {
+    "title": "Treapta mea",
+    "tierLabel": "Treapta {{tier}}",
+    "noTier": "Încă nicio treaptă",
+    "tierDiscount": "−{{percent}}% la bilete",
+    "stampsCount_one": "{{count}} ștampilă strânsă",
+    "stampsCount_few": "{{count}} ștampile strânse",
+    "stampsCount_other": "{{count}} de ștampile strânse",
+    "toNext_one": "Încă {{count}} ștampilă până la treapta următoare",
+    "toNext_few": "Încă {{count}} ștampile până la treapta următoare",
+    "toNext_other": "Încă {{count}} de ștampile până la treapta următoare",
+    "nextReward": "Treapta {{tier}} îți dă −{{percent}}% la bilete.",
+    "progressLabel": "Progresul până la treapta {{tier}}",
+    "maxTier": "Ești pe ultima treaptă. Mai sus nu se poate — ai deja reducerea cea mai mare.",
+    "errors": {
+      "network": "Nu ai conexiune. Verifică internetul și încearcă din nou.",
+      "server": "Serverul nu a răspuns. Încearcă din nou peste puțin timp."
+    },
+    "invite": {
+      "label": "Cod de invitație",
+      "hint": "Ai primit un cod de la organizator? Scrie-l aici — literele mici, spațiile și cratimele se aranjează singure.",
+      "placeholder": "Cod, de exemplu ABCD2345",
+      "submit": "Folosește codul",
+      "sending": "Se trimite…",
+      "success": "Gata! Ai −{{percent}}% la „{{event}}”.",
+      "successNoDiscount": "Gata! Invitația ta la „{{event}}” este activă.",
+      "already": "Ai deja invitația la „{{event}}” (−{{percent}}%). Nu s-a consumat o folosire nouă.",
+      "errors": {
+        "not_found": "Codul acesta nu există. Verifică literele și cifrele, apoi încearcă din nou.",
+        "expired": "Invitația a ieșit din termen. Cere-i organizatorului una nouă.",
+        "exhausted": "Invitația a fost deja folosită de toate persoanele pentru care era valabilă.",
+        "revoked": "Organizatorul a retras această invitație.",
+        "unusable": "Invitația nu mai poate fi folosită.",
+        "tier_too_low_one": "Invitația cere cel puțin {{count}} ștampilă Flirt Passport. Mai treci pe la un eveniment și încearcă din nou.",
+        "tier_too_low_few": "Invitația cere cel puțin {{count}} ștampile Flirt Passport. Mai treci pe la evenimente și încearcă din nou.",
+        "tier_too_low_other": "Invitația cere cel puțin {{count}} de ștampile Flirt Passport. Mai treci pe la evenimente și încearcă din nou.",
+        "tierUnknownThreshold": "Invitația cere mai multe ștampile Flirt Passport decât ai acum.",
+        "rate_limit": "Prea multe încercări. Așteaptă un minut și încearcă din nou.",
+        "network": "Nu ai conexiune. Codul nu a plecat — verifică internetul și încearcă din nou.",
+        "server": "Serverul nu a răspuns. Încearcă din nou peste puțin timp.",
+        "unknown": "Nu am putut folosi codul. Încearcă din nou."
+      }
+    },
+    "price": {
+      "off": "−{{percent}}% reducere",
+      "a11y": "Prețul tău este {{price}}, în loc de {{base}}, cu {{percent}} la sută mai puțin",
+      "capped": "Reducerea este plafonată la {{percent}}%.",
+      "reason": {
+        "loyaltyTier": "Preț cu reducerea treptei {{tier}} (−{{percent}}%).",
+        "loyalty": "Preț cu reducerea ta de fidelitate (−{{percent}}%).",
+        "promo": "Preț cu reducerea promo a evenimentului (−{{percent}}%).",
+        "invite": "Preț cu reducerea invitației tale (−{{percent}}%).",
+        "other": "Preț cu reducere (−{{percent}}%)."
+      }
+    }
+  }
+}

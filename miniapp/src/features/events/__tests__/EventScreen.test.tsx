@@ -17,6 +17,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EventItem } from '@mobile/features/events/types';
 import type { TicketOrder } from '@mobile/features/tickets/types';
 
+import type { TicketQuote } from '@/features/loyalty';
 import { TICKETS_PATH } from '@/features/tickets/ticketRoutes';
 import { renderWithProviders } from '@/test/harness';
 
@@ -30,6 +31,16 @@ vi.mock('../eventsApi', () => ({
   checkin: vi.fn(),
   fetchMyTicketOrders: vi.fn(),
   createTicketOrder: vi.fn(),
+}));
+
+// Cotația de preț (`features/loyalty`): prețul biletului NU mai vine din
+// `Event`, ci de la server, calculat pentru utilizatorul curent. Implicit o
+// lăsăm să pice, ca restul testelor să vadă comportamentul de rezervă — prețul
+// de listă. Testele de preț și-o mochează cum au nevoie.
+vi.mock('@/features/loyalty/loyaltyApi', () => ({
+  fetchTicketQuote: vi.fn(),
+  fetchLoyaltyStatus: vi.fn(),
+  redeemInvite: vi.fn(),
 }));
 
 // Harta: un dublu minimal care imită lanțul `L.x(...).addTo(map)` din Leaflet.
@@ -47,6 +58,23 @@ vi.mock('leaflet', () => {
 
 const { checkin, createTicketOrder, fetchEvent, fetchMyTicketOrders, setGoing } =
   await import('../eventsApi');
+const { fetchTicketQuote } = await import('@/features/loyalty/loyaltyApi');
+
+/** Cotația unui bilet de 150 de lei, așa cum o întoarce serverul. */
+const QUOTE: TicketQuote = {
+  eventId: 'e1',
+  basePrice: 150,
+  currency: 'lei',
+  loyaltyPercent: 0,
+  promoPercent: 0,
+  invitePercent: 0,
+  appliedPercent: 0,
+  appliedSource: 'none',
+  capped: false,
+  discountAmount: 0,
+  finalPrice: 150,
+  tier: null,
+};
 
 const EVENT: EventItem = {
   id: 'e1',
@@ -103,6 +131,7 @@ function renderDetail() {
 beforeEach(() => {
   vi.mocked(fetchEvent).mockResolvedValue(EVENT);
   vi.mocked(fetchMyTicketOrders).mockResolvedValue([]);
+  vi.mocked(fetchTicketQuote).mockRejectedValue(new Error('no quote'));
 });
 
 describe('randarea detaliului', () => {
@@ -276,5 +305,64 @@ describe('bilet online', () => {
 
     expect(await screen.findByTestId('ticket-status')).toHaveTextContent('Bilet aprobat');
     expect(screen.getByRole('button', { name: 'Vezi biletul' })).toBeInTheDocument();
+  });
+});
+
+describe('prețul biletului, așa cum îl plătește utilizatorul', () => {
+  it('arată prețul redus pe buton și prețul întreg tăiat lângă el', async () => {
+    vi.mocked(fetchTicketQuote).mockResolvedValue({
+      ...QUOTE,
+      loyaltyPercent: 20,
+      appliedPercent: 20,
+      appliedSource: 'loyalty',
+      discountAmount: 30,
+      finalPrice: 120,
+      tier: { code: 'gold', name: 'Aur', minStamps: 12, discountPercent: 20 },
+    });
+    renderDetail();
+
+    // Prețul de pe buton e CEL AL OMULUI, nu cel din `Event.ticketPrice`.
+    // Butonul apare întâi cu prețul de listă (cotația e încă pe drum) și se
+    // corectează când răspunde serverul — de aceea așteptăm textul, nu nodul.
+    await waitFor(() =>
+      expect(screen.getByTestId('buy-ticket-btn')).toHaveTextContent(
+        'Cumpără bilet online — 120 lei',
+      ),
+    );
+    // Reducerea trebuie să se VADĂ: fără prețul întreg tăiat, 120 de lei arată
+    // exact ca 120 de lei.
+    expect(screen.getByTestId('ticket-quote-base')).toHaveTextContent('150 lei');
+    expect(screen.getByTestId('ticket-quote-final')).toHaveTextContent('120 lei');
+    expect(screen.getByTestId('ticket-quote-reason')).toHaveTextContent(
+      'Preț cu reducerea treptei Aur (−20%).',
+    );
+  });
+
+  it('fără reducere nu repetă prețul: rămâne doar butonul', async () => {
+    vi.mocked(fetchTicketQuote).mockResolvedValue(QUOTE);
+    renderDetail();
+
+    expect(await screen.findByTestId('buy-ticket-btn')).toHaveTextContent(
+      'Cumpără bilet online — 150 lei',
+    );
+    expect(screen.queryByTestId('ticket-quote')).not.toBeInTheDocument();
+  });
+
+  it('dacă cotația nu se poate aduce, butonul cade pe prețul de listă', async () => {
+    vi.mocked(fetchTicketQuote).mockRejectedValue(new Error('offline'));
+    renderDetail();
+
+    expect(await screen.findByTestId('buy-ticket-btn')).toHaveTextContent(
+      'Cumpără bilet online — 150 lei',
+    );
+    expect(screen.queryByTestId('ticket-quote')).not.toBeInTheDocument();
+  });
+
+  it('un eveniment fără bilet online nu cere nicio cotație', async () => {
+    vi.mocked(fetchEvent).mockResolvedValue(BARE_EVENT);
+    renderDetail();
+
+    await screen.findByText('Flirt Party Chișinău');
+    expect(fetchTicketQuote).not.toHaveBeenCalled();
   });
 });

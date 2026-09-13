@@ -15,6 +15,18 @@ vi.mock('@mobile/features/feed/feedApi', () => ({
   undoSwipe: vi.fn(),
 }));
 
+// Bara de povești din capul feedului își aduce singură datele. Aici NU ea e
+// subiectul (are testele ei, în `features/stories` și în `feedStories.test.tsx`),
+// dar nemocată ar porni cereri reale din fiecare test de deck.
+vi.mock('@/features/stories/storiesApi', () => ({
+  fetchStories: vi.fn(async () => []),
+  fetchMyStories: vi.fn(async () => []),
+  uploadStoryMedia: vi.fn(),
+  createStory: vi.fn(),
+  replyToStory: vi.fn(),
+  deleteStory: vi.fn(),
+}));
+
 const { fetchFeed, swipe, undoSwipe } = await import('@mobile/features/feed/feedApi');
 
 const CARDS: FeedCard[] = [
@@ -195,6 +207,41 @@ describe('erori de acțiune', () => {
     );
     // Indexul NU avansează: utilizatorul poate reîncerca aceeași alegere.
     expect(screen.getByText('Ana, 24')).toBeInTheDocument();
+  });
+
+  it('spune de ce, când serverul REFUZĂ anularea', async () => {
+    // `backend/app/services/feed_service.py::undo_last_swipe` nu aruncă: dacă nu
+    // găsește niciun `Like` al userului, răspunde 200 cu `undone: false`. Fără
+    // ramura asta, utilizatorul apăsa „Anulează", cardul nu revenea și pe ecran
+    // nu apărea nimic.
+    const card = await renderDeck();
+    drag(card, 200, 0);
+    await waitFor(() => expect(swipe).toHaveBeenCalledOnce());
+
+    vi.mocked(undoSwipe).mockResolvedValueOnce({ undone: false, targetUserId: null });
+    drag(screen.getByTestId('deck-card'), 0, 200);
+
+    expect(await screen.findByTestId('deck-action-error')).toHaveTextContent(
+      'Nu mai e nimic de anulat: serverul nu are niciun swipe al tău.',
+    );
+    // Cardul curent rămâne cel de după swipe — nu ne prefacem că s-a întors.
+    expect(screen.getByText('Bogdan, 29')).toBeInTheDocument();
+  });
+
+  it('un refuz al anulării oprește și butonul de undo din starea goală', async () => {
+    vi.mocked(fetchFeed).mockResolvedValue([CARDS[0] as FeedCard]);
+    const card = await renderDeck();
+    drag(card, 200, 0);
+    await waitFor(() => expect(swipe).toHaveBeenCalledOnce());
+
+    // Feed epuizat → ecranul gol, cu butonul „Înapoi".
+    const undoButton = await screen.findByTestId('deck-undo');
+    vi.mocked(undoSwipe).mockResolvedValueOnce({ undone: false, targetUserId: null });
+    fireEvent.click(undoButton);
+
+    expect(await screen.findByTestId('deck-action-error')).toBeInTheDocument();
+    // Serverul a spus că nu are ce anula: butonul dispare, nu rămâne unul mort.
+    await waitFor(() => expect(screen.queryByTestId('deck-undo')).not.toBeInTheDocument());
   });
 
   it('anunță eșecul unui undo', async () => {

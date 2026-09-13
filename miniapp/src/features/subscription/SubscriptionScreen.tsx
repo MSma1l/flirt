@@ -17,6 +17,7 @@
  *   /subscriptions/entitlements.
  */
 import { useQuery } from '@tanstack/react-query';
+import type { TFunction } from 'i18next';
 import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -26,18 +27,11 @@ import type { Entitlements, Plan, Subscription } from './subscriptionApi';
 import './subscription.css';
 
 /**
- * Mesajul onest despre plată. E scris ÎN COD, în română, nu luat din catalog:
- * cheia potrivită (`billing:paywall.telegramUnavailable`) nu există încă, iar
- * sarcina interzice modificarea cataloagelor. `paywall.storeUnavailable` ar fi
- * fost o minciună — nu magazinul e căzut, ci Mini App-ul nu vinde deloc.
- * Cheia lipsă e raportată separat.
+ * Mesajul onest despre plată și eticheta butonului mort stau în catalogul
+ * PROPRIU al Mini App-ului (`screens:subscription.*`): cataloagele mobile n-au
+ * chei pentru ele, iar `billing:paywall.storeUnavailable` ar fi fost o minciună
+ * — nu magazinul e căzut, ci Mini App-ul nu vinde deloc.
  */
-const PURCHASE_UNAVAILABLE_TEXT =
-  'Plata nu este disponibilă în Telegram deocamdată. ' +
-  'Abonamentul poate fi cumpărat din aplicația mobilă FLIRT, iar aici vezi planurile și starea lui.';
-
-/** Eticheta butonului dezactivat. Tot text propriu, din același motiv. */
-const PURCHASE_UNAVAILABLE_LABEL = 'Disponibil în aplicația mobilă';
 
 /**
  * Planurile pe care catalogul clientului le cunoaște.
@@ -82,20 +76,23 @@ function asFeatureList(raw: unknown): string[] | null {
 }
 
 /**
- * Starea abonamentului, în română. Serverul trimite un cod (`active`,
+ * Starea abonamentului, în limba interfeței. Serverul trimite un cod (`active`,
  * `expired`, …) — un cod brut pe ecran n-ar spune nimic userului, dar unul
  * NECUNOSCUT îl arătăm ca atare: mai bine un cuvânt ciudat decât o stare
- * inventată de client. Cheile de traducere lipsesc, vezi raportul.
+ * inventată de client.
+ *
+ * „Activ" se ia din catalogul mobil (`billing:paywall.active`, deja folosit de
+ * insigna planului curent), ca aceeași stare să nu aibă două traduceri.
  */
-function statusLabel(status: string): string {
+function statusLabel(t: TFunction, status: string): string {
   switch (status) {
     case 'active':
-      return 'Activ';
+      return t('billing:paywall.active');
     case 'expired':
-      return 'Expirat';
+      return t('screens:subscription.statusExpired');
     case 'cancelled':
     case 'canceled':
-      return 'Anulat';
+      return t('screens:subscription.statusCancelled');
     default:
       return status;
   }
@@ -122,16 +119,24 @@ function formatExpiry(iso: string | null | undefined, language: string): string 
   }
 }
 
-/** Drepturile deblocate, cu etichete proprii (cataloagele nu au chei pentru ele). */
-const ENTITLEMENT_LABELS: ReadonlyArray<{ key: keyof Entitlements; label: string }> = [
-  { key: 'premium', label: 'Premium' },
-  { key: 'noAds', label: 'Fără reclamă' },
-  { key: 'aiBot', label: 'AI-bot în chat' },
-  { key: 'eventDiscount', label: 'Reduceri la evenimente' },
+/**
+ * Drepturile deblocate. Primele trei poartă EXACT numele planurilor din
+ * catalogul mobil (`billing:plans.*.title`), deci le reutilizăm de acolo: altfel
+ * „Fără reclamă" ar avea două traduceri care se pot despărți. A patra apare pe
+ * mobil doar ca element dintr-o listă (`plans.all_inclusive.features[3]`), care
+ * nu se poate adresa pe cheie, deci stă în catalogul propriu.
+ */
+const ENTITLEMENT_LABELS: ReadonlyArray<{ key: keyof Entitlements; labelKey: string }> = [
+  { key: 'premium', labelKey: 'billing:plans.premium.title' },
+  { key: 'noAds', labelKey: 'billing:plans.no_ads.title' },
+  { key: 'aiBot', labelKey: 'billing:plans.ai_bot.title' },
+  { key: 'eventDiscount', labelKey: 'screens:subscription.eventDiscount' },
 ];
 
 export function SubscriptionScreen(): ReactElement {
-  const { t, i18n } = useTranslation('billing');
+  // `billing` și `profile` sunt cataloagele mobile REUTILIZATE (titlurile
+  // planurilor, contorul de intrări cu plural); `screens` e catalogul propriu.
+  const { t, i18n } = useTranslation(['billing', 'profile', 'screens']);
 
   const plansQuery = useQuery<Plan[]>({ queryKey: ['plans'], queryFn: fetchPlans });
   const meQuery = useQuery<Subscription | null>({
@@ -143,12 +148,12 @@ export function SubscriptionScreen(): ReactElement {
     queryFn: fetchEntitlements,
   });
 
-  const title = <h1 className="title sb-title">{t('paywall.title')}</h1>;
+  const title = <h1 className="title sb-title">{t('billing:paywall.title')}</h1>;
 
   if (plansQuery.isPending) {
     return (
       <div className="sb-state">
-        <div className="spinner" role="status" aria-label={t('paywall.title')} />
+        <div className="spinner" role="status" aria-label={t('billing:paywall.title')} />
       </div>
     );
   }
@@ -158,7 +163,7 @@ export function SubscriptionScreen(): ReactElement {
   if (plansQuery.isError || !plansQuery.data) {
     return (
       <div className="sb-state" data-testid="subscription-error">
-        <p className="error-text">{t('paywall.loadError')}</p>
+        <p className="error-text">{t('billing:paywall.loadError')}</p>
         <button
           type="button"
           className="button"
@@ -169,7 +174,7 @@ export function SubscriptionScreen(): ReactElement {
             void entitlementsQuery.refetch();
           }}
         >
-          {t('paywall.retry')}
+          {t('billing:paywall.retry')}
         </button>
       </div>
     );
@@ -182,7 +187,7 @@ export function SubscriptionScreen(): ReactElement {
       <div className="sb-screen">
         {title}
         <div className="sb-state" data-testid="subscription-empty">
-          <p className="body-text">Nu există planuri de abonament disponibile momentan.</p>
+          <p className="body-text">{t('screens:subscription.emptyPlans')}</p>
         </div>
       </div>
     );
@@ -203,33 +208,45 @@ export function SubscriptionScreen(): ReactElement {
       {/* Mesajul stă SUS, înaintea prețurilor: userul află că nu poate cumpăra
           aici înainte să-și aleagă un plan, nu după. */}
       <p className="body-text sb-notice" data-testid="purchase-unavailable">
-        {PURCHASE_UNAVAILABLE_TEXT}
+        {t('screens:subscription.notice')}
       </p>
 
       {subscription ? (
         <section className="sb-current" data-testid="subscription-current">
           <h2 className="sb-current__title">
             {isTranslatedPlan(subscription.plan)
-              ? t(`plans.${subscription.plan}.title`)
+              ? t(`billing:plans.${subscription.plan}.title`)
               : subscription.plan}
           </h2>
           <p className="caption sb-current__line">
-            Stare: {statusLabel(subscription.status)}
+            {t('screens:subscription.status', { status: statusLabel(t, subscription.status) })}
           </p>
-          {expiry ? <p className="caption sb-current__line">Valabil până la {expiry}</p> : null}
+          {expiry ? (
+            <p className="caption sb-current__line">
+              {t('screens:subscription.validUntil', { date: expiry })}
+            </p>
+          ) : null}
           {/* Cardurile de reduceri se consumă la fiecare check-in: câte intrări
               au mai rămas e singura cifră care contează pentru ele. */}
           {subscription.entriesRemaining !== null ? (
             <p className="caption sb-current__line" data-testid="subscription-entries">
-              Intrări rămase: {subscription.entriesRemaining}
-              {subscription.entriesTotal !== null ? ` din ${subscription.entriesTotal}` : ''}
+              {/*
+                Contorul REUTILIZEAZĂ cheia din Flirt Passport, singura care are
+                deja formele de plural pentru toate limbile (rusa are patru).
+                Fără total de la server, totalul e chiar restul — la fel ca în
+                `PassportScreen`, ca fraza să rămână coerentă.
+              */}
+              {t('profile:passport.discountCard.entriesLeft', {
+                count: subscription.entriesRemaining,
+                total: subscription.entriesTotal ?? subscription.entriesRemaining,
+              })}
             </p>
           ) : null}
           {activeEntitlements.length > 0 ? (
             <ul className="sb-current__entitlements">
               {activeEntitlements.map((item) => (
                 <li key={item.key} className="caption">
-                  ✓ {item.label}
+                  ✓ {t(item.labelKey)}
                 </li>
               ))}
             </ul>
@@ -237,7 +254,7 @@ export function SubscriptionScreen(): ReactElement {
         </section>
       ) : (
         <p className="caption sb-current__none" data-testid="subscription-none">
-          Nu ai un abonament activ.
+          {t('screens:subscription.none')}
         </p>
       )}
 
@@ -245,10 +262,10 @@ export function SubscriptionScreen(): ReactElement {
         {plans.map((plan) => {
           const code = plan.code;
           const isActive = code === currentPlan;
-          const planTitle = isTranslatedPlan(code) ? t(`plans.${code}.title`) : plan.title;
+          const planTitle = isTranslatedPlan(code) ? t(`billing:plans.${code}.title`) : plan.title;
           const features =
             (isTranslatedPlan(code)
-              ? asFeatureList(t(`plans.${code}.features`, { returnObjects: true }))
+              ? asFeatureList(t(`billing:plans.${code}.features`, { returnObjects: true }))
               : null) ?? plan.features;
 
           return (
@@ -261,13 +278,13 @@ export function SubscriptionScreen(): ReactElement {
                 <h2 className="sb-plan__title">{planTitle}</h2>
                 {isActive ? (
                   <span className="sb-plan__badge" data-testid={`plan-card-${code}-active`}>
-                    {t('paywall.active')}
+                    {t('billing:paywall.active')}
                   </span>
                 ) : null}
               </div>
 
               <p className="sb-plan__price">
-                {t('paywall.priceFallback', { price: plan.priceEur })}
+                {t('billing:paywall.priceFallback', { price: plan.priceEur })}
               </p>
 
               {features.length > 0 ? (
@@ -291,7 +308,9 @@ export function SubscriptionScreen(): ReactElement {
                 data-testid={`plan-card-${code}-buy`}
                 disabled
               >
-                {isActive ? t('paywall.planActive') : PURCHASE_UNAVAILABLE_LABEL}
+                {isActive
+                  ? t('billing:paywall.planActive')
+                  : t('screens:subscription.buyInApp')}
               </button>
             </li>
           );

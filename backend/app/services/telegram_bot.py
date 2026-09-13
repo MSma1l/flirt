@@ -16,12 +16,15 @@ fals `{"ok": True, "stub": True, ...}`. Exact tiparul din `push.StubPush` și di
 lucru se întâmplă și în modul `live` dacă tokenul lipsește: degradăm în stub și
 logăm, în loc să crăpăm webhookul.
 
-TOKENUL NU AJUNGE NICIODATĂ ÎN LOG
+SECRETELE NU AJUNG NICIODATĂ ÎN LOG
 ----------------------------------
 Tokenul face parte din URL-ul Bot API (`/bot<token>/sendMessage`), deci apare
 implicit în mesajele de eroare ale `httpx` (care includ URL-ul cererii) și în
-orice `repr` al unei cereri. De aceea TOT ce ajunge într-un log sau într-un
-mesaj de eroare trece prin `_redact()`.
+orice `repr` al unei cereri. Al doilea secret e `secret_token` din payload-ul
+`setWebhook`: exact valoarea pe care o verificăm în antetul
+`X-Telegram-Bot-Api-Secret-Token` ca să știm că un update chiar vine de la
+Telegram. De aceea TOT ce ajunge într-un log sau într-un mesaj de eroare trece
+prin `_redact()` / `_redact_payload()`.
 
 ROBUSTEȚE
 ---------
@@ -126,7 +129,25 @@ def is_stub() -> bool:
 
 
 def _redact(text: Any) -> str:
-    """Scoate tokenul botului din orice text care pleacă spre log/eroare."""
+    """Scoate SECRETELE din orice text care pleacă spre log/eroare.
+
+    Două secrete, nu unul:
+
+    1. Tokenul botului — e în URL-ul Bot API, deci apare în mesajele httpx.
+    2. Secretul de webhook (`secret_token`) — e în PAYLOAD-ul `setWebhook`, deci
+       apare oriunde se loghează payload-ul cererii. E secretul care
+       autentifică webhookul: cine îl află poate POST-a update-uri Telegram
+       false pe ruta noastră (mesaje și utilizatori fabricați, în numele
+       botului). Redactarea acoperea doar (1).
+
+    Secretul de webhook e curățat în DOUĂ feluri, pentru că nu e suficient
+    niciunul singur:
+      - după VALOAREA din configurație (acoperă textul liber, ex. un mesaj de
+        eroare httpx care include corpul cererii);
+      - după CHEIA `secret_token` din serializări (acoperă și un secret pasat ca
+        argument, diferit de cel din `settings` — rotire de secret, script rulat
+        cu altă valoare).
+    """
     out = str(text)
     token = bot_token()
     if token:
@@ -134,7 +155,42 @@ def _redact(text: Any) -> str:
         # `bot<token>` apare și URL-encodat în unele reprezentări httpx; acoperim
         # și forma fără prefix, apoi tăiem eventualele resturi de segment.
         out = re.sub(r"/bot[^/\s]+/", f"/bot{_REDACTED}/", out)
+
+    secret = webhook_secret()
+    if secret:
+        out = out.replace(secret, _REDACTED)
+
+    # `"secret_token": "..."`, `'secret_token': '...'`, `secret_token=...`
+    out = _SECRET_ASSIGNMENT_RE.sub(lambda m: f"{m.group(1)}{_REDACTED}", out)
     return out
+
+
+# Cheile de payload al căror CONȚINUT e secret. Redactăm după cheie (nu doar
+# după valoarea cunoscută din `settings`), ca un secret pasat ca argument să fie
+# acoperit chiar dacă diferă de cel configurat.
+_SECRET_PAYLOAD_KEYS = frozenset({"secret_token"})
+
+# Aceleași chei, dar în text deja serializat (JSON sau `repr` de dict).
+_SECRET_ASSIGNMENT_RE = re.compile(
+    r"""(['"]?(?:%s)['"]?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,}\]]+)"""
+    % "|".join(sorted(_SECRET_PAYLOAD_KEYS))
+)
+
+
+def _redact_payload(value: Any) -> Any:
+    """Copie a payload-ului cu valorile secrete înlocuite (recursiv).
+
+    NU modifică originalul: payload-ul chiar se trimite la Telegram, doar copia
+    ajunge în log / în răspunsul stub.
+    """
+    if isinstance(value, dict):
+        return {
+            key: _REDACTED if key in _SECRET_PAYLOAD_KEYS else _redact_payload(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_payload(item) for item in value]
+    return value
 
 
 def _api_url(method: str) -> str:
@@ -199,8 +255,13 @@ async def _call(method: str, payload: dict) -> dict:
     LIVE: POST JSON, cu erorile logate REDACTAT și întoarse ca `ok: False`.
     """
     if is_stub():
-        logger.info("STUB telegram -> %s payload=%r", method, payload)
-        return {"ok": True, "stub": True, "method": method, "payload": payload}
+        # Payload-ul se loghează ÎNTREG. `setWebhook` îl are pe `secret_token`
+        # în el — deci trece prin redactare înainte de log ȘI înainte de a fi
+        # întors apelantului (care îl poate tipări mai departe: vezi
+        # `scripts/setup_telegram_bot.py`).
+        safe_payload = _redact_payload(payload)
+        logger.info("STUB telegram -> %s payload=%s", method, _redact(repr(safe_payload)))
+        return {"ok": True, "stub": True, "method": method, "payload": safe_payload}
 
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as http:

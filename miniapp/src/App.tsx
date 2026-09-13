@@ -32,6 +32,7 @@ import { MemoryRouter } from 'react-router';
 import type { AuthErrorKind } from '@/auth/telegramAuth';
 import { useAuthStore } from '@/auth/authStore';
 import { StatusScreen, type StatusAction } from '@/components/StatusScreen';
+import { getLegalUrls } from '@/config';
 import { AppRoutes } from '@/routes';
 import { telegramBotAction } from '@/telegram/botLink';
 import { useTelegramBootstrap, useTelegramChrome } from '@/telegram/useTelegram';
@@ -47,10 +48,14 @@ import '@/styles/forms.css';
  * acțiune corectă acolo e butonul care duce în chatul botului. Datele expirate
  * sau invalide se rezolvă cel mai des tot prin redeschidere din chat, deci
  * primesc reîncercarea ca acțiune principală și Telegramul ca a doua.
+ *
+ * „Cont interzis" e singura stare fără reîncercare deloc: acolo serverul a luat
+ * o decizie despre CONT, nu despre datele de conectare, iar a mai încerca o dată
+ * e garantat inutil.
  */
 export function errorActions(
   error: AuthErrorKind,
-  labels: { retry: string; openTelegram: string },
+  labels: { retry: string; openTelegram: string; support: string },
   retry: () => void,
 ): StatusAction[] {
   const toTelegram = (ghost: boolean) =>
@@ -59,6 +64,19 @@ export function errorActions(
   if (error === 'outside_telegram') {
     const action = toTelegram(false);
     return action ? [action] : [];
+  }
+
+  if (error === 'banned') {
+    // NICIUN buton de reîncercare, și nici măcar „deschide în Telegram":
+    // serverul răspunde 403 la fiecare `POST /auth/telegram`, indiferent de cât
+    // de proaspăt e `initData`. Un buton acolo ar fi o buclă infinită pentru om
+    // și un slot consumat din limita de cereri la fiecare apăsare.
+    // Ieșirea care rămâne e singura reală: pagina de suport, unde un ban se
+    // poate contesta.
+    const support = getLegalUrls().supportUrl;
+    return support
+      ? [{ label: labels.support, href: support, testId: 'auth-support' }]
+      : [];
   }
 
   const actions: StatusAction[] = [
@@ -114,6 +132,7 @@ export function App() {
             {
               retry: t('actions.retry', { ns: 'common' }),
               openTelegram: t('actions.openInTelegram'),
+              support: t('actions.contactSupport'),
             },
             () => void signIn(),
           )}

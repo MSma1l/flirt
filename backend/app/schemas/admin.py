@@ -298,6 +298,13 @@ class AdminEventOut(BaseModel):
     ticket_price: float | None = None
     ticket_currency: str | None = None
     attendee_count: int = 0
+    # Comenzi de bilet ONLINE legate de acest eveniment. Sunt aici pentru un
+    # singur motiv concret: confirmarea de ștergere din panou trebuie să spună
+    # CE se pierde. Un eveniment cu bilete plătite nu se șterge „din reflex".
+    #   * `ticket_order_count`    — comenzi NErespinse (în așteptare + aprobate);
+    #   * `ticket_approved_count` — bilete deja emise (bani încasați).
+    ticket_order_count: int = 0
+    ticket_approved_count: int = 0
     created_at: datetime
 
 

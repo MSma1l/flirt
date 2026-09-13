@@ -52,6 +52,7 @@ from app.schemas.ticket_order import (
     TicketOrderOut,
     TicketOrderUserOut,
 )
+from app.services import loyalty
 from app.services.admin_service import audit
 from app.services.pagination import (
     ADMIN_MAX_LIMIT,
@@ -248,10 +249,18 @@ async def create_order(
 
     reference = user_payment_ref(user)
     currency = event.ticket_currency or DEFAULT_CURRENCY
+    # Prețul SNAPSHOT-uit e cel FINAL, după reducerea la care userul are dreptul:
+    # treapta lui de fidelitate, promo-ul evenimentului sau o invitație folosită —
+    # cea mai mare dintre ele, plafonată, niciodată sub zero. Regula completă și
+    # motivarea ei stau în `services/loyalty.py`; aici e singurul punct în care
+    # intră în fluxul de comandă, ca prețul cotat userului (`GET
+    # /loyalty/events/{id}/ticket-quote`) și cel înscris pe comandă să iasă din
+    # ACEEAȘI funcție. Clientul nu trimite nici preț, nici procent.
+    breakdown = await loyalty.price_breakdown(db, user, event)
     order = TicketOrder(
         user_id=user.id,
         event_id=event.id,
-        price=event.ticket_price,
+        price=breakdown.final_price,
         currency=currency,
         reference=reference,
         status=STATUS_AWAITING_PAYMENT,

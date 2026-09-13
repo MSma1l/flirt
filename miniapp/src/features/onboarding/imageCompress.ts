@@ -84,6 +84,79 @@ function looksLikeImage(type: string): boolean {
   return t === '' || t.startsWith('image/');
 }
 
+/* ————————————————————————————————————————————————————————————————————————
+ * TIPUL REAL AL POZEI — din OCTEȚI, nu din eticheta sistemului.
+ *
+ * `File.type` e doar o presupunere a sistemului de operare, de obicei după
+ * extensie. Un JPEG salvat cu extensia `.png` (partajat dintr-o altă aplicație,
+ * redenumit de cineva, exportat de un editor neglijent) ajunge la noi etichetat
+ * `image/png`. Backendul NU crede eticheta: `backend/app/api/v1/profiles.py`
+ * detectează formatul din magic-bytes și respinge cu 422 partea multipart al
+ * cărei tip declarat nu corespunde conținutului. Rezultatul, înainte de
+ * reparație: o poză perfect validă era refuzată, iar omul nu avea ce să repare.
+ *
+ * Deci ne uităm la aceiași octeți la care se uită și serverul. Doar primii —
+ * `Blob.slice` nu citește tot fișierul, deci nu aducem 8 MB în memorie.
+ * ———————————————————————————————————————————————————————————————————————— */
+
+/** Câți octeți de la început ne trebuie ca să recunoaștem orice format. */
+const MAGIC_BYTES = 16;
+
+/**
+ * Tipul REAL al unei imagini, după semnătura de octeți, sau `null` dacă nu o
+ * recunoaștem. Include și GIF, pe care backendul îl refuză: e important să
+ * știm că fișierul E o imagine pe care trebuie să o CONVERTIM, nu una bună.
+ */
+export function sniffImageType(bytes: Uint8Array): string | null {
+  const at = (i: number) => bytes[i];
+
+  // JPEG: FF D8 FF
+  if (bytes.length >= 3 && at(0) === 0xff && at(1) === 0xd8 && at(2) === 0xff) {
+    return 'image/jpeg';
+  }
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  if (bytes.length >= 8 && PNG.every((b, i) => at(i) === b)) return 'image/png';
+  // GIF: „GIF87a" / „GIF89a"
+  const GIF = [0x47, 0x49, 0x46, 0x38];
+  if (bytes.length >= 6 && GIF.every((b, i) => at(i) === b) && at(5) === 0x61) {
+    return 'image/gif';
+  }
+  // WEBP: „RIFF" …4 octeți de lungime… „WEBP"
+  const RIFF = [0x52, 0x49, 0x46, 0x46];
+  const WEBP = [0x57, 0x45, 0x42, 0x50];
+  if (
+    bytes.length >= 12 &&
+    RIFF.every((b, i) => at(i) === b) &&
+    WEBP.every((b, i) => at(8 + i) === b)
+  ) {
+    return 'image/webp';
+  }
+  return null;
+}
+
+/**
+ * Primii octeți ai fișierului, sau `null` dacă nu-i putem citi.
+ * Nu aruncă niciodată: un `null` înseamnă doar „nu știm ce e înăuntru", iar
+ * apelantul alege atunci varianta sigură (normalizarea).
+ */
+async function readMagic(file: Blob): Promise<Uint8Array | null> {
+  try {
+    const head = typeof file.slice === 'function' ? file.slice(0, MAGIC_BYTES) : file;
+    if (typeof head?.arrayBuffer !== 'function') return null;
+    return new Uint8Array(await head.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
+/** Extensia potrivită tipului real (backendul își generează oricum cheia). */
+function extensionFor(type: string): string {
+  if (type === 'image/png') return 'png';
+  if (type === 'image/webp') return 'webp';
+  return 'jpg';
+}
+
 /**
  * Pregătește o poză pentru upload: o decodează, o micșorează și o recomprimă
  * până intră sub `maxUploadBytes`.
@@ -103,6 +176,11 @@ export async function compressImage<T extends DecodedImage>(
 ): Promise<CompressResult> {
   if (!looksLikeImage(file.type)) return { ok: false, reason: 'type' };
 
+  // Tipul REAL, citit din conținut. `null` = nu l-am putut citi sau nu-l
+  // recunoaștem; atunci nu există cale rapidă și poza trece prin normalizare.
+  const magic = await readMagic(file);
+  const realType = magic ? sniffImageType(magic) : null;
+
   let image: T;
   try {
     image = await io.decode(file);
@@ -115,19 +193,33 @@ export async function compressImage<T extends DecodedImage>(
 
   try {
     const biggestAllowed = compression.dimensions[0] ?? 0;
-    // Poza e deja mică ȘI într-un format acceptat → o trimitem NEATINSĂ.
-    // O re-encodare ar pierde calitate degeaba (și ar mări un PNG cu text).
+    // Poza e deja mică ȘI conținutul ei e într-un format acceptat → o trimitem
+    // NEATINSĂ. O re-encodare ar pierde calitate degeaba (și ar mări un PNG cu
+    // text).
+    //
+    // Condiția se uită la `realType` (octeții), NU la `file.type` (eticheta).
+    // Alegerea are două jumătăți, ambele deliberate:
+    //   * eticheta greșită pe octeți BUNI → tot cale rapidă, dar cu tipul
+    //     CORECTAT pe blob. Nu re-encodăm o poză validă doar fiindcă sistemul a
+    //     numit-o greșit; îi punem eticheta pe care o va citi și serverul.
+    //   * octeți pe care nu-i recunoaștem sau pe care backendul nu-i acceptă
+    //     (GIF, HEIC, fișier rupt) → NORMALIZARE: bucla de mai jos îi re-encodează
+    //     în JPEG, deci ce pleacă e mereu ce declarăm.
     if (
+      realType !== null &&
+      limits.allowedTypes.includes(realType) &&
       file.size > 0 &&
       file.size <= limits.maxUploadBytes &&
-      limits.allowedTypes.includes(file.type) &&
       Math.max(image.width, image.height) <= biggestAllowed
     ) {
-      const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+      // `uploadPhoto` trimite partea multipart cu `blob.type`. Când eticheta
+      // minte, o înlocuim aici — altfel backendul ar compara magic-bytes cu un
+      // tip declarat greșit și ar respinge cu 422 o poză perfect validă.
+      const blob = file.type === realType ? file : new Blob([file], { type: realType });
       return {
         ok: true,
-        blob: file,
-        fileName: `${baseName}.${ext}`,
+        blob,
+        fileName: `${baseName}.${extensionFor(realType)}`,
         width: image.width,
         height: image.height,
       };

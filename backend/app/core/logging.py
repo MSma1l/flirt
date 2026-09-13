@@ -32,6 +32,30 @@ from starlette.requests import Request
 from app.core.config import settings
 from starlette.responses import Response
 
+# Adresa clientului: O SINGURĂ implementare, cea din `ratelimit`.
+#
+# Aici a existat o a doua copie, care lua PRIMA intrare din `X-Forwarded-For`.
+# Antetul ajuns la aplicație e cel construit de nginx cu
+# `$proxy_add_x_forwarded_for` (vezi `nginx/nginx.conf`), adică
+# „ce a trimis clientul, VIRGULĂ, IP-ul real al conexiunii" — prima intrare e
+# text scris de client. Consecința în jurnalul de acces: oricine putea alege ce
+# adresă apare în log-urile noastre, deci urmărirea unui abuz ducea la o adresă
+# inventată. Exact defectul reparat în `ratelimit.client_ip` (unde făcea cheia de
+# rate limiting controlabilă de atacator), supraviețuind într-o copie.
+#
+# De aceea NU duplicăm regula: o importăm. Două implementări ale aceleiași
+# reguli înseamnă că următoarea reparație o va prinde iar doar pe una — și
+# „de la ce IP vine cererea" trebuie să însemne același lucru în access log, în
+# rate limiting și în jurnalul de audit al panoului de admin.
+#
+# Importul nu creează ciclu: `app.core.ratelimit` depinde doar de `fastapi` și
+# `app.core.config`, niciunul dintre ele nu importă `app.core.logging`.
+#
+# Notă: valoarea de rezervă când nu se poate determina nimic e "anonymous"
+# (nu "-", cum era aici) — aceeași etichetă ca în cheia de rate limiting, ca o
+# linie de access log să poată fi corelată cu un bucket de limitare.
+from app.core.ratelimit import client_ip as _client_ip
+
 # --------------------------------------------------------------------------- #
 # Context per-cerere (corelare log-uri)
 # --------------------------------------------------------------------------- #
@@ -216,14 +240,3 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
                     "client_ip": _client_ip(request),
                 },
             )
-
-
-def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        first = forwarded.split(",")[0].strip()
-        if first:
-            return first
-    if request.client and request.client.host:
-        return request.client.host
-    return "-"

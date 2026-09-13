@@ -1,6 +1,7 @@
 {
   "actions": {
-    "openInTelegram": "Deschide în Telegram"
+    "openInTelegram": "Deschide în Telegram",
+    "contactSupport": "Scrie-ne la suport"
   },
   "app": {
     "connecting": "Te conectăm…",
@@ -27,6 +28,10 @@
     "server": {
       "title": "Serverul nu răspunde",
       "body": "Ceva n-a mers pe partea noastră. Încearcă din nou în câteva momente."
+    },
+    "banned": {
+      "title": "Contul a fost blocat",
+      "body": "Contul tău a fost blocat de moderatori pentru încălcarea regulilor. Reîncercarea nu ajută: accesul rămâne închis. Dacă crezi că e o greșeală, scrie-ne la suport."
     }
   },
   "feed": {
@@ -53,7 +58,8 @@
       "body": "Ție și lui {{name}} vă place unul de altul.",
       "continue": "Continuă"
     },
-    "emptyBody": "Nu e o eroare: chiar nu mai avem pe cine să-ți arătăm acum. Revino mai târziu sau lărgește filtrele din Setări."
+    "emptyBody": "Nu e o eroare: chiar nu mai avem pe cine să-ți arătăm acum. Revino mai târziu sau lărgește filtrele din Setări.",
+    "undoNothing": "Nu mai e nimic de anulat: serverul nu are niciun swipe al tău."
   },
   "nav": {
     "label": "Navigare principală",
@@ -78,7 +84,8 @@
     "titleNamed": "Bine ai venit, {{name}}!",
     "body": "Contul tău e deja creat — ai intrat cu Telegram. Mai rămâne profilul, ca ceilalți să aibă ce vedea.",
     "cta": "Continuă cu Telegram",
-    "note": "Fără parolă și fără cod pe SMS. Pornim de la numele și poza din Telegram, iar tu le poți schimba."
+    "note": "Fără parolă și fără cod pe SMS. Pornim de la numele și poza din Telegram, iar tu le poți schimba.",
+    "legalNote": "Continuând, accepți Termenii de utilizare și Politica de confidențialitate:"
   },
   "onboarding": {
     "title": "Profilul tău",
@@ -175,5 +182,10 @@
       "network": "Nu avem legătură cu serverul. Verifică internetul și încearcă din nou.",
       "unknown": "Nu am putut obține un răspuns. Încearcă din nou."
     }
+  },
+  "legal": {
+    "terms": "Termeni",
+    "privacy": "Confidențialitate",
+    "support": "Suport"
   }
 }

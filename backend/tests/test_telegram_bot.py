@@ -356,3 +356,111 @@ def test_url_ul_bot_api_contine_tokenul_dar_nu_se_loghează(live_bot):
     url = telegram_bot._api_url("sendMessage")
     assert url == f"{telegram_bot.TELEGRAM_API_BASE}/bot{BOT_TOKEN}/sendMessage"
     assert BOT_TOKEN not in telegram_bot._redact(url)
+
+
+# --- Secretul de webhook nu apare NICIODATĂ în loguri --------------------------
+#
+# `_call` loghează, în modul stub, ÎNTREG payload-ul cererii
+# (`logger.info("STUB telegram -> %s payload=%r", ...)`). Payload-ul metodei
+# `setWebhook` conține `secret_token` — exact secretul care AUTENTIFICĂ
+# webhookul (antetul `X-Telegram-Bot-Api-Secret-Token`, verificat în
+# `api/v1/telegram.py`). Redactarea acoperea doar tokenul botului.
+#
+# SCENARIUL DE EȘEC: `scripts/setup_telegram_bot.py` se rulează pe server ca să
+# înregistreze webhookul; dacă modul e stub (sau devine stub pentru că tokenul
+# lipsește din mediu), secretul ajunge în clar pe stdout → în jurnalul
+# containerului → în orice colector de log-uri. Cine citește log-urile poate
+# POST-a apoi update-uri Telegram FALSE pe ruta noastră de webhook: mesaje
+# fabricate, „utilizatori" fabricați, în numele botului. Un secret ajuns în
+# log-uri nu mai e secret, iar log-urile se păstrează mult mai mult decât ne
+# amintim noi.
+
+
+@pytest.mark.asyncio
+async def test_secretul_de_webhook_nu_apare_in_log_in_modul_stub(
+    monkeypatch, telegram_calls, caplog
+):
+    """Modul stub loghează payload-ul → `secret_token` trebuie redactat."""
+    monkeypatch.setattr(telegram_bot.settings, "telegram_auth_mode", "stub")
+    monkeypatch.setattr(telegram_bot.settings, "telegram_bot_token", BOT_TOKEN)
+    monkeypatch.setattr(telegram_bot.settings, "telegram_webhook_secret", WEBHOOK_SECRET)
+
+    with caplog.at_level(logging.DEBUG):
+        result = await telegram_bot.set_webhook(
+            "https://api.flrt.md/api/v1/telegram/webhook", WEBHOOK_SECRET
+        )
+
+    assert telegram_calls == []
+    assert result["ok"] is True
+    # Nici în log-uri...
+    assert WEBHOOK_SECRET not in caplog.text
+    assert telegram_bot._REDACTED in caplog.text
+    # ...nici în valoarea întoarsă (apelantul o poate tipări/loga mai departe:
+    # vezi `scripts/setup_telegram_bot.py`).
+    assert WEBHOOK_SECRET not in repr(result)
+
+
+@pytest.mark.asyncio
+async def test_secretul_dat_ca_argument_este_redactat_chiar_daca_difera_de_setari(
+    monkeypatch, telegram_calls, caplog
+):
+    """Redactarea nu se poate baza DOAR pe valoarea din `settings`.
+
+    `set_webhook(url, secret)` primește secretul ca ARGUMENT; poate fi altul
+    decât cel din configurație (rotire de secret, rulare cu `--secret` etc.).
+    Redactăm după CHEIA din payload, nu doar după valoarea cunoscută.
+    """
+    monkeypatch.setattr(telegram_bot.settings, "telegram_auth_mode", "stub")
+    monkeypatch.setattr(telegram_bot.settings, "telegram_bot_token", BOT_TOKEN)
+    monkeypatch.setattr(telegram_bot.settings, "telegram_webhook_secret", "alt-secret")
+
+    rotit = "secret-NOU-abia-rotit-987"
+    with caplog.at_level(logging.DEBUG):
+        await telegram_bot.set_webhook("https://api.flrt.md/hook", rotit)
+
+    assert rotit not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_secretul_de_webhook_nu_apare_in_eroarea_unui_apel_live(
+    live_bot, monkeypatch, caplog
+):
+    """Un mesaj de eroare care conține payload-ul nu are voie să scurgă secretul."""
+    async def exploding_post(self, url, **kwargs):
+        # Unele erori httpx/servere de proxy includ corpul cererii în mesaj.
+        raise httpx.ConnectError(f"failed POST {url} body={kwargs.get('json')!r}")
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", exploding_post)
+
+    with caplog.at_level(logging.DEBUG):
+        result = await telegram_bot.set_webhook("https://api.flrt.md/hook", WEBHOOK_SECRET)
+
+    assert result["ok"] is False
+    assert WEBHOOK_SECRET not in result["error"]
+    assert WEBHOOK_SECRET not in caplog.text
+    assert BOT_TOKEN not in caplog.text
+
+
+def test_redact_scoate_si_secretul_de_webhook(live_bot):
+    """`_redact` curăță ȘI secretul de webhook, nu doar tokenul botului."""
+    raw = f"setWebhook payload={{'secret_token': '{WEBHOOK_SECRET}'}} token={BOT_TOKEN}"
+    cleaned = telegram_bot._redact(raw)
+    assert WEBHOOK_SECRET not in cleaned
+    assert BOT_TOKEN not in cleaned
+    assert telegram_bot._REDACTED in cleaned
+
+
+def test_redactarea_nu_strica_restul_payload_ului():
+    """Redactăm secretele, nu tot: restul payload-ului rămâne util în log."""
+    payload = {
+        "url": "https://api.flrt.md/api/v1/telegram/webhook",
+        "secret_token": "s3cr3t-de-webhook",
+        "menu_button": {"type": "web_app", "text": "Deschide"},
+    }
+    masked = telegram_bot._redact_payload(payload)
+
+    assert masked["url"] == payload["url"]
+    assert masked["menu_button"] == payload["menu_button"]
+    assert masked["secret_token"] == telegram_bot._REDACTED
+    # Originalul NU e modificat: payload-ul chiar se trimite la Telegram.
+    assert payload["secret_token"] == "s3cr3t-de-webhook"

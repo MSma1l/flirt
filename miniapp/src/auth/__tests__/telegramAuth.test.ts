@@ -274,6 +274,56 @@ describe('fiecare eroare a backendului are un motiv propriu', () => {
     });
   });
 
+  it.each([
+    // Ban de moderare: `_BANNED_EXC` din `backend/app/services/auth_service.py`
+    // (`login_with_telegram`) și `backend/app/core/deps.py`. 403, nu 401.
+    ['Account is banned'],
+    // Același 403, cu mesajul tradus — clasificarea NU are voie să depindă de text.
+    ['Contul este interzis'],
+    ['Аккаунт заблокирован'],
+  ])('403 „%s" → cont interzis, nu „date expirate"', async (detail) => {
+    installTelegramStub();
+    vi.spyOn(api, 'post').mockRejectedValue(httpError(403, detail));
+
+    await expect(authenticateWithTelegram()).rejects.toMatchObject({ kind: 'banned' });
+  });
+
+  it('un ban descoperit abia la `/auth/me` dă tot ecranul de cont interzis', async () => {
+    // `deps.get_current_user` verifică banul la FIECARE cerere, nu doar la
+    // login: tokenul poate fi emis, iar contul blocat o clipă mai târziu.
+    installTelegramStub();
+    vi.spyOn(api, 'post').mockResolvedValue({ data: TOKENS } as never);
+    vi.spyOn(api, 'get').mockRejectedValue(httpError(403, 'Account is banned'));
+
+    await useAuthStore.getState().signIn();
+
+    expect(useAuthStore.getState().error).toBe('banned');
+  });
+
+  it('403 fără `detail` rămâne „cont interzis" — codul e semnalul', () => {
+    expect(classifyAuthError(httpError(403))).toBe('banned');
+  });
+
+  it('un 403 care vorbește despre `initData` NU e luat drept ban', () => {
+    // Portiță pentru viitor: dacă backendul mută vreodată o eroare de semnătură
+    // pe 403, textul decide, iar utilizatorul primește ecranul cu reîncercare.
+    expect(classifyAuthError(httpError(403, 'Invalid Telegram init data signature'))).toBe(
+      'invalid',
+    );
+  });
+
+  it('contul interzis ajunge ca atare în starea aplicației', async () => {
+    installTelegramStub();
+    vi.spyOn(api, 'post').mockRejectedValue(httpError(403, 'Account is banned'));
+
+    await useAuthStore.getState().signIn();
+
+    const state = useAuthStore.getState();
+    expect(state.status).toBe('error');
+    expect(state.error).toBe('banned');
+    expect(tokenStore.getAccess()).toBeNull();
+  });
+
   it('`classifyAuthError` nu se lasă păcălit de un `detail` care nu e text', () => {
     const weird = httpError(401);
     (weird.response as { data: unknown }).data = { detail: { code: 42 } };

@@ -10,6 +10,7 @@ from app.api.v1 import (
     events,
     feed,
     humor,
+    loyalty,
     profiles,
     push,
     reports,
@@ -34,6 +35,8 @@ api_router.include_router(events.router, prefix="/events", tags=["events"])
 # Bilete online (transfer bancar + verificare manuală). Rutele își declară căile
 # absolute (`/events/{id}/ticket-orders`, `/ticket-orders/*`) → fără prefix.
 api_router.include_router(ticket_orders.router, tags=["ticket-orders"])
+# Fidelitate (trepte Flirt Passport) + folosirea invitațiilor speciale.
+api_router.include_router(loyalty.router, prefix="/loyalty", tags=["loyalty"])
 api_router.include_router(stories.router, prefix="/stories", tags=["stories"])
 api_router.include_router(humor.router, prefix="/humor", tags=["humor"])
 api_router.include_router(reports.router, prefix="/reports", tags=["moderation"])

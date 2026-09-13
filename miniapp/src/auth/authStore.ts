@@ -12,6 +12,7 @@ import { getUnsafeUser } from '@/telegram/bridge';
 
 import {
   authenticateWithTelegram,
+  classifyAuthError,
   TelegramAuthError,
   type AuthErrorKind,
 } from './telegramAuth';
@@ -42,6 +43,21 @@ async function fetchMe(): Promise<AuthUser> {
   return data;
 }
 
+/**
+ * Motivul eșecului, oricare ar fi pasul la care s-a produs.
+ *
+ * `/auth/me` poate pica și el cu 403: `deps.get_current_user` verifică banul la
+ * FIECARE cerere, nu doar la login, deci un cont blocat între emiterea tokenului
+ * și prima cerere ajunge aici. Fără ramura asta ar fi fost „serverul nu
+ * răspunde" — un ecran cu buton de reîncercare, adică exact bucla pe care o
+ * reparăm. Restul eșecurilor de după un token valid rămân „server": nu sunt
+ * despre identitate.
+ */
+function errorKind(error: unknown): AuthErrorKind {
+  if (error instanceof TelegramAuthError) return error.kind;
+  return classifyAuthError(error) === 'banned' ? 'banned' : 'server';
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   status: 'idle',
   user: null,
@@ -63,12 +79,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ status: 'authenticated', user, error: null });
     } catch (error) {
       tokenStore.clear();
-      const kind =
-        error instanceof TelegramAuthError
-          ? error.kind
-          : // `/auth/me` a picat după un token valid: e o problemă de server,
-            // nu de identitate.
-            'server';
+      const kind = errorKind(error);
       set({ status: 'error', user: null, error: kind });
     }
   },
