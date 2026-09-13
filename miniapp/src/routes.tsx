@@ -56,6 +56,8 @@ import { SUBSCRIPTION_PATH } from '@/features/subscription/subscriptionRoutes';
 import { SubscriptionScreen } from '@/features/subscription/SubscriptionScreen';
 import { TICKETS_PATH } from '@/features/tickets/ticketRoutes';
 import { TicketsScreen } from '@/features/tickets/TicketsScreen';
+import { VerificationScreen } from '@/features/verification/VerificationScreen';
+import { VERIFICATION_PATH } from '@/features/verification/verificationRoutes';
 import { MORE_PATH, MoreScreen } from '@/components/MoreScreen';
 
 /** Rutele aplicației normale, sub bara de taburi. */
@@ -101,6 +103,17 @@ function CompletedRoutes() {
           element={<DeepScreen title={t(titleKey)}>{element}</DeepScreen>}
         />
       ))}
+      {/* Verificarea prin selfie: ecran „în adâncime", deschis din profil.
+          Titlul vine din namespace-ul `verification` al cataloagelor mobile
+          (deja tradus), nu din `miniapp`, de aceea nu intră în lista de mai sus. */}
+      <Route
+        path={VERIFICATION_PATH}
+        element={
+          <DeepScreen title={t('verification:title')}>
+            <VerificationScreen />
+          </DeepScreen>
+        }
+      />
       <Route path="*" element={<Navigate to={FEED_PATH} replace />} />
     </Routes>
   );

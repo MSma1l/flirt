@@ -1,0 +1,131 @@
+/*
+ * Stilurile ecranului de verificare. Toate culorile, razele și spațierile vin
+ * din variabilele scrise de `theme/applyTheme.ts`, deci ecranul urmează tema
+ * clientului Telegram fără nicio valoare hardcodată.
+ *
+ * Prefixul `verify-` — CSS-ul e global, iar `styles/forms.css` și
+ * `features/profile/profile.css` revendică deja nume generice. Clasele globale
+ * folosite ca atare (`.button`, `.caption`, `.title`, `.body-text`,
+ * `.error-text`) vin din `styles/global.css`.
+ */
+
+.verify-screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding-top: var(--space-lg);
+  padding-bottom: var(--space-xxl);
+}
+
+/* ——— Confidențialitate: la vedere, nu în subsol ——— */
+
+.verify-privacy {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.verify-privacy__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.verify-privacy__body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+}
+
+/* ——— Previzualizarea camerei ——— */
+
+.verify-camera {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  max-height: 60vh;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  background: var(--color-scrim, rgba(0, 0, 0, 0.6));
+}
+
+/*
+ * OGLINDIREA STĂ AICI, și numai aici.
+ *
+ * Omul se așteaptă să se vadă ca într-o oglindă; o previzualizare neoglindită
+ * pare stricată și îl face să se miște invers. Dar imaginea TRIMISĂ nu are voie
+ * să fie oglindită — comparația facială ar primi altceva decât pozele de
+ * profil. De aceea răsturnarea e o transformare CSS pe elementul de
+ * previzualizare, iar `captureFrame()` desenează cadrul original pe canvas,
+ * fără nicio transformare.
+ */
+.verify-camera__video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.verify-preview {
+  width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+/* ——— Rezultat ——— */
+
+.verify-verified {
+  margin: 0;
+  font-weight: 600;
+  color: var(--color-success);
+}
+
+.verify-result__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.verify-tips {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+}
+
+.verify-tips__title {
+  margin: 0 0 var(--space-xs);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.verify-tips__list {
+  margin: 0;
+  padding-left: 1.1em;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/*
+ * Intrarea fișierului: ascunsă vizual, dar NU cu `display: none`.
+ * Un element cu `display: none` iese din arborele de accesibilitate și, pe
+ * unele WebView-uri, `click()` pe el e ignorat — exact calea de rezervă pe care
+ * ne bazăm când camera în pagină nu merge.
+ */
+.verify-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}

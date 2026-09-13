@@ -108,5 +108,28 @@
         "other": "Discounted price (−{{percent}}%)."
       }
     }
+  },
+  "verification": {
+    "privacyTitle": "What happens to your selfie",
+    "privacy": "The selfie goes to the FLIRT server and is compared automatically with your profile photos. The server does not keep it and shows it to no one. If automatic verification is switched on, the image also reaches the external face verification provider, for the comparison only.",
+    "cameraUnavailable": "The camera can’t be started here. Take a selfie with your camera app or pick a recent photo — it works just as well.",
+    "choose": "Pick a photo or use your phone camera",
+    "shoot": "Take the photo",
+    "retake": "Take another photo",
+    "send": "Send for verification",
+    "sending": "Sending…",
+    "reviewNote": "This exact photo goes for verification. Take another one if you are not happy with it.",
+    "successBody": "Done. The badge now shows on your profile.",
+    "failTitle": "Verification did not go through",
+    "tipsTitle": "What you can try",
+    "tips": {
+      "light": "Face a light source, do not stand with your back to a window.",
+      "frame": "Hold the phone at eye level and fit your whole face in the frame.",
+      "sunglasses": "Take off sunglasses, a mask, a hat or a hood."
+    },
+    "backToProfile": "Back to profile",
+    "a11y": {
+      "shot": "The selfie you just took"
+    }
   }
 }

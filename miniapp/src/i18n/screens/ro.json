@@ -111,5 +111,28 @@
         "other": "Preț cu reducere (−{{percent}}%)."
       }
     }
+  },
+  "verification": {
+    "privacyTitle": "Ce se întâmplă cu selfie-ul",
+    "privacy": "Selfie-ul pleacă la serverul FLIRT și este comparat automat cu pozele tale de profil. Serverul nu îl păstrează și nu îl arată nimănui. Dacă verificarea automată este pornită, imaginea ajunge și la furnizorul extern de verificare facială, doar pentru comparație.",
+    "cameraUnavailable": "Camera nu poate fi pornită aici. Fă un selfie cu aplicația camerei sau alege o poză recentă — merge la fel de bine.",
+    "choose": "Alege o poză sau fă una cu camera telefonului",
+    "shoot": "Fotografiază",
+    "retake": "Fă altă poză",
+    "send": "Trimite pentru verificare",
+    "sending": "Se trimite…",
+    "reviewNote": "Exact poza asta pleacă la verificare. Dacă nu îți convine, fă alta.",
+    "successBody": "Gata. Badge-ul apare de acum pe profilul tău.",
+    "failTitle": "Verificarea nu a reușit",
+    "tipsTitle": "Ce poți încerca",
+    "tips": {
+      "light": "Stai cu fața spre lumină, nu cu spatele la fereastră.",
+      "frame": "Ține telefonul la nivelul ochilor și încadrează-ți toată fața.",
+      "sunglasses": "Scoate ochelarii de soare, masca, pălăria sau gluga."
+    },
+    "backToProfile": "Înapoi la profil",
+    "a11y": {
+      "shot": "Selfie-ul făcut acum"
+    }
   }
 }

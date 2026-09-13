@@ -44,6 +44,9 @@ const OWNED_FEATURES = [
   'tickets',
   'social',
   'passport',
+  // Verificarea prin selfie: ecran nou, cu texte în `verification` (cataloagele
+  // mobile) și în `screens`. Intră în plasă de la început, nu după prima scăpare.
+  'verification',
 ];
 
 /**

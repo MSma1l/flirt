@@ -329,6 +329,12 @@ class Settings(BaseSettings):
     # costă bani reali la furnizorul extern — motivarea completă a cifrei e în
     # `app/api/v1/ai.py`, lângă dependency-ul care o folosește.
     rate_limit_ai_per_min: int = 10
+    # Verificarea faciala cheama un serviciu extern CU PLATA (Rekognition) la
+    # fiecare apel. Fara prag, un cont poate genera cost nelimitat, iar un selfie
+    # respins se reincearca firesc de cateva ori — deci pragul e mic, dar nu
+    # sufocant. In modul de dezvoltare nu costa nimic, dar regula trebuie sa
+    # existe INAINTE de a porni providerul real, nu dupa prima factura.
+    rate_limit_face_verify_per_hour: int = 10
     otp_request_per_hour: int = 5           # cereri OTP / telefon / oră
     otp_max_attempts: int = 5               # încercări verify / cod, apoi invalidare
     max_upload_bytes: int = 8_388_608       # 8 MB limită upload

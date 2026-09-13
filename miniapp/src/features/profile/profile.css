@@ -308,3 +308,19 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/*
+ * Intrarea către verificarea prin selfie, arătată doar contului NEverificat.
+ * Indiciul și butonul stau împreună: un text fără drum înainte nu ajută pe
+ * nimeni. Vezi `features/verification/`.
+ */
+.profile-verify {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  align-items: flex-start;
+}
+
+.profile-verify__cta {
+  align-self: stretch;
+}

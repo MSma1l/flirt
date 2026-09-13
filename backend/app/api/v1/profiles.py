@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.deps import get_current_user
+from app.core.ratelimit import rate_limit
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.profile import (
@@ -23,6 +24,11 @@ from app.services.photo_moderation import get_photo_moderator
 from app.services.storage import key_from_own_url
 
 router = APIRouter()
+
+# Verificarea faciala e singura ruta de profil care cheama un serviciu extern cu
+# plata. Pragul e pe ora, nu pe minut: un utilizator reincearca firesc de
+# cateva ori la rand cand selfie-ul iese prost, dar nu de zeci de ori pe zi.
+_face_verify_rl = rate_limit("face_verify", "rate_limit_face_verify_per_hour", 3600)
 
 logger = logging.getLogger("app.profiles")
 
@@ -254,7 +260,11 @@ async def reorder_photos(data: PhotoOrderIn, db: DbDep, user: UserDep) -> list[s
     return await profile_service.reorder_photos(db, user, data.urls)
 
 
-@router.post("/verify-face", response_model=FaceVerifyOut)
+@router.post(
+    "/verify-face",
+    response_model=FaceVerifyOut,
+    dependencies=[Depends(_face_verify_rl)],
+)
 async def verify_face(request: Request, db: DbDep, user: UserDep) -> FaceVerifyOut:
     """Verificare facială (TZ 2.2): compară un selfie cu pozele profilului.
 

@@ -7,8 +7,10 @@
  */
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { VERIFICATION_PATH } from '@/features/verification/verificationRoutes';
 import { renderWithProviders } from '@/test/harness';
 
 import { ProfileScreen } from '../ProfileScreen';
@@ -84,15 +86,27 @@ beforeEach(() => {
   vi.mocked(reorderPhotos).mockResolvedValue([PHOTOS[1] as string, PHOTOS[0] as string]);
 });
 
+/**
+ * Randează ecranul într-un router de memorie: de când profilul neverificat
+ * arată intrarea către verificare (`<Link>`), fără router randarea ar arunca.
+ */
+function renderScreen() {
+  return renderWithProviders(
+    <MemoryRouter>
+      <ProfileScreen />
+    </MemoryRouter>,
+  );
+}
+
 /** Randează ecranul și așteaptă terminarea încărcării. */
 async function renderProfile() {
-  renderWithProviders(<ProfileScreen />);
+  renderScreen();
   await screen.findByRole('heading', { level: 1 });
 }
 
 describe('încărcare și vizualizare', () => {
   it('arată întâi starea de încărcare, apoi profilul', async () => {
-    renderWithProviders(<ProfileScreen />);
+    renderScreen();
     expect(screen.getByRole('status')).toBeInTheDocument();
 
     expect(await screen.findByRole('heading', { name: 'Ana' })).toBeInTheDocument();
@@ -112,6 +126,15 @@ describe('încărcare și vizualizare', () => {
     expect(screen.queryByTestId('unverified-hint')).not.toBeInTheDocument();
   });
 
+  /**
+   * Contul deja verificat NU primește butonul către flux: a trecut o dată prin
+   * selfie, nu are de ce să o ia de la capăt.
+   */
+  it('nu trimite contul deja verificat înapoi în fluxul de verificare', async () => {
+    await renderProfile();
+    expect(screen.queryByTestId('verify-cta')).not.toBeInTheDocument();
+  });
+
   it('arată indiciul de verificare pentru un cont neverificat', async () => {
     vi.mocked(fetchMyProfile).mockResolvedValue({ ...PROFILE, verified: false });
     await renderProfile();
@@ -119,9 +142,16 @@ describe('încărcare și vizualizare', () => {
     expect(screen.queryByTestId('verified-badge')).not.toBeInTheDocument();
   });
 
+  it('dă contului neverificat un drum către flux, nu doar un text', async () => {
+    vi.mocked(fetchMyProfile).mockResolvedValue({ ...PROFILE, verified: false });
+    await renderProfile();
+    const cta = screen.getByTestId('verify-cta');
+    expect(cta).toHaveAttribute('href', VERIFICATION_PATH);
+  });
+
   it('arată eroarea de încărcare și permite reîncercarea', async () => {
     vi.mocked(fetchMyProfile).mockRejectedValueOnce(new Error('offline'));
-    renderWithProviders(<ProfileScreen />);
+    renderScreen();
 
     const retry = await screen.findByRole('button', { name: 'Reîncearcă' });
     await userEvent.click(retry);

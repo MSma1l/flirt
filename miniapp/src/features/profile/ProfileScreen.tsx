@@ -20,10 +20,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router';
 
 import { DEFAULT_LANGUAGE, normalizeLanguage } from '@mobile/i18n/config';
 
 import { StatusScreen } from '@/components/StatusScreen';
+import { VERIFICATION_PATH } from '@/features/verification/verificationRoutes';
 
 import { PhotoManager, type PhotoTile } from './PhotoManager';
 import {
@@ -278,16 +280,28 @@ export function ProfileScreen() {
         ) : null}
       </header>
 
-      {/* Starea de verificare (TZ 2.2) — badge doar când serverul a confirmat-o. */}
+      {/* Starea de verificare (TZ 2.2) — badge doar când serverul a confirmat-o.
+          Când NU e confirmată, indiciul vine la pachet cu drumul spre flux:
+          un text care spune „poți fi verificat" fără niciun buton e o
+          fundătură, iar fluxul n-avea până acum nicio intrare în Mini App.
+          Contul deja verificat NU primește butonul: nu are de ce să treacă a
+          doua oară prin selfie. */}
       {profile ? (
         profile.verified ? (
           <p className="profile-verified" data-testid="verified-badge">
             {t('verification:verified')}
           </p>
         ) : (
-          <p className="caption" data-testid="unverified-hint">
-            {t('verification:intro')}
-          </p>
+          <div className="profile-verify" data-testid="unverified-hint">
+            <p className="caption">{t('verification:intro')}</p>
+            <Link
+              className="button button--ghost profile-verify__cta"
+              to={VERIFICATION_PATH}
+              data-testid="verify-cta"
+            >
+              {t('verification:start')}
+            </Link>
+          </div>
         )
       ) : null}
 
