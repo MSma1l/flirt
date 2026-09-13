@@ -135,6 +135,22 @@ if ! $install_cmd; then
     exit 0
 fi
 
+# Sursele partajate din `mobile/` isi importa propriile dependinte (axios, i18next
+# etc.). Ele sunt instalate in `miniapp/node_modules`, dar TypeScript cauta
+# pornind de la FISIERUL care face importul si urca din folder in folder — iar
+# `mobile/` nu are node_modules in containerul de build.
+#
+# Fara puntea asta, verificarea de tipuri cade cu "Cannot find module 'axios'",
+# apoi cu erori in lant (fara tipurile bibliotecii, ingustarea tipului dintr-un
+# `catch` nu mai functioneaza). Local nu se vede: acolo `mobile/node_modules`
+# exista. Legatura la RADACINA acopera orice sursa partajata, prezenta sau
+# viitoare, fara sa enumeram bibliotecile una cate una.
+if [ -d "$APP/node_modules" ] && [ ! -e "$WORK/node_modules" ]; then
+    ln -s "$APP/node_modules" "$WORK/node_modules" \
+      && log "am legat dependintele la radacina, pentru sursele partajate" \
+      || log "ATENTIE: nu am putut lega dependintele la radacina"
+fi
+
 if ! npm run build; then
     log "EȘEC la 'npm run build'."
     [ -f "$OUT/index.html" ] && { log "păstrez build-ul ANTERIOR din $OUT"; exit 0; }
