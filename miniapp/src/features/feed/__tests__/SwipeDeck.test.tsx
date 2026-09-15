@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { FeedCard } from '@mobile/features/feed/types';
 
+import { MemoryRouter } from 'react-router';
 import { renderWithProviders } from '@/test/harness';
 
 import { SwipeDeck } from '../SwipeDeck';
@@ -65,7 +66,7 @@ function drag(element: HTMLElement, dx: number, dy: number) {
 }
 
 async function renderDeck() {
-  renderWithProviders(<SwipeDeck />);
+  renderWithProviders(<MemoryRouter><SwipeDeck /></MemoryRouter>);
   return await screen.findByTestId('deck-card');
 }
 
@@ -77,7 +78,7 @@ beforeEach(() => {
 
 describe('stările deck-ului', () => {
   it('arată încărcarea, apoi primul card', async () => {
-    renderWithProviders(<SwipeDeck />);
+    renderWithProviders(<MemoryRouter><SwipeDeck /></MemoryRouter>);
     expect(screen.getByRole('status')).toBeInTheDocument();
 
     expect(await screen.findByText('Ana, 24')).toBeInTheDocument();
@@ -88,7 +89,7 @@ describe('stările deck-ului', () => {
 
   it('arată eroarea de feed și permite reîncercarea', async () => {
     vi.mocked(fetchFeed).mockRejectedValueOnce(new Error('offline'));
-    renderWithProviders(<SwipeDeck />);
+    renderWithProviders(<MemoryRouter><SwipeDeck /></MemoryRouter>);
 
     const retry = await screen.findByRole('button', { name: 'Încearcă din nou' });
     vi.mocked(fetchFeed).mockResolvedValue(CARDS);
@@ -99,7 +100,7 @@ describe('stările deck-ului', () => {
 
   it('arată starea goală când feed-ul e gol', async () => {
     vi.mocked(fetchFeed).mockResolvedValue([]);
-    renderWithProviders(<SwipeDeck />);
+    renderWithProviders(<MemoryRouter><SwipeDeck /></MemoryRouter>);
 
     expect(await screen.findByTestId('deck-reload')).toBeInTheDocument();
     // Fără swipe-uri în sesiune, butonul de undo nu are ce anula.
@@ -111,7 +112,7 @@ describe('stările deck-ului', () => {
 
   it('eroarea de feed are logo și buton de reîncercare', async () => {
     vi.mocked(fetchFeed).mockRejectedValue(new Error('offline'));
-    renderWithProviders(<SwipeDeck />);
+    renderWithProviders(<MemoryRouter><SwipeDeck /></MemoryRouter>);
 
     expect(await screen.findByTestId('deck-retry')).toBeInTheDocument();
     expect(screen.getByTestId('brand-logo')).toBeInTheDocument();

@@ -308,3 +308,32 @@ body {
     transform: none;
   }
 }
+
+/* --- Refuz la swipe: panou cu acțiune, nu mesaj fără ieșire -------------- */
+/* Un refuz de autorizare nu e o eroare de reîncercat. Utilizatorului îi lipsește
+   ceva concret, iar panoul trebuie să-l ducă acolo. Fără buton, e o fundătură. */
+.deck-block {
+  margin: var(--space-md);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-accent);
+  text-align: center;
+}
+
+.deck-block__title {
+  margin: 0 0 var(--space-xs);
+  font-size: 17px;
+  line-height: 22px;
+}
+
+.deck-block__body {
+  margin: 0 0 var(--space-md);
+  color: var(--color-text-secondary);
+}
+
+.deck-block__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}

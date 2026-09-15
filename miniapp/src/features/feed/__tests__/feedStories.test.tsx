@@ -18,6 +18,7 @@ import type { FeedCard } from '@mobile/features/feed/types';
 import type { Story, UserStories } from '@mobile/features/stories/types';
 
 import '@/i18n';
+import { MemoryRouter } from 'react-router';
 import { renderWithProviders } from '@/test/harness';
 import { resetSeenStories } from '@/features/stories/storySeen';
 
@@ -100,7 +101,7 @@ beforeEach(() => {
 
 /** Randează deck-ul și așteaptă primul card. */
 async function renderFeed() {
-  renderWithProviders(<SwipeDeck />);
+  renderWithProviders(<MemoryRouter><SwipeDeck /></MemoryRouter>);
   return await screen.findByTestId('deck-card');
 }
 
@@ -117,7 +118,7 @@ describe('bara de povești în capul feedului', () => {
 
   it('rămâne și când nu mai sunt ankete de arătat', async () => {
     vi.mocked(fetchFeed).mockResolvedValue([]);
-    renderWithProviders(<SwipeDeck />);
+    renderWithProviders(<MemoryRouter><SwipeDeck /></MemoryRouter>);
 
     expect(await screen.findByTestId('deck-reload')).toBeInTheDocument();
     expect(screen.getByTestId('stories-add')).toBeInTheDocument();
@@ -250,7 +251,7 @@ describe('vizualizarea unei povești', () => {
     );
     // Fiecare cerere întoarce o listă NOUĂ, cu același conținut.
     vi.mocked(fetchFeed).mockImplementation(async () => CARDS.map((c) => ({ ...c })));
-    render(<SwipeDeck />, { wrapper });
+    render(<MemoryRouter><SwipeDeck /></MemoryRouter>, { wrapper });
 
     const card = await screen.findByTestId('deck-card');
     drag(card, 220, 0);

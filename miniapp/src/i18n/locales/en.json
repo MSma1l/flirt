@@ -1,7 +1,8 @@
 {
   "actions": {
     "openInTelegram": "Open in Telegram",
-    "contactSupport": "Contact support"
+    "contactSupport": "Contact support",
+    "close": "Close"
   },
   "app": {
     "connecting": "Connecting…",
@@ -59,7 +60,41 @@
       "continue": "Continue"
     },
     "emptyBody": "This isn't an error: there really is nobody left to show right now. Come back later or widen your filters in Settings.",
-    "undoNothing": "Nothing to undo: the server has no swipes of yours."
+    "undoNothing": "Nothing to undo: the server has no swipes of yours.",
+    "blocked": {
+      "humor": {
+        "title": "One more step: the humor test",
+        "body": "To send likes, take the humor test. It takes a minute and helps match you with people who laugh at the same things.",
+        "action": "Take the test"
+      },
+      "photos": {
+        "title": "Add one more photo",
+        "body": "Your profile doesn't have enough photos. Add one more to send likes.",
+        "action": "Add photos"
+      },
+      "profile": {
+        "title": "Your profile isn't complete",
+        "body": "Complete your profile to send likes.",
+        "action": "Complete profile"
+      },
+      "underage": {
+        "title": "The app is 18+",
+        "body": "This feature isn't available to you."
+      },
+      "blocked": {
+        "title": "Interaction blocked",
+        "body": "You can't interact with this user."
+      },
+      "self": {
+        "title": "That's you",
+        "body": "You can't like your own profile."
+      },
+      "unknown": {
+        "title": "Something's missing from your profile",
+        "body": "The server declined the action. Check your profile and try again.",
+        "action": "Open profile"
+      }
+    }
   },
   "nav": {
     "label": "Main navigation",

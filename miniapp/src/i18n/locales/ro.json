@@ -1,7 +1,8 @@
 {
   "actions": {
     "openInTelegram": "Deschide în Telegram",
-    "contactSupport": "Scrie-ne la suport"
+    "contactSupport": "Scrie-ne la suport",
+    "close": "Închide"
   },
   "app": {
     "connecting": "Te conectăm…",
@@ -59,7 +60,41 @@
       "continue": "Continuă"
     },
     "emptyBody": "Nu e o eroare: chiar nu mai avem pe cine să-ți arătăm acum. Revino mai târziu sau lărgește filtrele din Setări.",
-    "undoNothing": "Nu mai e nimic de anulat: serverul nu are niciun swipe al tău."
+    "undoNothing": "Nu mai e nimic de anulat: serverul nu are niciun swipe al tău.",
+    "blocked": {
+      "humor": {
+        "title": "Încă un pas: testul de umor",
+        "body": "Ca să dai like trebuie să treci testul de umor. Durează un minut și ajută la potrivirea cu oameni care râd de aceleași lucruri.",
+        "action": "Fă testul acum"
+      },
+      "photos": {
+        "title": "Mai adaugă o poză",
+        "body": "Profilul tău nu are destule poze. Adaugă încă una ca să poți da like.",
+        "action": "Adaugă poze"
+      },
+      "profile": {
+        "title": "Profilul nu e complet",
+        "body": "Completează-ți profilul ca să poți da like.",
+        "action": "Completează profilul"
+      },
+      "underage": {
+        "title": "Aplicația e 18+",
+        "body": "Nu poți folosi această funcție."
+      },
+      "blocked": {
+        "title": "Interacțiune blocată",
+        "body": "Nu poți interacționa cu acest utilizator."
+      },
+      "self": {
+        "title": "Ești tu",
+        "body": "Nu poți da like propriului profil."
+      },
+      "unknown": {
+        "title": "Ceva îți lipsește din profil",
+        "body": "Serverul a refuzat acțiunea. Verifică-ți profilul și încearcă din nou.",
+        "action": "Vezi profilul"
+      }
+    }
   },
   "nav": {
     "label": "Navigare principală",

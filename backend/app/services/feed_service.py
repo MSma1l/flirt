@@ -27,6 +27,7 @@ from sqlalchemy import and_, func, nullslast, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.errors import CodedHTTPException, ErrorCode
 from app.models.account import Block, UserSettings
 from app.models.chat import Chat, Message
 from app.models.interest import Interest, ProfileInterest
@@ -470,18 +471,20 @@ async def _authorize_swipe(
     """
     # Self-match interzis (nu-ți poți da like ție însuți).
     if target_user_id == user.id:
-        raise HTTPException(
+        raise CodedHTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Nu poți face swipe pe propriul profil.",
+            code=ErrorCode.SELF_SWIPE,
         )
 
     # Profilul propriu — incomplet ⇒ interzis.
     my_result = await db.execute(select(Profile).where(Profile.user_id == user.id))
     my_profile = my_result.scalar_one_or_none()
     if my_profile is None or not my_profile.completed:
-        raise HTTPException(
+        raise CodedHTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Profilul tău nu este complet.",
+            code=ErrorCode.PROFILE_INCOMPLETE,
         )
 
     # Profilul țintei — inexistent SAU incomplet ⇒ 404 (nu divulgăm starea).
@@ -499,9 +502,10 @@ async def _authorize_swipe(
     # `adult_age`, NU poate da swipe și NU poate fi swipe-uit — nici prin API
     # direct, ocolind feed-ul.
     if _calc_age(my_profile.birth_date) < settings.adult_age:
-        raise HTTPException(
+        raise CodedHTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Aplicația este disponibilă doar de la {settings.adult_age} ani.",
+            code=ErrorCode.UNDERAGE,
         )
     if _calc_age(target_profile.birth_date) < settings.adult_age:
         raise HTTPException(
@@ -513,9 +517,10 @@ async def _authorize_swipe(
     # swipe-abil prin `POST /feed/swipe` de către oricine îi știa id-ul, iar un user
     # fără poze putea colecta match-uri fără să apară vreodată în feedul altcuiva.
     if not _has_min_photos(my_profile):
-        raise HTTPException(
+        raise CodedHTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=PHOTOS_REQUIRED_DETAIL,
+            code=ErrorCode.PHOTOS_REQUIRED,
         )
     if not _has_min_photos(target_profile):
         raise HTTPException(
@@ -534,9 +539,10 @@ async def _authorize_swipe(
     # mobilul să redirecționeze la `/humor`, nu la anketă. Feed-ul (browsing) rămâne
     # permis — gate-ul e pe acțiune, exact unde umorul devine obligatoriu.
     if not _has_humor(my_profile):
-        raise HTTPException(
+        raise CodedHTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=HUMOR_REQUIRED_DETAIL,
+            code=ErrorCode.HUMOR_REQUIRED,
         )
 
     # I1 — block în ORICE direcție (eu → el sau el → eu).
@@ -555,8 +561,10 @@ async def _authorize_swipe(
         )
     )
     if block_result.first() is not None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Interacțiune blocată."
+        raise CodedHTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Interacțiune blocată.",
+            code=ErrorCode.INTERACTION_BLOCKED,
         )
 
     # I2 — profil ascuns ⇒ indisponibil pentru swipe (404 neutru).

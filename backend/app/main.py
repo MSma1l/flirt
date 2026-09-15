@@ -3,6 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -69,6 +70,26 @@ app.add_middleware(RequestContextMiddleware)
 # pe care îl dăm înapoi e `request_id`-ul: userul îl raportează la suport, noi
 # găsim exact cererea în log-uri.
 # --------------------------------------------------------------------------- #
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(
+    request: Request, exc: StarletteHTTPException
+) -> JSONResponse:
+    """Comportamentul implicit, plus `code` cand exceptia poarta unul.
+
+    De ce e nevoie: un client nu are voie sa decida dupa TEXTUL mesajului. Textul
+    se traduce si se rescrie; codul nu. `detail` ramane neschimbat, ca aplicatia
+    nativa aflata in productie sa nu fie afectata — codul e un camp NOU, pe care
+    clientii vechi il ignora.
+    """
+    corp: dict[str, object] = {"detail": exc.detail}
+    cod = getattr(exc, "code", None)
+    if cod:
+        corp["code"] = cod
+    return JSONResponse(
+        status_code=exc.status_code, content=corp, headers=exc.headers or None
+    )
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     # Handler-ul rulează în ServerErrorMiddleware, care e ÎN AFARA

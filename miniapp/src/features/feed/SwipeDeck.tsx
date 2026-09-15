@@ -25,8 +25,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router';
 
 import { fetchFeed, swipe, undoSwipe } from '@mobile/features/feed/feedApi';
+import { clasificaRefuzul, type SwipeBlock } from './swipeBlock';
 import {
   resolveDirection,
   SWIPE_THRESHOLD_X,
@@ -61,6 +63,7 @@ function cueOpacity(distance: number, threshold: number): number {
 
 export function SwipeDeck() {
   const { t } = useTranslation('miniapp');
+  const navigate = useNavigate();
   const { data, isLoading, isError, refetch } = useQuery<FeedCard[]>({
     queryKey: ['feed'],
     queryFn: fetchFeed,
@@ -72,6 +75,8 @@ export function SwipeDeck() {
   const [settling, setSettling] = useState(false);
   const [swipeCount, setSwipeCount] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
+  /** Refuz de autorizare: NU o eroare de reîncercat, ci ceva de rezolvat. */
+  const [block, setBlock] = useState<SwipeBlock | null>(null);
   const [matchName, setMatchName] = useState<string | null>(null);
 
   // Punctul de plecare al gestului curent. `null` = niciun deget pe card.
@@ -128,10 +133,16 @@ export function SwipeDeck() {
       if (result.matched) setMatchName(card.name);
       setSwipeCount((c) => c + 1);
       setIndex((i) => i + 1);
-    } catch {
+    } catch (error) {
+      // Un refuz de autorizare NU e o eroare de reîncercat: reîncercarea dă exact
+      // acelaşi răspuns. Utilizatorului îi lipseşte ceva — testul de umor, o poză,
+      // profilul — şi trebuie dus acolo, cu buton. Fără asta rămâne blocat cu un
+      // mesaj generic, exact ce s-a întâmplat în producţie.
+      const refuz = clasificaRefuzul(error);
+      if (refuz) setBlock(refuz);
       // Rețea sau server picat: NU avansăm indexul — rămânem pe același card,
       // ca utilizatorul să poată reîncerca exact aceeași alegere.
-      setActionError(t('feed.sendFailed'));
+      else setActionError(t('feed.sendFailed'));
     } finally {
       setSettling(false);
       setOffset(ORIGIN);
@@ -303,6 +314,35 @@ export function SwipeDeck() {
     </p>
   ) : null;
 
+  // Refuzul se afişează ca panou cu ACŢIUNE, nu ca text. Un mesaj fără buton e o
+  // fundătură: utilizatorul află că nu poate, dar nu şi cum să poată.
+  const blockPanel = block ? (
+    <div className="deck-block" role="alert" data-testid="deck-block">
+      <h2 className="deck-block__title">{t(block.titleKey)}</h2>
+      <p className="deck-block__body">{t(block.bodyKey)}</p>
+      <div className="deck-block__actions">
+        {block.to && block.actionKey ? (
+          <button
+            type="button"
+            className="button"
+            data-testid="deck-block-action"
+            onClick={() => navigate(block.to as string)}
+          >
+            {t(block.actionKey)}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="button button--ghost"
+          data-testid="deck-block-dismiss"
+          onClick={() => setBlock(null)}
+        >
+          {t('actions.close')}
+        </button>
+      </div>
+    </div>
+  ) : null;
+
   if (!current) {
     // Feed gol NU e o eroare, și ecranul trebuie să spună asta răspicat. E chiar
     // starea din producție pentru un cont nou într-un oraș mic: nu mai sunt
@@ -343,7 +383,8 @@ export function SwipeDeck() {
           body={t('feed.emptyBody')}
           actions={actions}
         >
-          {errorText}
+          {blockPanel}
+      {errorText}
           {matchModal}
         </StatusScreen>
       </>
@@ -400,7 +441,8 @@ export function SwipeDeck() {
 
       <div className="deck__hint">
         <p className="caption">{t('feed.hint')}</p>
-        {errorText}
+        {blockPanel}
+      {errorText}
       </div>
 
       {matchModal}
