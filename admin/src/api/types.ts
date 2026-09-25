@@ -351,6 +351,53 @@ export interface PaymentSettings {
   instructions: string;
 }
 
+/* ------------------------ Cereri procurare bilete ------------------------ */
+
+/** Stările noului flux cu dovadă de plată verificată manual. */
+export type TicketRequestStatus =
+  | 'pending_payment'
+  | 'payment_proof_submitted'
+  | 'under_review'
+  | 'approved'
+  | 'rejected'
+  | 'additional_information_required'
+  | 'cancelled';
+
+/** DTO admin: conține datele necesare verificării, însă nu URL-ul public al dovezii. */
+export interface TicketRequest {
+  id: Uuid;
+  event_id: Uuid;
+  event_title: string;
+  event_starts_at: IsoDateTime;
+  event_venue: string | null;
+  full_name: string | null;
+  phone: string | null;
+  email: string | null;
+  ticket_quantity: number;
+  ticket_price: number;
+  total_amount: number;
+  currency: string;
+  payment_description: string;
+  payment_proof_uploaded: boolean;
+  status: TicketRequestStatus;
+  client_message: string | null;
+  admin_comment: string | null;
+  reviewed_at: IsoDateTime | null;
+  created_at: IsoDateTime;
+}
+
+export interface TicketRequestFilters {
+  status?: TicketRequestStatus | 'all';
+  event_id?: Uuid;
+  created_from?: string;
+  created_to?: string;
+}
+
+export interface TicketRequestReviewInput {
+  status: 'approved' | 'rejected' | 'additional_information_required' | 'under_review';
+  admin_comment?: string;
+}
+
 /* ---------------- Fidelitate: trepte ---------------- */
 
 /**

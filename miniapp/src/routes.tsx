@@ -56,6 +56,8 @@ import { SUBSCRIPTION_PATH } from '@/features/subscription/subscriptionRoutes';
 import { SubscriptionScreen } from '@/features/subscription/SubscriptionScreen';
 import { TICKETS_PATH } from '@/features/tickets/ticketRoutes';
 import { TicketsScreen } from '@/features/tickets/TicketsScreen';
+import { TicketRequestScreen } from '@/features/ticketRequests/TicketRequestScreen';
+import { TICKET_REQUEST_ROUTE_PATTERN } from '@/features/ticketRequests/ticketRequestRoutes';
 import { VerificationGate } from '@/features/verification/VerificationGate';
 import { VERIFICATION_PATH } from '@/features/verification/verificationRoutes';
 import { MORE_PATH, MoreScreen } from '@/components/MoreScreen';
@@ -93,6 +95,7 @@ function CompletedRoutes() {
           [BLOCKLIST_PATH, 'nav.blocklist', <BlocklistScreen key="bl" />],
           [PASSPORT_PATH, 'nav.passport', <PassportScreen key="pa" />],
           [TICKETS_PATH, 'nav.tickets', <TicketsScreen key="ti" />],
+          [TICKET_REQUEST_ROUTE_PATTERN, 'nav.event', <TicketRequestScreen key="tr" />],
           [SUBSCRIPTION_PATH, 'nav.subscription', <SubscriptionScreen key="su" />],
           [SETTINGS_PATH, 'nav.settings', <SettingsScreen key="se" />],
         ] as const

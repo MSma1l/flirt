@@ -217,6 +217,16 @@ export async function apiVoid(path: string, options: RequestOptions = {}): Promi
 }
 
 /**
+ * Citește un răspuns binar protejat de aceeași autentificare ca JSON-ul.
+ * Este folosit pentru dovezile de plată: nu punem URL-ul unui fișier privat în
+ * DOM și nu expunem tokenul într-un query string.
+ */
+export async function apiBlob(path: string): Promise<Blob> {
+  const response = await request(path);
+  return response.blob();
+}
+
+/**
  * Cerere paginată: corpul e o listă simplă, cursorul următor vine în
  * `X-Next-Cursor`. Acceptă și forma `{items, next_cursor}` dacă backend-ul
  * întoarce obiectul (unele rute folosesc `EventPage`) — ambele sunt tratate.

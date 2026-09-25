@@ -104,13 +104,13 @@ def key_from_own_url(url: str, profile_id) -> str | None:
 
 
 def key_within_namespace(url: str) -> str | None:
-    """Defense-in-depth: cheia dacă host-ul e al nostru și cheia e sub `photos/`.
+    """Defense-in-depth: cheia dacă host-ul e al nostru și cheia e într-un namespace permis.
 
     Nu leagă de un profil anume — folosit în layerul de storage/verify unde
     `profile_id` nu e disponibil, pentru a refuza chei în afara namespace-ului.
     """
     key = _relative_key(url)
-    if key is None or not key.startswith("photos/"):
+    if key is None or not key.startswith(("photos/", "ticket-proofs/")):
         return None
     return key
 
@@ -130,6 +130,10 @@ class Storage(Protocol):
         """Șterge fișierul asociat unui URL (idempotent)."""
         ...
 
+    async def read(self, url: str) -> tuple[bytes, str] | None:
+        """Citește un obiect propriu pentru endpoint-uri cu acces autorizat."""
+        ...
+
 
 class StubStorage:
     """Storage fals pentru dezvoltare/teste: nu atinge disc/rețea.
@@ -145,6 +149,9 @@ class StubStorage:
 
     async def delete(self, url: str) -> None:
         """No-op în stub — nimic de șters."""
+        return None
+
+    async def read(self, url: str) -> tuple[bytes, str] | None:
         return None
 
 
@@ -199,6 +206,13 @@ class S3Storage:
         self._client().delete_object(Bucket=settings.s3_bucket, Key=key)
         return None
 
+    async def read(self, url: str) -> tuple[bytes, str] | None:
+        key = _relative_key(url)
+        if not key:
+            return None
+        obj = self._client().get_object(Bucket=settings.s3_bucket, Key=key)
+        return obj["Body"].read(), obj.get("ContentType", "application/octet-stream")
+
 
 class LocalStorage:
     """Storage pe disc, servit de pe domeniul propriu — GRATUIT, fără AWS.
@@ -244,6 +258,20 @@ class LocalStorage:
         if target.is_file():
             target.unlink()
         return None
+
+    async def read(self, url: str) -> tuple[bytes, str] | None:
+        key = _relative_key(url)
+        if not key:
+            return None
+        try:
+            target = self._path_for_key(key)
+        except ValueError:
+            return None
+        if not target.is_file():
+            return None
+        ext = target.suffix.lower()
+        content_type = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}.get(ext, "application/octet-stream")
+        return target.read_bytes(), content_type
 
 
 def get_storage() -> Storage:

@@ -30,13 +30,23 @@ from app.models.user import User
 # --- Stările unei comenzi de bilet -------------------------------------------
 STATUS_AWAITING_PAYMENT = "awaiting_payment"
 STATUS_PAYMENT_DECLARED = "payment_declared"
+STATUS_PENDING_PAYMENT = "pending_payment"
+STATUS_PROOF_SUBMITTED = "payment_proof_submitted"
+STATUS_UNDER_REVIEW = "under_review"
 STATUS_APPROVED = "approved"
 STATUS_REJECTED = "rejected"
+STATUS_ADDITIONAL_INFORMATION_REQUIRED = "additional_information_required"
+STATUS_CANCELLED = "cancelled"
 TICKET_ORDER_STATUSES = (
     STATUS_AWAITING_PAYMENT,
     STATUS_PAYMENT_DECLARED,
     STATUS_APPROVED,
     STATUS_REJECTED,
+    STATUS_PENDING_PAYMENT,
+    STATUS_PROOF_SUBMITTED,
+    STATUS_UNDER_REVIEW,
+    STATUS_ADDITIONAL_INFORMATION_REQUIRED,
+    STATUS_CANCELLED,
 )
 
 # Moneda implicită a biletului (aliniată cu `Event.ticket_currency`).
@@ -71,6 +81,16 @@ class TicketOrder(Base):
     # schimbă ulterior `Event.ticket_price`, comenzile deja emise păstrează prețul
     # cu care au fost create (userul plătește exact ce i s-a comunicat).
     price: Mapped[float] = mapped_column(Float, nullable=False)
+    ticket_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    total_amount: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")
+    full_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    client_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    payment_description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # URL intern; nu este serializat direct către client. Accesul se face prin
+    # endpointul autorizat de proof.
+    payment_proof_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     currency: Mapped[str] = mapped_column(
         String(8), nullable=False, server_default=DEFAULT_CURRENCY, default=DEFAULT_CURRENCY
     )

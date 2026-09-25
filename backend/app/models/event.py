@@ -62,6 +62,12 @@ class Event(Base):
     ticket_currency: Mapped[str | None] = mapped_column(
         String(8), nullable=True, server_default="lei"
     )
+    # Capacitatea pentru vânzarea de bilete. NULL înseamnă nelimitat; la aprobare
+    # se incrementează `tickets_sold`, în aceeași tranzacție cu comanda.
+    ticket_capacity: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tickets_sold: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
 
 
 class EventAttendance(Base):

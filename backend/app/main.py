@@ -134,6 +134,22 @@ if settings.storage_provider == "local":
     from urllib.parse import urlparse
 
     from fastapi.staticfiles import StaticFiles
+    from starlette.responses import Response
+
+    class _PublicMediaFiles(StaticFiles):
+        """Servește doar media care poate fi publică.
+
+        Pozele de profil și story-urile pot rămâne sub mount-ul static. Dovezile
+        de plată sunt însă date financiare personale: ele se citesc exclusiv
+        prin endpointurile `/ticket-requests/*/payment-proof`, care verifică
+        proprietarul sau rolul de administrator. Fără această barieră, un URL
+        ghicit din storage-ul local ar ocoli autorizarea de la API.
+        """
+
+        async def get_response(self, path: str, scope):  # type: ignore[no-untyped-def]
+            if path == "ticket-proofs" or path.startswith("ticket-proofs/"):
+                return Response(status_code=404)
+            return await super().get_response(path, scope)
 
     # Path-ul de montare = path-ul din `storage_base_url` (ex. `/media`), ca
     # `GET {storage_base_url}/{key}` să lovească exact acest mount. Config-ul
@@ -142,6 +158,6 @@ if settings.storage_provider == "local":
     os.makedirs(settings.storage_local_dir, exist_ok=True)
     app.mount(
         _mount_path,
-        StaticFiles(directory=settings.storage_local_dir),
+        _PublicMediaFiles(directory=settings.storage_local_dir),
         name="media",
     )

@@ -24,6 +24,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { to: '/subscriptions', label: 'Abonamente' },
   { to: '/ads', label: 'Reclame' },
   { to: '/ticket-orders', label: 'Comenzi bilete' },
+  { to: '/ticket-requests', label: 'Cereri bilete' },
   { to: '/loyalty', label: 'Fidelitate' },
   { to: '/invites', label: 'Invitații' },
 ] as const;

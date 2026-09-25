@@ -30,6 +30,7 @@ import { useNavigate, useParams } from 'react-router';
 
 import { TicketPriceBlock, useRefreshLoyalty, useTicketQuote } from '@/features/loyalty';
 import { TICKETS_PATH } from '@/features/tickets/ticketRoutes';
+import { ticketRequestPath } from '@/features/ticketRequests/ticketRequestRoutes';
 
 import { EventMap } from './EventMap';
 import { formatEventDate, kindColorVar, kindLabel } from './eventFormat';
@@ -198,6 +199,14 @@ export function EventScreen() {
     ticketSection = (
       <>
         {quote ? <TicketPriceBlock quote={quote} /> : null}
+        <button
+          type="button"
+          className="button ev-detail__action"
+          data-testid="request-ticket-btn"
+          onClick={() => void navigate(ticketRequestPath(eventId))}
+        >
+          Solicită bilet
+        </button>
         <button
           type="button"
           className="button ev-detail__action"

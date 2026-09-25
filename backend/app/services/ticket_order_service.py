@@ -37,6 +37,11 @@ from app.models.ticket_order import (
     STATUS_AWAITING_PAYMENT,
     STATUS_PAYMENT_DECLARED,
     STATUS_REJECTED,
+    STATUS_PENDING_PAYMENT,
+    STATUS_PROOF_SUBMITTED,
+    STATUS_UNDER_REVIEW,
+    STATUS_ADDITIONAL_INFORMATION_REQUIRED,
+    STATUS_CANCELLED,
     PaymentSettings,
     TicketOrder,
     user_payment_ref,
@@ -51,9 +56,13 @@ from app.schemas.ticket_order import (
     TicketOrderEventOut,
     TicketOrderOut,
     TicketOrderUserOut,
+    TicketRequestCreateIn,
+    TicketRequestCreateOut,
+    TicketRequestOut,
 )
 from app.services import loyalty
 from app.services.admin_service import audit
+from app.services.push import send_to_user
 from app.services.pagination import (
     ADMIN_MAX_LIMIT,
     ADMIN_PAGE_LIMIT,
@@ -170,6 +179,121 @@ def _to_order_out(order: TicketOrder, event: Event) -> TicketOrderOut:
         created_at=order.created_at,
         decided_at=order.decided_at,
     )
+
+
+def _to_request_out(order: TicketOrder, event: Event) -> TicketRequestOut:
+    """Forma publică a unei cereri; URL-ul intern al dovezii nu iese niciodată."""
+    return TicketRequestOut(
+        id=order.id, event_id=event.id, event_title=event.title,
+        event_starts_at=event.starts_at, event_venue=event.venue,
+        full_name=order.full_name, phone=order.phone, email=order.email,
+        ticket_quantity=order.ticket_quantity, ticket_price=order.price,
+        total_amount=order.total_amount, currency=order.currency,
+        payment_description=order.payment_description,
+        payment_proof_uploaded=bool(order.payment_proof_url), status=order.status,
+        client_message=order.client_message, admin_comment=order.admin_note,
+        created_at=order.created_at, reviewed_at=order.decided_at,
+    )
+
+
+async def create_request(
+    db: AsyncSession, user: User, event_id: uuid.UUID, data: TicketRequestCreateIn
+) -> TicketRequestCreateOut:
+    """Creează cererea manuală cu preț server-side și rezervare doar la aprobare."""
+    event = await _get_event_or_404(db, event_id)
+    if event.ticket_price is None or _as_utc(event.starts_at) < _now():
+        raise HTTPException(status_code=400, detail="Biletele nu sunt disponibile pentru acest eveniment.")
+    if event.ticket_capacity is not None and event.tickets_sold + data.ticket_quantity > event.ticket_capacity:
+        raise HTTPException(status_code=409, detail="Nu mai sunt suficiente bilete disponibile.")
+    existing = (await db.execute(select(TicketOrder).where(
+        TicketOrder.user_id == user.id, TicketOrder.event_id == event.id,
+        TicketOrder.status.in_((STATUS_PENDING_PAYMENT, STATUS_PROOF_SUBMITTED, STATUS_UNDER_REVIEW, STATUS_ADDITIONAL_INFORMATION_REQUIRED)),
+    ).order_by(TicketOrder.created_at.desc()))).scalars().first()
+    if existing:
+        settings = await _get_or_create_settings(db)
+        return TicketRequestCreateOut(request=_to_request_out(existing, event), payment=_payment_instructions(existing, event, settings))
+    price = event.ticket_price
+    total = round(price * data.ticket_quantity, 2)
+    reference = user_payment_ref(user)
+    description = f"Bilet {event.title} – {event.starts_at:%Y-%m-%d} – {data.full_name}"
+    order = TicketOrder(user_id=user.id, event_id=event.id, price=price,
+        total_amount=total, ticket_quantity=data.ticket_quantity, currency=event.ticket_currency or DEFAULT_CURRENCY,
+        reference=reference, status=STATUS_PENDING_PAYMENT, full_name=data.full_name,
+        phone=data.phone, email=data.email or user.email, client_message=data.client_message,
+        payment_description=description)
+    db.add(order)
+    await db.commit(); await db.refresh(order)
+    settings = await _get_or_create_settings(db)
+    payment = _payment_instructions(order, event, settings)
+    payment.amount = total
+    payment.comment_template = description
+    return TicketRequestCreateOut(request=_to_request_out(order, event), payment=payment)
+
+
+async def list_my_requests(db: AsyncSession, user: User) -> list[TicketRequestOut]:
+    rows = (await db.execute(select(TicketOrder, Event).join(Event, Event.id == TicketOrder.event_id).where(
+        TicketOrder.user_id == user.id, TicketOrder.full_name.is_not(None)
+    ).order_by(TicketOrder.created_at.desc()))).all()
+    return [_to_request_out(row.TicketOrder, row.Event) for row in rows]
+
+
+async def get_my_request(db: AsyncSession, user: User, order_id: uuid.UUID) -> TicketRequestOut:
+    order = await _get_own_order_or_404(db, user, order_id)
+    if order.full_name is None:
+        raise HTTPException(status_code=404, detail="Ticket request not found")
+    return _to_request_out(order, await _get_event_or_404(db, order.event_id))
+
+
+async def submit_payment_proof(db: AsyncSession, user: User, order_id: uuid.UUID, proof_url: str) -> TicketRequestOut:
+    order = await _get_own_order_or_404(db, user, order_id)
+    if order.full_name is None or order.status in (STATUS_APPROVED, STATUS_CANCELLED):
+        raise HTTPException(status_code=409, detail="Cererea nu mai acceptă o dovadă nouă.")
+    order.payment_proof_url = proof_url
+    order.status = STATUS_PROOF_SUBMITTED
+    await db.commit(); await db.refresh(order)
+    # Notification is intentionally best-effort; it never changes the payment state.
+    admins = (await db.execute(select(User.id).where(User.role == "admin"))).scalars().all()
+    for admin_id in admins:
+        await send_to_user(db, admin_id, "Dovadă de plată nouă", f"Cererea {order.id} așteaptă verificarea.")
+    return _to_request_out(order, await _get_event_or_404(db, order.event_id))
+
+
+async def review_request(db: AsyncSession, actor: User, order_id: uuid.UUID, new_status: str, comment: str | None, ip: str | None = None) -> TicketRequestOut:
+    order = await _get_order_or_404(db, order_id)
+    if order.full_name is None:
+        raise HTTPException(status_code=404, detail="Ticket request not found")
+    previous = order.status
+    if previous in (STATUS_APPROVED, STATUS_CANCELLED):
+        raise HTTPException(status_code=409, detail="Cererea a fost închisă definitiv.")
+    if new_status == STATUS_APPROVED:
+        if not order.payment_proof_url:
+            raise HTTPException(status_code=409, detail="Nu se poate confirma plata fără dovadă.")
+        # Lock the event row: concurrent approvals cannot oversell capacity.
+        event = (await db.execute(select(Event).where(Event.id == order.event_id).with_for_update())).scalars().one()
+        if event.ticket_capacity is not None and event.tickets_sold + order.ticket_quantity > event.ticket_capacity:
+            raise HTTPException(status_code=409, detail="Capacitatea evenimentului a fost epuizată.")
+        event.tickets_sold += order.ticket_quantity
+        order.ticket_code = order.ticket_code or uuid.uuid4().hex
+    else:
+        event = await _get_event_or_404(db, order.event_id)
+    order.status = new_status; order.admin_note = comment; order.decided_by = actor.id; order.decided_at = _now()
+    audit(db, actor, ACTION_TICKET_ORDER_APPROVE if new_status == STATUS_APPROVED else ACTION_TICKET_ORDER_REJECT,
+          target_type="ticket_request", target_id=order.id,
+          meta={"previous_status": previous, "new_status": new_status, "comment": comment or ""}, ip=ip)
+    await db.commit(); await db.refresh(order)
+    bodies = {STATUS_APPROVED: "Plata a fost confirmată. Cererea ta pentru bilet a fost acceptată.", STATUS_REJECTED: comment or "Cererea a fost refuzată.", STATUS_ADDITIONAL_INFORMATION_REQUIRED: comment or "Sunt necesare informații suplimentare."}
+    await send_to_user(db, order.user_id, "Actualizare cerere bilet", bodies.get(new_status, comment or "Cererea ta este în verificare."))
+    return _to_request_out(order, event)
+
+
+async def list_requests(db: AsyncSession, *, status_filter: str | None = None, event_id: uuid.UUID | None = None, created_from: datetime | None = None, created_to: datetime | None = None) -> list[TicketRequestOut]:
+    stmt = select(TicketOrder, Event).join(Event, Event.id == TicketOrder.event_id).where(TicketOrder.full_name.is_not(None))
+    if status_filter: stmt = stmt.where(TicketOrder.status == status_filter)
+    if event_id: stmt = stmt.where(TicketOrder.event_id == event_id)
+    if created_from: stmt = stmt.where(TicketOrder.created_at >= created_from)
+    if created_to: stmt = stmt.where(TicketOrder.created_at <= created_to)
+    rows = (await db.execute(stmt.order_by(TicketOrder.created_at.desc()))).all()
+    return [_to_request_out(row.TicketOrder, row.Event) for row in rows]
 
 
 # --------------------------------------------------------------------------- #

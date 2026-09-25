@@ -15,7 +15,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 
 from app.core.validators import optional_safe_str, safe_str
 
@@ -83,6 +83,47 @@ class DeclareIn(BaseModel):
     """Payload la `POST /ticket-orders/{id}/declare` — declararea plății."""
 
     note: optional_safe_str(NOTE_MAX_LENGTH) | None = None
+
+
+# --- Cereri de bilete (contract nou, transfer manual) -----------------------
+class TicketRequestCreateIn(BaseModel):
+    full_name: safe_str(200)
+    phone: safe_str(40)
+    email: EmailStr | None = None
+    ticket_quantity: int = Field(ge=1, le=20)
+    client_message: optional_safe_str(NOTE_MAX_LENGTH) | None = None
+
+
+class TicketRequestOut(BaseModel):
+    id: uuid.UUID
+    event_id: uuid.UUID
+    event_title: str
+    event_starts_at: datetime
+    event_venue: str | None = None
+    full_name: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    ticket_quantity: int
+    ticket_price: float
+    total_amount: float
+    currency: str
+    payment_description: str | None = None
+    payment_proof_uploaded: bool = False
+    status: str
+    client_message: str | None = None
+    admin_comment: str | None = None
+    created_at: datetime
+    reviewed_at: datetime | None = None
+
+
+class TicketRequestCreateOut(BaseModel):
+    request: TicketRequestOut
+    payment: PaymentInstructions
+
+
+class TicketRequestReviewIn(BaseModel):
+    status: str = Field(pattern="^(approved|rejected|under_review|additional_information_required|cancelled)$")
+    admin_comment: optional_safe_str(NOTE_MAX_LENGTH) | None = None
 
 
 # --- Admin --------------------------------------------------------------------

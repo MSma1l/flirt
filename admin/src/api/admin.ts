@@ -4,7 +4,7 @@
  * Toate cer un access token de la un cont cu `role: "admin"`; altfel backend-ul
  * întoarce 403 (vezi `require_admin`).
  */
-import { ApiError, apiFetch, apiPage, apiVoid } from './client';
+import { ApiError, apiBlob, apiFetch, apiPage, apiVoid } from './client';
 import type {
   Ad,
   AdInput,
@@ -27,6 +27,9 @@ import type {
   PaymentSettings,
   ResolveAction,
   TicketOrder,
+  TicketRequest,
+  TicketRequestFilters,
+  TicketRequestReviewInput,
   TimeseriesPoint,
   TokenPair,
   Uuid,
@@ -300,5 +303,40 @@ export function updatePaymentSettings(body: PaymentSettings): Promise<PaymentSet
   return apiFetch<PaymentSettings>('/admin/payment-settings', {
     method: 'PUT',
     body: { ...body },
+  });
+}
+
+/* ----------------------- Cereri procurare bilete ----------------------- */
+
+export function fetchTicketRequests(filters: TicketRequestFilters = {}): Promise<TicketRequest[]> {
+  return apiFetch<TicketRequest[]>('/admin/ticket-requests', {
+    query: {
+      status: filters.status === 'all' ? undefined : filters.status,
+      event_id: filters.event_id,
+      created_from: filters.created_from,
+      created_to: filters.created_to,
+    },
+  });
+}
+
+export function fetchTicketRequest(id: Uuid): Promise<TicketRequest> {
+  return apiFetch<TicketRequest>(`/admin/ticket-requests/${id}`);
+}
+
+/** Dovada rămâne într-un endpoint autentificat; pagina o transformă local în Blob URL. */
+export function fetchTicketRequestProof(id: Uuid): Promise<Blob> {
+  return apiBlob(`/admin/ticket-requests/${id}/payment-proof`);
+}
+
+export function reviewTicketRequest(
+  id: Uuid,
+  input: TicketRequestReviewInput,
+): Promise<TicketRequest> {
+  return apiFetch<TicketRequest>(`/admin/ticket-requests/${id}/review`, {
+    method: 'POST',
+    body: {
+      status: input.status,
+      admin_comment: input.admin_comment?.trim() || undefined,
+    },
   });
 }
