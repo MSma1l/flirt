@@ -210,5 +210,103 @@
       "tooLargeAfterCompression": "The photo is still too large ({{size}}) even after compression, and the limit is {{limit}}. Choose another photo.",
       "decodeFailed": "We couldn't process the photo. Some formats (for example HEIC, the iPhone default) can't be opened here. Choose another photo or save it as JPEG."
     }
+  },
+  "passport": {
+    "stampsTitle": "My stamps"
+  },
+  "chat": {
+    "attach": "Attach a photo or video",
+    "day": {
+      "today": "Today",
+      "yesterday": "Yesterday"
+    },
+    "emoji": {
+      "title": "Emoji",
+      "open": "Open emoji",
+      "close": "Back to keyboard",
+      "recentEmpty": "Your frequently used emoji will show up here.",
+      "tabs": {
+        "recent": "Recent",
+        "smileys": "Smileys",
+        "love": "Love",
+        "gestures": "Gestures",
+        "fun": "Fun",
+        "nature": "Nature"
+      }
+    },
+    "media": {
+      "photo": "Photo",
+      "video": "Video",
+      "openPhoto": "Open photo",
+      "playVideo": "Play video"
+    },
+    "listPreview": {
+      "image": "📷 Photo",
+      "video": "🎥 Video",
+      "voice": "🎤 Voice message",
+      "attachment": "📎 Attachment"
+    },
+    "preview": {
+      "titlePhoto": "Send a photo",
+      "titleVideo": "Send a video",
+      "caption": "Add a caption…",
+      "send": "Send attachment",
+      "cancel": "Cancel"
+    },
+    "status": {
+      "sent": "Sent",
+      "read": "Read",
+      "sending": "Sending"
+    },
+    "upload": {
+      "progress": "Uploading: {{percent}}%",
+      "retry": "Retry sending",
+      "remove": "Discard attachment"
+    },
+    "errors": {
+      "tooLargeImage": "The photo is too large. The limit is 10 MB.",
+      "tooLargeVideo": "The video is too large. The limit is 50 MB.",
+      "tooLargeVoice": "The voice message is too long or too large (5 minutes max).",
+      "unsupported": "This file type isn’t supported. Send a photo, a video or a voice message.",
+      "empty": "The file is empty. Pick another one.",
+      "generic": "The attachment wasn’t sent. Try again."
+    },
+    "voice": {
+      "record": "Record a voice message",
+      "send": "Send voice message",
+      "cancel": "Cancel recording",
+      "recording": "Recording…",
+      "play": "Play",
+      "pause": "Pause",
+      "denied": "Microphone access was denied. Allow it in your phone settings to send voice messages.",
+      "unavailable": "Voice recording isn’t available on this device."
+    },
+    "viewer": {
+      "close": "Close"
+    }
+  },
+  "profileView": {
+    "photos": "Profile photos",
+    "prevPhoto": "Previous photo",
+    "nextPhoto": "Next photo",
+    "verified": "Verified",
+    "noPhotosTitle": "Add your photos",
+    "noPhotosHint": "Photos are the first thing people see. You need at least {{min}}.",
+    "addPhotos": "Add photos",
+    "infoTitle": "At a glance",
+    "gender": "Gender",
+    "height": "Height",
+    "heightValue": "{{cm}} cm",
+    "city": "City",
+    "nationality": "Nationality",
+    "languages": "Languages",
+    "aboutTitle": "About me",
+    "strength": {
+      "title": "Profile strength",
+      "hint": "Fill in the rest to stand out:",
+      "a11y": "Profile {{percent}}% complete",
+      "photos": "At least {{min}} photos",
+      "verified": "Account verification"
+    }
   }
 }

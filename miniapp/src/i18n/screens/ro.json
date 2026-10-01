@@ -214,5 +214,103 @@
       "tooLargeAfterCompression": "Poza rămâne prea mare ({{size}}) chiar și după comprimare, iar limita este {{limit}}. Alege altă poză.",
       "decodeFailed": "Nu am putut procesa poza. Unele formate (de exemplu HEIC, cel implicit pe iPhone) nu pot fi deschise aici. Alege altă poză sau salveaz-o ca JPEG."
     }
+  },
+  "passport": {
+    "stampsTitle": "Ștampilele mele"
+  },
+  "chat": {
+    "attach": "Atașează o poză sau un video",
+    "day": {
+      "today": "Astăzi",
+      "yesterday": "Ieri"
+    },
+    "emoji": {
+      "title": "Emoji",
+      "open": "Deschide emoji",
+      "close": "Înapoi la tastatură",
+      "recentEmpty": "Emoji-urile folosite des apar aici.",
+      "tabs": {
+        "recent": "Recente",
+        "smileys": "Fețe",
+        "love": "Dragoste",
+        "gestures": "Gesturi",
+        "fun": "Distracție",
+        "nature": "Natură"
+      }
+    },
+    "media": {
+      "photo": "Poză",
+      "video": "Video",
+      "openPhoto": "Deschide poza",
+      "playVideo": "Redă video-ul"
+    },
+    "listPreview": {
+      "image": "📷 Poză",
+      "video": "🎥 Video",
+      "voice": "🎤 Mesaj vocal",
+      "attachment": "📎 Atașament"
+    },
+    "preview": {
+      "titlePhoto": "Trimite o poză",
+      "titleVideo": "Trimite un video",
+      "caption": "Adaugă o descriere…",
+      "send": "Trimite atașamentul",
+      "cancel": "Anulează"
+    },
+    "status": {
+      "sent": "Trimis",
+      "read": "Citit",
+      "sending": "Se trimite"
+    },
+    "upload": {
+      "progress": "Se încarcă: {{percent}}%",
+      "retry": "Reîncearcă trimiterea",
+      "remove": "Renunță la atașament"
+    },
+    "errors": {
+      "tooLargeImage": "Poza e prea mare. Limita e de 10 MB.",
+      "tooLargeVideo": "Video-ul e prea mare. Limita e de 50 MB.",
+      "tooLargeVoice": "Mesajul vocal e prea lung sau prea mare (maxim 5 minute).",
+      "unsupported": "Tipul ăsta de fișier nu e acceptat. Trimite o poză, un video sau un mesaj vocal.",
+      "empty": "Fișierul e gol. Alege altul.",
+      "generic": "Atașamentul nu a fost trimis. Reîncearcă."
+    },
+    "voice": {
+      "record": "Înregistrează un mesaj vocal",
+      "send": "Trimite mesajul vocal",
+      "cancel": "Anulează înregistrarea",
+      "recording": "Se înregistrează…",
+      "play": "Ascultă",
+      "pause": "Pauză",
+      "denied": "Nu ai permis accesul la microfon. Permite-l din setările telefonului ca să trimiți mesaje vocale.",
+      "unavailable": "Înregistrarea vocală nu e disponibilă pe acest dispozitiv."
+    },
+    "viewer": {
+      "close": "Închide"
+    }
+  },
+  "profileView": {
+    "photos": "Pozele profilului",
+    "prevPhoto": "Poza anterioară",
+    "nextPhoto": "Poza următoare",
+    "verified": "Verificat",
+    "noPhotosTitle": "Adaugă-ți pozele",
+    "noPhotosHint": "Pozele sunt primul lucru pe care îl văd ceilalți. Ai nevoie de cel puțin {{min}}.",
+    "addPhotos": "Adaugă poze",
+    "infoTitle": "Pe scurt",
+    "gender": "Gen",
+    "height": "Înălțime",
+    "heightValue": "{{cm}} cm",
+    "city": "Oraș",
+    "nationality": "Naționalitate",
+    "languages": "Limbi",
+    "aboutTitle": "Despre mine",
+    "strength": {
+      "title": "Puterea profilului",
+      "hint": "Completează și restul ca să ieși în evidență:",
+      "a11y": "Profil completat în proporție de {{percent}}%",
+      "photos": "Cel puțin {{min}} poze",
+      "verified": "Verificarea contului"
+    }
   }
 }

@@ -98,9 +98,24 @@ export function InviteRedeemForm() {
 
   return (
     <form className="ly-invite" onSubmit={submit} data-testid="invite-form">
-      <label className="ly-invite__label" htmlFor="invite-code">
-        {t('loyalty.invite.label')}
-      </label>
+      <div className="ly-invite__head">
+        <span className="ly-invite__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20">
+            <rect x="3" y="8" width="18" height="13" rx="2" fill="none" stroke="currentColor" strokeWidth="1.7" />
+            <path d="M3 12h18M12 8v13" stroke="currentColor" strokeWidth="1.7" />
+            <path
+              d="M12 8c-1.5-3.5-5-3.5-5-1.2C7 8 9.5 8 12 8zm0 0c1.5-3.5 5-3.5 5-1.2C17 8 14.5 8 12 8z"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+        <label className="ly-invite__label" htmlFor="invite-code">
+          {t('loyalty.invite.label')}
+        </label>
+      </div>
       <p className="caption ly-invite__hint">{t('loyalty.invite.hint')}</p>
       <div className="ly-invite__row">
         <input

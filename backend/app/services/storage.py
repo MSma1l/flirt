@@ -110,7 +110,7 @@ def key_within_namespace(url: str) -> str | None:
     `profile_id` nu e disponibil, pentru a refuza chei în afara namespace-ului.
     """
     key = _relative_key(url)
-    if key is None or not key.startswith(("photos/", "ticket-proofs/")):
+    if key is None or not key.startswith(("photos/", "ticket-proofs/", "chat-media/")):
         return None
     return key
 

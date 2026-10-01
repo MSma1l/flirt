@@ -389,6 +389,11 @@ class Settings(BaseSettings):
     otp_max_attempts: int = 5               # încercări verify / cod, apoi invalidare
     max_upload_bytes: int = 8_388_608       # 8 MB limită upload
     allowed_image_types: str = "image/jpeg,image/png,image/webp"
+    # Atașamente în chat (POST /chats/{id}/attachments). nginx permite 55 MB.
+    chat_image_max_bytes: int = 10_485_760      # 10 MB
+    chat_voice_max_bytes: int = 10_485_760      # 10 MB
+    chat_video_max_bytes: int = 52_428_800      # 50 MB
+    chat_voice_max_duration_ms: int = 300_000   # 5 minute
     free_daily_swipe_limit: int = 50        # limită swipe/zi pentru non-premium (TZ 4.5)
     feed_scan_limit: int = 500              # câți candidați scanează feed-ul (anti-DoS)
 

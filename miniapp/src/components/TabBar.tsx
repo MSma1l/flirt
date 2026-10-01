@@ -13,17 +13,26 @@
  * strâmbă și improvizată. Desenele au aceeași fereastră de 24×24 și aceeași
  * grosime de linie, deci se aliniază între ele pe orice platformă.
  */
-import { NavLink } from 'react-router';
+import { NavLink, useLocation } from 'react-router';
 import { useTranslation } from 'react-i18next';
 
+import { STORIES_PATH } from '@/features/stories/storyRoutes';
+import { VERIFICATION_PATH } from '@/features/verification/verificationRoutes';
 import { haptic } from '@/telegram/bridge';
 
 import { Icon, type IconName } from './icons';
+import { MENU_ENTRIES, MORE_PATH } from './MoreScreen';
 
 export interface TabItem {
   to: string;
   labelKey: string;
   icon: IconName;
+  /**
+   * Alte căi (cu tot ce e sub ele) care aprind ACEST tab. Bara stă și pe
+   * ecranele adânci; fără asta, pe `/passport` nu s-ar aprinde niciun tab și
+   * utilizatorul n-ar ști unde se află.
+   */
+  also?: readonly string[];
 }
 
 /** Taburile de nivel întâi. Ordinea e cea din produs: căutare → relație → tine. */
@@ -36,46 +45,74 @@ export interface TabItem {
 // calendar, nu o stea (steaua rămâne pentru „Favorite", în meniu), iar profilul
 // e o siluetă, nu un zâmbet (zâmbetul e testul de umor).
 export const TABS: TabItem[] = [
-  { to: '/feed', labelKey: 'nav.feed', icon: 'heart' },
+  // Poveștile se deschid din capul feedului.
+  { to: '/feed', labelKey: 'nav.feed', icon: 'heart', also: [STORIES_PATH] },
+  // `/events/:id` și `/events/:id/ticket-request` sunt sub `/events`.
   { to: '/events', labelKey: 'nav.events', icon: 'calendar' },
+  // O conversație e `/mesaje/:id`, sub `/mesaje`.
   { to: '/mesaje', labelKey: 'nav.chats', icon: 'chat' },
-  { to: '/profil', labelKey: 'nav.profile', icon: 'person' },
-  { to: '/meniu', labelKey: 'nav.more', icon: 'menu' },
+  // Verificarea se deschide din profil.
+  {
+    to: '/profil',
+    labelKey: 'nav.profile',
+    icon: 'person',
+    also: [VERIFICATION_PATH],
+  },
+  // Tot ce se deschide din meniu (pașaport, bilete, setări...) aprinde meniul.
+  {
+    to: MORE_PATH,
+    labelKey: 'nav.more',
+    icon: 'menu',
+    also: MENU_ENTRIES.map((e) => e.to),
+  },
 ];
+
+function underPath(pathname: string, base: string): boolean {
+  return pathname === base || pathname.startsWith(`${base}/`);
+}
+
+/** Tabul care se aprinde pentru o cale, inclusiv pentru ecranele adânci. */
+export function isTabActive(tab: TabItem, pathname: string): boolean {
+  return [tab.to, ...(tab.also ?? [])].some((base) => underPath(pathname, base));
+}
 
 export function TabBar() {
   const { t } = useTranslation('miniapp');
+  const { pathname } = useLocation();
 
   return (
     <nav className="tab-bar" aria-label={t('nav.label')}>
-      {TABS.map((tab) => (
-        <NavLink
-          key={tab.to}
-          to={tab.to}
-          className={({ isActive }) => (isActive ? 'tab tab--active' : 'tab')}
-          onClick={() => haptic('light')}
-        >
-          {({ isActive }) => (
-            <>
-              <span className="tab__icon">
-                <Icon name={tab.icon} active={isActive} />
-              </span>
-              <span className="tab__label">{t(tab.labelKey)}</span>
-              {/*
-               * AL DOILEA SEMNAL al tabului activ, pe lângă linia mai groasă a
-               * iconiței. Roz pe gri e singura diferență pentru un ochi care
-               * distinge culorile; pentru unul care nu le distinge, roz și gri
-               * au aproape aceeași luminozitate, deci tabul activ ar dispărea.
-               *
-               * Bara stă MEREU în DOM, doar ascunsă: dacă ar apărea la
-               * schimbarea tabului, ar împinge eticheta cu câțiva pixeli, iar
-               * întreaga bară ar tresări la fiecare apăsare.
-               */}
-              <span className="tab__indicator" aria-hidden="true" data-active={isActive ? 'true' : 'false'} />
-            </>
-          )}
-        </NavLink>
-      ))}
+      {TABS.map((tab) => {
+        const isActive = isTabActive(tab, pathname);
+        return (
+          <NavLink
+            key={tab.to}
+            to={tab.to}
+            className={isActive ? 'tab tab--active' : 'tab'}
+            onClick={() => haptic('light')}
+          >
+            <span className="tab__icon">
+              <Icon name={tab.icon} active={isActive} />
+            </span>
+            <span className="tab__label">{t(tab.labelKey)}</span>
+            {/*
+             * AL DOILEA SEMNAL al tabului activ, pe lângă linia mai groasă a
+             * iconiței. Roz pe gri e singura diferență pentru un ochi care
+             * distinge culorile; pentru unul care nu le distinge, roz și gri
+             * au aproape aceeași luminozitate, deci tabul activ ar dispărea.
+             *
+             * Bara stă MEREU în DOM, doar ascunsă: dacă ar apărea la
+             * schimbarea tabului, ar împinge eticheta cu câțiva pixeli, iar
+             * întreaga bară ar tresări la fiecare apăsare.
+             */}
+            <span
+              className="tab__indicator"
+              aria-hidden="true"
+              data-active={isActive ? 'true' : 'false'}
+            />
+          </NavLink>
+        );
+      })}
     </nav>
   );
 }

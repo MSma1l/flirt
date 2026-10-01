@@ -1,6 +1,7 @@
 """Logica de chat: dialoguri per match, mesaje, mascare contacte (TZ secț. 5)."""
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import date
 
@@ -15,6 +16,7 @@ from app.models.profile import Profile
 from app.models.swipe import Match
 from app.models.user import User
 from app.schemas.chat import ChatSummary, MessageOut, MessagePage
+from app.services.chat_media import ChatMedia, build_attachment_key
 from app.services.compatibility import compute_compatibility
 from app.services.contact_masker import mask_contacts
 from app.services.pagination import (
@@ -24,6 +26,9 @@ from app.services.pagination import (
     decode_cursor,
     encode_cursor,
 )
+from app.services.storage import get_storage
+
+logger = logging.getLogger("app.chat")
 
 
 def _calc_age(birth_date: date, today: date | None = None) -> int:
@@ -120,8 +125,8 @@ async def _ensure_not_blocked(
 
 async def _last_messages_by_chat(
     db: AsyncSession, user: User
-) -> dict[uuid.UUID, tuple[str, object]]:
-    """Ultimul mesaj (body, created_at) din FIECARE chat al userului — O(1) query.
+) -> dict[uuid.UUID, tuple[str, object, str]]:
+    """Ultimul mesaj (body, created_at, kind) din FIECARE chat al userului — O(1) query.
 
     Window function `ROW_NUMBER() OVER (PARTITION BY chat_id ORDER BY created_at
     DESC, id DESC)`, filtrată la rândul 1. Înlocuiește un `SELECT ... LIMIT 1`
@@ -140,6 +145,7 @@ async def _last_messages_by_chat(
             Message.chat_id.label("chat_id"),
             Message.body.label("body"),
             Message.created_at.label("created_at"),
+            Message.kind.label("kind"),
             rank,
         )
         # JOIN pe chat (nu `IN (:id1, …, :idN)`) — numărul de parametri legați nu
@@ -149,11 +155,13 @@ async def _last_messages_by_chat(
         .subquery()
     )
     result = await db.execute(
-        select(ranked.c.chat_id, ranked.c.body, ranked.c.created_at).where(
-            ranked.c.rank == 1
-        )
+        select(
+            ranked.c.chat_id, ranked.c.body, ranked.c.created_at, ranked.c.kind
+        ).where(ranked.c.rank == 1)
     )
-    return {row.chat_id: (row.body, row.created_at) for row in result.all()}
+    return {
+        row.chat_id: (row.body, row.created_at, row.kind) for row in result.all()
+    }
 
 
 async def _unread_counts_by_chat(
@@ -259,7 +267,7 @@ async def list_chats(db: AsyncSession, user: User) -> list[ChatSummary]:
         else:
             compatibility = 0
 
-        last_body, last_at = last_by_chat.get(chat.id, (None, None))
+        last_body, last_at, last_kind = last_by_chat.get(chat.id, (None, None, None))
 
         summaries.append(
             ChatSummary(
@@ -270,6 +278,7 @@ async def list_chats(db: AsyncSession, user: User) -> list[ChatSummary]:
                 other_city=profile.city if profile else None,
                 last_message=last_body,
                 last_message_at=last_at,
+                last_message_kind=last_kind,
                 unread_count=unread_by_chat.get(chat.id, 0),
                 compatibility=compatibility,
             )
@@ -368,6 +377,67 @@ async def send_message(
     )
     db.add(message)
     await db.commit()
+    await db.refresh(message)
+    return MessageOut.model_validate(message)
+
+
+async def get_writable_chat(
+    db: AsyncSession, user: User, chat_id: uuid.UUID
+) -> Chat:
+    """Chat-ul în care `user` poate scrie: participant (altfel 404) și neblocat (403).
+
+    Folosit de ruta de atașamente ÎNAINTE de a citi fișierul — un străin sau un
+    user blocat nu ne poate umple storage-ul.
+    """
+    chat = await _get_participant_chat(db, user, chat_id)
+    await _ensure_not_blocked(db, user.id, _other_id(chat, user.id))
+    return chat
+
+
+async def send_attachment(
+    db: AsyncSession,
+    user: User,
+    chat: Chat,
+    media: ChatMedia,
+    caption: str,
+) -> MessageOut:
+    """Trimite un mesaj media (poză / video / vocal) cu legendă opțională.
+
+    Legenda trece prin aceeași mascare de contacte ca un mesaj text (TZ 5.5);
+    fără legendă `body` e "" (coloana rămâne NOT NULL pentru clienții vechi).
+    Fișierul se salvează în storage sub o cheie aleatoare; dacă persistarea
+    mesajului pică, îl ștergem (best-effort) ca să nu rămână orfan.
+    """
+    masked_body, was_masked = mask_contacts(caption) if caption else ("", False)
+
+    storage = get_storage()
+    key = build_attachment_key(chat.id, media.mime)
+    url = await storage.save(key, media.content, media.mime)
+
+    message = Message(
+        chat_id=chat.id,
+        sender_id=user.id,
+        body=masked_body,
+        was_masked=was_masked,
+        is_read=False,
+        kind=media.kind,
+        attachment_url=url,
+        attachment_mime=media.mime,
+        attachment_size=len(media.content),
+        attachment_duration_ms=media.duration_ms,
+        attachment_width=media.width,
+        attachment_height=media.height,
+    )
+    db.add(message)
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        try:
+            await storage.delete(url)
+        except Exception:  # noqa: BLE001 — curățenia nu maschează eroarea reală
+            logger.warning("Atașament orfan neșters: %s", url, exc_info=True)
+        raise
     await db.refresh(message)
     return MessageOut.model_validate(message)
 

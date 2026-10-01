@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -10,6 +11,10 @@ from app.core.validators import no_control_chars, no_html, safe_str
 
 # Lungimea maximă a unui mesaj de chat (TZ 5) — anti-DoS payload.
 MESSAGE_MAX_LENGTH = 2000
+
+# Tipurile de mesaj. 'text' e implicitul — clienții vechi (aplicația nativă)
+# ignoră câmpul și văd exact aceleași mesaje ca înainte.
+MessageKind = Literal["text", "image", "video", "voice"]
 
 
 class ChatSummary(BaseModel):
@@ -22,9 +27,23 @@ class ChatSummary(BaseModel):
     other_city: str | None = None
     last_message: str | None = None
     last_message_at: datetime | None = None
+    # Tipul ultimului mesaj (aditiv): la media `last_message` e legenda sau "",
+    # iar clientul afișează o previzualizare după `last_message_kind`.
+    last_message_kind: MessageKind | None = None
     unread_count: int = 0
     # Scorul de compatibilitate cu celălalt participant, 0–100 (TZ 5.2 / 4.6).
     compatibility: int = 0
+
+
+class AttachmentOut(BaseModel):
+    """Fișierul media atașat unui mesaj (poză / video / mesaj vocal)."""
+
+    url: str
+    mime: str
+    size_bytes: int
+    duration_ms: int | None = None
+    width: int | None = None
+    height: int | None = None
 
 
 class MessageOut(BaseModel):
@@ -39,6 +58,10 @@ class MessageOut(BaseModel):
     is_read: bool
     reaction: str | None = None  # emoji simplu sau None (TZ 5.2)
     created_at: datetime
+    # Câmpuri ADITIVE (compatibile cu clienții existenți): la media `body` e
+    # legenda sau "", iar `attachment` descrie fișierul; la text attachment=None.
+    kind: MessageKind = "text"
+    attachment: AttachmentOut | None = None
 
 
 class MessagePage(BaseModel):

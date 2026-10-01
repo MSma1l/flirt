@@ -2,20 +2,66 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.validators import safe_str
 
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.chat import ChatSummary, MessageIn, MessageOut, ReactionIn
+from app.schemas.chat import (
+    MESSAGE_MAX_LENGTH,
+    ChatSummary,
+    MessageIn,
+    MessageOut,
+    ReactionIn,
+)
 from app.services import chat_service
+from app.services.chat_media import max_attachment_bytes, validate_attachment
 from app.services.pagination import MAX_CURSOR_LENGTH, MESSAGES_MAX_LIMIT
 
 router = APIRouter()
 
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
+
+# Legenda unui atașament: aceleași reguli ca `MessageIn.body` (trim, plafon,
+# fără control chars / HTML) — doar că poate lipsi.
+_CAPTION = TypeAdapter(safe_str(MESSAGE_MAX_LENGTH))
+# Plafonul duratei declarate (ms) — sanitizare, nu limită de produs (1 oră).
+_DURATION_MS_MAX = 3_600_000
+
+
+def _parse_caption(raw: object) -> str:
+    """Legenda validată ("" dacă lipsește / e goală). 422 la input nepermis."""
+    if raw is None:
+        return ""
+    if not isinstance(raw, str):
+        raise HTTPException(status_code=422, detail="Câmpul 'caption' trebuie să fie text.")
+    if not raw.strip():
+        return ""
+    try:
+        return _CAPTION.validate_python(raw)
+    except ValidationError as exc:
+        msg = exc.errors()[0].get("msg", "Legendă invalidă.")
+        raise HTTPException(status_code=422, detail=f"caption: {msg}") from None
+
+
+def _parse_duration(raw: object) -> int | None:
+    """`duration_ms` opțional: întreg 0..1h; altfel 422."""
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return None
+    try:
+        value = int(str(raw).strip())
+    except ValueError:
+        raise HTTPException(
+            status_code=422, detail="Câmpul 'duration_ms' trebuie să fie un număr întreg."
+        ) from None
+    if value < 0 or value > _DURATION_MS_MAX:
+        raise HTTPException(status_code=422, detail="Câmpul 'duration_ms' este în afara limitelor.")
+    return value
 
 
 @router.get("/", response_model=list[ChatSummary])
@@ -61,6 +107,54 @@ async def send_message(
 ) -> MessageOut:
     """Trimite un mesaj (contactele sunt mascate automat, TZ 5.5)."""
     return await chat_service.send_message(db, user, chat_id, data.body)
+
+
+@router.post(
+    "/{chat_id}/attachments",
+    response_model=MessageOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def send_attachment(
+    chat_id: uuid.UUID, request: Request, db: DbDep, user: UserDep
+) -> MessageOut:
+    """Trimite o poză / un video / un mesaj vocal (multipart/form-data).
+
+    Câmpuri: `file` (obligatoriu), `duration_ms` (opțional, voice/video),
+    `caption` (opțional; aceleași reguli + mascare ca un mesaj text).
+    Tipul (`kind`) se deduce din conținutul real (magic bytes): 415 dacă nu e
+    permis, 413 peste limite, 422 pentru fișier gol. Pozele pierd EXIF/GPS.
+    """
+    # Autorizare ÎNAINTE de a accepta bytes: străin → 404, blocat → 403.
+    chat = await chat_service.get_writable_chat(db, user, chat_id)
+
+    if not request.headers.get("content-type", "").startswith("multipart/form-data"):
+        raise HTTPException(
+            status_code=422,
+            detail="Se așteaptă multipart/form-data cu câmpul 'file'.",
+        )
+    form = await request.form()
+    upload = form.get("file")
+    if upload is None or not hasattr(upload, "read"):
+        raise HTTPException(status_code=422, detail="Lipsește câmpul 'file' (multipart).")
+    caption = _parse_caption(form.get("caption"))
+    duration_ms = _parse_duration(form.get("duration_ms"))
+
+    # Plafon de citire: nu încărcăm în RAM mai mult decât cea mai mare limită.
+    limit = max_attachment_bytes()
+    if upload.size is not None and upload.size > limit:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Fișier prea mare (maxim {limit // (1024 * 1024)} MB).",
+        )
+    content = await upload.read(limit + 1)
+    if len(content) > limit:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Fișier prea mare (maxim {limit // (1024 * 1024)} MB).",
+        )
+
+    media = validate_attachment(content, duration_ms)
+    return await chat_service.send_attachment(db, user, chat, media, caption)
 
 
 @router.post("/{chat_id}/messages/{message_id}/react", response_model=MessageOut)

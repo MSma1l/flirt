@@ -79,11 +79,25 @@ function StampCard({ stamp }: { stamp: PassportStamp }) {
       data-testid="passport-stamp"
       aria-label={t('profile:passport.stamp', { event: stamp.eventTitle })}
     >
+      {/* Sigiliul rotit din colț: ștampila arată ca una pusă cu mâna. */}
+      <span className="pp-stamp__seal" aria-hidden="true">
+        FLIRT
+      </span>
       <span className="pp-stamp__icon" aria-hidden="true">
-        🎫
+        <svg viewBox="0 0 24 24" width="20" height="20">
+          <path
+            d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinejoin="round"
+          />
+          <path d="M14 5v12" stroke="currentColor" strokeWidth="1.7" strokeDasharray="2 2" />
+        </svg>
       </span>
       <span className="pp-stamp__title">{stamp.eventTitle}</span>
       <span className="caption pp-stamp__city">{stamp.city}</span>
+      <span className="pp-stamp__divider" aria-hidden="true" />
       <span className="pp-stamp__date">{formatStampDate(stamp.stampedAt)}</span>
     </li>
   );
@@ -152,11 +166,17 @@ export function PassportScreen() {
     );
   } else {
     stampsBody = (
-      <ul className="pp-grid">
-        {(data ?? []).map((stamp) => (
-          <StampCard key={stamp.eventId} stamp={stamp} />
-        ))}
-      </ul>
+      <section className="pp-section">
+        <h2 className="pp-section__title">
+          {t('screens:passport.stampsTitle')}
+          <span className="pp-section__count">{(data ?? []).length}</span>
+        </h2>
+        <ul className="pp-grid">
+          {(data ?? []).map((stamp) => (
+            <StampCard key={stamp.eventId} stamp={stamp} />
+          ))}
+        </ul>
+      </section>
     );
   }
 
@@ -178,8 +198,9 @@ export function PassportScreen() {
       {/* Codurile de invitație nu depind de ștampile: câmpul rămâne pe ecran și
           pentru cineva care nu are încă nicio ștampilă — invitația poate fi
           chiar motivul pentru care ajunge la primul lui eveniment. */}
+      {/* Eticheta formularului e deja titlul cardului; un al doilea antet cu
+          același text ar repeta-o. */}
       <section className="pp-section">
-        <h2 className="pp-section__title">{t('screens:loyalty.invite.label')}</h2>
         <InviteRedeemForm />
       </section>
     </div>

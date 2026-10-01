@@ -8,6 +8,13 @@
  *
  * Butonul se ascunde singur la demontare (curățarea întoarsă de `showBackButton`),
  * deci ecranele de nivel întâi nu trebuie să facă nimic.
+ *
+ * NU e un cadru propriu (`.app-shell`): în aplicația normală se montează ÎN
+ * `AppShell`, deasupra barei de taburi, ca bara să nu dispară niciodată. Înainte
+ * fiecare ecran adânc își desena propriul `.app-shell` în afara layout-ului cu
+ * taburi, iar bara dispărea pe eveniment, conversație, pașaport, bilete etc.
+ * Înregistrarea (unde bara lipsește intenționat) îl învelește în `.app-shell`
+ * din `routes.tsx`.
  */
 import type { ReactNode } from 'react';
 import { useCallback } from 'react';
@@ -35,7 +42,7 @@ export function DeepScreen({ children, title, onBack }: DeepScreenProps) {
   useTelegramBackButton(goBack);
 
   return (
-    <div className="app-shell">
+    <section className="deep-screen">
       <header className="deep-header">
         <button
           type="button"
@@ -47,8 +54,8 @@ export function DeepScreen({ children, title, onBack }: DeepScreenProps) {
         </button>
         {title ? <h1 className="deep-header__title">{title}</h1> : null}
       </header>
-      <main className="app-shell__content">{children}</main>
-    </div>
+      <div className="app-shell__content deep-screen__content">{children}</div>
+    </section>
   );
 }
 

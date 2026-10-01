@@ -48,56 +48,6 @@
   font-weight: 700;
 }
 
-/* --------------------------------- Galerie ------------------------------- */
-
-.profile-gallery {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-  gap: var(--space-sm);
-}
-
-.profile-gallery__img {
-  width: 100%;
-  aspect-ratio: 3 / 4;
-  object-fit: cover;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-}
-
-/* ---------------------------- Date de profil ----------------------------- */
-
-.profile-facts {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-  gap: var(--space-sm) var(--space-md);
-  margin: 0;
-  align-items: baseline;
-}
-
-.profile-facts dt {
-  margin: 0;
-}
-
-.profile-facts dd {
-  margin: 0;
-  color: var(--color-text-primary);
-  overflow-wrap: anywhere;
-}
-
-.profile-about {
-  margin: 0;
-  color: var(--color-text-primary);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.profile-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-}
-
 /* ---------------------------------- Chips -------------------------------- */
 
 .pf-chip-row {
@@ -323,4 +273,557 @@
 
 .profile-verify__cta {
   align-self: stretch;
+}
+
+/* ===================== Modul de vizualizare (premium) ======================
+ *
+ * Aceeași limbă vizuală ca `loyalty.css` / `passport.css`: straturi de
+ * radial-gradient, titluri cu gradient, umbre moi care strălucesc. Culorile
+ * vin din variabilele temei; singurele valori fixe sunt pe scrim-ul pozei
+ * (textul stă peste o fotografie, deci trebuie să fie alb în ORICE temă).
+ */
+
+.profile-screen--view {
+  gap: var(--space-xl);
+  padding-top: var(--space-md);
+}
+
+.pf-section-title {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, var(--color-link), var(--color-accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.pf-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.pf-card {
+  position: relative;
+  padding: var(--space-lg);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--color-border);
+  background:
+    radial-gradient(120% 80% at 100% 0%, var(--color-accent-glow) 0%, transparent 45%),
+    var(--color-surface);
+  box-shadow: 0 14px 32px -24px var(--color-accent-glow);
+}
+
+.pf-icon-badge {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  color: var(--color-accent);
+  background: var(--color-tag-bg);
+  box-shadow: inset 0 0 0 1px var(--color-accent-glow);
+}
+
+/* ---------------------------------- Hero ---------------------------------- */
+
+.pf-hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.pf-hero__media {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  border-radius: 28px;
+  background: var(--color-surface);
+  box-shadow:
+    0 24px 48px -24px var(--color-accent-glow),
+    0 0 0 1px var(--color-border);
+  touch-action: pan-y; /* swipe orizontal pentru poze, scroll vertical liber */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.pf-hero__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
+  display: block;
+  opacity: 0;
+  transform: scale(1.04);
+  transition:
+    opacity 0.35s ease,
+    transform 0.6s ease;
+  -webkit-user-drag: none;
+}
+
+.pf-hero__img--active {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.pf-hero__placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(90% 70% at 20% 10%, var(--color-link) 0%, transparent 60%),
+    radial-gradient(80% 70% at 100% 100%, rgba(120, 60, 255, 0.55) 0%, transparent 60%),
+    linear-gradient(160deg, var(--color-accent) 0%, var(--color-accent-pressed) 100%);
+}
+
+.pf-hero__initials {
+  font-size: 96px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+}
+
+/* Barele de sus, ca la stories: câte una pe poză, cea activă plină. */
+.pf-hero__bars {
+  position: absolute;
+  z-index: 3;
+  top: var(--space-md);
+  left: var(--space-md);
+  right: var(--space-md);
+  display: flex;
+  gap: 4px;
+}
+
+.pf-hero__bar {
+  appearance: none;
+  flex: 1;
+  height: 4px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  transition: background 0.25s ease;
+}
+
+.pf-hero__bar--on {
+  background: #ffffff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+}
+
+/* Zonele de atingere stânga / dreapta (invizibile). */
+.pf-hero__tap {
+  appearance: none;
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pf-hero__tap--prev {
+  left: 0;
+}
+
+.pf-hero__tap--next {
+  right: 0;
+}
+
+.pf-hero__tap:focus-visible,
+.pf-hero__bar:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: -4px;
+}
+
+.pf-hero__scrim {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.35) 0%, transparent 18%),
+    linear-gradient(0deg, rgba(0, 0, 0, 0.82) 0%, rgba(0, 0, 0, 0.45) 26%, transparent 52%);
+}
+
+.pf-hero__info {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  padding: var(--space-xl) var(--space-lg) var(--space-lg);
+  color: #ffffff;
+  pointer-events: none;
+}
+
+.pf-hero__verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 var(--space-xs);
+  padding: 4px 12px 4px 6px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.pf-hero__verified svg {
+  color: #3b9bff;
+  filter: drop-shadow(0 0 6px rgba(59, 155, 255, 0.6));
+}
+
+.pf-hero__name {
+  margin: 0;
+  max-width: 100%;
+  font-size: 34px;
+  line-height: 40px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.35);
+}
+
+.pf-hero__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.pf-hero__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+  text-align: center;
+}
+
+.pf-hero__empty .caption {
+  margin: 0;
+}
+
+.pf-hero__empty-title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+/* ---------------------------- Verificare (view) ---------------------------- */
+
+.pf-verify {
+  display: flex;
+  gap: var(--space-md);
+  align-items: flex-start;
+}
+
+.pf-verify__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  min-width: 0;
+  flex: 1;
+}
+
+.pf-verify__body .caption {
+  margin: 0;
+}
+
+.pf-verify__cta {
+  align-self: stretch;
+}
+
+/* --------------------------- Puterea profilului --------------------------- */
+
+.pf-strength {
+  display: flex;
+  gap: var(--space-lg);
+  align-items: center;
+}
+
+.pf-strength__ring {
+  position: relative;
+  flex: none;
+  width: 64px;
+  height: 64px;
+}
+
+.pf-strength__ring svg {
+  transform: rotate(-90deg);
+  filter: drop-shadow(0 0 6px var(--color-accent-glow));
+}
+
+.pf-strength__track,
+.pf-strength__value {
+  fill: none;
+  stroke-width: 6;
+}
+
+.pf-strength__track {
+  stroke: var(--color-border);
+}
+
+.pf-strength__value {
+  stroke: url(#pf-ring-grad);
+  stroke-linecap: round;
+  animation: pf-ring-in 0.9s ease-out both;
+}
+
+@keyframes pf-ring-in {
+  from {
+    stroke-dasharray: 0 100;
+  }
+}
+
+.pf-strength__percent {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--color-text-primary);
+}
+
+.pf-strength__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.pf-strength__body .caption {
+  margin: 0;
+}
+
+.pf-strength__missing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: var(--space-xs) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pf-strength__missing li {
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px dashed var(--color-accent);
+  color: var(--color-link);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+/* ------------------------------ Datele de bază ----------------------------- */
+
+.pf-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-sm);
+  margin: 0;
+}
+
+.pf-fact {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: var(--space-md);
+  align-items: center;
+  padding: var(--space-md);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.pf-fact--wide {
+  grid-column: 1 / -1;
+}
+
+.pf-fact .pf-icon-badge {
+  grid-row: 1 / span 2;
+}
+
+.pf-fact__label {
+  margin: 0;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.pf-fact__value {
+  margin: 0;
+  font-size: 15px;
+  line-height: 21px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+/* -------------------------------- Despre mine ------------------------------ */
+
+.pf-quote {
+  margin: 0;
+  padding: var(--space-xl) var(--space-lg) var(--space-lg) calc(var(--space-lg) + 4px);
+  overflow: hidden;
+}
+
+.pf-quote::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: var(--space-lg);
+  bottom: var(--space-lg);
+  width: 3px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(180deg, var(--color-link), var(--color-accent));
+}
+
+.pf-quote__mark {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  width: 44px;
+  height: 44px;
+  color: var(--color-accent);
+  opacity: 0.22;
+}
+
+.pf-quote__text {
+  margin: 0;
+  font-size: 16px;
+  line-height: 25px;
+  font-style: italic;
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------ Chips premium ------------------------------ */
+
+.pf-chip--premium {
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid transparent;
+  color: var(--color-text-primary);
+  font-weight: 600;
+  background:
+    linear-gradient(var(--color-tag-bg), var(--color-tag-bg)) padding-box,
+    linear-gradient(135deg, var(--color-link), var(--color-accent) 60%, var(--color-border))
+      border-box;
+}
+
+.pf-chip--premium svg {
+  color: var(--color-accent);
+}
+
+/* ------------------------------ Butonul de editare ------------------------- */
+
+.pf-cta {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  width: 100%;
+  min-height: 52px;
+  padding: 0 var(--space-xl);
+  border: none;
+  border-radius: var(--radius-pill);
+  color: var(--color-on-accent);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  background: linear-gradient(
+    120deg,
+    var(--color-link) 0%,
+    var(--color-accent) 50%,
+    var(--color-accent-pressed) 100%
+  );
+  background-size: 200% 100%;
+  background-position: 0% 0%;
+  box-shadow:
+    0 12px 28px -10px var(--color-accent-glow),
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+  transition:
+    background-position 0.4s ease,
+    transform 0.15s ease,
+    box-shadow 0.25s ease;
+}
+
+.pf-cta:hover {
+  background-position: 100% 0%;
+  box-shadow:
+    0 16px 34px -10px var(--color-accent-glow),
+    0 0 0 1px rgba(255, 255, 255, 0.12) inset;
+}
+
+.pf-cta:active {
+  transform: scale(0.98);
+}
+
+.pf-cta:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+.pf-cta--small {
+  width: auto;
+  min-height: 44px;
+  font-size: 15px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-hero__img,
+  .pf-hero__bar,
+  .pf-cta {
+    transition: none;
+  }
+
+  .pf-hero__img {
+    transform: none;
+  }
+
+  .pf-strength__value {
+    animation: none;
+  }
 }

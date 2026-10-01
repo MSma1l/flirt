@@ -16,7 +16,7 @@
  * spre el (dintr-un link, dintr-un `navigate` uitat într-un ecran).
  */
 import { useTranslation } from 'react-i18next';
-import { Navigate, Route, Routes } from 'react-router';
+import { Navigate, Outlet, Route, Routes } from 'react-router';
 
 import { AppShell } from '@/components/AppShell';
 import { DeepScreen } from '@/components/DeepScreen';
@@ -62,7 +62,12 @@ import { VerificationGate } from '@/features/verification/VerificationGate';
 import { VERIFICATION_PATH } from '@/features/verification/verificationRoutes';
 import { MORE_PATH, MoreScreen } from '@/components/MoreScreen';
 
-/** Rutele aplicației normale, sub bara de taburi. */
+/**
+ * Rutele aplicației normale. TOATE stau în layout-ul `AppShell`, deci bara de
+ * taburi e prezentă pe fiecare ecran, inclusiv pe cele „în adâncime"
+ * (eveniment, conversație, pașaport, bilete, setări...). Înainte, ecranele
+ * adânci erau rute-surori ale layout-ului și bara dispărea pe ele.
+ */
 function CompletedRoutes() {
   const { t } = useTranslation('miniapp');
   return (
@@ -73,57 +78,69 @@ function CompletedRoutes() {
         <Route path={CHATS_PATH} element={<ChatListScreen />} />
         <Route path={PROFILE_PATH} element={<ProfileScreen />} />
         <Route path={MORE_PATH} element={<MoreScreen />} />
-      </Route>
-      {/* O conversație e un ecran „în adâncime": fără taburi, cu butonul
-          ÎNAPOI nativ al Telegramului legat de `DeepScreen`. */}
-      <Route
-        path={CHAT_ROUTE_PATTERN}
-        element={
-          <DeepScreen title={t('nav.chat')}>
-            <ChatScreen />
-          </DeepScreen>
-        }
-      />
-      {/* Ecrane „în adâncime": deschise dintr-un tab sau din meniu, fără bara de
-          taburi, cu butonul ÎNAPOI nativ al Telegramului legat de `DeepScreen`. */}
-      {(
-        [
-          [EVENT_ROUTE_PATTERN, 'nav.event', <EventScreen key="ev" />],
-          [STORIES_PATH, 'nav.stories', <StoriesScreen key="st" />],
-          [HUMOR_PATH, 'nav.humor', <HumorScreen key="hu" />],
-          [FAVORITES_PATH, 'nav.favorites', <FavoritesScreen key="fa" />],
-          [BLOCKLIST_PATH, 'nav.blocklist', <BlocklistScreen key="bl" />],
-          [PASSPORT_PATH, 'nav.passport', <PassportScreen key="pa" />],
-          [TICKETS_PATH, 'nav.tickets', <TicketsScreen key="ti" />],
-          [TICKET_REQUEST_ROUTE_PATTERN, 'nav.event', <TicketRequestScreen key="tr" />],
-          [SUBSCRIPTION_PATH, 'nav.subscription', <SubscriptionScreen key="su" />],
-          [SETTINGS_PATH, 'nav.settings', <SettingsScreen key="se" />],
-        ] as const
-      ).map(([path, titleKey, element]) => (
+        {/* O conversație e un ecran „în adâncime": antet cu ÎNAPOI (butonul nativ
+            al Telegramului legat de `DeepScreen`), dar tot SUB bara de taburi —
+            compozitorul de mesaje stă deasupra barei, nu sub ea. */}
         <Route
-          key={path}
-          path={path}
-          element={<DeepScreen title={t(titleKey)}>{element}</DeepScreen>}
+          path={CHAT_ROUTE_PATTERN}
+          element={
+            <DeepScreen title={t('nav.chat')}>
+              <ChatScreen />
+            </DeepScreen>
+          }
         />
-      ))}
-      {/* Verificarea prin selfie: ecran „în adâncime", deschis din profil.
-          Titlul vine din namespace-ul `verification` al cataloagelor mobile
-          (deja tradus), nu din `miniapp`, de aceea nu intră în lista de mai sus.
+        {/* Ecrane „în adâncime": deschise dintr-un tab sau din meniu, cu butonul
+            ÎNAPOI nativ al Telegramului legat de `DeepScreen`. Stau ÎN `AppShell`,
+            deci bara de taburi rămâne vizibilă și pe ele (cerința produsului:
+            bara nu dispare pe niciun ecran din aplicație). */}
+        {(
+          [
+            [EVENT_ROUTE_PATTERN, 'nav.event', <EventScreen key="ev" />],
+            [STORIES_PATH, 'nav.stories', <StoriesScreen key="st" />],
+            [HUMOR_PATH, 'nav.humor', <HumorScreen key="hu" />],
+            [FAVORITES_PATH, 'nav.favorites', <FavoritesScreen key="fa" />],
+            [BLOCKLIST_PATH, 'nav.blocklist', <BlocklistScreen key="bl" />],
+            [PASSPORT_PATH, 'nav.passport', <PassportScreen key="pa" />],
+            [TICKETS_PATH, 'nav.tickets', <TicketsScreen key="ti" />],
+            [TICKET_REQUEST_ROUTE_PATTERN, 'nav.event', <TicketRequestScreen key="tr" />],
+            [SUBSCRIPTION_PATH, 'nav.subscription', <SubscriptionScreen key="su" />],
+            [SETTINGS_PATH, 'nav.settings', <SettingsScreen key="se" />],
+          ] as const
+        ).map(([path, titleKey, element]) => (
+          <Route
+            key={path}
+            path={path}
+            element={<DeepScreen title={t(titleKey)}>{element}</DeepScreen>}
+          />
+        ))}
+        {/* Verificarea prin selfie: ecran „în adâncime", deschis din profil.
+            Titlul vine din namespace-ul `verification` al cataloagelor mobile
+            (deja tradus), nu din `miniapp`, de aceea nu intră în lista de mai sus.
 
-          Ruta rămâne ÎNREGISTRATĂ chiar și când funcția e oprită pe server, iar
-          `VerificationGate` decide ce se montează: fluxul, sau un mesaj scurt
-          cu drum înapoi spre profil. Dacă am fi scos ruta, un link vechi ar fi
-          căzut pe `*` și ar fi aruncat utilizatorul în feed, fără explicație. */}
-      <Route
-        path={VERIFICATION_PATH}
-        element={
-          <DeepScreen title={t('verification:title')}>
-            <VerificationGate />
-          </DeepScreen>
-        }
-      />
+            Ruta rămâne ÎNREGISTRATĂ chiar și când funcția e oprită pe server, iar
+            `VerificationGate` decide ce se montează: fluxul, sau un mesaj scurt
+            cu drum înapoi spre profil. Dacă am fi scos ruta, un link vechi ar fi
+            căzut pe `*` și ar fi aruncat utilizatorul în feed, fără explicație. */}
+        <Route
+          path={VERIFICATION_PATH}
+          element={
+            <DeepScreen title={t('verification:title')}>
+              <VerificationGate />
+            </DeepScreen>
+          }
+        />
+      </Route>
       <Route path="*" element={<Navigate to={FEED_PATH} replace />} />
     </Routes>
+  );
+}
+
+/** Cadrul înregistrării: același `.app-shell`, fără bara de taburi. */
+function OnboardingShell() {
+  return (
+    <div className="app-shell">
+      <Outlet />
+    </div>
   );
 }
 
@@ -132,30 +149,27 @@ function OnboardingRoutes() {
   const { t } = useTranslation('miniapp');
   return (
     <Routes>
-      <Route
-        path={WELCOME_PATH}
-        element={
-          <div className="app-shell">
-            <WelcomeScreen />
-          </div>
-        }
-      />
-      <Route
-        path={ONBOARDING_PROFILE_PATH}
-        element={
-          <DeepScreen title={t('onboarding.title')}>
-            <ProfileFormScreen />
-          </DeepScreen>
-        }
-      />
-      <Route
-        path={ONBOARDING_PHOTOS_PATH}
-        element={
-          <DeepScreen title={t('photos.title')}>
-            <PhotosScreen />
-          </DeepScreen>
-        }
-      />
+      {/* Înregistrarea e ÎNAINTEA aplicației: fără bara de taburi, intenționat —
+          niciun tab nu are ce arăta unui profil necompletat. */}
+      <Route element={<OnboardingShell />}>
+        <Route path={WELCOME_PATH} element={<WelcomeScreen />} />
+        <Route
+          path={ONBOARDING_PROFILE_PATH}
+          element={
+            <DeepScreen title={t('onboarding.title')}>
+              <ProfileFormScreen />
+            </DeepScreen>
+          }
+        />
+        <Route
+          path={ONBOARDING_PHOTOS_PATH}
+          element={
+            <DeepScreen title={t('photos.title')}>
+              <PhotosScreen />
+            </DeepScreen>
+          }
+        />
+      </Route>
       <Route path="*" element={<Navigate to={WELCOME_PATH} replace />} />
     </Routes>
   );

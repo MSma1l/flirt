@@ -1,7 +1,7 @@
 """Modele pentru chat: un dialog per match + mesajele lui (TZ secț. 5)."""
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Index, String, Text
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -60,3 +60,35 @@ class Message(Base):
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Reacția la mesaj — un emoji simplu (❤️/😂/👍); None = fără reacție (TZ 5.2).
     reaction: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
+    # Tipul mesajului: 'text' | 'image' | 'video' | 'voice'. Rândurile vechi
+    # primesc 'text' prin server_default (migrare sigură pe tabel populat).
+    kind: Mapped[str] = mapped_column(
+        String(16), default="text", server_default="text", nullable=False
+    )
+    # Atașamentul media (doar pentru kind != 'text'); NULL la mesajele text.
+    # URL-ul întors de storage — cheia conține un token aleator de 128 biți,
+    # deci nu poate fi ghicit (storage-ul nu are URL-uri semnate).
+    attachment_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # Tipul MIME detectat server-side din magic bytes (nu cel declarat de client).
+    attachment_mime: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    attachment_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Durata declarată de client (voice/video), în milisecunde.
+    attachment_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Dimensiunile imaginii (doar kind='image').
+    attachment_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    attachment_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    @property
+    def attachment(self) -> dict | None:
+        """Atașamentul ca dict (citit de `MessageOut.attachment`); None la text."""
+        if not self.attachment_url:
+            return None
+        return {
+            "url": self.attachment_url,
+            "mime": self.attachment_mime or "application/octet-stream",
+            "size_bytes": self.attachment_size or 0,
+            "duration_ms": self.attachment_duration_ms,
+            "width": self.attachment_width,
+            "height": self.attachment_height,
+        }

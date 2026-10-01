@@ -29,16 +29,15 @@ import { CAPABILITY, useCapability } from '@/features/capabilities';
 import { VERIFICATION_PATH } from '@/features/verification/verificationRoutes';
 
 import { PhotoManager, type PhotoTile } from './PhotoManager';
+import { ProfileView } from './ProfileView';
 import {
   fetchMyProfile,
   fetchReference,
-  interestLabel,
-  labelOf,
   saveProfile,
   type AnketaDraft,
   type MyProfileFull,
 } from './profileApi';
-import { PHOTO_LIMITS, preparePhoto, validateCanAddPhoto, validatePhotoCount } from './photoResize';
+import { preparePhoto, validateCanAddPhoto, validatePhotoCount } from './photoResize';
 import { deletePhoto, moveItem, reorderPhotos, uploadPhoto } from './photosApi';
 import { usePhotoErrorText } from './usePhotoErrorText';
 import { isValid, MAX_ABOUT_LENGTH, validateProfile, type FieldErrors } from './validation';
@@ -274,351 +273,265 @@ export function ProfileScreen() {
   const aboutLength = (draft.about ?? '').length;
 
   return (
-    <div className="profile-screen">
-      <header className="profile-screen__header">
-        <h1 className="title">{editing ? t('edit.title') : profile?.name || t('edit.title')}</h1>
-        {profile && !editing ? (
-          <p className="caption">
-            {profile.age ? `${profile.age} · ` : ''}
-            {profile.city}
-          </p>
-        ) : null}
-      </header>
-
-      {/* Starea de verificare (TZ 2.2) — badge doar când serverul a confirmat-o.
-          Când NU e confirmată, indiciul vine la pachet cu drumul spre flux:
-          un text care spune „poți fi verificat" fără niciun buton e o
-          fundătură, iar fluxul n-avea până acum nicio intrare în Mini App.
-          Contul deja verificat NU primește butonul: nu are de ce să treacă a
-          doua oară prin selfie.
-
-          BADGE-UL NU DEPINDE DE CAPABILITATE. Un cont verificat cândva rămâne
-          verificat chiar dacă funcția e oprită acum: oprirea privește câștigarea
-          insignei de aici înainte, nu retragerea celor deja acordate — statutul e
-          al serverului, iar clientul n-are dreptul să-l șteargă de pe ecran.
-
-          INDICIUL, în schimb, dispare complet cât timp serverul spune că funcția
-          nu e disponibilă. Un text care promite o insignă plus un buton care
-          duce într-o fundătură ar fi exact minciuna pe care o închidem. */}
-      {profile ? (
-        profile.verified ? (
-          <p className="profile-verified" data-testid="verified-badge">
-            {t('verification:verified')}
-          </p>
-        ) : verificationEnabled ? (
-          <div className="profile-verify" data-testid="unverified-hint">
-            <p className="caption">{t('verification:intro')}</p>
-            <Link
-              className="button button--ghost profile-verify__cta"
-              to={VERIFICATION_PATH}
-              data-testid="verify-cta"
-            >
-              {t('verification:start')}
-            </Link>
-          </div>
-        ) : null
-      ) : null}
-
+    <div className={`profile-screen${editing ? '' : ' profile-screen--view'}`}>
       {!editing && profile ? (
-        <>
-          <div className="profile-gallery" data-testid="profile-gallery">
-            {photos.length > 0 ? (
-              photos.map((url, index) => (
-                <img
-                  key={url}
-                  className="profile-gallery__img"
-                  src={url}
-                  alt={
-                    index === 0
-                      ? t('photos.a11y.mainPhoto')
-                      : t('photos.a11y.photo', { number: index + 1 })
-                  }
-                />
-              ))
-            ) : (
-              <p className="caption">
-                {t('photos.counter', {
-                  current: 0,
-                  max: PHOTO_LIMITS.max,
-                  min: PHOTO_LIMITS.min,
-                })}
-              </p>
-            )}
-          </div>
-
-          <dl className="profile-facts">
-            <dt className="caption">{t('edit.gender')}</dt>
-            <dd className="body-text">{labelOf(reference.genders, profile.gender)}</dd>
-
-            <dt className="caption">{t('edit.height')}</dt>
-            <dd className="body-text">{profile.heightCm}</dd>
-
-            <dt className="caption">{t('edit.city')}</dt>
-            <dd className="body-text">
-              {profile.city}
-              {profile.street ? `, ${profile.street}` : ''}
-            </dd>
-
-            {profile.nationality ? (
-              <>
-                <dt className="caption">{t('edit.nationality')}</dt>
-                <dd className="body-text">{profile.nationality}</dd>
-              </>
-            ) : null}
-
-            <dt className="caption">{t('edit.languages')}</dt>
-            <dd className="body-text">
-              {profile.languages.map((v) => labelOf(reference.languages, v)).join(', ') || '—'}
-            </dd>
-          </dl>
-
-          {profile.about ? <p className="body-text profile-about">{profile.about}</p> : null}
-
-          {profile.datingStatuses.length > 0 ? (
-            <section className="profile-section">
-              <p className="caption">{t('edit.datingStatus')}</p>
-              <div className="pf-chip-row">
-                {profile.datingStatuses.map((v) => (
-                  <span className="pf-chip" key={v}>
-                    {labelOf(reference.datingStatuses, v)}
-                  </span>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          {profile.interests.length > 0 ? (
-            <section className="profile-section">
-              <p className="caption">{t('edit.interests')}</p>
-              <div className="pf-chip-row">
-                {profile.interests.map((slug) => (
-                  <span className="pf-chip" key={slug}>
-                    {interestLabel(reference.interests, slug)}
-                  </span>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          <button
-            type="button"
-            className="button profile-screen__cta"
-            onClick={() => setEditing(true)}
-            data-testid="start-edit"
-          >
-            {t('settings:links.profileEdit')}
-          </button>
-        </>
+        <ProfileView
+          profile={profile}
+          reference={reference}
+          photos={photos}
+          verificationEnabled={verificationEnabled}
+          onEdit={() => setEditing(true)}
+        />
       ) : (
-        <form
-          className="profile-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            handleSave();
-          }}
-        >
-          <PhotoManager
-            tiles={tiles}
-            savedCount={photos.length}
-            onAdd={(file) => void handleAddPhoto(file)}
-            onRemove={(index) => void handleRemovePhoto(index)}
-            onMove={(from, to) => void handleMovePhoto(from, to)}
-            busy={photosBusy || saveMutation.isPending}
-            error={photosError}
-          />
+        <>
+          <header className="profile-screen__header">
+            <h1 className="title">{t('edit.title')}</h1>
+          </header>
 
-          <label className="pf-field">
-            <span className="caption">{t('edit.name')}</span>
-            <input
-              className="pf-field__input"
-              value={draft.name ?? ''}
-              placeholder={t('edit.namePlaceholder')}
-              onChange={(e) => setField('name', e.target.value)}
-              data-testid="field-name"
-            />
-            {errors.name ? <span className="pf-field__error">{errors.name}</span> : null}
-          </label>
+          {/* Starea de verificare (TZ 2.2) — badge doar când serverul a confirmat-o.
+              Când NU e confirmată, indiciul vine la pachet cu drumul spre flux:
+              un text care spune „poți fi verificat" fără niciun buton e o
+              fundătură, iar fluxul n-avea până acum nicio intrare în Mini App.
+              Contul deja verificat NU primește butonul: nu are de ce să treacă a
+              doua oară prin selfie.
 
-          <label className="pf-field">
-            <span className="caption">{t('edit.birthDate')}</span>
-            <input
-              className="pf-field__input"
-              type="date"
-              value={draft.birthDate ?? ''}
-              onChange={(e) => setField('birthDate', e.target.value)}
-              data-testid="field-birth-date"
-            />
-            {errors.birthDate ? <span className="pf-field__error">{errors.birthDate}</span> : null}
-          </label>
+              BADGE-UL NU DEPINDE DE CAPABILITATE. Un cont verificat cândva rămâne
+              verificat chiar dacă funcția e oprită acum: oprirea privește câștigarea
+              insignei de aici înainte, nu retragerea celor deja acordate — statutul e
+              al serverului, iar clientul n-are dreptul să-l șteargă de pe ecran.
 
-          <fieldset className="pf-field">
-            <legend className="caption">{t('edit.gender')}</legend>
-            <div className="pf-chip-row">
-              {reference.genders.map((o) => (
-                <Chip
-                  key={o.value}
-                  label={o.label}
-                  selected={draft.gender === o.value}
-                  onToggle={() => setField('gender', o.value)}
-                  testId={`gender-${o.value}`}
-                />
-              ))}
-            </div>
-            {errors.gender ? <span className="pf-field__error">{errors.gender}</span> : null}
-          </fieldset>
-
-          <label className="pf-field">
-            <span className="caption">{t('edit.height')}</span>
-            <input
-              className="pf-field__input"
-              inputMode="numeric"
-              value={draft.heightCm != null ? String(draft.heightCm) : ''}
-              placeholder={t('edit.heightPlaceholder')}
-              onChange={(e) => {
-                const digits = e.target.value.replace(/[^0-9]/g, '');
-                // Câmp golit = „nimic ales", nu 0: validarea trebuie să ceară o
-                // valoare, nu să reclame o înălțime absurdă.
-                setDraft((d) => ({
-                  ...d,
-                  heightCm: digits ? parseInt(digits, 10) : undefined,
-                }));
-              }}
-              data-testid="field-height"
-            />
-            {errors.heightCm ? <span className="pf-field__error">{errors.heightCm}</span> : null}
-          </label>
-
-          <label className="pf-field">
-            <span className="caption">{t('edit.city')}</span>
-            <input
-              className="pf-field__input"
-              value={draft.city ?? ''}
-              placeholder={t('edit.cityPlaceholder')}
-              onChange={(e) => setField('city', e.target.value)}
-              data-testid="field-city"
-            />
-            {errors.city ? <span className="pf-field__error">{errors.city}</span> : null}
-          </label>
-
-          <label className="pf-field">
-            <span className="caption">{t('edit.street')}</span>
-            <input
-              className="pf-field__input"
-              value={draft.street ?? ''}
-              placeholder={t('edit.streetPlaceholder')}
-              onChange={(e) => setField('street', e.target.value)}
-              data-testid="field-street"
-            />
-            {errors.street ? <span className="pf-field__error">{errors.street}</span> : null}
-          </label>
-
-          <label className="pf-field">
-            <span className="caption">{t('edit.nationality')}</span>
-            <input
-              className="pf-field__input"
-              value={draft.nationality ?? ''}
-              onChange={(e) => setField('nationality', e.target.value)}
-              data-testid="field-nationality"
-            />
-          </label>
-
-          <fieldset className="pf-field">
-            <legend className="caption">{t('edit.languages')}</legend>
-            <div className="pf-chip-row">
-              {reference.languages.map((o) => (
-                <Chip
-                  key={o.value}
-                  label={o.label}
-                  selected={(draft.languages ?? []).includes(o.value)}
-                  onToggle={() => toggleMulti('languages', o.value)}
-                  testId={`language-${o.value}`}
-                />
-              ))}
-            </div>
-            {errors.languages ? <span className="pf-field__error">{errors.languages}</span> : null}
-          </fieldset>
-
-          <label className="pf-field">
-            <span className="caption">
-              {t('edit.about', { current: aboutLength, max: MAX_ABOUT_LENGTH })}
-            </span>
-            <textarea
-              className="pf-field__input pf-field__textarea"
-              maxLength={MAX_ABOUT_LENGTH}
-              value={draft.about ?? ''}
-              placeholder={t('edit.aboutPlaceholder')}
-              onChange={(e) => setField('about', e.target.value)}
-              data-testid="field-about"
-            />
-            {errors.about ? <span className="pf-field__error">{errors.about}</span> : null}
-          </label>
-
-          <fieldset className="pf-field">
-            <legend className="caption">{t('edit.datingStatus')}</legend>
-            <div className="pf-chip-row">
-              {reference.datingStatuses.map((o) => (
-                <Chip
-                  key={o.value}
-                  label={o.label}
-                  selected={(draft.datingStatuses ?? []).includes(o.value)}
-                  onToggle={() => toggleMulti('datingStatuses', o.value)}
-                  testId={`status-${o.value}`}
-                />
-              ))}
-            </div>
-          </fieldset>
-
-          <fieldset className="pf-field">
-            <legend className="caption">{t('edit.interests')}</legend>
-            <div className="pf-chip-row">
-              {reference.interests.map((o) => (
-                <Chip
-                  key={o.slug}
-                  label={o.label}
-                  selected={(draft.interests ?? []).includes(o.slug)}
-                  onToggle={() => toggleMulti('interests', o.slug)}
-                  testId={`interest-${o.slug}`}
-                />
-              ))}
-            </div>
-            {errors.interests ? <span className="pf-field__error">{errors.interests}</span> : null}
-          </fieldset>
-
-          {saveMutation.isError ? (
-            <p className="error-text" role="alert" data-testid="save-error">
-              {t('edit.saveError')}
-            </p>
+              INDICIUL, în schimb, dispare complet cât timp serverul spune că funcția
+              nu e disponibilă. Un text care promite o insignă plus un buton care
+              duce într-o fundătură ar fi exact minciuna pe care o închidem. */}
+          {profile ? (
+            profile.verified ? (
+              <p className="profile-verified" data-testid="verified-badge">
+                {t('verification:verified')}
+              </p>
+            ) : verificationEnabled ? (
+              <div className="profile-verify" data-testid="unverified-hint">
+                <p className="caption">{t('verification:intro')}</p>
+                <Link
+                  className="button button--ghost profile-verify__cta"
+                  to={VERIFICATION_PATH}
+                  data-testid="verify-cta"
+                >
+                  {t('verification:start')}
+                </Link>
+              </div>
+            ) : null
           ) : null}
 
-          <div className="profile-form__actions">
-            {profile ? (
-              <button
-                type="button"
-                className="button button--ghost"
-                disabled={saveMutation.isPending}
-                onClick={() => {
-                  // Renunțare: revenim exact la ce e pe server, inclusiv pozele
-                  // (ele se salvează imediat, deci lista lor e deja cea reală).
-                  setDraft(draftFrom(profile));
-                  setErrors({});
-                  setPhotosError(null);
-                  setEditing(false);
+          <form
+            className="profile-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              handleSave();
+            }}
+          >
+            <PhotoManager
+              tiles={tiles}
+              savedCount={photos.length}
+              onAdd={(file) => void handleAddPhoto(file)}
+              onRemove={(index) => void handleRemovePhoto(index)}
+              onMove={(from, to) => void handleMovePhoto(from, to)}
+              busy={photosBusy || saveMutation.isPending}
+              error={photosError}
+            />
+
+            <label className="pf-field">
+              <span className="caption">{t('edit.name')}</span>
+              <input
+                className="pf-field__input"
+                value={draft.name ?? ''}
+                placeholder={t('edit.namePlaceholder')}
+                onChange={(e) => setField('name', e.target.value)}
+                data-testid="field-name"
+              />
+              {errors.name ? <span className="pf-field__error">{errors.name}</span> : null}
+            </label>
+
+            <label className="pf-field">
+              <span className="caption">{t('edit.birthDate')}</span>
+              <input
+                className="pf-field__input"
+                type="date"
+                value={draft.birthDate ?? ''}
+                onChange={(e) => setField('birthDate', e.target.value)}
+                data-testid="field-birth-date"
+              />
+              {errors.birthDate ? <span className="pf-field__error">{errors.birthDate}</span> : null}
+            </label>
+
+            <fieldset className="pf-field">
+              <legend className="caption">{t('edit.gender')}</legend>
+              <div className="pf-chip-row">
+                {reference.genders.map((o) => (
+                  <Chip
+                    key={o.value}
+                    label={o.label}
+                    selected={draft.gender === o.value}
+                    onToggle={() => setField('gender', o.value)}
+                    testId={`gender-${o.value}`}
+                  />
+                ))}
+              </div>
+              {errors.gender ? <span className="pf-field__error">{errors.gender}</span> : null}
+            </fieldset>
+
+            <label className="pf-field">
+              <span className="caption">{t('edit.height')}</span>
+              <input
+                className="pf-field__input"
+                inputMode="numeric"
+                value={draft.heightCm != null ? String(draft.heightCm) : ''}
+                placeholder={t('edit.heightPlaceholder')}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/[^0-9]/g, '');
+                  // Câmp golit = „nimic ales", nu 0: validarea trebuie să ceară o
+                  // valoare, nu să reclame o înălțime absurdă.
+                  setDraft((d) => ({
+                    ...d,
+                    heightCm: digits ? parseInt(digits, 10) : undefined,
+                  }));
                 }}
-                data-testid="cancel-edit"
-              >
-                {t('common:actions.cancel')}
-              </button>
+                data-testid="field-height"
+              />
+              {errors.heightCm ? <span className="pf-field__error">{errors.heightCm}</span> : null}
+            </label>
+
+            <label className="pf-field">
+              <span className="caption">{t('edit.city')}</span>
+              <input
+                className="pf-field__input"
+                value={draft.city ?? ''}
+                placeholder={t('edit.cityPlaceholder')}
+                onChange={(e) => setField('city', e.target.value)}
+                data-testid="field-city"
+              />
+              {errors.city ? <span className="pf-field__error">{errors.city}</span> : null}
+            </label>
+
+            <label className="pf-field">
+              <span className="caption">{t('edit.street')}</span>
+              <input
+                className="pf-field__input"
+                value={draft.street ?? ''}
+                placeholder={t('edit.streetPlaceholder')}
+                onChange={(e) => setField('street', e.target.value)}
+                data-testid="field-street"
+              />
+              {errors.street ? <span className="pf-field__error">{errors.street}</span> : null}
+            </label>
+
+            <label className="pf-field">
+              <span className="caption">{t('edit.nationality')}</span>
+              <input
+                className="pf-field__input"
+                value={draft.nationality ?? ''}
+                onChange={(e) => setField('nationality', e.target.value)}
+                data-testid="field-nationality"
+              />
+            </label>
+
+            <fieldset className="pf-field">
+              <legend className="caption">{t('edit.languages')}</legend>
+              <div className="pf-chip-row">
+                {reference.languages.map((o) => (
+                  <Chip
+                    key={o.value}
+                    label={o.label}
+                    selected={(draft.languages ?? []).includes(o.value)}
+                    onToggle={() => toggleMulti('languages', o.value)}
+                    testId={`language-${o.value}`}
+                  />
+                ))}
+              </div>
+              {errors.languages ? <span className="pf-field__error">{errors.languages}</span> : null}
+            </fieldset>
+
+            <label className="pf-field">
+              <span className="caption">
+                {t('edit.about', { current: aboutLength, max: MAX_ABOUT_LENGTH })}
+              </span>
+              <textarea
+                className="pf-field__input pf-field__textarea"
+                maxLength={MAX_ABOUT_LENGTH}
+                value={draft.about ?? ''}
+                placeholder={t('edit.aboutPlaceholder')}
+                onChange={(e) => setField('about', e.target.value)}
+                data-testid="field-about"
+              />
+              {errors.about ? <span className="pf-field__error">{errors.about}</span> : null}
+            </label>
+
+            <fieldset className="pf-field">
+              <legend className="caption">{t('edit.datingStatus')}</legend>
+              <div className="pf-chip-row">
+                {reference.datingStatuses.map((o) => (
+                  <Chip
+                    key={o.value}
+                    label={o.label}
+                    selected={(draft.datingStatuses ?? []).includes(o.value)}
+                    onToggle={() => toggleMulti('datingStatuses', o.value)}
+                    testId={`status-${o.value}`}
+                  />
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset className="pf-field">
+              <legend className="caption">{t('edit.interests')}</legend>
+              <div className="pf-chip-row">
+                {reference.interests.map((o) => (
+                  <Chip
+                    key={o.slug}
+                    label={o.label}
+                    selected={(draft.interests ?? []).includes(o.slug)}
+                    onToggle={() => toggleMulti('interests', o.slug)}
+                    testId={`interest-${o.slug}`}
+                  />
+                ))}
+              </div>
+              {errors.interests ? <span className="pf-field__error">{errors.interests}</span> : null}
+            </fieldset>
+
+            {saveMutation.isError ? (
+              <p className="error-text" role="alert" data-testid="save-error">
+                {t('edit.saveError')}
+              </p>
             ) : null}
-            <button
-              type="submit"
-              className="button"
-              disabled={saveMutation.isPending}
-              data-testid="save-profile"
-            >
-              {t('edit.save')}
-            </button>
-          </div>
-        </form>
+
+            <div className="profile-form__actions">
+              {profile ? (
+                <button
+                  type="button"
+                  className="button button--ghost"
+                  disabled={saveMutation.isPending}
+                  onClick={() => {
+                    // Renunțare: revenim exact la ce e pe server, inclusiv pozele
+                    // (ele se salvează imediat, deci lista lor e deja cea reală).
+                    setDraft(draftFrom(profile));
+                    setErrors({});
+                    setPhotosError(null);
+                    setEditing(false);
+                  }}
+                  data-testid="cancel-edit"
+                >
+                  {t('common:actions.cancel')}
+                </button>
+              ) : null}
+              <button
+                type="submit"
+                className="button"
+                disabled={saveMutation.isPending}
+                data-testid="save-profile"
+              >
+                {t('edit.save')}
+              </button>
+            </div>
+          </form>
+        </>
       )}
     </div>
   );

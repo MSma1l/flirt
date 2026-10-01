@@ -39,7 +39,9 @@ export const CHATS_POLL_MS = 12000;
  * gruparea să fie identică în ambele aplicații.
  */
 function isNewOrUnread(chat: ChatSummary): boolean {
-  return chat.unreadCount > 0 || !chat.lastMessage;
+  // Un ultim mesaj media are text gol, dar EXISTĂ: nu-l tratăm ca dialog nou.
+  const hasMedia = !!(chat as { lastMessageKind?: string }).lastMessageKind;
+  return chat.unreadCount > 0 || (!chat.lastMessage && !hasMedia);
 }
 
 interface Section {

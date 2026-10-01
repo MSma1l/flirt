@@ -137,6 +137,17 @@
 
 /* ——— Antetul ecranelor în adâncime ——————————————————————————— */
 
+/* Ecranul adânc stă ÎN zona de conținut a `AppShell` (sau într-un `.app-shell`
+   la înregistrare) și o umple exact: antetul fix sus, conținutul derulează sub
+   el, iar bara de taburi rămâne dedesubt, ca vecin în același flex. Așa
+   compozitorul conversației stă mereu DEASUPRA barei, niciodată sub ea. */
+.deep-screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .deep-header {
   display: flex;
   align-items: center;

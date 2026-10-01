@@ -17,10 +17,11 @@ import type { ChatSummary } from '@mobile/features/chat/types';
 
 import { cssVarColors } from '@/theme/tokens';
 
+import type { ChatSummaryEx } from './chatApi';
 import { chatPath } from './chatRoutes';
 
 interface Props {
-  chat: ChatSummary;
+  chat: ChatSummary & Partial<Pick<ChatSummaryEx, 'lastMessageKind' | 'otherPhotoUrl'>>;
 }
 
 function initial(name: string): string {
@@ -30,7 +31,7 @@ function initial(name: string): string {
 function ChatListRowBase({ chat }: Props) {
   // Textele rândului sunt în `chat`; eticheta de compatibilitate stă în `feed`,
   // acolo unde e definită și regula scorului.
-  const { t, i18n } = useTranslation(['chat', 'feed']);
+  const { t, i18n } = useTranslation(['chat', 'feed', 'screens']);
   const hasUnread = chat.unreadCount > 0;
 
   /**
@@ -55,11 +56,29 @@ function ChatListRowBase({ chat }: Props) {
     });
   };
 
+  /**
+   * Previzualizarea: textul de la server (DEJA mascat) sau, pentru un mesaj
+   * media, eticheta lui tradusă („📷 Poză"). Fără `last_message_kind` de la
+   * server, un ultim mesaj gol cu dată înseamnă tot un atașament.
+   */
+  const kind = chat.lastMessageKind;
+  let preview: string;
+  if (kind && kind !== 'text') {
+    const label = t(`screens:chat.listPreview.${kind}`);
+    preview = chat.lastMessage ? `${label} · ${chat.lastMessage}` : label;
+  } else if (chat.lastMessage) {
+    preview = chat.lastMessage;
+  } else if (chat.lastMessage === '' && chat.lastMessageAt) {
+    preview = t('screens:chat.listPreview.attachment');
+  } else {
+    preview = t('chat:list.noMessages');
+  }
+
   return (
     <li className="chat-row__item">
       <Link className="chat-row" to={chatPath(chat.chatId)} data-testid="chat-row">
         <span className="chat-row__avatar" aria-hidden="true">
-          {initial(chat.otherName)}
+          {chat.otherPhotoUrl ? <img src={chat.otherPhotoUrl} alt="" /> : initial(chat.otherName)}
         </span>
 
         <span className="chat-row__body">
@@ -88,7 +107,7 @@ function ChatListRowBase({ chat }: Props) {
               }
             >
               {/* Previzualizarea vine de la server DEJA mascată — o afișăm ca atare. */}
-              {chat.lastMessage ?? t('chat:list.noMessages')}
+              {preview}
             </span>
             {hasUnread ? (
               <span

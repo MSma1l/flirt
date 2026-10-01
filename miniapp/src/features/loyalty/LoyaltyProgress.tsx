@@ -39,6 +39,39 @@ export function progressPercent(status: LoyaltyStatus): number {
   return Math.max(0, Math.min(100, Math.round(done)));
 }
 
+/**
+ * Metalul cardului, ghicit din numele treptei (setat de admin, în orice limbă).
+ * E pur decorativ: un nume necunoscut primește finisajul de brand, nu o eroare.
+ */
+export type TierMetal = 'bronze' | 'silver' | 'gold' | 'platinum' | 'brand';
+
+const METAL_HINTS: readonly [TierMetal, readonly string[]][] = [
+  ['platinum', ['platin', 'diamond', 'diamant', 'бриллиант', 'платин', 'vip']],
+  ['gold', ['gold', 'aur', 'золот']],
+  ['silver', ['silver', 'argint', 'серебр']],
+  ['bronze', ['bronz', 'бронз']],
+];
+
+export function tierMetal(name: string | null | undefined): TierMetal {
+  const lower = (name ?? '').toLowerCase();
+  const hit = METAL_HINTS.find(([, hints]) => hints.some((hint) => lower.includes(hint)));
+  return hit ? hit[0] : 'brand';
+}
+
+/** Emblema cardului: o stea fațetată, colorată de metalul treptei. */
+function TierEmblem() {
+  return (
+    <span className="ly-emblem" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="22" height="22">
+        <path
+          d="M12 2.5l2.6 5.6 6.1.7-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6-4.5-4.2 6.1-.7z"
+          fill="currentColor"
+        />
+      </svg>
+    </span>
+  );
+}
+
 /** Cardul treptei: numele, reducerea și progresul. Pur prezentațional. */
 export function LoyaltyProgress({ status }: { status: LoyaltyStatus }) {
   const { t } = useTranslation('screens');
@@ -49,9 +82,16 @@ export function LoyaltyProgress({ status }: { status: LoyaltyStatus }) {
   const { tier, nextTier, stamps, stampsToNextTier, discountPercent } = status;
   const percent = progressPercent(status);
   const atMaxTier = nextTier === null;
+  // Fără treaptă încă, cardul poartă deja culoarea celei spre care mergi.
+  const metal = tierMetal(tier?.name ?? nextTier?.name);
 
   return (
-    <div className="ly-card" data-testid="loyalty-progress">
+    <div className="ly-card" data-testid="loyalty-progress" data-metal={metal}>
+      <div className="ly-card__sheen" aria-hidden="true" />
+      <div className="ly-card__brand">
+        <span className="ly-card__eyebrow">{t('settings:links.passport')}</span>
+        <TierEmblem />
+      </div>
       <div className="ly-card__head">
         <span className="ly-card__tier" data-testid="loyalty-tier">
           {tier
@@ -83,7 +123,9 @@ export function LoyaltyProgress({ status }: { status: LoyaltyStatus }) {
             aria-valuenow={percent}
             aria-label={t('loyalty.progressLabel', { tier: nextTier.name })}
           >
-            <div className="ly-progress__fill" style={{ width: `${percent}%` }} />
+            <div className="ly-progress__fill" style={{ width: `${percent}%` }}>
+              <span className="ly-progress__shine" aria-hidden="true" />
+            </div>
           </div>
           <p className="ly-progress__text">
             {t('loyalty.toNext', { count: stampsToNextTier ?? 0 })}
