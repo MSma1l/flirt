@@ -6,13 +6,14 @@ token real. Interceptăm doar cererile către `api.telegram.org`; cererile
 clientului de test către aplicație (ASGI) trec neatinse către implementarea
 originală.
 """
+import json
 import logging
 
 import httpx
 import pytest
 
 from app.api.v1 import telegram as telegram_api
-from app.services import telegram_bot
+from app.services import bot_texts, telegram_bot
 
 API = "/api/v1"
 WEBHOOK = f"{API}/telegram/webhook"
@@ -55,10 +56,49 @@ def _update(text: str, chat_id: int = 555, update_id: int = 1) -> dict:
     }
 
 
+def _markup(call: dict) -> dict:
+    """Tastatura inline dintr-un apel capturat (JSON sau multipart)."""
+    if call.get("json") is not None:
+        return call["json"]["reply_markup"]
+    return json.loads(call["data"]["reply_markup"])
+
+
 def _button(call: dict) -> dict:
-    """Extrage butonul inline din payload-ul unui `sendMessage` capturat."""
-    markup = call["json"]["reply_markup"]
-    return markup["inline_keyboard"][0][0]
+    """Primul buton inline (cel care deschide Mini App-ul)."""
+    return _markup(call)["inline_keyboard"][0][0]
+
+
+def _text(call: dict) -> str:
+    """Textul unui `sendMessage` sau legenda unui `sendPhoto`."""
+    body = call.get("json") if call.get("json") is not None else call["data"]
+    return body.get("text") or body.get("caption") or ""
+
+
+def _method(call: dict) -> str:
+    return call["url"].rsplit("/", 1)[-1]
+
+
+# Răspunsul Bot API la un `sendPhoto` reușit: variantele pozei, cea mai mare ultima.
+PHOTO_RESULT = {
+    "ok": True,
+    "result": {
+        "message_id": 12,
+        "photo": [{"file_id": "small-id"}, {"file_id": "WELCOME-FILE-ID"}],
+    },
+}
+
+
+@pytest.fixture(autouse=True)
+def _cache_file_id_curat(monkeypatch):
+    """Fiecare test pornește fără `file_id` memorat și fără Redis."""
+    telegram_bot._file_id_cache.clear()
+
+    async def no_redis():
+        return None
+
+    monkeypatch.setattr(telegram_bot, "_get_redis", no_redis)
+    yield
+    telegram_bot._file_id_cache.clear()
 
 
 @pytest.fixture
@@ -83,7 +123,14 @@ def telegram_calls(monkeypatch):
 
     async def fake_post(self, url, **kwargs):
         if isinstance(url, str) and url.startswith(telegram_bot.TELEGRAM_API_BASE):
-            calls.append({"url": url, "json": kwargs.get("json")})
+            calls.append({
+                "url": url,
+                "json": kwargs.get("json"),
+                "data": kwargs.get("data"),
+                "files": kwargs.get("files"),
+            })
+            if url.endswith("/sendPhoto"):
+                return _FakeResponse(PHOTO_RESULT)
             return _FakeResponse({"ok": True, "result": {"message_id": 11}})
         return await original_post(self, url, **kwargs)
 
@@ -128,7 +175,7 @@ async def test_webhook_live_fara_secret_configurat_respinge_tot(
 # --- /start și butonul web_app ------------------------------------------------
 @pytest.mark.asyncio
 async def test_start_raspunde_cu_buton_web_app(client, live_bot, telegram_calls):
-    """Secret corect + `/start` → 200 și un `sendMessage` cu buton `web_app`."""
+    """Secret corect + `/start` → 200 și o POZĂ (încărcată) cu buton `web_app`."""
     resp = await client.post(
         WEBHOOK,
         json=_update("/start"),
@@ -139,15 +186,21 @@ async def test_start_raspunde_cu_buton_web_app(client, live_bot, telegram_calls)
 
     assert len(telegram_calls) == 1, telegram_calls
     call = telegram_calls[0]
-    assert call["url"].endswith("/sendMessage")
-    assert call["json"]["chat_id"] == 555
+    assert _method(call) == "sendPhoto"
+    # Prima trimitere încarcă fișierul (multipart), nu un JSON.
+    assert call["json"] is None
+    assert call["data"]["chat_id"] == "555"
+    assert call["data"]["parse_mode"] == "HTML"
+    name, content, mime = call["files"]["photo"]
+    assert name == "welcome.png" and mime == "image/png"
+    assert content == telegram_bot.WELCOME_IMAGE.read_bytes()
 
     button = _button(call)
     assert "web_app" in button, "Butonul trebuie să fie de tip web_app."
     assert button["web_app"]["url"] == MINIAPP_URL
-    assert button["text"] == telegram_api.BUTTON_TEXT
+    assert button["text"] == bot_texts.button("ro", "open")
     # Mesajul de bun venit e în română.
-    assert "bine ai venit" in call["json"]["text"].lower()
+    assert "bine ai venit" in _text(call).lower()
 
 
 @pytest.mark.asyncio
@@ -189,7 +242,7 @@ async def test_start_cu_username_de_bot(client, live_bot, telegram_calls):
         headers={telegram_api.SECRET_HEADER: WEBHOOK_SECRET},
     )
     assert resp.status_code == 200, resp.text
-    assert "bine ai venit" in telegram_calls[0]["json"]["text"].lower()
+    assert "bine ai venit" in _text(telegram_calls[0]).lower()
 
 
 # --- Mesaje oarecare & update-uri necunoscute ---------------------------------
@@ -206,8 +259,8 @@ async def test_mesaj_oarecare_primeste_raspuns_scurt_cu_buton(
     assert resp.status_code == 200, resp.text
 
     call = telegram_calls[0]
-    assert call["json"]["text"] == telegram_api.FALLBACK_TEXT
-    assert "/start" in call["json"]["text"]
+    assert call["json"]["text"] == bot_texts.fallback_text("ro")
+    assert "/help" in call["json"]["text"]
     assert "web_app" in _button(call)
 
 
@@ -215,8 +268,8 @@ async def test_mesaj_oarecare_primeste_raspuns_scurt_cu_buton(
 async def test_update_necunoscut_este_confirmat_cu_200(
     client, live_bot, telegram_calls, caplog
 ):
-    """Un update fără mesaj (ex. `callback_query`) → 200, logat, fără trimitere."""
-    unknown = {"update_id": 7, "callback_query": {"id": "abc", "data": "x"}}
+    """Un update fără mesaj (ex. `my_chat_member`) → 200, logat, fără trimitere."""
+    unknown = {"update_id": 7, "my_chat_member": {"chat": {"id": 1}}}
     with caplog.at_level(logging.INFO):
         resp = await client.post(
             WEBHOOK,
@@ -225,7 +278,7 @@ async def test_update_necunoscut_este_confirmat_cu_200(
         )
     assert resp.status_code == 200, resp.text
     assert telegram_calls == []
-    assert "callback_query" in caplog.text
+    assert "my_chat_member" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -314,6 +367,8 @@ async def test_set_webhook_si_menu_button_trimit_payload_corect(
     assert telegram_calls[0]["json"] == {
         "url": "https://api.flrt.md/api/v1/telegram/webhook",
         "secret_token": "s3cr3t",
+        # Explicit: altfel Telegram păstrează lista veche (poate fără callback_query).
+        "allowed_updates": ["message", "callback_query"],
     }
     menu = telegram_calls[1]["json"]["menu_button"]
     assert menu["type"] == "web_app"
@@ -464,3 +519,495 @@ def test_redactarea_nu_strica_restul_payload_ului():
     assert masked["secret_token"] == telegram_bot._REDACTED
     # Originalul NU e modificat: payload-ul chiar se trimite la Telegram.
     assert payload["secret_token"] == "s3cr3t-de-webhook"
+
+
+# =========================================================================== #
+# Bun venit cu poză, comenzi, butoane callback, profilul botului
+# =========================================================================== #
+import importlib.util  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+
+def _update_from(text: str, language_code: str | None = None, first_name: str = "Ion",
+                 chat_id: int = 555) -> dict:
+    update = _update(text, chat_id=chat_id)
+    update["message"]["from"]["first_name"] = first_name
+    if language_code:
+        update["message"]["from"]["language_code"] = language_code
+    return update
+
+
+def _callback_update(data: str, language_code: str = "ro", chat_id: int = 555) -> dict:
+    return {
+        "update_id": 99,
+        "callback_query": {
+            "id": "cbq-1",
+            "from": {"id": chat_id, "is_bot": False, "first_name": "Ion",
+                     "language_code": language_code},
+            "message": {"message_id": 10, "chat": {"id": chat_id, "type": "private"}},
+            "data": data,
+        },
+    }
+
+
+async def _post(client, update: dict):
+    resp = await client.post(
+        WEBHOOK, json=update, headers={telegram_api.SECRET_HEADER: WEBHOOK_SECRET}
+    )
+    assert resp.status_code == 200, resp.text
+    return resp
+
+
+def _all_buttons(call: dict) -> list[dict]:
+    return [b for row in _markup(call)["inline_keyboard"] for b in row]
+
+
+class _StatusResponse(_FakeResponse):
+    """Răspuns non-2xx cu corp JSON, ca Bot API (`raise_for_status` real)."""
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                "error", request=None, response=self  # type: ignore[arg-type]
+            )
+
+
+@pytest.fixture
+def scripted_calls(monkeypatch):
+    """Ca `telegram_calls`, dar răspunsul fiecărei metode se poate programa."""
+    calls: list[dict] = []
+    responses: dict[str, object] = {}
+    original_post = httpx.AsyncClient.post
+
+    async def fake_post(self, url, **kwargs):
+        if isinstance(url, str) and url.startswith(telegram_bot.TELEGRAM_API_BASE):
+            call = {"url": url, "json": kwargs.get("json"), "data": kwargs.get("data"),
+                    "files": kwargs.get("files")}
+            calls.append(call)
+            method = url.rsplit("/", 1)[-1]
+            handler = responses.get(method)
+            if callable(handler):
+                return handler(call)
+            if handler is not None:
+                return handler
+            if method == "sendPhoto":
+                return _FakeResponse(PHOTO_RESULT)
+            return _FakeResponse({"ok": True, "result": {"message_id": 11}})
+        return await original_post(self, url, **kwargs)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    return calls, responses
+
+
+# --- Limba ---------------------------------------------------------------------
+@pytest.mark.parametrize(
+    ("code", "lang"),
+    [(None, "ro"), ("", "ro"), ("ro", "ro"), ("ru", "ru"), ("uk", "ru"), ("be", "ru"),
+     ("en", "en"), ("en-US", "en"), ("de", "ro"), ("fr", "ro")],
+)
+def test_limba_dupa_language_code(code, lang):
+    assert bot_texts.lang_for(code) == lang
+
+
+# --- /start: poză, meniu, localizare ------------------------------------------
+@pytest.mark.asyncio
+async def test_start_ru_are_legenda_in_rusa_si_meniul_complet(client, live_bot, telegram_calls):
+    await _post(client, _update_from("/start", "ru"))
+
+    call = telegram_calls[0]
+    assert _method(call) == "sendPhoto"
+    assert "Добро пожаловать" in _text(call)
+
+    rows = _markup(call)["inline_keyboard"]
+    assert rows[0][0]["text"] == bot_texts.button("ru", "open")
+    assert rows[0][0]["web_app"]["url"] == MINIAPP_URL
+    events, tickets = rows[1]
+    assert events["text"] == bot_texts.button("ru", "events")
+    assert events["web_app"]["url"] == f"{MINIAPP_URL}?startapp=events"
+    assert tickets["web_app"]["url"] == f"{MINIAPP_URL}?startapp=tickets"
+    help_btn, contacts_btn = rows[2]
+    assert help_btn["callback_data"] == "help"
+    assert contacts_btn["callback_data"] == "contacts"
+
+
+@pytest.mark.asyncio
+async def test_start_en_si_numele_e_escapat_html(client, live_bot, telegram_calls):
+    await _post(client, _update_from("/start", "en", first_name="<b>Ion</b> & co"))
+    caption = _text(telegram_calls[0])
+    assert "Welcome to <b>FLIRT</b>" in caption
+    assert "&lt;b&gt;Ion&lt;/b&gt; &amp; co" in caption
+    assert "<b>Ion</b>" not in caption
+
+
+def test_legenda_incape_in_limita_telegram():
+    for lang in bot_texts.LANGS:
+        assert len(bot_texts.welcome(lang, "X" * 200)) <= 1024
+
+
+@pytest.mark.asyncio
+async def test_a_doua_oara_poza_pleaca_dupa_file_id(client, live_bot, telegram_calls):
+    """Prima trimitere încarcă fișierul; a doua refolosește `file_id` (JSON)."""
+    await _post(client, _update_from("/start"))
+    await _post(client, _update_from("/start"))
+
+    first, second = telegram_calls
+    assert first["files"] is not None
+    assert _method(second) == "sendPhoto"
+    assert second["files"] is None
+    assert second["json"]["photo"] == "WELCOME-FILE-ID"
+    assert second["json"]["parse_mode"] == "HTML"
+    assert "bine ai venit" in second["json"]["caption"].lower()
+
+
+@pytest.mark.asyncio
+async def test_file_id_respins_se_uita_si_poza_se_reincarca(client, live_bot, scripted_calls):
+    calls, responses = scripted_calls
+    key = telegram_bot.file_id_cache_key(telegram_bot.WELCOME_IMAGE)
+    telegram_bot._file_id_cache[key] = "STALE-ID"
+
+    def send_photo(call):
+        if call["json"] is not None:  # trimitere după file_id → respinsă
+            return _StatusResponse(
+                {"ok": False, "error_code": 400, "description": "Bad Request: wrong file_id"},
+                status_code=400,
+            )
+        return _FakeResponse(PHOTO_RESULT)
+
+    responses["sendPhoto"] = send_photo
+    await _post(client, _update_from("/start"))
+
+    assert [_method(c) for c in calls] == ["sendPhoto", "sendPhoto"]
+    assert calls[0]["json"]["photo"] == "STALE-ID"
+    assert calls[1]["files"] is not None
+    assert telegram_bot._file_id_cache[key] == "WELCOME-FILE-ID"
+
+
+@pytest.mark.asyncio
+async def test_poza_esuata_cade_pe_mesaj_text(client, live_bot, scripted_calls):
+    calls, responses = scripted_calls
+    responses["sendPhoto"] = _StatusResponse(
+        {"ok": False, "error_code": 400, "description": "Bad Request: IMAGE_PROCESS_FAILED"},
+        status_code=400,
+    )
+    await _post(client, _update_from("/start promo-1"))
+
+    assert [_method(c) for c in calls] == ["sendPhoto", "sendMessage"]
+    fallback = calls[1]["json"]
+    assert fallback["parse_mode"] == "HTML"
+    assert "bine ai venit" in fallback["text"].lower()
+    # Meniul și deep linkul se păstrează și pe varianta text.
+    assert "startapp=promo-1" in _button(calls[1])["web_app"]["url"]
+    assert telegram_bot._file_id_cache == {}
+
+
+@pytest.mark.asyncio
+async def test_file_id_se_memoreaza_si_in_redis(client, live_bot, telegram_calls, monkeypatch):
+    store: dict[str, str] = {}
+
+    class FakeRedis:
+        async def get(self, key):
+            return store.get(key)
+
+        async def set(self, key, value, ex=None):
+            assert ex == telegram_bot.FILE_ID_CACHE_TTL_SECONDS
+            store[key] = value
+
+        async def delete(self, key):
+            store.pop(key, None)
+
+        async def aclose(self):
+            pass
+
+    async def fake_redis():
+        return FakeRedis()
+
+    monkeypatch.setattr(telegram_bot, "_get_redis", fake_redis)
+
+    await _post(client, _update_from("/start"))
+    key = telegram_bot.file_id_cache_key(telegram_bot.WELCOME_IMAGE)
+    assert store == {key: "WELCOME-FILE-ID"}
+    assert key.startswith("telegram:file_id:1234567890:welcome:")
+    assert BOT_TOKEN.split(":", 1)[1] not in key
+
+    # Alt proces (memorie goală) găsește file_id în Redis → fără reîncărcare.
+    telegram_bot._file_id_cache.clear()
+    await _post(client, _update_from("/start"))
+    assert telegram_calls[1]["json"]["photo"] == "WELCOME-FILE-ID"
+
+
+@pytest.mark.asyncio
+async def test_redis_cazut_nu_strica_bun_venitul(client, live_bot, telegram_calls, monkeypatch):
+    async def broken_redis():
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr(telegram_bot, "_get_redis", broken_redis)
+    await _post(client, _update_from("/start"))
+    assert _method(telegram_calls[0]) == "sendPhoto"
+
+
+@pytest.mark.asyncio
+async def test_start_fara_miniapp_url_trimite_doar_butoane_callback(
+    client, live_bot, telegram_calls, monkeypatch
+):
+    monkeypatch.setattr(telegram_bot.settings, "telegram_miniapp_url", "")
+    await _post(client, _update_from("/start"))
+    buttons = _all_buttons(telegram_calls[0])
+    assert buttons and all("web_app" not in b for b in buttons)
+    assert {b["callback_data"] for b in buttons} == {"help", "contacts"}
+
+
+# --- Comenzi -------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_help_explica_biletele_si_listeaza_comenzile(client, live_bot, telegram_calls):
+    await _post(client, _update_from("/help"))
+    call = telegram_calls[0]
+    assert _method(call) == "sendMessage"
+    body = call["json"]
+    assert body["parse_mode"] == "HTML"
+    assert body["link_preview_options"] == {"is_disabled": True}
+    for command, _ in bot_texts.COMMANDS["ro"]:
+        assert f"/{command}" in body["text"]
+    assert "MIA" in body["text"]
+    assert "web_app" in _button(call)
+    callbacks = {b.get("callback_data") for b in _all_buttons(call)}
+    assert {"contacts", "privacy"} <= callbacks
+
+
+@pytest.mark.asyncio
+async def test_help_in_engleza(client, live_bot, telegram_calls):
+    await _post(client, _update_from("/help", "en"))
+    assert "How to buy a ticket" in telegram_calls[0]["json"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_contacts_cu_email_telegram_si_site(client, live_bot, telegram_calls, monkeypatch):
+    monkeypatch.setattr(telegram_bot.settings, "legal_contact_email", "help@flrt.md")
+    monkeypatch.setattr(telegram_bot.settings, "support_telegram_username", "@flirt_support")
+    monkeypatch.setattr(telegram_bot.settings, "public_website_url", "https://flrt.md/")
+
+    await _post(client, _update_from("/contacts"))
+    call = telegram_calls[0]
+    text = call["json"]["text"]
+    assert '<a href="mailto:help@flrt.md">help@flrt.md</a>' in text
+    assert '<a href="https://t.me/flirt_support">@flirt_support</a>' in text
+    assert '<a href="https://flrt.md">flrt.md</a>' in text
+    urls = [b.get("url") for b in _all_buttons(call)]
+    assert "https://t.me/flirt_support" in urls
+    assert "https://flrt.md" in urls
+
+
+@pytest.mark.asyncio
+async def test_contacts_implicit_doar_emailul_de_suport(client, live_bot, telegram_calls, monkeypatch):
+    monkeypatch.setattr(telegram_bot.settings, "legal_contact_email", "")
+    monkeypatch.setattr(telegram_bot.settings, "support_telegram_username", "")
+    await _post(client, _update_from("/contacts", "ru"))
+    text = telegram_calls[0]["json"]["text"]
+    assert "support@flrt.md" in text
+    assert "t.me/" not in text
+    assert "Контакты" in text
+
+
+@pytest.mark.asyncio
+async def test_privacy_are_linkuri_publice_si_buton_spre_app(client, live_bot, telegram_calls, monkeypatch):
+    monkeypatch.setattr(telegram_bot.settings, "public_legal_base_url", "https://api.flrt.md/")
+    await _post(client, _update_from("/privacy"))
+    call = telegram_calls[0]
+    text = call["json"]["text"]
+    assert '<a href="https://api.flrt.md/legal/privacy">' in text
+    assert '<a href="https://api.flrt.md/legal/terms">' in text
+    button = _button(call)
+    assert button["text"] == bot_texts.button("ro", "privacy_app")
+    assert button["web_app"]["url"] == f"{MINIAPP_URL}?startapp=privacy"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("command", "param"), [("/events", "events"), ("/tickets", "tickets")])
+async def test_events_si_tickets_deschid_ecranul_potrivit(
+    client, live_bot, telegram_calls, command, param
+):
+    await _post(client, _update_from(command))
+    assert _button(telegram_calls[0])["web_app"]["url"] == f"{MINIAPP_URL}?startapp={param}"
+
+
+@pytest.mark.asyncio
+async def test_comanda_pentru_alt_bot_e_ignorata(client, live_bot, telegram_calls, monkeypatch):
+    monkeypatch.setattr(telegram_bot.settings, "telegram_bot_username", "flrt_party_bot")
+    await _post(client, _update_from("/help@alt_bot"))
+    assert telegram_calls == []
+    await _post(client, _update_from("/help@flrt_party_bot"))
+    assert _method(telegram_calls[0]) == "sendMessage"
+
+
+@pytest.mark.asyncio
+async def test_comanda_necunoscuta_primeste_indiciul(client, live_bot, telegram_calls):
+    await _post(client, _update_from("/xyz"))
+    assert telegram_calls[0]["json"]["text"] == bot_texts.fallback_text("ro")
+
+
+@pytest.mark.asyncio
+async def test_mesaj_editat_nu_primeste_raspuns(client, live_bot, telegram_calls):
+    update = _update("/start")
+    update["edited_message"] = update.pop("message")
+    await _post(client, update)
+    assert telegram_calls == []
+
+
+# --- callback_query ----------------------------------------------------------
+@pytest.mark.asyncio
+async def test_callback_ajutor_raspunde_si_trimite_ajutorul(client, live_bot, telegram_calls):
+    await _post(client, _callback_update("help", "en"))
+    assert [_method(c) for c in telegram_calls] == ["answerCallbackQuery", "sendMessage"]
+    assert telegram_calls[0]["json"] == {"callback_query_id": "cbq-1"}
+    assert telegram_calls[1]["json"]["chat_id"] == 555
+    assert "What FLIRT can do" in telegram_calls[1]["json"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_callback_contacte(client, live_bot, telegram_calls):
+    await _post(client, _callback_update("contacts", "ro"))
+    assert "Contacte FLIRT" in telegram_calls[1]["json"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_callback_necunoscut_e_doar_confirmat(client, live_bot, telegram_calls):
+    await _post(client, _callback_update("../../hack"))
+    assert [_method(c) for c in telegram_calls] == ["answerCallbackQuery"]
+
+
+@pytest.mark.asyncio
+async def test_callback_fara_secret_e_respins(client, live_bot, telegram_calls):
+    resp = await client.post(WEBHOOK, json=_callback_update("help"))
+    assert resp.status_code == 403
+    assert telegram_calls == []
+
+
+@pytest.mark.asyncio
+async def test_callback_respecta_rate_limit(client, live_bot, telegram_calls, monkeypatch):
+    async def over_limit(chat_id):
+        return False
+
+    monkeypatch.setattr(telegram_api, "_within_rate_limit", over_limit)
+    await _post(client, _callback_update("help"))
+    assert telegram_calls == []
+
+
+# --- Textele profilului: limitele Telegram ------------------------------------
+def _utf16_len(text: str) -> int:
+    return len(text.encode("utf-16-le")) // 2
+
+
+def test_textele_profilului_respecta_limitele():
+    for lang in bot_texts.LANGS:
+        assert _utf16_len(bot_texts.DESCRIPTION[lang]) <= 512
+        assert _utf16_len(bot_texts.SHORT_DESCRIPTION[lang]) <= 120
+        assert 1 <= len(bot_texts.BOT_NAME[lang]) <= 64
+        names = [c for c, _ in bot_texts.COMMANDS[lang]]
+        assert names == [c for c, _ in bot_texts.COMMANDS["ro"]], "aceleași comenzi în toate limbile"
+        for name, desc in bot_texts.COMMANDS[lang]:
+            assert name.islower() and 1 <= len(name) <= 32
+            assert 1 <= len(desc) <= 256
+    # Webhookul înțelege fiecare comandă din meniu.
+    assert set(telegram_api._SIMPLE_HANDLERS) | {"start"} == bot_texts.KNOWN_COMMANDS
+
+
+def test_imaginile_botului_exista_si_au_dimensiunile_corecte():
+    from PIL import Image
+
+    with Image.open(telegram_bot.WELCOME_IMAGE) as im:
+        assert im.size == (1280, 720)
+    with Image.open(telegram_bot.AVATAR_IMAGE) as im:
+        assert im.size == (640, 640)
+
+
+# --- Scriptul de configurare -------------------------------------------------
+def _load_setup_script():
+    path = Path(__file__).resolve().parent.parent / "scripts" / "setup_telegram_bot.py"
+    spec = importlib.util.spec_from_file_location("setup_telegram_bot", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
+
+
+def test_setup_dry_run_nu_face_apeluri(telegram_calls, capsys, monkeypatch):
+    monkeypatch.delenv("TELEGRAM_WEBHOOK_URL", raising=False)
+    setup = _load_setup_script()
+    assert setup._main(["--dry-run"]) == 0
+    assert telegram_calls == []
+    out = capsys.readouterr().out
+    assert "[dry-run]" in out and "/help" in out
+
+
+def test_setup_configureaza_profilul_fara_sa_atinga_webhookul(
+    live_bot, scripted_calls, capsys, monkeypatch
+):
+    monkeypatch.delenv("TELEGRAM_WEBHOOK_URL", raising=False)
+    calls, responses = scripted_calls
+    # Numele implicit e deja „FLIRT" → nu se rescrie (idempotent).
+    responses["getMyName"] = lambda call: _FakeResponse(
+        {"ok": True, "result": {"name": "FLIRT" if not (call["json"] or {}).get("language_code") else "Vechi"}}
+    )
+    responses["getWebhookInfo"] = _FakeResponse(
+        {"ok": True, "result": {"url": "https://api.flrt.md/api/v1/telegram/webhook",
+                                "allowed_updates": ["message"], "pending_update_count": 0}}
+    )
+    setup = _load_setup_script()
+    assert setup._main([]) == 0
+
+    methods = [_method(c) for c in calls]
+    assert methods.count("setMyCommands") == 8  # 4 limbi × (implicit + private)
+    assert methods.count("setMyName") == 3      # implicitul era deja la zi
+    assert methods.count("setMyDescription") == 4
+    assert methods.count("setMyShortDescription") == 4
+    assert "setChatMenuButton" in methods
+    assert "setWebhook" not in methods
+    assert "setMyProfilePhoto" not in methods
+
+    ru_cmds = next(c["json"] for c in calls if _method(c) == "setMyCommands"
+                   and c["json"].get("language_code") == "ru")
+    assert {"command": "help", "description": dict(bot_texts.COMMANDS["ru"])["help"]} in ru_cmds["commands"]
+    menu = next(c["json"] for c in calls if _method(c) == "setChatMenuButton")["menu_button"]
+    assert menu == {"type": "web_app", "text": "FLIRT", "web_app": {"url": MINIAPP_URL}}
+
+    out = capsys.readouterr().out
+    assert "REZUMAT" in out
+    # allowed_updates fără callback_query → instrucțiune clară, fără modificare.
+    assert "--webhook-url" in out
+    assert BOT_TOKEN not in out and WEBHOOK_SECRET not in out
+
+
+def test_setup_cu_webhook_url_seteaza_si_allowed_updates(live_bot, scripted_calls, monkeypatch):
+    monkeypatch.delenv("TELEGRAM_WEBHOOK_URL", raising=False)
+    calls, _ = scripted_calls
+    setup = _load_setup_script()
+    assert setup._main(["--webhook-url", "https://api.flrt.md/api/v1/telegram/webhook"]) == 0
+    hook = next(c["json"] for c in calls if _method(c) == "setWebhook")
+    assert hook["allowed_updates"] == ["message", "callback_query"]
+    assert hook["secret_token"] == WEBHOOK_SECRET
+
+
+def test_setup_poza_de_profil_metoda_lipsa_da_pasii_botfather(
+    live_bot, scripted_calls, capsys, monkeypatch
+):
+    monkeypatch.delenv("TELEGRAM_WEBHOOK_URL", raising=False)
+    calls, responses = scripted_calls
+    responses["setMyProfilePhoto"] = _StatusResponse(
+        {"ok": False, "error_code": 404, "description": "Not Found"}, status_code=404
+    )
+    setup = _load_setup_script()
+    # Metoda lipsă NU e un eșec al scriptului: e o acțiune manuală.
+    assert setup._main(["--with-photo"]) == 0
+
+    photo = next(c for c in calls if _method(c) == "setMyProfilePhoto")
+    assert json.loads(photo["data"]["photo"]) == {"type": "static", "photo": "attach://avatar"}
+    assert photo["files"]["avatar"][1] == telegram_bot.AVATAR_IMAGE.read_bytes()
+    out = capsys.readouterr().out
+    assert "@BotFather" in out and "Edit Botpic" in out
+
+
+def test_setup_poza_de_profil_reusita(live_bot, scripted_calls, capsys, monkeypatch):
+    monkeypatch.delenv("TELEGRAM_WEBHOOK_URL", raising=False)
+    calls, responses = scripted_calls
+    responses["setMyProfilePhoto"] = _FakeResponse({"ok": True, "result": True})
+    setup = _load_setup_script()
+    assert setup._main(["--with-photo"]) == 0
+    assert "✓ setMyProfilePhoto" in capsys.readouterr().out

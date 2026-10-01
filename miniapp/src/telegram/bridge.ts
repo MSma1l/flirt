@@ -144,6 +144,23 @@ export function getRawInitData(): string {
 }
 
 /**
+ * Parametrul de start cu care s-a deschis Mini App-ul: `start_param` din
+ * `initDataUnsafe` (linkurile `t.me/<bot>/<app>?startapp=x`) sau, pentru
+ * butoanele `web_app` ale botului, `?startapp=x` din URL — Telegram nu
+ * completează `start_param` pentru acelea. Doar pentru navigare, nu pentru
+ * decizii de securitate.
+ */
+export function getStartParam(): string | null {
+  const fromTelegram = safely((app) => app.initDataUnsafe?.start_param ?? null, null);
+  if (fromTelegram) return fromTelegram;
+  try {
+    return new URLSearchParams(window.location.search).get('startapp');
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Utilizatorul NEVERIFICAT din `initDataUnsafe`.
  * DOAR pentru afișare optimistă (un nume, un avatar) și pentru alegerea limbii.
  * Nu decide niciodată accesul pe baza lui.

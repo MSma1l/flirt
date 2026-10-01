@@ -34,7 +34,9 @@ import { useAuthStore } from '@/auth/authStore';
 import { StatusScreen, type StatusAction } from '@/components/StatusScreen';
 import { getLegalUrls } from '@/config';
 import { AppRoutes } from '@/routes';
+import { getStartParam } from '@/telegram/bridge';
 import { telegramBotAction } from '@/telegram/botLink';
+import { initialPathFromStartParam } from '@/telegram/startParamRoute';
 import { useTelegramBootstrap, useTelegramChrome } from '@/telegram/useTelegram';
 
 import '@/styles/shell.css';
@@ -142,7 +144,7 @@ export function App() {
   }
 
   return (
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialPathFromStartParam(getStartParam())]}>
       <AppRoutes />
     </MemoryRouter>
   );

@@ -253,6 +253,13 @@ class Settings(BaseSettings):
     telegram_webhook_secret: str = ""
     # URL-ul public al Mini App-ului (folosit la butonul din bot / deep-links).
     telegram_miniapp_url: str = ""
+    # Contul Telegram de suport afișat de bot la /contacts (fără `@`; gol = ascuns).
+    support_telegram_username: str = ""
+    # Site-ul public afișat de bot la /contacts (gol = ascuns).
+    public_website_url: str = "https://flrt.md"
+    # Baza publică a paginilor legale HTML (`/legal/privacy`, `/legal/terms`,
+    # servite de `app/api/legal.py` la rădăcina API-ului) — linkurile din /privacy.
+    public_legal_base_url: str = "https://api.flrt.md"
 
     # Push notifications (TZ 6.3). Provider: 'stub' | 'expo' | 'fcm'
     push_provider: str = "stub"
