@@ -19,7 +19,17 @@ ScanResult = Literal[
     "cancelled",
     "event_over",
     "not_found",
+    # QR-ul Flirt Passport al unui om FĂRĂ bilet online la evenimentul scanat:
+    # staff-ul poate încasa cash la ușă (`POST /admin/events/{id}/door-admissions`).
+    "no_ticket",
 ]
+
+# 'event_ticket' (comandă plătită la un eveniment) | 'flirt_party' (biletul
+# one-time Flirt Party al userului) | 'door_cash' (intrare plătită cash la ușă,
+# identificată prin QR-ul Flirt Passport; și la `no_ticket` — ce s-ar înregistra).
+TicketType = Literal["event_ticket", "flirt_party", "door_cash"]
+# Cum a fost identificat omul: codul biletului sau QR-ul Flirt Passport.
+ScanVia = Literal["ticket", "passport"]
 
 
 class TicketScanIn(BaseModel):
@@ -36,9 +46,7 @@ class TicketScanIn(BaseModel):
 class ScannedTicketOut(BaseModel):
     """Ce vede staff-ul pe cardul de rezultat (fără date sensibile)."""
 
-    # 'event_ticket' (comandă plătită la un eveniment) | 'flirt_party' (biletul
-    # one-time Flirt Party al userului).
-    ticket_type: Literal["event_ticket", "flirt_party"]
+    ticket_type: TicketType
     first_name: str | None = None
     age: int | None = None
     photo_url: str | None = None
@@ -50,11 +58,25 @@ class ScannedTicketOut(BaseModel):
     ticket_quantity: int = 1
     admitted_at: datetime | None = None
     admitted_by_email: str | None = None
+    # Doar la scanarea pașaportului: câte ștampile are omul și reducerea treptei
+    # lui curente de fidelitate (0 = nicio treaptă). None = scanare de bilet.
+    stamps: int | None = None
+    discount_percent: int | None = None
 
 
 class TicketScanOut(BaseModel):
     result: ScanResult
     ticket: ScannedTicketOut | None = None
+    via: ScanVia = "ticket"
+
+
+class DoorAdmissionIn(BaseModel):
+    """Payload la `POST /admin/events/{event_id}/door-admissions` („Achitat cash").
+
+    `code` = conținutul QR-ului Flirt Passport (`FLIRTP-<token>`).
+    """
+
+    code: str = Field(min_length=1, max_length=SCAN_CODE_MAX_LENGTH)
 
 
 class ScanStatsOut(BaseModel):
@@ -63,16 +85,18 @@ class ScanStatsOut(BaseModel):
     event_id: uuid.UUID
     # Persoane cu bilet plătit/aprobat (suma `ticket_quantity`).
     sold: int
-    # Persoane intrate: bilete de eveniment + bilete Flirt Party scanate aici.
+    # Persoane intrate: bilete de eveniment + bilete Flirt Party + cash la ușă.
     admitted: int
     # Din `admitted`, câte au intrat cu biletul Flirt Party.
     flirt_party_admitted: int
+    # Din `admitted`, câte au plătit cash la ușă (fără bilet online).
+    door_admitted: int = 0
 
 
 class AdmissionOut(BaseModel):
     """Un rând din lista intrărilor recente la un eveniment."""
 
-    ticket_type: Literal["event_ticket", "flirt_party"]
+    ticket_type: TicketType
     first_name: str | None = None
     age: int | None = None
     photo_url: str | None = None

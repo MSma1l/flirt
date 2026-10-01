@@ -60,6 +60,15 @@ class PassportStampOut(BaseModel):
     stamped_at: datetime
 
 
+class PassportQrOut(BaseModel):
+    """QR-ul personal Flirt Passport (arătat la intrare) + codul de plată."""
+
+    # Conținutul QR-ului: `FLIRTP-` + 32 hex.
+    qr_payload: str
+    # Codul de plată de 6 cifre (de scris în comentariul transferului).
+    payment_code: str
+
+
 class GoingIn(BaseModel):
     """Payload pentru marcajul „merg / nu mai merg" la un eveniment."""
 

@@ -7,6 +7,7 @@ serviciului se înregistrează ca acoperite (vezi nota din `test_ad_service_unit
 """
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -27,11 +28,11 @@ from app.models.ticket_order import (
     STATUS_AWAITING_PAYMENT,
     STATUS_PAYMENT_DECLARED,
     STATUS_REJECTED,
-    user_payment_ref,
 )
 from app.models.user import ROLE_ADMIN, User
 from app.schemas.ticket_order import PaymentSettingsIn
 from app.services import ticket_order_service as T
+from app.services import user_codes
 
 pytestmark = pytest.mark.asyncio
 
@@ -107,13 +108,46 @@ async def test_create_order_returns_instructions(db_session):
     out = await T.create_order(db_session, user, event.id)
     assert out.order.status == STATUS_AWAITING_PAYMENT
     assert out.order.price == 200.0
-    assert out.order.reference == user_payment_ref(user)
+    await db_session.refresh(user)
+    code = user.payment_code
+    assert re.fullmatch(r"[1-9][0-9]{5}", code)
+    assert out.order.reference == code
     assert out.order.ticket_code is None
     # Instrucțiuni prezente la creare.
     assert out.payment is not None
-    assert out.payment.reference == user_payment_ref(user)
+    assert out.payment.reference == code
     assert out.payment.amount == 200.0
-    assert user_payment_ref(user) in out.payment.comment_template
+    # Comentariul transferului = DOAR codul de plată.
+    assert out.payment.comment_template == code
+
+
+async def test_payment_code_format_stable_and_unique(db_session):
+    a = await _make_user(db_session, "code_a@example.com")
+    b = await _make_user(db_session, "code_b@example.com")
+    code_a = await user_codes.ensure_payment_code(db_session, a)
+    await db_session.commit()
+    assert re.fullmatch(r"[1-9][0-9]{5}", code_a)
+    # Stabil: al doilea apel (și o comandă) întorc același cod.
+    assert await user_codes.ensure_payment_code(db_session, a) == code_a
+    event = await _make_event(db_session)
+    out = await T.create_order(db_session, a, event.id)
+    assert out.order.reference == code_a
+    # Unic: o coliziune forțată pe codul lui `a` → `b` primește alt cod.
+    calls = iter([code_a, code_a, "777777"])
+    orig = user_codes.new_payment_code
+    user_codes.new_payment_code = lambda: next(calls)
+    try:
+        code_b = await user_codes._ensure(
+            db_session, b, User.payment_code, user_codes.new_payment_code
+        )
+    finally:
+        user_codes.new_payment_code = orig
+    await db_session.commit()
+    assert code_b == "777777" != code_a
+    # Generatorul: mereu 6 cifre, prima ≠ 0.
+    assert all(
+        re.fullmatch(r"[1-9][0-9]{5}", user_codes.new_payment_code()) for _ in range(500)
+    )
 
 
 async def test_create_order_event_404(db_session):

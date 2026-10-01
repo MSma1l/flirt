@@ -559,11 +559,19 @@ export type TicketScanResult =
   | 'not_paid'
   | 'cancelled'
   | 'event_over'
-  | 'not_found';
+  | 'not_found'
+  /** Pașaport Flirt scanat, dar persoana nu are bilet online la eveniment. */
+  | 'no_ticket';
+
+/** `door_cash` = intrare plătită cash la ușă (pașaport, fără bilet online). */
+export type AdmissionTicketType = 'event_ticket' | 'flirt_party' | 'door_cash';
 
 export interface ScannedTicket {
-  /** `event_ticket` = bilet plătit la eveniment; `flirt_party` = biletul one-time. */
-  ticket_type: 'event_ticket' | 'flirt_party';
+  /**
+   * `event_ticket` = bilet plătit la eveniment; `flirt_party` = biletul one-time;
+   * `door_cash` = intrare cash la ușă.
+   */
+  ticket_type: AdmissionTicketType;
   first_name: string | null;
   age: number | null;
   photo_url: string | null;
@@ -575,11 +583,17 @@ export interface ScannedTicket {
   ticket_quantity: number;
   admitted_at: IsoDateTime | null;
   admitted_by_email: string | null;
+  /** Ștampilele din pașaport (doar la scanarea pașaportului). */
+  stamps?: number | null;
+  /** Reducerea treptei curente de fidelitate (0 = niciuna). */
+  discount_percent?: number | null;
 }
 
 export interface TicketScanResponse {
   result: TicketScanResult;
   ticket: ScannedTicket | null;
+  /** Ce s-a scanat: biletul sau pașaportul Flirt (care a găsit biletul). */
+  via?: 'ticket' | 'passport';
 }
 
 export interface ScanStats {
@@ -587,10 +601,12 @@ export interface ScanStats {
   sold: number;
   admitted: number;
   flirt_party_admitted: number;
+  /** Intrări cash la ușă (incluse și în `admitted`). */
+  door_admitted?: number;
 }
 
 export interface Admission {
-  ticket_type: 'event_ticket' | 'flirt_party';
+  ticket_type: AdmissionTicketType;
   first_name: string | null;
   age: number | null;
   photo_url: string | null;

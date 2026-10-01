@@ -11,11 +11,22 @@
  * Camera: `getUserMedia` (camera din spate) + `BarcodeDetector` când există,
  * altfel `jsqr` pe cadre din canvas (vezi `lib/qrDecoder.ts`). Merge doar pe
  * HTTPS — erorile de permisiune primesc instrucțiuni clare.
+ *
+ * Flirt Passport: QR-ul personal din aplicație trece prin același endpoint. Cu
+ * bilet online → admis ca bilet (`via: "passport"`). Fără bilet → `no_ticket`
+ * (card chihlimbariu, NU dispare singur): staff-ul încasează cash și apasă
+ * „Achitat cash" → `POST /admin/events/{id}/door-admissions` cu același cod.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 
-import { fetchAdmissions, fetchEvents, fetchScanStats, scanTicket } from '../api/admin';
+import {
+  admitDoorCash,
+  fetchAdmissions,
+  fetchEvents,
+  fetchScanStats,
+  scanTicket,
+} from '../api/admin';
 import type { AdminEvent, TicketScanResponse } from '../api/types';
 import { Button, Card, EmptyState, Field, LoadingState, Select, TextInput } from '../components/ui';
 import { INTL_LOCALE, useLanguage, useMessages } from '../i18n/LanguageContext';
@@ -265,6 +276,9 @@ export function ScanPage(): JSX.Element {
   const [manualCode, setManualCode] = useState('');
   const lastCodeRef = useRef<{ code: string; at: number } | null>(null);
   const busyRef = useRef(false);
+  /** Codul (pașaportul) pentru care se poate înregistra intrarea cash. */
+  const [cashCode, setCashCode] = useState<{ code: string; event: string } | null>(null);
+  const cashBusyRef = useRef(false);
 
   const eventsQuery = useQuery({
     queryKey: ['scan-events'],
@@ -297,17 +311,23 @@ export function ScanPage(): JSX.Element {
   );
   const formatTime = (iso: string | null): string => (iso ? timeFormat.format(new Date(iso)) : '—');
 
+  const refreshCounters = useCallback(
+    (event: string) => {
+      void queryClient.invalidateQueries({ queryKey: ['scan-stats', event] });
+      void queryClient.invalidateQueries({ queryKey: ['scan-admissions', event] });
+    },
+    [queryClient],
+  );
+
   const scanMutation = useMutation({
     mutationFn: ({ code, event }: { code: string; event: string }) => scanTicket(code, event),
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       const ok = data.result === 'admitted';
       vibrate(ok);
       beep(ok);
+      setCashCode(data.result === 'no_ticket' ? variables : null);
       setShown(data);
-      if (selected) {
-        void queryClient.invalidateQueries({ queryKey: ['scan-stats', selected.id] });
-        void queryClient.invalidateQueries({ queryKey: ['scan-admissions', selected.id] });
-      }
+      refreshCounters(variables.event);
     },
     onError: (error) => {
       vibrate(false);
@@ -318,6 +338,35 @@ export function ScanPage(): JSX.Element {
       busyRef.current = false;
     },
   });
+
+  const cashMutation = useMutation({
+    mutationFn: ({ code, event }: { code: string; event: string }) => admitDoorCash(event, code),
+    onSuccess: (data, variables) => {
+      const ok = data.result === 'admitted';
+      vibrate(ok);
+      beep(ok);
+      setCashCode(null);
+      setShown(data);
+      refreshCounters(variables.event);
+    },
+    onError: (error) => {
+      vibrate(false);
+      beep(false);
+      setCashCode(null);
+      setShown({ result: 'error', ticket: null, message: errorMessage(error) });
+    },
+    onSettled: () => {
+      cashBusyRef.current = false;
+    },
+  });
+
+  const onPayCash = useCallback(() => {
+    // Garda sincronă: un dublu-tap nu trimite două înregistrări.
+    if (!cashCode || cashBusyRef.current) return;
+    cashBusyRef.current = true;
+    unlockAudio();
+    cashMutation.mutate(cashCode);
+  }, [cashCode, cashMutation]);
 
   const submitCode = useCallback(
     (raw: string) => {
@@ -346,14 +395,17 @@ export function ScanPage(): JSX.Element {
   const camera = useQrCamera(onCameraCode);
 
   const dismiss = useCallback(() => {
+    if (cashBusyRef.current) return;
     setShown(null);
+    setCashCode(null);
     // Cooldown-ul pornește de la revenire: QR-ul încă ținut în fața camerei nu
     // re-declanșează imediat „deja intrat".
     if (lastCodeRef.current) lastCodeRef.current = { ...lastCodeRef.current, at: Date.now() };
   }, []);
 
   useEffect(() => {
-    if (!shown) return undefined;
+    // „Fără bilet" așteaptă decizia staff-ului (încasează cash sau anulează).
+    if (!shown || shown.result === 'no_ticket') return undefined;
     const timer = window.setTimeout(dismiss, RESULT_DISPLAY_MS);
     return () => window.clearTimeout(timer);
   }, [shown, dismiss]);
@@ -428,6 +480,11 @@ export function ScanPage(): JSX.Element {
               {statsQuery.data && statsQuery.data.flirt_party_admitted > 0 ? (
                 <span className="scan__counter-label">
                   {m.flirtParty(statsQuery.data.flirt_party_admitted)}
+                </span>
+              ) : null}
+              {statsQuery.data && typeof statsQuery.data.door_admitted === 'number' ? (
+                <span className="scan__counter-label" data-testid="scan-counter-cash">
+                  {m.doorCash(statsQuery.data.door_admitted)}
                 </span>
               ) : null}
             </div>
@@ -518,6 +575,9 @@ export function ScanPage(): JSX.Element {
                       {row.age !== null ? `, ${row.age}` : ''}
                       {row.ticket_quantity > 1 ? ` ${m.persons(row.ticket_quantity)}` : ''}
                     </span>
+                    {row.ticket_type === 'door_cash' ? (
+                      <span className="scan__recent-tag">{m.recentCash}</span>
+                    ) : null}
                     <span className="scan__recent-time">{formatTime(row.admitted_at)}</span>
                   </li>
                 ))}
@@ -529,7 +589,15 @@ export function ScanPage(): JSX.Element {
         </>
       ) : null}
 
-      {shown ? (
+      {shown && shown.result === 'no_ticket' ? (
+        <NoTicketOverlay
+          shown={shown}
+          messages={m}
+          saving={cashMutation.isPending}
+          onPayCash={onPayCash}
+          onCancel={dismiss}
+        />
+      ) : shown ? (
         <ResultOverlay
           shown={shown}
           formatTime={formatTime}
@@ -565,6 +633,8 @@ function reasonFor(shown: ShownResult, m: ScanText, formatTime: (iso: string | n
       return m.reason.eventOver;
     case 'not_found':
       return m.reason.notFound;
+    case 'no_ticket':
+      return m.noTicket.reason;
     default:
       return null;
   }
@@ -584,6 +654,7 @@ function ResultOverlay({
   const ok = shown.result === 'admitted';
   const ticket = shown.ticket;
   const reason = reasonFor(shown, m, formatTime);
+  const sourceLine = sourceLineFor(shown, m);
   return (
     <button
       type="button"
@@ -613,8 +684,78 @@ function ResultOverlay({
           ) : null}
         </span>
       ) : null}
+      {sourceLine ? <span className="scan-result__source">{sourceLine}</span> : null}
       {reason ? <span className="scan-result__reason">{reason}</span> : null}
       <span className="scan-result__hint">{m.tapToContinue}</span>
     </button>
+  );
+}
+
+/** De unde vine intrarea: cash la ușă sau biletul online găsit prin pașaport. */
+function sourceLineFor(shown: ShownResult, m: ScanText): string | null {
+  if (shown.result === 'error' || !shown.ticket) return null;
+  if (shown.ticket.ticket_type === 'door_cash') {
+    return shown.result === 'admitted' ? m.doorCashAdmitted : m.doorCashTicket;
+  }
+  if (shown.via === 'passport' && shown.result === 'admitted') return m.viaPassport;
+  return null;
+}
+
+/**
+ * Pașaport fără bilet online: cardul rămâne până la decizia staff-ului. Nu e
+ * un singur buton-ecran (ca refuzurile) pentru că are două acțiuni distincte.
+ */
+function NoTicketOverlay({
+  shown,
+  messages: m,
+  saving,
+  onPayCash,
+  onCancel,
+}: {
+  shown: TicketScanResponse;
+  messages: ScanText;
+  saving: boolean;
+  onPayCash: () => void;
+  onCancel: () => void;
+}): JSX.Element {
+  const ticket = shown.ticket;
+  const discount = ticket?.discount_percent ?? 0;
+  return (
+    <div className="scan-result scan-result--warn" role="alert" data-testid="scan-result">
+      <span className="scan-result__icon" aria-hidden="true">
+        !
+      </span>
+      <span className="scan-result__title">{m.result.no_ticket}</span>
+      {ticket && (ticket.photo_url || ticket.first_name) ? (
+        <span className="scan-result__person">
+          {ticket.photo_url ? (
+            <img className="scan-result__photo" src={ticket.photo_url} alt="" />
+          ) : null}
+          <span className="scan-result__name">
+            {ticket.first_name ?? '—'}
+            {ticket.age !== null ? `, ${m.ageSuffix(ticket.age)}` : ''}
+          </span>
+        </span>
+      ) : null}
+      <span className="scan-result__reason">{m.noTicket.reason}</span>
+      <span className="scan-result__loyalty">
+        {typeof ticket?.stamps === 'number' ? <span>{m.noTicket.visits(ticket.stamps)}</span> : null}
+        <span className="scan-result__discount">
+          {discount > 0 ? m.noTicket.discount(discount) : m.noTicket.noDiscount}
+        </span>
+      </span>
+      <button
+        type="button"
+        className="scan-result__cash"
+        onClick={onPayCash}
+        disabled={saving}
+        aria-busy={saving}
+      >
+        {saving ? m.noTicket.saving : m.noTicket.payCash}
+      </button>
+      <button type="button" className="scan-result__cancel" onClick={onCancel} disabled={saving}>
+        {m.noTicket.cancel}
+      </button>
+    </div>
   );
 }

@@ -287,11 +287,20 @@ export function fetchTicketOrders(): Promise<TicketOrder[]> {
   return apiFetch<TicketOrder[]>('/admin/ticket-orders');
 }
 
-/** Lista filtrată pe stări (`?status=a,b`); fără stări = toată lista. */
-export function fetchTicketOrdersByStatus(statuses: readonly string[]): Promise<TicketOrder[]> {
-  const query =
-    statuses.length > 0 ? `?status=${encodeURIComponent(statuses.join(','))}` : '';
-  return apiFetch<TicketOrder[]>(`/admin/ticket-orders${query}`);
+/**
+ * Lista filtrată pe stări (`?status=a,b`); fără stări = toată lista.
+ * `q` = codul de plată (referința comenzii) din comentariul extrasului bancar.
+ */
+export function fetchTicketOrdersByStatus(
+  statuses: readonly string[],
+  q?: string,
+): Promise<TicketOrder[]> {
+  return apiFetch<TicketOrder[]>('/admin/ticket-orders', {
+    query: {
+      status: statuses.length > 0 ? statuses.join(',') : undefined,
+      q: q?.trim() || undefined,
+    },
+  });
 }
 
 /** Detaliul unei comenzi (cu `allowed_statuses` pentru corecții). */
@@ -396,6 +405,17 @@ export function scanTicket(code: string, eventId: Uuid): Promise<TicketScanRespo
   return apiFetch<TicketScanResponse>('/admin/tickets/scan', {
     method: 'POST',
     body: { code, event_id: eventId },
+  });
+}
+
+/**
+ * Intrare plătită CASH la ușă (fără bilet online): același cod scanat
+ * (pașaportul Flirt) → intrarea se înregistrează + ștampilă în pașaport.
+ */
+export function admitDoorCash(eventId: Uuid, code: string): Promise<TicketScanResponse> {
+  return apiFetch<TicketScanResponse>(`/admin/events/${eventId}/door-admissions`, {
+    method: 'POST',
+    body: { code },
   });
 }
 

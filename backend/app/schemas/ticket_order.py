@@ -118,9 +118,10 @@ class PaymentInstructions(BaseModel):
     bank_name: str | None = None
     amount: float
     currency: str
-    # Referința userului (`U-XXXXXXXX`) — de pus în comentariul transferului.
+    # Codul de plată al userului (6 cifre, ex. `482719`; comenzile vechi:
+    # `U-XXXXXXXX`) — de pus în comentariul transferului.
     reference: str
-    # Comentariul structurat recomandat, ex. „Bilet {titlu} {dată} Ref:U-XXXXXXXX".
+    # Comentariul transferului = DOAR codul de plată (ex. „482719").
     comment_template: str
     instructions: str | None = None
     # Aditiv — MIA Plăți Instant: plata din aplicația băncii după numărul de

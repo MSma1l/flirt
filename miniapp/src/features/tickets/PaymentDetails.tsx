@@ -1,8 +1,8 @@
 /**
  * Datele de plată ale unei comenzi de bilet, pe metode, în ordinea serverului:
  *  - MIA Plăți Instant (după numărul de telefon) — primul, cardul premium;
- *  - transfer bancar (IBAN) — suma, destinația plății (textul EXACT de scris la
- *    transfer), beneficiarul, IBAN-ul, banca, termenul și pașii.
+ *  - transfer bancar (IBAN) — suma, codul de plată (singurul lucru de scris la
+ *    comentariul transferului), beneficiarul, IBAN-ul, banca, termenul și pașii.
  * Cu ambele metode configurate apare un comutator MIA | IBAN (implicit MIA).
  * Un server vechi (fără `payment_methods`) → exact afișarea de dinainte (IBAN).
  *
@@ -115,9 +115,9 @@ export interface PaymentDetailsProps {
   beneficiary?: string | null;
   iban?: string | null;
   bankName?: string | null;
-  /** Textul exact al destinației plății. */
+  /** Ce scrie omul la comentariul transferului — azi DOAR codul de plată (`482719`). */
   purpose?: string | null;
-  /** Codul de plată al userului (`U-XXXXXXXX`). */
+  /** Codul de plată al userului (6 cifre); rezervă când lipsește `purpose`. */
   reference?: string | null;
   phone?: string | null;
   accountDetails?: string | null;
@@ -178,18 +178,63 @@ function FieldRows({
   );
 }
 
-function Steps({ steps }: { steps: string[] }) {
+/** Un pas; `code` se arată mare, imediat după text (pasul „comentariul"). */
+interface Step {
+  text: string;
+  code?: string | null;
+}
+
+/** Codul de plată: 4–8 cifre. Orice altceva e un text vechi de destinație. */
+export function isPaymentCode(value: string): boolean {
+  return /^\d{4,8}$/.test(value);
+}
+
+/**
+ * Pașii — aceiași patru pentru orice metodă; doar pasul 2 spune concret pe ce
+ * cale se face transferul (telefon MIA, QR MIA sau IBAN).
+ */
+function buildSteps(
+  t: (key: string, options?: Record<string, unknown>) => string,
+  transfer: string,
+  comment: string | null,
+  finalStep: 'declare' | 'proof',
+): Step[] {
+  const steps: Step[] = [{ text: t('tickets.pay.steps.open') }, { text: transfer }];
+  if (comment) {
+    steps.push(
+      isPaymentCode(comment)
+        ? { text: t('tickets.pay.steps.comment'), code: comment }
+        : { text: t('tickets.pay.steps.commentText') },
+    );
+  }
+  steps.push({
+    text: finalStep === 'declare' ? t('tickets.pay.steps.finalDeclare') : t('tickets.pay.steps.finalProof'),
+  });
+  return steps;
+}
+
+function Steps({ steps }: { steps: Step[] }) {
   const { t } = useTranslation('screens');
   return (
     <div className="tk-pay__steps">
       <h4 className="tk-pay__steps-title">{t('tickets.pay.stepsTitle')}</h4>
       <ol className="tk-steps" data-testid="pay-steps">
         {steps.map((step, index) => (
-          <li key={step} className="tk-steps__item">
+          <li key={step.text} className="tk-steps__item">
             <span className="tk-steps__num" aria-hidden="true">
               {index + 1}
             </span>
-            <span className="tk-steps__text">{step}</span>
+            <span className="tk-steps__text">
+              {step.text}
+              {step.code ? (
+                <>
+                  {' '}
+                  <strong className="tk-steps__code tk-selectable" data-testid="pay-step-code">
+                    {step.code}
+                  </strong>
+                </>
+              ) : null}
+            </span>
           </li>
         ))}
       </ol>
@@ -206,6 +251,33 @@ function Deadline({ deadline }: { deadline?: string | null }) {
       <ClockIcon width={16} height={16} />
       {t('tickets.pay.deadline', { date: formatEventDate(deadline) })}
     </p>
+  );
+}
+
+/**
+ * Blocul „ce scrii la comentariu": codul de plată mare, cu buton de copiere și
+ * o explicație de un rând. Un singur loc pentru cod — comentariul și referința
+ * sunt același lucru acum, deci nu-l mai arătăm de două ori.
+ *
+ * Cifrele se rup vizual DOAR prin `letter-spacing`, nu prin spațiu: omul scrie
+ * ce vede, iar un spațiu în comentariu ar fi încă un loc de greșit. Se copiază
+ * mereu valoarea brută.
+ */
+function CodeBlock({ value, copiedKey, onCopy }: { value: string; copiedKey: string | null; onCopy: CopyFn }) {
+  const { t } = useTranslation('screens');
+  const code = isPaymentCode(value);
+  const label = code ? t('tickets.pay.code.label') : t('tickets.pay.code.textLabel');
+  return (
+    <div className={`tk-pay__purpose${code ? ' tk-pay__code' : ''}`} data-testid="pay-code-block">
+      <span className="tk-eyebrow">{label}</span>
+      <p className="tk-pay__purpose-text tk-selectable" data-testid="pay-code">
+        {value}
+      </p>
+      <p className="tk-pay__purpose-hint" data-testid="pay-code-hint">
+        {code ? t('tickets.pay.code.hint') : t('tickets.pay.code.textHint')}
+      </p>
+      <CopyButton copyKey="code" value={value} label={label} copiedKey={copiedKey} onCopy={onCopy} large />
+    </div>
   );
 }
 
@@ -235,22 +307,15 @@ function MiaDetails(props: PaymentDetailsProps & { copiedKey: string | null; onC
   const rows: { key: string; label: string; value: string; mono?: boolean; testId?: string }[] = [
     { key: 'mia-amount', label: t('tickets.pay.mia.amount'), value: String(props.amount), testId: 'mia-amount' },
   ];
-  if (comment) {
-    rows.push({ key: 'mia-comment', label: t('tickets.pay.mia.comment'), value: comment, mono: true, testId: 'mia-comment' });
-  }
-  if (props.reference && comment !== props.reference && !comment?.includes(props.reference)) {
-    rows.push({ key: 'mia-reference', label: t('tickets.pay.reference'), value: props.reference, mono: true });
-  }
 
-  const steps = [
-    t('tickets.pay.mia.step1'),
-    phoneLabel ? t('tickets.pay.mia.step2') : t('tickets.pay.mia.step2Qr'),
+  const steps = buildSteps(
+    t,
     phoneLabel
-      ? t('tickets.pay.mia.step3', { phone: phoneLabel, amount: amountLabel })
-      : t('tickets.pay.mia.step3Qr', { amount: amountLabel }),
-    t('tickets.pay.mia.step4'),
-    props.finalStep === 'declare' ? t('tickets.pay.mia.step5Declare') : t('tickets.pay.mia.step5Proof'),
-  ];
+      ? t('tickets.pay.steps.transferPhone', { phone: phoneLabel, amount: amountLabel })
+      : t('tickets.pay.steps.transferQr', { amount: amountLabel }),
+    comment,
+    props.finalStep,
+  );
 
   return (
     <div className="tk-pay" data-testid="pay-mia">
@@ -313,8 +378,8 @@ function MiaDetails(props: PaymentDetailsProps & { copiedKey: string | null; onC
         <Deadline deadline={props.deadline} />
       </section>
 
+      {comment ? <CodeBlock value={comment} copiedKey={props.copiedKey} onCopy={props.onCopy} /> : null}
       <FieldRows rows={rows} copiedKey={props.copiedKey} onCopy={props.onCopy} />
-      {comment ? <p className="tk-pay__purpose-hint">{t('tickets.pay.purposeHint')}</p> : null}
 
       {props.instructions ? <p className="tk-note">{props.instructions}</p> : null}
       <Steps steps={steps} />
@@ -322,11 +387,12 @@ function MiaDetails(props: PaymentDetailsProps & { copiedKey: string | null; onC
   );
 }
 
-/** Transferul bancar (IBAN) — afișarea de dinainte, neschimbată. */
+/** Transferul bancar (IBAN): suma, codul de plată, datele bancare, pașii. */
 function IbanDetails(props: PaymentDetailsProps & { testId: string; copiedKey: string | null; onCopy: CopyFn }) {
   const { t } = useTranslation('screens');
   const { copiedKey, onCopy: copy } = props;
   const amountLabel = `${props.amount} ${props.currency}`;
+  const comment = props.purpose || props.reference || null;
 
   const rows: { key: string; label: string; value: string; mono?: boolean; testId?: string }[] = [];
   if (props.beneficiary) rows.push({ key: 'beneficiary', label: t('tickets.pay.recipient'), value: props.beneficiary });
@@ -334,14 +400,13 @@ function IbanDetails(props: PaymentDetailsProps & { testId: string; copiedKey: s
   if (props.bankName) rows.push({ key: 'bank', label: t('tickets.pay.bank'), value: props.bankName });
   if (props.phone) rows.push({ key: 'phone', label: t('tickets.pay.phone'), value: props.phone, mono: true });
   if (props.accountDetails) rows.push({ key: 'account', label: t('tickets.pay.account'), value: props.accountDetails, mono: true });
-  if (props.reference) rows.push({ key: 'reference', label: t('tickets.pay.reference'), value: props.reference, mono: true, testId: 'pay-reference' });
 
-  const steps = [
-    t('tickets.pay.step1'),
-    t('tickets.pay.step2', { amount: amountLabel }),
-    t('tickets.pay.step3'),
-    props.finalStep === 'declare' ? t('tickets.pay.step4Declare') : t('tickets.pay.step4Proof'),
-  ];
+  const steps = buildSteps(
+    t,
+    t('tickets.pay.steps.transferIban', { amount: amountLabel }),
+    comment,
+    props.finalStep,
+  );
 
   return (
     <div className="tk-pay" data-testid={props.testId}>
@@ -362,23 +427,7 @@ function IbanDetails(props: PaymentDetailsProps & { testId: string; copiedKey: s
         <Deadline deadline={props.deadline} />
       </div>
 
-      {props.purpose ? (
-        <div className="tk-pay__purpose">
-          <span className="tk-eyebrow">{t('tickets.pay.purpose')}</span>
-          <p className="tk-pay__purpose-text tk-selectable" data-testid="pay-comment">
-            {props.purpose}
-          </p>
-          <p className="tk-pay__purpose-hint">{t('tickets.pay.purposeHint')}</p>
-          <CopyButton
-            copyKey="comment"
-            value={props.purpose}
-            label={t('tickets.pay.purpose')}
-            copiedKey={copiedKey}
-            onCopy={copy}
-            large
-          />
-        </div>
-      ) : null}
+      {comment ? <CodeBlock value={comment} copiedKey={copiedKey} onCopy={copy} /> : null}
 
       {rows.length > 0 ? (
         <FieldRows rows={rows} copiedKey={copiedKey} onCopy={copy} />

@@ -37,9 +37,13 @@ import {
   LoyaltySection,
 } from '@/features/loyalty';
 
+import { QrCode } from '@/features/tickets/QrCode';
+
 import {
   fetchMySubscription,
   fetchPassport,
+  fetchPassportQr,
+  type PassportQr,
   type PassportStamp,
   type Subscription,
 } from './passportApi';
@@ -67,6 +71,57 @@ function DiscountCard({ subscription }: { subscription: Subscription }) {
       <span className="pp-discount__entries">{t('profile:passport.discountCard.entriesLeft', entries)}</span>
       <span className="pp-discount__hint">{t('profile:passport.discountCard.hint')}</span>
     </div>
+  );
+}
+
+/**
+ * Permisul de intrare: QR-ul personal pe care staff-ul îl scanează la ușă.
+ * Biletul online se găsește automat după el; cine plătește cash la intrare e
+ * înregistrat tot prin el (și primește ștampila). Ca și restul secțiunilor,
+ * eroarea lui rămâne în cardul lui.
+ */
+function EntryPassCard() {
+  const { t } = useTranslation('screens');
+  const { data, isLoading, isError, isFetching, refetch } = useQuery<PassportQr>({
+    queryKey: ['passport-qr'],
+    queryFn: fetchPassportQr,
+  });
+
+  let body: ReactNode;
+  if (isLoading) {
+    body = <div className="spinner" role="status" aria-label={t('passport.qr.title')} />;
+  } else if (isError || !data) {
+    body = (
+      <div className="pp-pass__error" data-testid="passport-qr-error">
+        <p className="error-text">{t('passport.qr.error')}</p>
+        <button type="button" className="button" disabled={isFetching} onClick={() => void refetch()}>
+          {t('passport.qr.retry')}
+        </button>
+      </div>
+    );
+  } else {
+    body = (
+      <>
+        <QrCode value={data.qrPayload} size={200} label={t('passport.qr.alt')} testId="passport-qr" showCode={false} />
+        <p className="pp-pass__show">{t('passport.qr.show')}</p>
+        <ul className="pp-pass__notes">
+          <li>{t('passport.qr.online')}</li>
+          <li>{t('passport.qr.cash')}</li>
+        </ul>
+        {data.paymentCode ? (
+          <p className="caption pp-pass__code" data-testid="passport-payment-code">
+            {t('passport.qr.paymentCode', { code: data.paymentCode })}
+          </p>
+        ) : null}
+      </>
+    );
+  }
+
+  return (
+    <section className="pp-section pp-pass" data-testid="passport-pass">
+      <h2 className="pp-section__title">{t('passport.qr.title')}</h2>
+      {body}
+    </section>
   );
 }
 
@@ -191,6 +246,7 @@ export function PassportScreen() {
   return (
     <div className="pp-screen">
       {title}
+      <EntryPassCard />
       <LoyaltySection />
       {discounts}
       {stampsBody}

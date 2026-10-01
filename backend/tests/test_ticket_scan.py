@@ -27,7 +27,7 @@ from app.models.account import Ticket
 from app.models.admin import ACTION_TICKET_ADMIT, AdminAuditLog
 from app.models.event import Event, FlirtPassportStamp
 from app.models.profile import Profile
-from app.models.ticket_order import TicketOrder, user_payment_ref
+from app.models.ticket_order import TicketOrder
 from app.models.user import ROLE_ADMIN, User
 from app.services import ticket_scan_service
 from app.services.ticket_lifecycle import order_ticket_status, party_ticket_status
@@ -104,7 +104,7 @@ async def _order(db, user: User, event: Event, *, status="approved", quantity=1)
         total_amount=100.0 * quantity,
         ticket_quantity=quantity,
         currency="lei",
-        reference=user_payment_ref(user),
+        reference="123456",
         status=status,
         ticket_code=uuid.uuid4().hex if status == "approved" else None,
     )
@@ -381,7 +381,7 @@ async def test_stats_and_admissions(client, db_session):
     await _order(db_session, guest2, event, status="payment_declared")
 
     stats = (await client.get(f"{ADMIN}/tickets/scan-stats", params={"event_id": str(event.id)}, headers=staff)).json()
-    assert stats == {"event_id": str(event.id), "sold": 3, "admitted": 0, "flirt_party_admitted": 0}
+    assert stats == {"event_id": str(event.id), "sold": 3, "admitted": 0, "flirt_party_admitted": 0, "door_admitted": 0}
 
     await _scan(client, staff, o1.ticket_code, event.id)
     stats = (await client.get(f"{ADMIN}/tickets/scan-stats", params={"event_id": str(event.id)}, headers=staff)).json()
@@ -423,3 +423,198 @@ async def test_user_ticket_order_statuses(client, db_session):
         ("Viitor", "rejected", "cancelled"),
         ("Viitor", "awaiting_payment", None),
     ])
+
+
+# --------------------------------------------------------------------------- #
+# Cod scurt (sufix) + Flirt Passport QR + intrarea cash la ușă
+# --------------------------------------------------------------------------- #
+async def test_typed_suffix_matches_within_event(client, db_session):
+    """Codul scurt din Mini App („B094 1698") = ULTIMELE 8 caractere ale codului."""
+    staff = await _make_admin(client, db_session)
+    _, guest = await _holder(client, db_session)
+    event = await _event(db_session)
+    order = await _order(db_session, guest, event)
+
+    short = order.ticket_code[-8:].upper()
+    body = await _scan(client, staff, f"{short[:4]} {short[4:]}", event.id)
+    assert body["result"] == "admitted"
+    assert body["via"] == "ticket"
+
+
+async def _passport_qr(client, headers) -> dict:
+    resp = await client.get(f"{API}/events/passport/qr", headers=headers)
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+async def _door(client, headers, code: str, event_id) -> dict:
+    resp = await client.post(
+        f"{ADMIN}/events/{event_id}/door-admissions", json={"code": code}, headers=headers
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+async def test_passport_qr_endpoint_is_stable(client, db_session):
+    headers, guest = await _holder(client, db_session)
+    first = await _passport_qr(client, headers)
+    second = await _passport_qr(client, headers)
+    assert first == second
+    assert first["qr_payload"].startswith("FLIRTP-")
+    token = first["qr_payload"].removeprefix("FLIRTP-")
+    assert len(token) == 32 and int(token, 16) >= 0
+    code = first["payment_code"]
+    assert len(code) == 6 and code.isdigit() and code[0] != "0"
+    await db_session.refresh(guest)
+    assert guest.passport_token == token
+    assert guest.payment_code == code
+    # Protejat.
+    assert (await client.get(f"{API}/events/passport/qr")).status_code in (401, 403)
+
+
+async def test_scan_passport_with_paid_ticket_admits_ticket(client, db_session):
+    staff = await _make_admin(client, db_session)
+    headers, guest = await _holder(client, db_session)
+    event = await _event(db_session)
+    await _order(db_session, guest, event, quantity=2)
+    qr = (await _passport_qr(client, headers))["qr_payload"]
+
+    body = await _scan(client, staff, qr, event.id)
+    assert body["result"] == "admitted"
+    assert body["via"] == "passport"
+    assert body["ticket"]["ticket_type"] == "event_ticket"
+    assert body["ticket"]["ticket_quantity"] == 2
+    assert body["ticket"]["stamps"] == 1
+    assert await _stamps(db_session, guest.id, event.id) == 1
+
+    again = await _scan(client, staff, qr, event.id)
+    assert again["result"] == "already_admitted"
+    assert again["via"] == "passport"
+
+    # „Achitat cash" peste un bilet online → se întoarce biletul, fără dublă evidență.
+    door = await _door(client, staff, qr, event.id)
+    assert door["result"] == "already_admitted"
+    assert door["ticket"]["ticket_type"] == "event_ticket"
+    stats = (
+        await client.get(f"{ADMIN}/tickets/scan-stats", params={"event_id": str(event.id)}, headers=staff)
+    ).json()
+    assert stats["admitted"] == 2 and stats["door_admitted"] == 0
+
+
+async def test_scan_passport_without_ticket_is_no_ticket(client, db_session):
+    staff = await _make_admin(client, db_session)
+    headers, guest = await _holder(client, db_session)
+    event = await _event(db_session, title="Seara cash")
+    # O cerere NEPLĂTITĂ nu contează ca bilet.
+    await _order(db_session, guest, event, status="awaiting_payment")
+    qr = (await _passport_qr(client, headers))["qr_payload"]
+
+    body = await _scan(client, staff, qr.lower(), event.id)
+    assert body["result"] == "no_ticket"
+    assert body["via"] == "passport"
+    t = body["ticket"]
+    assert t["first_name"] == "Ana"
+    assert t["event_title"] == "Seara cash"
+    assert t["event_id"] == str(event.id)
+    assert t["stamps"] == 0
+    assert t["discount_percent"] == 0
+    assert t["admitted_at"] is None
+    assert await _stamps(db_session, guest.id, event.id) == 0
+
+
+async def test_unknown_passport_not_found(client, db_session):
+    staff = await _make_admin(client, db_session)
+    event = await _event(db_session)
+    fake = "FLIRTP-" + uuid.uuid4().hex
+    assert (await _scan(client, staff, fake, event.id))["result"] == "not_found"
+    assert (await _door(client, staff, fake, event.id))["result"] == "not_found"
+    # Un cod de bilet nu e acceptat ca pașaport la intrarea cash.
+    assert (await _door(client, staff, uuid.uuid4().hex, event.id))["result"] == "not_found"
+
+
+async def test_door_admission_cash_flow(client, db_session):
+    from app.models.billing import Subscription  # noqa: F401 — doar pentru claritate
+    from app.models.event import EventDoorAdmission
+
+    staff = await _make_admin(client, db_session)
+    headers, guest = await _holder(client, db_session)
+    event = await _event(db_session)
+    qr = (await _passport_qr(client, headers))["qr_payload"]
+
+    body = await _door(client, staff, qr, event.id)
+    assert body["result"] == "admitted"
+    assert body["via"] == "passport"
+    t = body["ticket"]
+    assert t["ticket_type"] == "door_cash"
+    assert t["ticket_quantity"] == 1
+    assert t["admitted_at"] is not None
+    assert t["admitted_by_email"] == "staff@example.com"
+    assert t["stamps"] == 1
+    assert await _stamps(db_session, guest.id, event.id) == 1
+    row = await db_session.scalar(select(EventDoorAdmission).where(EventDoorAdmission.user_id == guest.id))
+    assert row.payment_method == "cash"
+    audits = await db_session.scalar(
+        select(func.count()).select_from(AdminAuditLog).where(
+            AdminAuditLog.action == ACTION_TICKET_ADMIT,
+            AdminAuditLog.target_type == "event_door_admission",
+        )
+    )
+    assert audits == 1
+
+    # A doua apăsare / o scanare ulterioară → already_admitted, cu ora ORIGINALĂ.
+    again = await _door(client, staff, qr, event.id)
+    assert again["result"] == "already_admitted"
+    assert again["ticket"]["ticket_type"] == "door_cash"
+    assert again["ticket"]["admitted_at"] == t["admitted_at"]
+    scanned = await _scan(client, staff, qr, event.id)
+    assert scanned["result"] == "already_admitted"
+    assert scanned["ticket"]["ticket_type"] == "door_cash"
+    assert await _stamps(db_session, guest.id, event.id) == 1
+
+    stats = (
+        await client.get(f"{ADMIN}/tickets/scan-stats", params={"event_id": str(event.id)}, headers=staff)
+    ).json()
+    assert stats["sold"] == 0
+    assert stats["admitted"] == 1
+    assert stats["door_admitted"] == 1
+    admissions = (await client.get(f"{ADMIN}/events/{event.id}/admissions", headers=staff)).json()
+    assert len(admissions) == 1
+    assert admissions[0]["ticket_type"] == "door_cash"
+    assert admissions[0]["first_name"] == "Ana"
+    assert admissions[0]["ticket_quantity"] == 1
+
+
+async def test_door_admission_does_not_consume_discount_card(client, db_session, monkeypatch):
+    """Intrarea cash emite ștampila FĂRĂ `billing.consume_event_entry`."""
+    from app.services import billing
+
+    called = []
+
+    async def fake_consume(db, user):
+        called.append(user.id)
+
+    monkeypatch.setattr(billing, "consume_event_entry", fake_consume)
+    staff = await _make_admin(client, db_session)
+    headers, guest = await _holder(client, db_session)
+    event = await _event(db_session)
+    qr = (await _passport_qr(client, headers))["qr_payload"]
+    assert (await _door(client, staff, qr, event.id))["result"] == "admitted"
+    assert called == []
+    assert await _stamps(db_session, guest.id, event.id) == 1
+
+
+async def test_door_admission_event_over_and_404(client, db_session):
+    staff = await _make_admin(client, db_session)
+    headers, _ = await _holder(client, db_session)
+    past = await _event(db_session, starts_in=-timedelta(days=3))
+    qr = (await _passport_qr(client, headers))["qr_payload"]
+    assert (await _door(client, staff, qr, past.id))["result"] == "event_over"
+    resp = await client.post(
+        f"{ADMIN}/events/{uuid.uuid4()}/door-admissions", json={"code": qr}, headers=staff
+    )
+    assert resp.status_code == 404
+    # Doar admin.
+    resp = await client.post(
+        f"{ADMIN}/events/{past.id}/door-admissions", json={"code": qr}, headers=headers
+    )
+    assert resp.status_code == 403

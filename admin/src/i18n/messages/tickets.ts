@@ -34,6 +34,9 @@ export const ticketsMessages = defineMessages({
       colProof: 'Chitanță',
       proofAttached: 'Chitanță încărcată',
       filterLabel: 'Filtru status',
+      searchLabel: 'Cod de plată',
+      searchPlaceholder: 'ex. 482719 (din comentariul transferului)',
+      searchEmpty: (q: string) => `Nicio comandă cu codul „${q}"`,
       filter: {
         all: 'Toate (de verificat primele)',
         toVerify: 'De verificat',
@@ -207,6 +210,9 @@ export const ticketsMessages = defineMessages({
       colProof: 'Чек',
       proofAttached: 'Чек загружен',
       filterLabel: 'Фильтр по статусу',
+      searchLabel: 'Код оплаты',
+      searchPlaceholder: 'напр. 482719 (из комментария к переводу)',
+      searchEmpty: (q: string) => `Нет заказа с кодом «${q}»`,
       filter: {
         all: 'Все (сначала на проверку)',
         toVerify: 'На проверку',

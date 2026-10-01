@@ -1317,3 +1317,20 @@
     animation: none;
   }
 }
+
+/* Codul de plată (6 cifre): mare, rar între cifre — spațiul e doar vizual,
+   ca omul să nu scrie un spațiu în comentariul transferului. */
+.tk-pay__code .tk-pay__purpose-text {
+  font-size: 34px;
+  line-height: 40px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+}
+
+.tk-steps__code {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}

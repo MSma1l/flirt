@@ -1,14 +1,22 @@
 """SCANAREA biletelor la intrarea în eveniment (staff cu telefonul, fără aplicație).
 
-CE CODURI EXISTĂ (și ce conține QR-ul): QR-ul afișat userului conține codul
-BRUT, 32 de caractere hex (uuid4().hex), fără prefix sau URL:
+CE CODURI EXISTĂ (și ce conține QR-ul): QR-ul unui BILET conține codul BRUT,
+32 de caractere hex (uuid4().hex), fără prefix sau URL:
   * `TicketOrder.ticket_code` — biletul plătit la UN eveniment (emis la aprobare);
+                                tastat de mână: prefix SAU sufix unic ≥ 8 caractere
+                                (Mini App-ul afișează ultimele 8 drept cod scurt);
   * `Ticket.code`             — biletul one-time Flirt Party al userului, NELEGAT
                                 de un eveniment; e consumat la prima scanare
                                 reușită la un eveniment de tip `flirt_party`.
+QR-ul FLIRT PASSPORT (personal, nu un bilet) e `FLIRTP-<32 hex>` (`users.passport_token`);
+normalizat devine `flirtp<32 hex>` — prefixul nu e hex, deci nu se ciocnește cu
+codurile de bilet. Scanarea lui caută biletul PLĂTIT al omului la evenimentul ales
+(→ fluxul de bilet, `via="passport"`); fără bilet → `no_ticket`, iar staff-ul poate
+înregistra intrarea plătită CASH la ușă (`door_admit`, tabela `event_door_admissions`).
 
 REZULTATE (în ordinea verificărilor — primul care se potrivește câștigă):
   not_found        codul nu există (sau e prea scurt/ambiguu);
+  no_ticket        pașaport valid, dar omul n-are bilet plătit la eveniment;
   wrong_event      biletul e pentru alt eveniment (Flirt Party: evenimentul
                    scanat nu e de tip `flirt_party`);
   cancelled        comanda a fost respinsă/anulată;
@@ -35,14 +43,20 @@ from datetime import date, datetime, timezone
 from urllib.parse import parse_qs, urlsplit
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.models.account import Ticket
 from app.models.admin import ACTION_TICKET_ADMIT
-from app.models.event import Event
+from app.models.event import (
+    DOOR_PAYMENT_CASH,
+    Event,
+    EventDoorAdmission,
+    FlirtPassportStamp,
+)
 from app.models.profile import Profile
 from app.models.ticket_order import (
     STATUS_APPROVED,
@@ -57,7 +71,7 @@ from app.schemas.ticket_scan import (
     ScanStatsOut,
     TicketScanOut,
 )
-from app.services import event_service
+from app.services import event_service, loyalty
 from app.services.admin_service import audit
 from app.services.ticket_lifecycle import event_is_over
 
@@ -77,6 +91,8 @@ ADMISSIONS_DEFAULT_LIMIT = 50
 _SEPARATORS = re.compile(r"[\s\-_]+")
 _VALID_CODE = re.compile(r"[0-9a-z]{1,64}")
 _HEX = re.compile(r"[0-9a-f]+")
+# QR-ul Flirt Passport după `normalize_code`: `flirtp` + tokenul de 32 hex.
+_PASSPORT_CODE = re.compile(r"flirtp([0-9a-f]{32})")
 
 
 def _now() -> datetime:
@@ -153,7 +169,8 @@ async def _get_event_or_404(db: AsyncSession, event_id: uuid.UUID) -> Event:
 async def _find_order(
     db: AsyncSession, code: str, event: Event
 ) -> TicketOrder | None:
-    """Comanda după cod exact; altfel după PREFIX unic în evenimentul scanat."""
+    """Comanda după cod exact; altfel după PREFIX sau SUFIX unic în evenimentul
+    scanat (codul scurt din Mini App = ultimele 8 caractere ale `ticket_code`)."""
     order = await db.scalar(select(TicketOrder).where(TicketOrder.ticket_code == code))
     if order is not None:
         return order
@@ -164,7 +181,10 @@ async def _find_order(
                 select(TicketOrder)
                 .where(
                     TicketOrder.event_id == event.id,
-                    TicketOrder.ticket_code.like(f"{code}%"),
+                    or_(
+                        TicketOrder.ticket_code.like(f"{code}%"),
+                        TicketOrder.ticket_code.like(f"%{code}"),
+                    ),
                 )
                 .limit(2)
             )
@@ -206,6 +226,8 @@ def _ticket_out(
     quantity: int,
     admitted_at: datetime | None,
     admitted_by_email: str | None,
+    stamps: int | None = None,
+    discount_percent: int | None = None,
 ) -> ScannedTicketOut:
     return ScannedTicketOut(
         ticket_type=ticket_type,
@@ -218,6 +240,8 @@ def _ticket_out(
         ticket_quantity=quantity,
         admitted_at=admitted_at,
         admitted_by_email=admitted_by_email,
+        stamps=stamps,
+        discount_percent=discount_percent,
     )
 
 
@@ -373,6 +397,10 @@ async def scan(
     if code is None:
         return TicketScanOut(result="not_found")
 
+    passport = _PASSPORT_CODE.fullmatch(code)
+    if passport is not None:
+        return await _scan_passport(db, actor, passport.group(1), event, ip)
+
     order = await _find_order(db, code, event)
     if order is not None:
         return await _scan_order(db, actor, order, event, ip)
@@ -382,6 +410,180 @@ async def scan(
         return await _scan_party_ticket(db, actor, ticket, event, ip)
 
     return TicketScanOut(result="not_found")
+
+
+# --------------------------------------------------------------------------- #
+# Flirt Passport: identificarea omului + intrarea cash la ușă
+# --------------------------------------------------------------------------- #
+async def _passport_user(db: AsyncSession, code: str | None) -> User | None:
+    """Userul după QR-ul Flirt Passport normalizat; None = nu e un QR de pașaport
+    sau tokenul nu există."""
+    match = _PASSPORT_CODE.fullmatch(code or "")
+    if match is None:
+        return None
+    return await db.scalar(select(User).where(User.passport_token == match.group(1)))
+
+
+async def _paid_order(db: AsyncSession, user: User, event: Event) -> TicketOrder | None:
+    """Comanda APROBATĂ a userului la eveniment — întâi una încă neadmisă (un om
+    poate avea mai multe cereri aprobate), altfel una deja admisă."""
+    return await db.scalar(
+        select(TicketOrder)
+        .where(
+            TicketOrder.user_id == user.id,
+            TicketOrder.event_id == event.id,
+            TicketOrder.status == STATUS_APPROVED,
+        )
+        .order_by(TicketOrder.admitted_at.is_not(None), TicketOrder.created_at.desc())
+        .limit(1)
+    )
+
+
+async def _with_loyalty(db: AsyncSession, user: User, out: TicketScanOut) -> TicketScanOut:
+    """Marchează rezultatul ca venit din pașaport și adaugă ștampilele + reducerea
+    treptei curente de fidelitate (citite DUPĂ o eventuală ștampilă nouă)."""
+    out.via = "passport"
+    if out.ticket is not None:
+        # Un rollback din fluxul de bilet (cursă la ștampilă) expiră obiectele —
+        # în async un acces leneș ar exploda, deci reîncărcăm explicit.
+        await db.refresh(user)
+        status_ = await loyalty.get_status(db, user)
+        out.ticket.stamps = status_.stamps
+        out.ticket.discount_percent = status_.discount_percent
+    return out
+
+
+async def _door_out(
+    db: AsyncSession,
+    result: str,
+    user: User,
+    event: Event,
+    row: EventDoorAdmission | None,
+) -> TicketScanOut:
+    holder = await _holder(db, user.id)
+    out = TicketScanOut(
+        result=result,
+        ticket=_ticket_out(
+            ticket_type="door_cash",
+            holder=holder,
+            event=event,
+            quantity=1,
+            admitted_at=row.admitted_at if row else None,
+            admitted_by_email=await _email(db, row.admitted_by) if row else None,
+        ),
+    )
+    return await _with_loyalty(db, user, out)
+
+
+async def _door_row(
+    db: AsyncSession, user: User, event: Event
+) -> EventDoorAdmission | None:
+    return await db.scalar(
+        select(EventDoorAdmission).where(
+            EventDoorAdmission.event_id == event.id,
+            EventDoorAdmission.user_id == user.id,
+        )
+    )
+
+
+async def _scan_passport(
+    db: AsyncSession, actor: User, token: str, event: Event, ip: str | None
+) -> TicketScanOut:
+    """QR-ul Flirt Passport: biletul plătit al omului → fluxul de bilet; altfel
+    intrarea cash deja înregistrată → `already_admitted`; altfel `no_ticket`."""
+    user = await db.scalar(select(User).where(User.passport_token == token))
+    if user is None:
+        return TicketScanOut(result="not_found", via="passport")
+    order = await _paid_order(db, user, event)
+    if order is not None:
+        return await _with_loyalty(db, user, await _scan_order(db, actor, order, event, ip))
+    row = await _door_row(db, user, event)
+    if row is not None:
+        return await _door_out(db, "already_admitted", user, event, row)
+    return await _door_out(db, "no_ticket", user, event, None)
+
+
+async def _stamp_passport_door(db: AsyncSession, user_id: uuid.UUID, event_id: uuid.UUID) -> None:
+    """Ștampila pentru intrarea cash — FĂRĂ `billing.consume_event_entry`.
+
+    `event_service.checkin` consumă o intrare din cardul de reduceri al omului;
+    la plata cash la ușă omul n-a folosit cardul, deci emitem ștampila direct.
+    Idempotentă (ON CONFLICT pe perechea unică) și best effort, ca la bilet.
+    """
+    try:
+        await db.execute(
+            pg_insert(FlirtPassportStamp)
+            .values(id=uuid.uuid4(), event_id=event_id, user_id=user_id, stamped_at=_now())
+            .on_conflict_do_nothing(index_elements=["event_id", "user_id"])
+        )
+        await db.commit()
+    except Exception:  # noqa: BLE001 — nu stricăm intrarea pentru o ștampilă
+        await db.rollback()
+        log.exception("passport stamp failed after door admission")
+
+
+async def door_admit(
+    db: AsyncSession,
+    actor: User,
+    raw_code: str,
+    event_id: uuid.UUID,
+    ip: str | None = None,
+) -> TicketScanOut:
+    """„Achitat cash": înregistrează intrarea la ușă a omului cu QR-ul Flirt Passport.
+
+    Dacă omul are totuși bilet online plătit, se admite BILETUL (fluxul normal de
+    scanare) — fără dublă evidență. Unicitatea (event, user) e impusă de DB:
+    două apăsări simultane → o singură intrare, a doua vede `already_admitted`.
+    """
+    event = await _get_event_or_404(db, event_id)
+    user = await _passport_user(db, normalize_code(raw_code))
+    if user is None:
+        return TicketScanOut(result="not_found", via="passport")
+
+    order = await _paid_order(db, user, event)
+    if order is not None:
+        return await _with_loyalty(db, user, await _scan_order(db, actor, order, event, ip))
+
+    row = await _door_row(db, user, event)
+    if row is not None:
+        return await _door_out(db, "already_admitted", user, event, row)
+    if event_is_over(event):
+        return await _door_out(db, "event_over", user, event, None)
+
+    inserted = await db.scalar(
+        pg_insert(EventDoorAdmission)
+        .values(
+            id=uuid.uuid4(),
+            event_id=event.id,
+            user_id=user.id,
+            payment_method=DOOR_PAYMENT_CASH,
+            admitted_at=_now(),
+            admitted_by=actor.id,
+        )
+        .on_conflict_do_nothing(index_elements=["event_id", "user_id"])
+        .returning(EventDoorAdmission.id)
+    )
+    if inserted is None:
+        # Altă apăsare a câștigat cursa: arătăm intrarea ORIGINALĂ.
+        await db.commit()
+        return await _door_out(db, "already_admitted", user, event, await _door_row(db, user, event))
+
+    audit(
+        db,
+        actor,
+        ACTION_TICKET_ADMIT,
+        target_type="event_door_admission",
+        target_id=inserted,
+        meta={
+            "event_id": str(event.id),
+            "user_id": str(user.id),
+            "payment_method": DOOR_PAYMENT_CASH,
+        },
+        ip=ip,
+    )
+    await db.commit()
+    await _stamp_passport_door(db, user.id, event.id)
+    return await _door_out(db, "admitted", user, event, await _door_row(db, user, event))
 
 
 async def scan_stats(db: AsyncSession, event_id: uuid.UUID) -> ScanStatsOut:
@@ -400,11 +602,20 @@ async def scan_stats(db: AsyncSession, event_id: uuid.UUID) -> ScanStatsOut:
         )
         or 0
     )
+    door = (
+        await db.scalar(
+            select(func.count())
+            .select_from(EventDoorAdmission)
+            .where(EventDoorAdmission.event_id == event.id)
+        )
+        or 0
+    )
     return ScanStatsOut(
         event_id=event.id,
         sold=int(sold),
-        admitted=int(admitted_orders) + int(party),
+        admitted=int(admitted_orders) + int(party) + int(door),
         flirt_party_admitted=int(party),
+        door_admitted=int(door),
     )
 
 
@@ -435,6 +646,16 @@ async def list_admissions(
             .limit(limit)
         )
     ).all()
+    door_rows = (
+        await db.execute(
+            select(EventDoorAdmission, Profile, admin.email)
+            .outerjoin(Profile, Profile.user_id == EventDoorAdmission.user_id)
+            .outerjoin(admin, admin.id == EventDoorAdmission.admitted_by)
+            .where(EventDoorAdmission.event_id == event.id)
+            .order_by(EventDoorAdmission.admitted_at.desc())
+            .limit(limit)
+        )
+    ).all()
 
     def row(ticket_type: str, profile: Profile | None, quantity: int, at: datetime, by: str | None) -> AdmissionOut:
         photos = (profile.photos or []) if profile else []
@@ -451,6 +672,8 @@ async def list_admissions(
     items = [
         row("event_ticket", p, o.ticket_quantity or 1, o.admitted_at, email)
         for o, p, email in order_rows
-    ] + [row("flirt_party", p, 1, t.admitted_at, email) for t, p, email in party_rows]
+    ] + [row("flirt_party", p, 1, t.admitted_at, email) for t, p, email in party_rows] + [
+        row("door_cash", p, 1, d.admitted_at, email) for d, p, email in door_rows
+    ]
     items.sort(key=lambda a: a.admitted_at, reverse=True)
     return items[:limit]

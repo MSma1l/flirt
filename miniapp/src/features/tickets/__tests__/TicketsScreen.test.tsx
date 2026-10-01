@@ -65,8 +65,8 @@ const PAYMENT: PaymentInstructions = {
   bankName: 'maib',
   amount: 200,
   currency: 'lei',
-  reference: 'U-1A2B3C4D',
-  commentTemplate: 'Bilet Flirt Party 1 octombrie Ref:U-1A2B3C4D',
+  reference: '482719',
+  commentTemplate: '482719',
   instructions: null,
 };
 
@@ -98,7 +98,7 @@ const ORDERS: TicketOrderListItem[] = [
     status: 'awaiting_payment',
     price: 200,
     currency: 'lei',
-    reference: 'U-1A2B3C4D',
+    reference: '482719',
     ticketCode: null,
     createdAt: '2026-09-20T10:00:00Z',
   },
@@ -110,7 +110,7 @@ const ORDERS: TicketOrderListItem[] = [
     status: 'approved',
     price: 350,
     currency: 'lei',
-    reference: 'U-1A2B3C4D',
+    reference: '482719',
     ticketCode: 'ZQ71KM44',
     createdAt: '2026-09-18T10:00:00Z',
   },
@@ -164,7 +164,7 @@ const REQUEST_ROW: TicketOrderListItem = {
   status: 'pending_payment',
   price: 170,
   currency: 'lei',
-  reference: 'U-1A2B3C4D',
+  reference: '482719',
   ticketCode: null,
   createdAt: '2026-09-25T10:00:00Z',
 };
@@ -328,17 +328,28 @@ describe('lista de comenzi', () => {
 });
 
 describe('comandă în așteptarea plății', () => {
-  it('arată suma, destinația plății, IBAN-ul, termenul și pașii', async () => {
+  it('arată suma, codul de plată, IBAN-ul, termenul și pașii', async () => {
     renderScreen();
     fireEvent.click(await screen.findByTestId('order-row-o1'));
 
     await screen.findByTestId('order-instructions');
     const detail = screen.getByTestId('order-detail');
     expect(within(detail).getByTestId('pay-amount')).toHaveTextContent('200 lei');
-    expect(within(detail).getByTestId('pay-comment')).toHaveTextContent(PAYMENT.commentTemplate);
+    expect(within(detail).getByTestId('pay-code')).toHaveTextContent('482719');
+    expect(within(detail).getByTestId('pay-code-hint')).toHaveTextContent(
+      'Scrie acest cod în comentariul transferului — după el îți găsim plata.',
+    );
+    // Codul apare O SINGURĂ dată ca bloc (comentariul și referința sunt același lucru).
+    expect(within(detail).getAllByTestId('pay-code-block')).toHaveLength(1);
     expect(within(detail).getByTestId('pay-iban')).toHaveTextContent(PAYMENT.iban);
-    expect(within(detail).getByTestId('pay-reference')).toHaveTextContent('U-1A2B3C4D');
-    expect(within(within(detail).getByTestId('pay-steps')).getAllByRole('listitem')).toHaveLength(4);
+    const steps = within(within(detail).getByTestId('pay-steps')).getAllByRole('listitem');
+    expect(steps).toHaveLength(4);
+    expect(steps[0]).toHaveTextContent('Deschide aplicația mobilă a băncii tale.');
+    expect(steps[0]).not.toHaveTextContent('ghișeu');
+    expect(steps[1]).toHaveTextContent('Fă un transfer pe IBAN-ul de mai sus, suma exactă — 200 lei.');
+    expect(steps[2]).toHaveTextContent('În comentariul transferului scrie doar codul tău de plată: 482719');
+    expect(within(steps[2]!).getByTestId('pay-step-code')).toHaveTextContent('482719');
+    expect(steps[3]).toHaveTextContent('Revino aici și încarcă chitanța');
     // Cronologia: comandat, urmează plata.
     expect(within(detail).getByTestId('order-stepper')).toHaveTextContent('Comandat');
     // Termenul = închiderea vânzării online a evenimentului.
@@ -357,8 +368,9 @@ describe('comandă în așteptarea plății', () => {
       await waitFor(() => expect(writeText).toHaveBeenCalledWith(PAYMENT.iban));
       expect(await screen.findByTestId('copy-iban')).toHaveTextContent('Copiat');
 
-      fireEvent.click(screen.getByTestId('copy-comment'));
-      await waitFor(() => expect(writeText).toHaveBeenCalledWith(PAYMENT.commentTemplate));
+      // Codul se copiază exact: doar cifrele, fără spații.
+      fireEvent.click(screen.getByTestId('copy-code'));
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('482719'));
 
       fireEvent.click(screen.getByTestId('copy-amount'));
       await waitFor(() => expect(writeText).toHaveBeenCalledWith('200'));
@@ -441,7 +453,7 @@ describe('plata prin MIA (după numărul de telefon)', () => {
     methods: ['mia', 'iban'],
   };
 
-  it('arată întâi cardul MIA, cu telefon, destinatar, sumă, comentariu și 5 pași', async () => {
+  it('arată întâi cardul MIA, cu telefon, destinatar, sumă, codul de plată și 4 pași', async () => {
     vi.mocked(fetchTicketOrder).mockResolvedValue({ ...AWAITING_DETAIL, payment: MIA_PAYMENT });
     renderScreen();
     fireEvent.click(await screen.findByTestId('order-row-o1'));
@@ -450,8 +462,13 @@ describe('plata prin MIA (după numărul de telefon)', () => {
     expect(within(mia).getByTestId('mia-phone')).toHaveTextContent('+373 69 123 456');
     expect(within(mia).getByTestId('mia-recipient')).toHaveTextContent('Ion Popescu');
     expect(within(mia).getByTestId('mia-amount')).toHaveTextContent('200');
-    expect(within(mia).getByTestId('mia-comment')).toHaveTextContent(PAYMENT.commentTemplate);
-    expect(within(within(mia).getByTestId('pay-steps')).getAllByRole('listitem')).toHaveLength(5);
+    expect(within(mia).getByTestId('pay-code')).toHaveTextContent('482719');
+    expect(within(mia).getAllByTestId('pay-code-block')).toHaveLength(1);
+    const steps = within(within(mia).getByTestId('pay-steps')).getAllByRole('listitem');
+    expect(steps).toHaveLength(4);
+    expect(steps[0]).toHaveTextContent('Deschide aplicația mobilă a băncii tale.');
+    expect(steps[1]).toHaveTextContent('Fă un transfer MIA la numărul +373 69 123 456, suma exactă — 200 lei.');
+    expect(steps[2]).toHaveTextContent('scrie doar codul tău de plată: 482719');
     expect(screen.getByTestId('pay-method-mia')).toHaveAttribute('aria-checked', 'true');
     expect(screen.queryByTestId('pay-iban')).not.toBeInTheDocument();
   });
@@ -509,6 +526,9 @@ describe('plata prin MIA (după numărul de telefon)', () => {
     expect(qr).toHaveTextContent('Scanează cu aplicația băncii (MIA)');
     // Doar QR: fără telefon de copiat.
     expect(screen.queryByTestId('mia-phone')).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('pay-steps')).getAllByRole('listitem')[1]).toHaveTextContent(
+      'Fă un transfer MIA: scanează codul QR de mai sus și introdu suma exactă — 200 lei.',
+    );
 
     fireEvent.click(screen.getByTestId('mia-qr-open'));
     expect(open).toHaveBeenCalledWith('https://media.flrt.md/photos/payment-qr/a.png', '_blank', 'noopener,noreferrer');
@@ -543,7 +563,9 @@ describe('cerere manuală cu dovadă de plată', () => {
 
     await screen.findByTestId('order-instructions');
     expect(screen.getByTestId('pay-amount')).toHaveTextContent('340 lei');
-    expect(screen.getByTestId('pay-comment')).toHaveTextContent('Ana Popescu');
+    // Text vechi de destinație (nu un cod): se arată ca text, cu pasul „lipește textul".
+    expect(screen.getByTestId('pay-code')).toHaveTextContent('Ana Popescu');
+    expect(screen.getByTestId('pay-steps')).toHaveTextContent('lipește textul de mai sus');
     expect(screen.getByTestId('proof-upload')).toBeInTheDocument();
     expect(screen.queryByTestId('declare-btn')).not.toBeInTheDocument();
   });

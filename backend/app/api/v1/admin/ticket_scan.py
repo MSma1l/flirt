@@ -1,5 +1,5 @@
 """Scanarea biletelor la intrare — `/api/v1/admin/tickets/*` și
-`/api/v1/admin/events/{id}/admissions`.
+`/api/v1/admin/events/{id}/admissions` + `/door-admissions` (intrarea cash la ușă).
 
 Folosite de pagina „Scanner" din panoul de admin, deschisă pe telefonul
 staff-ului (fără aplicație instalată). Protecția (`require_admin`) se aplică pe
@@ -18,6 +18,7 @@ from app.core.ratelimit import rate_limit
 from app.db.session import get_db
 from app.schemas.ticket_scan import (
     AdmissionOut,
+    DoorAdmissionIn,
     ScanStatsOut,
     TicketScanIn,
     TicketScanOut,
@@ -48,6 +49,29 @@ async def scan_ticket(
     """
     return await ticket_scan_service.scan(
         db, admin, data.code, data.event_id, ip=request_ip(request)
+    )
+
+
+@router.post(
+    "/events/{event_id}/door-admissions",
+    response_model=TicketScanOut,
+    dependencies=[Depends(_scan_rl)],
+)
+async def door_admission(
+    event_id: uuid.UUID,
+    data: DoorAdmissionIn,
+    request: Request,
+    db: DbDep,
+    admin: CurrentAdmin,
+) -> TicketScanOut:
+    """„Achitat cash": intrarea la ușă a omului identificat prin QR-ul Flirt Passport.
+
+    Ca la scanare: mereu 200 cu `result` (`admitted` / `already_admitted` /
+    `event_over` / `not_found`); dacă omul are bilet online plătit se admite
+    biletul. 404 doar dacă evenimentul nu există. Aceeași limită ca scanarea.
+    """
+    return await ticket_scan_service.door_admit(
+        db, admin, data.code, event_id, ip=request_ip(request)
     )
 
 

@@ -18,6 +18,7 @@ from app.models.account import (  # noqa: F401
 from app.models.event import (  # noqa: F401
     Event,
     EventAttendance,
+    EventDoorAdmission,
     FlirtPassportStamp,
 )
 from app.models.story import Story  # noqa: F401

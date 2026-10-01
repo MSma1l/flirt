@@ -108,6 +108,9 @@ const FILTER_KEYS: readonly FilterKey[] = [
   'cancelled',
 ];
 
+/** Pauza după ultima tastă înainte de căutare (nu o cerere la fiecare cifră). */
+export const SEARCH_DEBOUNCE_MS = 350;
+
 function statusLabel(labels: Record<string, string>, status: string): string {
   return labels[status] ?? status;
 }
@@ -119,14 +122,23 @@ export function TicketOrdersPage(): JSX.Element {
   const locale = INTL_LOCALE[useLanguage().language];
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<FilterKey>('all');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [toApprove, setToApprove] = useState<TicketOrder | null>(null);
   const [toReject, setToReject] = useState<TicketOrder | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // Codul de plată din comentariul extrasului bancar → comanda (`?q=`).
+  useEffect(() => {
+    const next = searchInput.trim();
+    const timer = window.setTimeout(() => setSearch(next), SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
   const query = useQuery({
-    queryKey: ['ticket-orders', filter],
-    queryFn: () => fetchTicketOrdersByStatus(FILTER_STATUSES[filter]),
+    queryKey: ['ticket-orders', filter, search],
+    queryFn: () => fetchTicketOrdersByStatus(FILTER_STATUSES[filter], search),
   });
 
   const invalidate = (): Promise<void> =>
@@ -160,7 +172,27 @@ export function TicketOrdersPage(): JSX.Element {
       <PaymentSettingsCard />
 
       <Card title={m.orders.title}>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'flex-end',
+            gap: 12,
+            marginBottom: 12,
+          }}
+        >
+          <Field label={m.orders.searchLabel} htmlFor="ticket-orders-search">
+            <TextInput
+              id="ticket-orders-search"
+              type="search"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder={m.orders.searchPlaceholder}
+              autoComplete="off"
+              spellCheck={false}
+              maxLength={64}
+            />
+          </Field>
           <Field label={m.orders.filterLabel} htmlFor="ticket-orders-filter">
             <Select
               id="ticket-orders-filter"
@@ -181,8 +213,8 @@ export function TicketOrdersPage(): JSX.Element {
           <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} />
         ) : orders.length === 0 ? (
           <EmptyState
-            title={m.orders.emptyTitle}
-            hint={m.orders.emptyHint}
+            title={search ? m.orders.searchEmpty(search) : m.orders.emptyTitle}
+            hint={search ? undefined : m.orders.emptyHint}
           />
         ) : (
           <div className="table-wrap">

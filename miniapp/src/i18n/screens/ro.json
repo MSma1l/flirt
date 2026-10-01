@@ -83,17 +83,9 @@
       "bank": "Banca",
       "phone": "Telefon pentru transfer",
       "account": "Cont / card",
-      "reference": "Codul tău de plată",
-      "purpose": "Destinația plății",
-      "purposeHint": "Copiază textul exact, fără modificări — după el îți găsim plata.",
       "deadline": "Plătește până la {{date}}",
       "bankUnavailable": "Datele bancare apar la crearea comenzii. Dacă nu le mai vezi, scrie-ne și ți le trimitem.",
       "stepsTitle": "Cum plătești",
-      "step1": "Deschide aplicația băncii tale (maib, MICB, Moldindconbank etc.) sau mergi la un ghișeu.",
-      "step2": "Transferă exact {{amount}} către beneficiarul și IBAN-ul de mai sus.",
-      "step3": "La destinația plății lipește textul de mai sus, exact cum e scris.",
-      "step4Declare": "Revino aici și apasă „Am făcut transferul”.",
-      "step4Proof": "Încarcă mai jos o captură sau o fotografie a chitanței.",
       "after": "Verificăm plata manual, de obicei în câteva ore. Biletul cu cod QR apare aici imediat după confirmare.",
       "methodLabel": "Metoda de plată",
       "methodMia": "MIA · instant",
@@ -106,19 +98,26 @@
         "recipient": "Numele destinatarului",
         "recipientHint": "Vei vedea acest nume în aplicația băncii — verifică să coincidă.",
         "amount": "Suma exactă",
-        "comment": "Comentariul plății",
-        "step1": "Deschide aplicația băncii tale (maib, MICB, OTP, Moldindconbank etc.).",
-        "step2": "Alege Transfer → MIA / după numărul de telefon.",
-        "step3": "Introdu telefonul {{phone}} și suma exactă {{amount}}.",
-        "step4": "Lipește comentariul plății de mai sus, exact cum e scris.",
-        "step5Declare": "Revino aici și confirmă plata.",
-        "step5Proof": "Revino aici și încarcă chitanța (captură de ecran sau PDF).",
-        "step2Qr": "Alege Plată prin QR (MIA) și scanează codul de mai sus — sau încarcă imaginea salvată.",
-        "step3Qr": "Verifică destinatarul și introdu suma exactă {{amount}}.",
         "qrAlt": "Codul QR MIA pentru plată",
         "qrCaption": "Scanează cu aplicația băncii (MIA)",
         "qrSave": "Deschide QR-ul la mărime completă",
         "qrSameDevice": "Plătești de pe același telefon? Deschide QR-ul, salvează imaginea (apăsare lungă) și încarc-o în aplicația băncii la „Plată prin QR\"."
+      },
+      "code": {
+        "label": "Codul tău de plată",
+        "hint": "Scrie acest cod în comentariul transferului — după el îți găsim plata.",
+        "textLabel": "Comentariul transferului",
+        "textHint": "Copiază textul exact, fără modificări — după el îți găsim plata."
+      },
+      "steps": {
+        "open": "Deschide aplicația mobilă a băncii tale.",
+        "transferPhone": "Fă un transfer MIA la numărul {{phone}}, suma exactă — {{amount}}.",
+        "transferQr": "Fă un transfer MIA: scanează codul QR de mai sus și introdu suma exactă — {{amount}}.",
+        "transferIban": "Fă un transfer pe IBAN-ul de mai sus, suma exactă — {{amount}}.",
+        "comment": "În comentariul transferului scrie doar codul tău de plată:",
+        "commentText": "În comentariul transferului lipește textul de mai sus, exact cum e scris.",
+        "finalDeclare": "Revino aici și apasă „Am făcut transferul”.",
+        "finalProof": "Revino aici și încarcă chitanța (captură de ecran sau PDF)."
       }
     },
     "pass": {
@@ -336,7 +335,17 @@
     }
   },
   "passport": {
-    "stampsTitle": "Ștampilele mele"
+    "stampsTitle": "Ștampilele mele",
+    "qr": {
+      "title": "Permisul tău de intrare",
+      "show": "Arată acest QR la intrare.",
+      "online": "Ai cumpărat bilet online? Îl găsim automat după acest cod.",
+      "cash": "Plătești cash la ușă? Vizita se înregistrează oricum și contează pentru reducerile de fidelitate.",
+      "alt": "Codul QR de intrare",
+      "error": "Nu am putut încărca codul de intrare.",
+      "retry": "Reîncearcă",
+      "paymentCode": "Codul tău de plată: {{code}}"
+    }
   },
   "chat": {
     "attach": "Atașează o poză sau un video",

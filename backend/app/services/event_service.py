@@ -15,8 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.event import Event, EventAttendance, FlirtPassportStamp
 from app.models.user import User
-from app.schemas.event import EventOut, EventPage, PassportStampOut
-from app.services import billing
+from app.schemas.event import EventOut, EventPage, PassportQrOut, PassportStampOut
+from app.services import billing, user_codes
 from app.services.pagination import (
     EVENTS_MAX_LIMIT,
     EVENTS_PAGE_LIMIT,
@@ -246,6 +246,16 @@ async def list_passport(db: AsyncSession, user: User) -> list[PassportStampOut]:
         )
         for stamp, event in result.all()
     ]
+
+
+async def passport_qr(db: AsyncSession, user: User) -> PassportQrOut:
+    """QR-ul personal Flirt Passport + codul de plată (ambele generate leneș)."""
+    token = await user_codes.ensure_passport_token(db, user)
+    code = await user_codes.ensure_payment_code(db, user)
+    await db.commit()
+    return PassportQrOut(
+        qr_payload=f"{user_codes.PASSPORT_QR_PREFIX}{token}", payment_code=code
+    )
 
 
 # --- Helperi -----------------------------------------------------------------

@@ -3,7 +3,8 @@ verificare manuală de admin.
 
 Acoperă:
   * creare comandă (fără preț pe eveniment → 400)
-  * instrucțiunile conțin referința = payment_ref al userului
+  * instrucțiunile conțin referința = codul de plată al userului (comentariul = doar codul)
+  * admin: filtrul `?q=` după referința exactă
   * declare schimbă statusul awaiting_payment → payment_declared
   * admin listă: comenzile DECLARATE primele
   * approve generează ticket_code + `mine` îl arată; dublu-approve → 409
@@ -21,7 +22,6 @@ import pytest
 from sqlalchemy import select
 
 from app.models.event import Event
-from app.models.ticket_order import user_payment_ref
 from app.models.user import ROLE_ADMIN, User
 
 API = "/api/v1"
@@ -85,7 +85,9 @@ async def test_create_order_instructions_have_payment_ref(client, db_session):
     assert resp.status_code == 201, resp.text
     body = resp.json()
 
-    expected_ref = user_payment_ref(user)
+    await db_session.refresh(user)
+    expected_ref = user.payment_code
+    assert expected_ref and len(expected_ref) == 6 and expected_ref[0] != "0"
     assert body["order"]["status"] == "awaiting_payment"
     assert body["order"]["reference"] == expected_ref
     assert body["order"]["ticket_code"] is None
@@ -95,8 +97,7 @@ async def test_create_order_instructions_have_payment_ref(client, db_session):
     payment = body["payment"]
     assert payment["reference"] == expected_ref
     assert payment["amount"] == 150.0
-    assert expected_ref in payment["comment_template"]
-    assert event.title in payment["comment_template"]
+    assert payment["comment_template"] == expected_ref
 
 
 # --------------------------------------------------------------------------- #
@@ -163,8 +164,18 @@ async def test_admin_list_declared_first(client, db_session):
     assert items[0]["status"] == "payment_declared"
     assert items[0]["id"] == order_b
     assert items[0]["user"]["email"] == "buyer_b@example.com"
-    assert items[0]["user"]["payment_ref"].startswith("U-")
+    buyer_b = await db_session.scalar(select(User).where(User.email == "buyer_b@example.com"))
+    await db_session.refresh(buyer_b)
+    assert items[0]["user"]["payment_ref"] == buyer_b.payment_code
     assert items[0]["event"]["title"] == event.title
+
+    # `?q=` = referința EXACTĂ (codul de plată din extrasul bancar).
+    found = (
+        await client.get(f"{ADMIN}/ticket-orders", params={"q": buyer_b.payment_code}, headers=admin)
+    ).json()
+    assert [o["id"] for o in found] == [order_b]
+    none = (await client.get(f"{ADMIN}/ticket-orders", params={"q": "000000"}, headers=admin)).json()
+    assert none == []
 
 
 async def test_approve_generates_ticket_code_and_mine_shows_it(client, db_session):

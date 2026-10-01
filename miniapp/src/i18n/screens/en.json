@@ -83,17 +83,9 @@
       "bank": "Bank",
       "phone": "Phone for transfer",
       "account": "Account / card",
-      "reference": "Your payment code",
-      "purpose": "Payment purpose",
-      "purposeHint": "Copy the text exactly, unchanged — it's how we match your payment.",
       "deadline": "Pay before {{date}}",
       "bankUnavailable": "Bank details are shown when the order is created. If you can't see them, message us and we'll send them.",
       "stepsTitle": "How to pay",
-      "step1": "Open your bank's app (maib, MICB, Moldindconbank, etc.) or visit a branch.",
-      "step2": "Transfer exactly {{amount}} to the recipient and IBAN above.",
-      "step3": "Paste the text above into the payment purpose field, exactly as written.",
-      "step4Declare": "Come back here and tap “I've made the transfer”.",
-      "step4Proof": "Upload a screenshot or photo of the receipt below.",
       "after": "We check payments manually, usually within a few hours. Your QR ticket appears here right after confirmation.",
       "methodLabel": "Payment method",
       "methodMia": "MIA · instant",
@@ -106,19 +98,26 @@
         "recipient": "Recipient name",
         "recipientHint": "You'll see this name in your bank app — check that it matches.",
         "amount": "Exact amount",
-        "comment": "Payment comment",
-        "step1": "Open your bank app (maib, MICB, OTP, Moldindconbank, etc.).",
-        "step2": "Choose Transfer → MIA / by phone number.",
-        "step3": "Enter the phone {{phone}} and the exact amount {{amount}}.",
-        "step4": "Paste the payment comment above, exactly as written.",
-        "step5Declare": "Come back here and confirm the payment.",
-        "step5Proof": "Come back here and upload the receipt (screenshot or PDF).",
-        "step2Qr": "Choose Pay by QR (MIA) and scan the code above — or upload the saved image.",
-        "step3Qr": "Check the recipient and enter the exact amount {{amount}}.",
         "qrAlt": "MIA payment QR code",
         "qrCaption": "Scan with your bank app (MIA)",
         "qrSave": "Open the QR code full size",
         "qrSameDevice": "Paying from this same phone? Open the QR code, save the image (long-press) and upload it in your bank app under \"Pay by QR\"."
+      },
+      "code": {
+        "label": "Your payment code",
+        "hint": "Write this code in the transfer comment — that's how we find your payment.",
+        "textLabel": "Transfer comment",
+        "textHint": "Copy the text exactly, unchanged — it's how we match your payment."
+      },
+      "steps": {
+        "open": "Open your bank's mobile app.",
+        "transferPhone": "Send an MIA transfer to {{phone}} — exactly {{amount}}.",
+        "transferQr": "Send an MIA transfer: scan the QR code above and enter exactly {{amount}}.",
+        "transferIban": "Send a transfer to the IBAN above — exactly {{amount}}.",
+        "comment": "In the transfer comment, write only your payment code:",
+        "commentText": "Paste the text above into the transfer comment, exactly as written.",
+        "finalDeclare": "Come back here and tap “I've made the transfer”.",
+        "finalProof": "Come back here and upload the receipt (screenshot or PDF)."
       }
     },
     "pass": {
@@ -332,7 +331,17 @@
     }
   },
   "passport": {
-    "stampsTitle": "My stamps"
+    "stampsTitle": "My stamps",
+    "qr": {
+      "title": "Your entry pass",
+      "show": "Show this QR code at the entrance.",
+      "online": "Bought a ticket online? We'll find it automatically from this code.",
+      "cash": "Paying cash at the door? Your visit still gets recorded and counts toward loyalty discounts.",
+      "alt": "Entry QR code",
+      "error": "Couldn't load your entry code.",
+      "retry": "Try again",
+      "paymentCode": "Your payment code: {{code}}"
+    }
   },
   "chat": {
     "attach": "Attach a photo or video",

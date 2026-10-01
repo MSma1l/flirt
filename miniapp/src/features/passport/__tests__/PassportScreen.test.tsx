@@ -5,7 +5,7 @@
  * funcțiile pure din Expo): testele verifică deciziile ecranului — ce arată, ce
  * ascunde și cum se reîncearcă — nu axios.
  */
-import { fireEvent, screen } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PassportStamp } from '@mobile/features/events/types';
@@ -18,6 +18,7 @@ import { PassportScreen } from '../PassportScreen';
 vi.mock('../passportApi', () => ({
   fetchPassport: vi.fn(),
   fetchMySubscription: vi.fn(),
+  fetchPassportQr: vi.fn(),
 }));
 
 /**
@@ -33,7 +34,7 @@ vi.mock('@/features/loyalty/loyaltyApi', () => ({
   fetchTicketQuote: vi.fn(),
 }));
 
-const { fetchMySubscription, fetchPassport } = await import('../passportApi');
+const { fetchMySubscription, fetchPassport, fetchPassportQr } = await import('../passportApi');
 const { fetchLoyaltyStatus } = await import('@/features/loyalty/loyaltyApi');
 
 const STAMPS: PassportStamp[] = [
@@ -72,6 +73,10 @@ const PREMIUM: Subscription = {
 beforeEach(() => {
   vi.mocked(fetchPassport).mockResolvedValue(STAMPS);
   vi.mocked(fetchMySubscription).mockResolvedValue(null);
+  vi.mocked(fetchPassportQr).mockResolvedValue({
+    qrPayload: 'FLIRTP-0123456789abcdef0123456789abcdef',
+    paymentCode: '482719',
+  });
   vi.mocked(fetchLoyaltyStatus).mockResolvedValue({
     stamps: 2,
     tier: null,
@@ -187,5 +192,46 @@ describe('cardul de reduceri', () => {
     expect(await screen.findAllByTestId('passport-stamp')).toHaveLength(2);
     expect(screen.queryByTestId('passport-error')).not.toBeInTheDocument();
     expect(screen.queryByTestId('passport-discount-card')).not.toBeInTheDocument();
+  });
+});
+
+describe('permisul de intrare (QR)', () => {
+  it('arată QR-ul personal, explicația și codul de plată', async () => {
+    renderWithProviders(<PassportScreen />);
+
+    const pass = await screen.findByTestId('passport-pass');
+    expect(pass).toHaveTextContent('Permisul tău de intrare');
+    const qr = await within(pass).findByTestId('passport-qr');
+    // QR-ul codifică exact payload-ul serverului, iar tokenul nu se afișează în clar.
+    expect(within(qr).getByRole('img')).toHaveAttribute(
+      'aria-label',
+      'Codul QR de intrare: FLIRTP-0123456789abcdef0123456789abcdef',
+    );
+    expect(pass).not.toHaveTextContent('0123456789abcdef');
+    expect(pass).toHaveTextContent('Arată acest QR la intrare.');
+    expect(pass).toHaveTextContent('Îl găsim automat');
+    expect(pass).toHaveTextContent('cash la ușă');
+    expect(within(pass).getByTestId('passport-payment-code')).toHaveTextContent('Codul tău de plată: 482719');
+  });
+
+  it('fără cod de plată, cardul rămâne fără rândul lui', async () => {
+    vi.mocked(fetchPassportQr).mockResolvedValue({ qrPayload: 'FLIRTP-abc', paymentCode: null });
+    renderWithProviders(<PassportScreen />);
+
+    await screen.findByTestId('passport-qr');
+    expect(screen.queryByTestId('passport-payment-code')).not.toBeInTheDocument();
+  });
+
+  it('eroarea QR-ului rămâne în cardul lui și se poate reîncerca', async () => {
+    vi.mocked(fetchPassportQr).mockRejectedValueOnce(new Error('offline'));
+    renderWithProviders(<PassportScreen />);
+
+    const error = await screen.findByTestId('passport-qr-error');
+    expect(error).toHaveTextContent('Nu am putut încărca codul de intrare.');
+    // Restul pașaportului rămâne pe ecran.
+    expect(await screen.findByText('Flirt Party Chișinău')).toBeInTheDocument();
+
+    fireEvent.click(within(error).getByRole('button', { name: 'Reîncearcă' }));
+    expect(await screen.findByTestId('passport-qr')).toBeInTheDocument();
   });
 });

@@ -106,6 +106,20 @@ class User(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Codul de plată SIMPLU al userului: 6 cifre, prima ≠ 0 (ex. `482719`).
+    # Userul îl scrie SINGUR în comentariul transferului, adminul îl caută în
+    # extrasul băncii. Generat LENEȘ, aleator (`user_codes.ensure_payment_code`);
+    # UNIQUE ca să identifice fără echivoc plătitorul. NULL = încă negenerat.
+    payment_code: Mapped[str | None] = mapped_column(
+        String(6), unique=True, nullable=True
+    )
+    # Tokenul QR-ului Flirt Passport (32 hex, `secrets.token_hex(16)`), arătat la
+    # intrare și scanat de staff (`FLIRTP-<token>`). Generat LENEȘ; UNIQUE.
+    # Secret de identificare, nu de autentificare: nu dă acces la cont.
+    passport_token: Mapped[str | None] = mapped_column(
+        String(32), unique=True, nullable=True
+    )
+
     # Relație opțională către profil; referință prin string ca să evităm
     # importul circular la definirea mapper-ului. Condiția de join este dedusă
     # din cheia externă Profile.user_id -> users.id.

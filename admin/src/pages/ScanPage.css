@@ -175,6 +175,66 @@
   background: #d62f2f;
 }
 
+/* Pașaport fără bilet online: atenționare, nu refuz (se poate încasa cash). */
+.scan-result--warn {
+  background: #b45309;
+  cursor: default;
+}
+
+.scan-result__source {
+  font-size: 17px;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-4);
+}
+
+.scan-result__loyalty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.scan-result__discount {
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.scan-result__cash {
+  width: 100%;
+  max-width: 420px;
+  min-height: 64px;
+  border: none;
+  border-radius: var(--radius-lg, 14px);
+  background: #fff;
+  color: #7c2d12;
+  font: inherit;
+  font-size: clamp(18px, 5vw, 22px);
+  font-weight: 800;
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+}
+
+.scan-result__cash:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.scan-result__cancel {
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  padding: var(--space-2) var(--space-5, 20px);
+  min-height: 44px;
+  cursor: pointer;
+}
+
 .scan-result__icon {
   font-size: clamp(72px, 26vw, 128px);
   line-height: 1;
@@ -244,4 +304,14 @@
   .scan-result {
     animation: none;
   }
+}
+
+.scan__recent-tag {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  border-radius: var(--radius-pill);
+  padding: 2px 8px;
+  background: rgba(180, 83, 9, 0.15);
+  color: #b45309;
 }

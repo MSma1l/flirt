@@ -1,6 +1,6 @@
 """Rute Evenimente + Flirt Passport — sub prefixul /api/v1/events (TZ secț. 8).
 
-`/passport` e declarat ÎNAINTE de `/{event_id}` ca să nu fie „înghițit" de
+`/passport` și `/passport/qr` sunt declarate ÎNAINTE de `/{event_id}` ca să nu fie „înghițit" de
 ruta parametrizată.
 """
 import uuid
@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.event import EventOut, GoingIn, PassportStampOut
+from app.schemas.event import EventOut, GoingIn, PassportQrOut, PassportStampOut
 from app.services import event_service
 from app.services.pagination import EVENTS_MAX_LIMIT, MAX_CURSOR_LENGTH
 
@@ -45,6 +45,16 @@ async def list_events(
 async def list_passport(db: DbDep, user: UserDep) -> list[PassportStampOut]:
     """Ștampilele Flirt Passport ale userului curent (protejat)."""
     return await event_service.list_passport(db, user)
+
+
+@router.get("/passport/qr", response_model=PassportQrOut)
+async def passport_qr(db: DbDep, user: UserDep) -> PassportQrOut:
+    """QR-ul personal Flirt Passport (`FLIRTP-<token>`) + codul de plată (protejat).
+
+    Staff-ul îl scanează la intrare: biletul online al omului e găsit automat,
+    iar fără bilet poate fi înregistrată intrarea plătită cash.
+    """
+    return await event_service.passport_qr(db, user)
 
 
 @router.get("/{event_id}", response_model=EventOut)

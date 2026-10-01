@@ -350,5 +350,35 @@ describe('TicketOrdersPage — detaliul comenzii', () => {
     expect(await within(dialog).findByText('Comanda e finală — statusul nu mai poate fi schimbat.')).toBeInTheDocument();
     expect(within(dialog).queryByLabelText('Schimbă statusul')).toBeNull();
   });
+
+  it('caută comanda după codul de plată (q) cu debounce', async () => {
+    seedAdminSession();
+    const api = mockFetch({
+      'GET /admin/payment-settings': { body: SETTINGS },
+      'GET /admin/ticket-orders': (call: { url: string }) => {
+        const q = new URL(call.url).searchParams.get('q');
+        if (q === null) return { body: [ORDER] };
+        return { body: q === '482719' ? [{ ...ORDER, id: 'ord-2', reference: '482719' }] : [] };
+      },
+    });
+    const person = userEvent.setup();
+    renderWithProviders(<TicketOrdersPage />);
+
+    expect(await screen.findByText('FLT-7788')).toBeInTheDocument();
+    await person.type(screen.getByLabelText('Cod de plată'), '482719');
+
+    expect(await screen.findByText('482719')).toBeInTheDocument();
+    expect(screen.queryByText('FLT-7788')).not.toBeInTheDocument();
+    const withQ = api
+      .callsTo('GET /admin/ticket-orders')
+      .map((call) => new URL(call.url).searchParams.get('q'))
+      .filter((q) => q !== null);
+    // Debounce: o singură cerere cu codul complet, nu una pe fiecare cifră.
+    expect(withQ).toEqual(['482719']);
+
+    await person.clear(screen.getByLabelText('Cod de plată'));
+    await person.type(screen.getByLabelText('Cod de plată'), '111111');
+    expect(await screen.findByText('Nicio comandă cu codul „111111"')).toBeInTheDocument();
+  });
 });
 

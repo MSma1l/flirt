@@ -115,7 +115,7 @@ const ORDER: TicketOrder = {
   status: 'awaiting_payment',
   price: 150,
   currency: 'lei',
-  reference: 'U-1A2B3C4D',
+  reference: '482719',
   ticketCode: null,
   createdAt: '2026-07-01T10:00:00.000Z',
 };

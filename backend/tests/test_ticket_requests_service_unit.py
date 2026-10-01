@@ -34,7 +34,10 @@ async def test_request_snapshots_contact_total_and_payment_description(db_sessio
     assert out.request.status == STATUS_PENDING_PAYMENT
     assert out.request.total_amount == 200
     assert out.request.email == user.email
-    assert "Ana Popescu" in out.request.payment_description
+    # Comentariul transferului = DOAR codul de plată al userului (6 cifre).
+    await db_session.refresh(user)
+    assert out.request.payment_description == user.payment_code
+    assert out.payment.comment_template == user.payment_code
     assert out.payment.amount == 200
 
 

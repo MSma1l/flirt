@@ -49,7 +49,6 @@ from app.models.ticket_order import (
     STATUS_CANCELLED,
     PaymentSettings,
     TicketOrder,
-    user_payment_ref,
 )
 from app.models.user import User
 from app.schemas.ticket_order import (
@@ -67,6 +66,7 @@ from app.schemas.ticket_order import (
     payment_methods_for,
 )
 from app.services import loyalty
+from app.services.user_codes import ensure_payment_code
 from app.services.admin_service import audit
 from app.services.ticket_lifecycle import order_ticket_status
 from app.services.push import send_to_user
@@ -279,9 +279,12 @@ async def _delete_file_quietly(url: str) -> None:
 # Mapări ORM → schemă
 # --------------------------------------------------------------------------- #
 def _comment_template(event: Event, reference: str) -> str:
-    """Comentariul structurat recomandat pentru transfer, ex.
-    „Bilet Petrecere Flirt 2026-08-01 Ref:U-1A2B3C4D"."""
-    return f"Bilet {event.title} {event.starts_at:%Y-%m-%d} Ref:{reference}"
+    """Comentariul transferului = DOAR codul de plată (ex. „482719").
+
+    Simplu de tastat în aplicația băncii și de găsit în extras; evenimentul nu mai
+    intră în comentariu (adminul îl vede pe comandă). `event` rămâne în semnătură
+    pentru apelanți."""
+    return reference
 
 
 def _payment_instructions(
@@ -390,8 +393,9 @@ async def create_request(
     _ensure_sales_open(event)
     price = event.ticket_price
     total = round(price * data.ticket_quantity, 2)
-    reference = user_payment_ref(user)
-    description = f"Bilet {event.title} – {event.starts_at:%Y-%m-%d} – {data.full_name}"
+    reference = await ensure_payment_code(db, user)
+    # Comentariul transferului = DOAR codul de plată (vezi `_comment_template`).
+    description = reference
     order = TicketOrder(user_id=user.id, event_id=event.id, price=price,
         total_amount=total, ticket_quantity=data.ticket_quantity, currency=event.ticket_currency or DEFAULT_CURRENCY,
         reference=reference, status=STATUS_PENDING_PAYMENT, full_name=data.full_name,
@@ -559,7 +563,7 @@ async def create_order(
     # (făcută la timp) s-a întors mai sus, ca userul să-și poată termina plata.
     _ensure_sales_open(event)
 
-    reference = user_payment_ref(user)
+    reference = await ensure_payment_code(db, user)
     currency = event.ticket_currency or DEFAULT_CURRENCY
     # Prețul SNAPSHOT-uit e cel FINAL, după reducerea la care userul are dreptul:
     # treapta lui de fidelitate, promo-ul evenimentului sau o invitație folosită —
@@ -736,7 +740,9 @@ def _to_admin_out(order: TicketOrder, user: User, event: Event) -> AdminTicketOr
     return AdminTicketOrderOut(
         id=order.id,
         user=TicketOrderUserOut(
-            id=user.id, email=user.email, payment_ref=user_payment_ref(user)
+            # Codul de plată al userului; un user fără cod generat încă (doar
+            # comenzi vechi) → referința istorică a comenzii (`U-XXXXXXXX`).
+            id=user.id, email=user.email, payment_ref=user.payment_code or order.reference
         ),
         event=TicketOrderEventOut(
             id=event.id, title=event.title, starts_at=event.starts_at
@@ -769,6 +775,7 @@ async def list_orders(
     limit: int | None = None,
     cursor: str | None = None,
     statuses: list[str] | None = None,
+    q: str | None = None,
 ) -> tuple[list[AdminTicketOrderOut], str | None]:
     """Coada de comenzi — DECLARATE primele, apoi cele mai recente.
 
@@ -787,6 +794,9 @@ async def list_orders(
     if statuses:
         # Filtru aditiv (`?status=a,b`); cursorul rămâne valid în interiorul filtrului.
         stmt = stmt.where(TicketOrder.status.in_(statuses))
+    if q and q.strip():
+        # Căutare după referința EXACTĂ (codul de plată din extrasul bancar).
+        stmt = stmt.where(TicketOrder.reference == q.strip())
 
     if cursor:
         anchor_id = decode_cursor(cursor)

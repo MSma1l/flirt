@@ -11,10 +11,11 @@ FLUXUL, exprimat prin `status`:
   approved         → adminul a verificat manual transferul → se emite `ticket_code`;
   rejected         → adminul a respins (nu s-a găsit transferul etc.).
 
-REFERINȚA userului (`reference`) e codul lui scurt STABIL, derivat DETERMINIST din
-`user.id` (`user_payment_ref`): userul îl pune în comentariul transferului, iar
-adminul îl caută în extrasul băncii. E snapshot-uit pe comandă la creare, dar rămâne
-identic pentru toate comenzile aceluiași user.
+REFERINȚA userului (`reference`) e CODUL LUI DE PLATĂ de 6 cifre (`users.payment_code`,
+generat leneș de `services/user_codes.py`): userul scrie DOAR acest cod în comentariul
+transferului, iar adminul îl caută în extrasul băncii. E snapshot-uit pe comandă la
+creare, dar rămâne identic pentru toate comenzile aceluiași user. Comenzile create
+înainte de codul simplu își păstrează referința istorică `U-XXXXXXXX`.
 """
 from __future__ import annotations
 
@@ -25,7 +26,6 @@ from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.models.user import User
 
 # --- Stările unei comenzi de bilet -------------------------------------------
 STATUS_AWAITING_PAYMENT = "awaiting_payment"
@@ -54,16 +54,6 @@ DEFAULT_CURRENCY = "lei"
 
 # Cheia fixă a rândului singleton de date bancare.
 PAYMENT_SETTINGS_ID = 1
-
-
-def user_payment_ref(user: User) -> str:
-    """Referința de plată STABILĂ a unui user: `U-XXXXXXXX`.
-
-    Derivată determinist din primele 8 caractere hex ale `user.id` (uuid),
-    majuscule. NU necesită o coloană nouă — e o funcție pură de id-ul userului,
-    deci aceeași valoare la fiecare apel, pentru toate comenzile lui.
-    """
-    return f"U-{user.id.hex[:8].upper()}"
 
 
 class TicketOrder(Base):
@@ -100,7 +90,7 @@ class TicketOrder(Base):
     currency: Mapped[str] = mapped_column(
         String(8), nullable=False, server_default=DEFAULT_CURRENCY, default=DEFAULT_CURRENCY
     )
-    # Referința de plată a userului (`U-XXXXXXXX`), snapshot la creare.
+    # Codul de plată al userului (6 cifre; istoric `U-XXXXXXXX`), snapshot la creare.
     reference: Mapped[str] = mapped_column(String(32), nullable=False)
     # Starea din flux (vezi constantele de mai sus). Indexată: coada de admin
     # filtrează/ordonează pe ea (declared-first).

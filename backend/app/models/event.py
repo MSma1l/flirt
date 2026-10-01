@@ -1,7 +1,8 @@
 """Modele pentru Evenimente + Flirt Passport (TZ secț. 8).
 
-Trei entități: evenimentul propriu-zis, prezența declarată a userului
-(„Iiду на мероприятие") și ștampila Flirt Passport primită după check-in.
+Patru entități: evenimentul propriu-zis, prezența declarată a userului
+(„Iiду на мероприятие"), ștampila Flirt Passport primită după check-in și
+intrarea plătită CASH la ușă (fără bilet online).
 Toate moștenesc `Base` (PK uuid + timestamps).
 """
 from __future__ import annotations
@@ -144,4 +145,41 @@ class FlirtPassportStamp(Base):
     # Momentul emiterii ștampilei (check-in confirmat).
     stamped_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
+    )
+
+
+# Metodele de plată ale unei intrări la ușă. Azi doar cash; câmpul e text ca o
+# metodă nouă (ex. card la ușă) să nu ceară migrare de schemă.
+DOOR_PAYMENT_CASH = "cash"
+
+
+class EventDoorAdmission(Base):
+    """Intrare la eveniment plătită la UȘĂ (fără bilet online).
+
+    Staff-ul scanează QR-ul Flirt Passport al omului și apasă „Achitat cash":
+    rândul ține evidența intrării (contorul de la ușă) și e unic per pereche
+    (event, user) — a doua apăsare întoarce `already_admitted`.
+    """
+
+    __tablename__ = "event_door_admissions"
+    __table_args__ = (
+        UniqueConstraint("event_id", "user_id", name="uq_door_admission_pair"),
+    )
+
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("events.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    payment_method: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=DOOR_PAYMENT_CASH,
+        server_default=DOOR_PAYMENT_CASH,
+    )
+    admitted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    # Staff-ul care a încasat; SET NULL dacă contul lui dispare (rândul rămâne).
+    admitted_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

@@ -42,6 +42,21 @@ const ADMITTED: TicketScanResponse = {
   },
 };
 
+const NO_TICKET_PERSON: NonNullable<TicketScanResponse['ticket']> = {
+  ticket_type: 'event_ticket',
+  first_name: 'Ion',
+  age: 30,
+  photo_url: null,
+  event_id: 'ev-1',
+  event_title: 'Flirt Party Chișinău',
+  starts_at: EVENT.starts_at,
+  ticket_quantity: 1,
+  admitted_at: null,
+  admitted_by_email: null,
+  stamps: 4,
+  discount_percent: 10,
+};
+
 function routes(scan: TicketScanResponse | ((body: unknown) => TicketScanResponse)) {
   return {
     'GET /admin/events': { body: [EVENT, PAST_EVENT] },
@@ -123,6 +138,102 @@ describe('ScanPage', () => {
     expect(card).toHaveClass('scan-result--fail');
     expect(card).toHaveTextContent(title);
     expect(card).toHaveTextContent(reason);
+  });
+
+  it('pașaport cu bilet online → INTRARE PERMISĂ cu mențiunea Flirt Passport', async () => {
+    mockFetch(routes({ ...ADMITTED, via: 'passport' }));
+    const person = userEvent.setup();
+    renderWithProviders(<ScanPage />);
+
+    await person.type(await screen.findByLabelText(/tastează codul/), 'FLIRTP-abc');
+    await person.click(screen.getByRole('button', { name: 'Verifică' }));
+
+    const card = await screen.findByTestId('scan-result');
+    expect(card).toHaveClass('scan-result--ok');
+    expect(card).toHaveTextContent('Bilet online găsit prin Flirt Passport');
+  });
+
+  it('pașaport fără bilet → „Achitat cash" înregistrează intrarea o singură dată', async () => {
+    const passport = 'FLIRTP-0123456789abcdef0123456789abcdef';
+    let stats = { ...STATS, door_admitted: 0 };
+    let admissions: unknown[] = [];
+    const api = mockFetch({
+      ...routes({ result: 'no_ticket', via: 'passport', ticket: NO_TICKET_PERSON }),
+      'GET /admin/tickets/scan-stats': () => ({ body: stats }),
+      'GET /admin/events/ev-1/admissions': () => ({ body: admissions }),
+      'POST /admin/events/ev-1/door-admissions': () => {
+        stats = { ...STATS, admitted: 4, door_admitted: 1 };
+        admissions = [
+          {
+            ticket_type: 'door_cash',
+            first_name: 'Ion',
+            age: 30,
+            photo_url: null,
+            ticket_quantity: 1,
+            admitted_at: '2026-10-01T21:00:00Z',
+            admitted_by_email: 'staff@flirt.app',
+          },
+        ];
+        return {
+          body: {
+            result: 'admitted',
+            via: 'passport',
+            ticket: {
+              ...NO_TICKET_PERSON,
+              ticket_type: 'door_cash',
+              admitted_at: '2026-10-01T21:00:00Z',
+            },
+          },
+        };
+      },
+    });
+    const person = userEvent.setup();
+    renderWithProviders(<ScanPage />);
+
+    expect(await screen.findByTestId('scan-counter-cash')).toHaveTextContent('din care 0 cash');
+    await person.type(await screen.findByLabelText(/tastează codul/), passport);
+    await person.click(screen.getByRole('button', { name: 'Verifică' }));
+
+    const card = await screen.findByTestId('scan-result');
+    expect(card).toHaveClass('scan-result--warn');
+    expect(card).toHaveTextContent('FĂRĂ BILET ONLINE');
+    expect(card).toHaveTextContent('Ion, 30 ani');
+    expect(card).toHaveTextContent('Vizite (ștampile): 4');
+    expect(card).toHaveTextContent('Reducere fidelitate: 10%');
+
+    const pay = screen.getByRole('button', { name: /Achitat cash/ });
+    await person.dblClick(pay);
+
+    const done = await screen.findByText('Intrare cash înregistrată · ștampilă adăugată');
+    expect(screen.getByTestId('scan-result')).toHaveClass('scan-result--ok');
+    expect(screen.getByTestId('scan-result')).toHaveTextContent('INTRARE PERMISĂ');
+    expect(done).toBeInTheDocument();
+    expect(api.callsTo('POST /admin/events/ev-1/door-admissions')).toHaveLength(1);
+    expect(api.callsTo('POST /admin/events/ev-1/door-admissions')[0]?.body).toEqual({
+      code: passport,
+    });
+
+    // Contorul și lista se reîmprospătează: intrarea cash apare marcată.
+    expect(await screen.findByText('4 / 10')).toBeInTheDocument();
+    expect(screen.getByTestId('scan-counter-cash')).toHaveTextContent('din care 1 cash la ușă');
+    expect(await screen.findByText('cash')).toBeInTheDocument();
+  });
+
+  it('pașaport fără bilet → „Anulează" închide cardul fără înregistrare', async () => {
+    const api = mockFetch(
+      routes({ result: 'no_ticket', via: 'passport', ticket: { ...NO_TICKET_PERSON, discount_percent: 0 } }),
+    );
+    const person = userEvent.setup();
+    renderWithProviders(<ScanPage />);
+
+    await person.type(await screen.findByLabelText(/tastează codul/), 'FLIRTP-x');
+    await person.click(screen.getByRole('button', { name: 'Verifică' }));
+
+    const card = await screen.findByTestId('scan-result');
+    expect(card).toHaveTextContent('Fără reducere de fidelitate');
+    await person.click(screen.getByRole('button', { name: 'Anulează' }));
+    expect(screen.queryByTestId('scan-result')).not.toBeInTheDocument();
+    expect(api.callsTo('POST /admin/events/ev-1/door-admissions')).toHaveLength(0);
   });
 
   it('permisiunea de cameră refuzată → instrucțiuni clare', async () => {

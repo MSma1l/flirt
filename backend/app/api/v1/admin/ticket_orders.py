@@ -46,18 +46,20 @@ async def list_ticket_orders(
     limit: Annotated[int | None, Query(ge=1, le=ADMIN_MAX_LIMIT)] = None,
     cursor: Annotated[str | None, Query(max_length=MAX_CURSOR_LENGTH)] = None,
     status: Annotated[str | None, Query(max_length=300)] = None,
+    q: Annotated[str | None, Query(max_length=64)] = None,
 ) -> list[AdminTicketOrderOut]:
     """Comenzile de bilet — cele DE VERIFICAT primele, apoi cele mai recente.
 
     Paginare pe cursor (convenția listelor de admin): cursorul paginii următoare
     vine în header-ul `X-Next-Cursor`. Filtru aditiv `?status=a,b` (422 pe o
-    stare necunoscută).
+    stare necunoscută). `?q=` = referința EXACTĂ (codul de plată din extrasul
+    bancar).
     """
     statuses = [s.strip() for s in status.split(",") if s.strip()] if status else None
     if statuses and any(s not in TICKET_ORDER_STATUSES for s in statuses):
         raise HTTPException(status_code=422, detail="Stare necunoscută în filtru.")
     items, next_cursor = await ticket_order_service.list_orders(
-        db, limit=limit, cursor=cursor, statuses=statuses
+        db, limit=limit, cursor=cursor, statuses=statuses, q=q
     )
     if next_cursor:
         response.headers["X-Next-Cursor"] = next_cursor
