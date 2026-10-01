@@ -501,5 +501,13 @@
       "rightsBody": "Ai dreptul de acces, rectificare, ștergere, restricționare, portabilitate și opoziție, precum și dreptul de a depune o plângere la Centrul Național pentru Protecția Datelor cu Caracter Personal (datepersonale.md).",
       "deleteAccount": "Șterge contul"
     }
+  },
+  "feedCard": {
+    "photos": "Pozele profilului",
+    "photoOf": "Poza {{current}} din {{total}}",
+    "prevPhoto": "Poza anterioară",
+    "nextPhoto": "Poza următoare",
+    "gotIt": "Am înțeles",
+    "gestureTitle": "Cum alegi"
   }
 }

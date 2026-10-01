@@ -497,5 +497,13 @@
       "rightsBody": "You have the rights of access, rectification, erasure, restriction, portability and objection, and the right to lodge a complaint with the National Center for Personal Data Protection (datepersonale.md).",
       "deleteAccount": "Delete account"
     }
+  },
+  "feedCard": {
+    "photos": "Profile photos",
+    "photoOf": "Photo {{current}} of {{total}}",
+    "prevPhoto": "Previous photo",
+    "nextPhoto": "Next photo",
+    "gotIt": "Got it",
+    "gestureTitle": "How to choose"
   }
 }

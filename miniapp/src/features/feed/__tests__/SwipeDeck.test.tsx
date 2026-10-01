@@ -28,7 +28,28 @@ vi.mock('@/features/stories/storiesApi', () => ({
   deleteStory: vi.fn(),
 }));
 
+// Interesele vin de la server ca SLUG-uri; etichetele traduse vin din catalogul
+// de referință, ca în profil și în setări. Mock-uim doar cererea catalogului.
+vi.mock('@/features/profile/profileApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/features/profile/profileApi')>();
+  return { ...actual, fetchReference: vi.fn() };
+});
+
 const { fetchFeed, swipe, undoSwipe } = await import('@mobile/features/feed/feedApi');
+const { fetchReference } = await import('@/features/profile/profileApi');
+
+const REFERENCE = {
+  genders: [],
+  datingStatuses: [],
+  languages: [],
+  interests: [
+    { slug: 'hiking', label: 'drumeții' },
+    { slug: 'music', label: 'muzică' },
+    { slug: 'movies', label: 'film' },
+    { slug: 'coffee', label: 'cafea' },
+    { slug: 'animals', label: 'animale' },
+  ],
+};
 
 const CARDS: FeedCard[] = [
   {
@@ -39,7 +60,7 @@ const CARDS: FeedCard[] = [
     city: 'Chișinău',
     distanceKm: 3.4,
     about: 'Îmi place drumețiile.',
-    topInterests: ['drumeții', 'muzică', 'film', 'cafea'],
+    topInterests: ['hiking', 'music', 'movies', 'coffee'],
     languages: ['ro'],
     compatibility: 91,
     photos: [],
@@ -74,6 +95,9 @@ beforeEach(() => {
   vi.mocked(fetchFeed).mockResolvedValue(CARDS);
   vi.mocked(swipe).mockResolvedValue({ matched: false });
   vi.mocked(undoSwipe).mockResolvedValue({ undone: true, targetUserId: 'u1' });
+  vi.mocked(fetchReference).mockResolvedValue(REFERENCE);
+  // Indiciul de gesturi apare o singură dată; fiecare test pornește de la zero.
+  window.localStorage.clear();
 });
 
 describe('stările deck-ului', () => {
@@ -83,7 +107,7 @@ describe('stările deck-ului', () => {
 
     expect(await screen.findByText('Ana, 24')).toBeInTheDocument();
     // Maximum 3 interese pe card, ca pe nativ.
-    expect(screen.getByText('drumeții')).toBeInTheDocument();
+    expect(await screen.findByText('drumeții')).toBeInTheDocument();
     expect(screen.queryByText('cafea')).not.toBeInTheDocument();
   });
 
@@ -269,5 +293,149 @@ describe('match', () => {
     expect(await screen.findByRole('dialog')).toHaveTextContent('Aveți match!');
     fireEvent.click(screen.getByRole('button', { name: 'Continuă' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+});
+
+describe('interesele de pe card', () => {
+  it('arată etichetele TRADUSE, nu cheile brute de la server', async () => {
+    await renderDeck();
+
+    const chips = await screen.findByTestId('profile-card-interests');
+    expect(chips).toHaveTextContent('drumeții');
+    expect(chips).toHaveTextContent('muzică');
+    expect(chips).toHaveTextContent('film');
+    // Cheile brute (exact defectul reclamat: „animals", „cars"...) nu apar.
+    for (const slug of ['hiking', 'music', 'movies']) {
+      expect(screen.queryByText(slug)).not.toBeInTheDocument();
+    }
+    expect(fetchReference).toHaveBeenCalledWith('ro');
+  });
+
+  it('fără catalog nu afișează nicio cheie brută', async () => {
+    vi.mocked(fetchReference).mockRejectedValue(new Error('offline'));
+    await renderDeck();
+
+    await waitFor(() => expect(fetchReference).toHaveBeenCalled());
+    expect(screen.queryByText('hiking')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('profile-card-interests')).not.toBeInTheDocument();
+  });
+
+  it('o cheie necunoscută catalogului e sărită, nu afișată brut', async () => {
+    vi.mocked(fetchFeed).mockResolvedValue([
+      { ...(CARDS[0] as FeedCard), topInterests: ['cars', 'animals'] },
+    ]);
+    await renderDeck();
+
+    const chips = await screen.findByTestId('profile-card-interests');
+    expect(chips).toHaveTextContent('animale');
+    expect(chips).not.toHaveTextContent('cars');
+  });
+});
+
+describe('badge-ul de compatibilitate', () => {
+  it('are eticheta accesibilă tradusă, nu cheia', async () => {
+    await renderDeck();
+
+    const badge = screen.getByTestId('compat-badge');
+    expect(badge).toHaveTextContent('91%');
+    expect(badge.getAttribute('aria-label')).not.toContain('compat.');
+    expect(badge.getAttribute('aria-label')).toContain('91%');
+  });
+});
+
+describe('pozele cardului', () => {
+  const MULTI: FeedCard = {
+    ...(CARDS[1] as FeedCard),
+    photos: ['https://example.test/1.jpg', 'https://example.test/2.jpg', 'https://example.test/3.jpg'],
+  };
+
+  function tap(element: HTMLElement, x: number) {
+    fireEvent.pointerDown(element, { clientX: x, clientY: 100, pointerId: 2 });
+    fireEvent.pointerUp(element, { clientX: x, clientY: 100, pointerId: 2 });
+  }
+
+  it('atingerea în dreapta/stânga comută poza, fără niciun swipe', async () => {
+    vi.mocked(fetchFeed).mockResolvedValue([MULTI]);
+    const card = await renderDeck();
+    vi.spyOn(card, 'getBoundingClientRect').mockReturnValue({
+      left: 0, top: 0, right: 400, bottom: 700, width: 400, height: 700, x: 0, y: 0,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    const photo = () => screen.getByTestId('profile-card-photo');
+    expect(photo()).toHaveAttribute('src', 'https://example.test/1.jpg');
+    expect(screen.getByTestId('photo-pager')).toHaveAccessibleName('Poza 1 din 3');
+
+    tap(card, 300);
+    expect(photo()).toHaveAttribute('src', 'https://example.test/2.jpg');
+    tap(card, 300);
+    expect(photo()).toHaveAttribute('src', 'https://example.test/3.jpg');
+    // La ultima poză, încă o atingere în dreapta nu iese din listă.
+    tap(card, 300);
+    expect(photo()).toHaveAttribute('src', 'https://example.test/3.jpg');
+    tap(card, 50);
+    expect(photo()).toHaveAttribute('src', 'https://example.test/2.jpg');
+
+    expect(swipe).not.toHaveBeenCalled();
+  });
+
+  it('un swipe adevărat NU comută poza', async () => {
+    vi.mocked(fetchFeed).mockResolvedValue([MULTI, CARDS[0] as FeedCard]);
+    const card = await renderDeck();
+
+    drag(card, 200, 0);
+
+    await waitFor(() => expect(swipe).toHaveBeenCalledWith('u2', 'like'));
+  });
+
+  it('se comută și de la tastatură', async () => {
+    vi.mocked(fetchFeed).mockResolvedValue([MULTI]);
+    await renderDeck();
+
+    fireEvent.click(screen.getByTestId('photo-next'));
+    expect(screen.getByTestId('profile-card-photo')).toHaveAttribute(
+      'src',
+      'https://example.test/2.jpg',
+    );
+    fireEvent.click(screen.getByTestId('photo-prev'));
+    expect(screen.getByTestId('profile-card-photo')).toHaveAttribute(
+      'src',
+      'https://example.test/1.jpg',
+    );
+  });
+
+  it('cu o singură poză nu arată indicatoare', async () => {
+    await renderDeck();
+    expect(screen.queryByTestId('photo-pager')).not.toBeInTheDocument();
+  });
+});
+
+describe('indiciul de gesturi', () => {
+  it('rămâne descrierea cardului pentru cititoarele de ecran', async () => {
+    await renderDeck();
+    expect(screen.getByTestId('profile-card')).toHaveAccessibleDescription(
+      'Trage cardul: stânga = nu, dreapta = like, sus = super like, jos = înapoi.',
+    );
+  });
+
+  it('apare o singură dată: după „Am înțeles" nu mai revine', async () => {
+    const first = renderWithProviders(<MemoryRouter><SwipeDeck /></MemoryRouter>);
+    fireEvent.click(await screen.findByTestId('feed-gesture-hint-dismiss'));
+    expect(screen.queryByTestId('feed-gesture-hint')).not.toBeInTheDocument();
+    first.unmount();
+
+    await renderDeck();
+    expect(screen.queryByTestId('feed-gesture-hint')).not.toBeInTheDocument();
+  });
+
+  it('dispare după primul swipe', async () => {
+    const card = await renderDeck();
+    expect(screen.getByTestId('feed-gesture-hint')).toBeInTheDocument();
+
+    drag(card, 200, 0);
+
+    await waitFor(() =>
+      expect(screen.queryByTestId('feed-gesture-hint')).not.toBeInTheDocument(),
+    );
   });
 });

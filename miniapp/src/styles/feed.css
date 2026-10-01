@@ -1,10 +1,137 @@
-/* Deck-ul de swipe. Geometria e în CSS; doar transformarea cardului de sus e
-   scrisă din JS, în timpul gestului. */
-.deck {
+/*
+ * Ecranul de ankete, pe tot ecranul: POZA e fundalul, restul plutește peste ea.
+ *
+ *   .feed            — umple zona de conținut (flex: 1; min-height: 0), deci se
+ *                      oprește EXACT la bara de taburi. Fără 100vh / fixed.
+ *   .feed__top       — banda de povești, singura pe sticlă mată (blur peste poză)
+ *   .deck            — cardul, pe toată suprafața, SUB banda de sus
+ *   .feed__coach     — indiciul de gesturi, o singură dată
+ *   .feed__notices   — refuzurile și erorile, ca foaie jos, peste poză
+ *
+ * `--feed-top` = înălțimea benzii de sus, măsurată din `SwipeDeck.tsx`; valoarea
+ * de rezervă acoperă bara de povești standard + zona sigură.
+ *
+ * Culorile de pe poză sunt DELIBERAT albe/negre translucide, nu din temă: stau
+ * peste o fotografie, nu peste fundalul aplicației, deci trebuie să fie lizibile
+ * pe orice poză, în ambele teme.
+ */
+
+.feed {
+  --feed-top: calc(var(--safe-top) + 96px);
+  --feed-gutter-left: max(var(--safe-left), var(--space-lg));
+  --feed-gutter-right: max(var(--safe-right), var(--space-lg));
+  --feed-glass: rgba(255, 255, 255, 0.16);
+  --feed-glass-border: rgba(255, 255, 255, 0.25);
+  --feed-text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 2px 12px rgba(0, 0, 0, 0.35);
+
   position: relative;
   flex: 1;
   min-height: 0;
-  margin: var(--space-md) 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* Colțuri doar jos, spre bara de taburi: sus poza intră sub antetul
+     clientului, de la margine la margine. */
+  border-radius: 0 0 24px 24px;
+  background: #0b0b0f;
+  color: #fff;
+}
+
+/* Stările fără card (încărcare, eroare, feed gol): cadrul e „pe tot ecranul",
+   deci marginile sigure le pune ecranul însuși. */
+.feed-status {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-top: var(--safe-top);
+  padding-left: var(--feed-gutter-left, max(var(--safe-left), var(--space-lg)));
+  padding-right: var(--feed-gutter-right, max(var(--safe-right), var(--space-lg)));
+}
+
+/* ——— Banda de sus: poveștile pe sticlă mată ——————————————————— */
+
+.feed__top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* Peste card. FĂRĂ filtru sau transform pe element: ar deveni bloc
+     conținător pentru `position: fixed`, iar vizualizatorul de povești
+     (`.st-overlay`) s-ar strânge în bandă în loc să acopere ecranul. Sticla e
+     deci pe un pseudo-element. */
+  z-index: 2;
+  padding-top: calc(var(--safe-top) + var(--space-sm));
+  padding-bottom: var(--space-sm);
+  padding-left: var(--feed-gutter-left);
+  padding-right: var(--feed-gutter-right);
+  /* Spațiul liber al benzii lasă gestul să treacă la card; cercurile îl
+     primesc înapoi mai jos. */
+  pointer-events: none;
+}
+
+.feed__top::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, rgba(8, 8, 12, 0.42), rgba(8, 8, 12, 0.22));
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  backdrop-filter: blur(22px) saturate(160%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.feed__top .st-bar {
+  pointer-events: auto;
+  /* Derularea orizontală ajunge până la marginile ecranului. */
+  margin-left: calc(-1 * var(--feed-gutter-left));
+  margin-right: calc(-1 * var(--feed-gutter-right));
+  padding-left: var(--feed-gutter-left);
+  padding-right: var(--feed-gutter-right);
+  scroll-padding-inline: var(--feed-gutter-left);
+}
+
+.feed__top .st-bar__name {
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.feed__top .st-bar__ring {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.feed__top .st-bar__ring--seen {
+  border-color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.feed__top .st-bar__ring--add {
+  border-color: rgba(255, 255, 255, 0.7);
+  color: #fff;
+}
+
+/* Vizualizatorul de povești se deschide DIN bandă (e `fixed`, pe tot ecranul):
+   nu moștenește nici textul alb pentru poză, nici atingerile oprite. */
+.feed__top .st-overlay {
+  pointer-events: auto;
+  color: var(--color-text-primary);
+}
+
+/* Fără suport de blur (WebView vechi): un fundal mai dens ține textul lizibil. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .feed__top::before {
+    background: rgba(8, 8, 12, 0.72);
+  }
+}
+
+/* ——— Deck-ul ——————————————————————————————————————————————— */
+
+.deck {
+  position: absolute;
+  inset: 0;
   touch-action: none; /* fără asta, browserul fură gestul pentru scroll */
 }
 
@@ -12,22 +139,45 @@
   position: absolute;
   inset: 0;
   will-change: transform;
+  cursor: grab;
+}
+
+.deck__card:active {
+  cursor: grabbing;
 }
 
 .deck__card--settling {
-  transition: transform 200ms ease-out;
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+
+/* ——— Cardul: poza pe tot ecranul ——————————————————————————————— */
 
 .profile-card {
   position: relative;
   height: 100%;
-  border-radius: var(--radius-card);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
+  background: #0b0b0f;
+  color: #fff;
+}
+
+.profile-card__media {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* Copia încețoșată de sub poză: la marginile cardului în timpul swipe-ului și
+   sub pozele mici, fundalul e tot poza, nu un dreptunghi gol. */
+.profile-card__backdrop {
+  position: absolute;
+  inset: -8%;
+  width: 116%;
+  height: 116%;
+  object-fit: cover;
+  filter: blur(28px) saturate(1.3) brightness(0.8);
+  transform: scale(1.05);
+  -webkit-user-drag: none;
+  pointer-events: none;
 }
 
 .profile-card__photo {
@@ -36,7 +186,26 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center 30%;
   -webkit-user-drag: none;
+  pointer-events: none;
+  animation: profile-photo-in 220ms ease-out;
+}
+
+/* Poză de rezoluție mică (ex. 128px): mărită de 3-4 ori, s-ar vedea pixelii.
+   O înmuiere discretă o face să pară o alegere, nu un defect. */
+.profile-card__photo[data-lowres='true'] {
+  filter: blur(1.2px) saturate(1.08);
+  transform: scale(1.02);
+}
+
+@keyframes profile-photo-in {
+  from {
+    opacity: 0.4;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .profile-card__placeholder {
@@ -45,31 +214,186 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-tag-bg);
-  color: var(--color-accent);
-  font-size: 32px;
-  line-height: 38px;
-  font-weight: 700;
+  background:
+    radial-gradient(120% 80% at 50% 30%, var(--color-accent-glow, rgba(255, 255, 255, 0.12)), transparent),
+    #15151c;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 96px;
+  line-height: 1;
+  font-weight: 800;
 }
 
-.profile-card__overlay {
-  position: relative;
-  padding: var(--space-lg);
-  background: var(--color-surface);
-  opacity: 0.96;
+.profile-card__scrim {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+}
+
+/* Sus: doar cât să se vadă indicatoarele și badge-ul pe o poză deschisă. */
+.profile-card__scrim--top {
+  top: 0;
+  height: calc(var(--feed-top) + 96px);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0));
+}
+
+/* Jos: gradientul care face textul lizibil, fără panou opac. */
+.profile-card__scrim--bottom {
+  bottom: 0;
+  height: 58%;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(0, 0, 0, 0.18) 30%,
+    rgba(0, 0, 0, 0.55) 62%,
+    rgba(0, 0, 0, 0.75) 100%
+  );
+}
+
+/* ——— Indicatoarele de poze, ca la stories —————————————————————— */
+
+.profile-card__pager {
+  position: absolute;
+  top: calc(var(--feed-top) + var(--space-sm));
+  left: var(--feed-gutter-left);
+  right: var(--feed-gutter-right);
+  z-index: 1;
+  display: flex;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.profile-card__bar {
+  flex: 1;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.25);
+  transition: background-color 180ms ease;
+}
+
+.profile-card__bar[data-active='true'] {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+/* Zonele de atingere stânga/dreapta. Atingerea cu degetul e tratată de deck
+   (deosebește atingerea de swipe); butoanele sunt pentru tastatură. */
+.profile-card__taps {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+
+.profile-card__tap {
+  appearance: none;
+  flex: 1;
+  border: none;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: inherit;
+}
+
+.profile-card__tap:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.9);
+  outline-offset: -6px;
+  border-radius: 20px;
+}
+
+/* ——— Badge-ul de compatibilitate ——————————————————————————————— */
+
+.compat-badge {
+  position: absolute;
+  top: calc(var(--feed-top) + var(--space-sm) + 3px + var(--space-md));
+  right: var(--feed-gutter-right);
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px 5px 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(10, 10, 14, 0.38);
+  border: 1px solid var(--feed-glass-border);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  color: #fff;
+  pointer-events: none;
+}
+
+.compat-badge__ring {
+  width: 26px;
+  height: 26px;
+  transform: rotate(-90deg);
+}
+
+.compat-badge__track,
+.compat-badge__arc {
+  fill: none;
+  stroke-width: 2.6;
+}
+
+.compat-badge__track {
+  stroke: rgba(255, 255, 255, 0.22);
+}
+
+.compat-badge__arc {
+  stroke: var(--compat-color, #fff);
+  stroke-linecap: round;
+}
+
+.compat-badge__heart {
+  fill: var(--compat-color, #fff);
+  /* Inima stă dreaptă, deși inelul e rotit ca arcul să pornească de sus. */
+  transform: rotate(90deg);
+  transform-origin: 12px 12px;
+}
+
+.compat-badge__value {
+  font-size: 15px;
+  line-height: 18px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+/* ——— Textul profilului, direct pe poză ————————————————————————— */
+
+.profile-card__info {
+  position: absolute;
+  left: var(--feed-gutter-left);
+  right: var(--feed-gutter-right);
+  bottom: var(--space-xl);
+  z-index: 1;
+  color: #fff;
+  text-shadow: var(--feed-text-shadow);
+  /* Textul nu fură atingerea: pe el, o atingere comută poza ca oriunde. */
+  pointer-events: none;
 }
 
 .profile-card__name {
-  font-size: 24px;
-  line-height: 30px;
-  font-weight: 700;
   margin: 0;
+  font-size: 30px;
+  line-height: 36px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  overflow-wrap: anywhere;
+}
+
+.profile-card__meta {
+  margin: 2px 0 0;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .profile-card__about {
   margin: var(--space-sm) 0 0;
-  font-size: 16px;
-  line-height: 22px;
+  font-size: 15px;
+  line-height: 21px;
+  color: rgba(255, 255, 255, 0.88);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -80,78 +404,176 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-sm);
-  margin-top: var(--space-md);
+  margin: var(--space-md) 0 0;
+  padding: 0;
+  list-style: none;
 }
 
-.chip {
-  background: var(--color-tag-bg);
-  color: var(--color-link);
+.profile-card__chip {
+  padding: 5px 12px;
   border-radius: var(--radius-pill);
-  padding: var(--space-xs) var(--space-md);
+  background: var(--feed-glass);
+  border: 1px solid var(--feed-glass-border);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  backdrop-filter: blur(12px) saturate(150%);
+  color: #fff;
   font-size: 13px;
   line-height: 18px;
+  font-weight: 600;
+  text-shadow: none;
 }
 
-.compat-badge {
-  position: absolute;
-  top: var(--space-lg);
-  right: var(--space-lg);
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-on-accent);
-  font-size: 12px;
-  line-height: 14px;
-  font-weight: 700;
-}
+/* ——— Ștampilele direcțiilor ———————————————————————————————————— */
 
-/* Indiciile celor patru direcții. Opacitatea vine din JS, proporțional cu
-   distanța parcursă de deget — utilizatorul vede ce urmează să se întâmple
-   ÎNAINTE să ridice degetul. */
+/* Opacitatea vine din JS, proporțional cu distanța parcursă de deget —
+   utilizatorul vede ce urmează să se întâmple ÎNAINTE să ridice degetul. */
 .cue {
   position: absolute;
-  padding: var(--space-sm) var(--space-md);
-  border: 2px solid currentColor;
-  border-radius: var(--radius-md);
-  font-weight: 500;
-  font-size: 16px;
-  line-height: 22px;
+  z-index: 2;
+  padding: 6px 14px;
+  border: 3px solid currentColor;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  font-weight: 900;
+  font-size: 26px;
+  line-height: 30px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
   pointer-events: none;
 }
 
 .cue--like {
-  top: 24px;
-  left: 24px;
+  top: calc(var(--feed-top) + 48px);
+  left: var(--space-xl);
   color: var(--color-success);
+  transform: rotate(-14deg);
 }
 
 .cue--nope {
-  top: 24px;
-  right: 24px;
+  top: calc(var(--feed-top) + 48px);
+  right: var(--space-xl);
   color: var(--color-danger);
+  transform: rotate(14deg);
 }
 
 .cue--super {
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) rotate(-6deg);
   color: var(--color-accent);
+  white-space: nowrap;
 }
 
 .cue--undo {
-  bottom: 96px;
+  bottom: 40%;
   left: 50%;
   transform: translateX(-50%);
-  color: var(--color-text-secondary);
+  color: #fff;
+  white-space: nowrap;
 }
 
-.deck__hint {
+/* ——— Indiciul de gesturi, o singură dată ——————————————————————— */
+
+.feed__coach {
+  position: absolute;
+  left: var(--feed-gutter-left);
+  right: var(--feed-gutter-right);
+  top: 50%;
+  z-index: 1;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  margin: 0 auto;
+  max-width: 320px;
+  padding: var(--space-lg);
+  border-radius: 20px;
+  background: rgba(10, 10, 14, 0.5);
+  border: 1px solid var(--feed-glass-border);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+  color: #fff;
   text-align: center;
-  padding-bottom: var(--space-md);
+  /* Nu blochează swipe-ul: doar butonul primește atingeri. */
+  pointer-events: none;
+  animation: feed-coach-in 320ms ease-out both;
 }
+
+.feed__coach-text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 21px;
+  font-weight: 600;
+}
+
+.feed__coach-button {
+  pointer-events: auto;
+  appearance: none;
+  border: 1px solid var(--feed-glass-border);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.92);
+  color: #111;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  min-height: 40px;
+  padding: 0 var(--space-xl);
+  cursor: pointer;
+}
+
+.feed__coach-button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+@keyframes feed-coach-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-50% + 8px));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%);
+  }
+}
+
+/* ——— Refuzuri și erori, ca foaie jos peste poză ———————————————— */
+
+.feed__notices {
+  position: absolute;
+  left: var(--feed-gutter-left);
+  right: var(--feed-gutter-right);
+  bottom: var(--space-md);
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.feed__notices .deck-block {
+  margin: 0;
+  border-radius: 20px;
+  color: var(--color-text-primary);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.feed__toast {
+  margin: 0;
+  padding: var(--space-md) var(--space-lg);
+  border-radius: 16px;
+  background: rgba(10, 10, 14, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-left: 3px solid var(--color-danger);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  color: #fff;
+  font-size: 15px;
+  line-height: 20px;
+}
+
+/* ——— Match ——————————————————————————————————————————————————— */
 
 .match-modal {
   position: fixed;
@@ -162,6 +584,7 @@
   justify-content: center;
   padding: var(--space-xl);
   z-index: 10;
+  color: var(--color-text-primary);
 }
 
 .match-modal__box {
@@ -175,4 +598,18 @@
   gap: var(--space-md);
   max-width: 320px;
   width: 100%;
+}
+
+/* ——— Mai puțină mișcare —————————————————————————————————————— */
+
+@media (prefers-reduced-motion: reduce) {
+  .deck__card--settling,
+  .profile-card__bar {
+    transition: none;
+  }
+
+  .profile-card__photo,
+  .feed__coach {
+    animation: none;
+  }
 }

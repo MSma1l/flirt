@@ -30,6 +30,17 @@ vi.mock('@mobile/features/feed/feedApi', () => ({
   undoSwipe: vi.fn(),
 }));
 
+// Catalogul de interese (etichetele traduse de pe card) — fără cereri reale.
+vi.mock('@/features/profile/profileApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/profile/profileApi')>()),
+  fetchReference: vi.fn(async () => ({
+    genders: [],
+    datingStatuses: [],
+    languages: [],
+    interests: [],
+  })),
+}));
+
 vi.mock('@/features/stories/storiesApi', () => ({
   fetchStories: vi.fn(),
   fetchMyStories: vi.fn(),

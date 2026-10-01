@@ -15,6 +15,17 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* Ruta feedului: conținutul iese din marginile cadrului (stânga, dreapta și
+   zona sigură de sus), ca poza cardului să umple ecranul de la margine la
+   margine. Nu derulează: cardul umple exact spațiul până la bara de taburi.
+   Marginile sigure le pune înapoi conținutul însuși (`feed.css`). */
+.app-shell__content--bleed {
+  overflow: hidden;
+  margin-top: calc(-1 * var(--safe-top));
+  margin-left: calc(-1 * max(var(--safe-left), var(--space-lg)));
+  margin-right: calc(-1 * max(var(--safe-right), var(--space-lg)));
+}
+
 /* ——— Bara de taburi ——————————————————————————————————————————— */
 
 .tab-bar {

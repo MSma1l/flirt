@@ -23,7 +23,7 @@
  * într-o zonă străină (`onPointerDown`, mai jos).
  */
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
@@ -42,6 +42,7 @@ import { StoriesStrip } from '@/features/stories/StoriesStrip';
 import { haptic } from '@/telegram/bridge';
 
 import { ProfileCardView } from './ProfileCardView';
+import { useInterestLabels } from './useInterestLabels';
 
 /** Cât se mișcă degetul până acceptăm că e un gest, nu o atingere. */
 const GESTURE_SLOP = 8;
@@ -55,6 +56,30 @@ interface Offset {
 }
 
 const ORIGIN: Offset = { x: 0, y: 0 };
+
+/**
+ * Indiciul de gesturi apare O SINGURĂ DATĂ, ca un strat discret peste primul
+ * card. Pentru tehnologiile de asistare textul rămâne mereu legat de card
+ * (`aria-describedby`), deci nu se pierde nimic când stratul dispare.
+ */
+const GESTURE_HINT_KEY = 'flirt.feed.gestureHintSeen';
+
+function readHintSeen(): boolean {
+  try {
+    return window.localStorage.getItem(GESTURE_HINT_KEY) === '1';
+  } catch {
+    // Stocare blocată (mod privat, WebView restrictiv): arătăm indiciul.
+    return false;
+  }
+}
+
+function writeHintSeen(): void {
+  try {
+    window.localStorage.setItem(GESTURE_HINT_KEY, '1');
+  } catch {
+    // Fără stocare, indiciul va reapărea la următoarea deschidere. Acceptabil.
+  }
+}
 
 /** Opacitatea unui indiciu: 0 la start, 1 când s-a atins pragul direcției. */
 function cueOpacity(distance: number, threshold: number): number {
@@ -81,9 +106,61 @@ export function SwipeDeck() {
 
   // Punctul de plecare al gestului curent. `null` = niciun deget pe card.
   const dragStart = useRef<{ x: number; y: number; pointerId: number } | null>(null);
+  /** Degetul a depășit pragul de gest? Dacă NU, ridicarea lui e o atingere. */
+  const movedRef = useRef(false);
 
   const cards = data ?? [];
   const current = cards[index];
+
+  /**
+   * Poza afișată, legată de cardul căruia îi aparține: la cardul următor
+   * indicele pornește singur de la zero, fără un efect care să-l reseteze.
+   */
+  const [photo, setPhoto] = useState<{ userId: string | null; index: number }>({
+    userId: null,
+    index: 0,
+  });
+  const photoCount = current?.photos.length ?? 0;
+  const photoIndex = current && photo.userId === current.userId ? photo.index : 0;
+  const showPhoto = useCallback(
+    (step: 1 | -1) => {
+      if (!current || photoCount < 2) return;
+      const next = Math.max(0, Math.min(photoCount - 1, photoIndex + step));
+      if (next === photoIndex) return;
+      haptic('light');
+      setPhoto({ userId: current.userId, index: next });
+    },
+    [current, photoCount, photoIndex],
+  );
+
+  // Catalogul se cere doar dacă are ce traduce: un feed gol nu face cereri.
+  const interestLabels = useInterestLabels((current?.topInterests.length ?? 0) > 0);
+  const hintId = useId();
+  const [hintSeen, setHintSeen] = useState(readHintSeen);
+  const dismissHint = useCallback(() => {
+    setHintSeen(true);
+    writeHintSeen();
+  }, []);
+
+  /**
+   * Înălțimea benzii de sus (povești + zona sigură), măsurată, ca indicatoarele
+   * de poze și badge-ul să stea EXACT sub ea, oricât de înaltă ar fi pe
+   * telefonul curent. Fără `ResizeObserver` (teste, WebView vechi) rămâne
+   * valoarea de rezervă din CSS.
+   */
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const topRef = useRef<HTMLDivElement | null>(null);
+  const hasCard = current !== undefined;
+  useEffect(() => {
+    const root = rootRef.current;
+    const top = topRef.current;
+    if (!root || !top || typeof ResizeObserver === 'undefined') return;
+    const sync = () => root.style.setProperty('--feed-top', `${top.offsetHeight}px`);
+    sync();
+    const observer = new ResizeObserver(sync);
+    observer.observe(top);
+    return () => observer.disconnect();
+  }, [hasCard]);
 
   /** Lista pentru care `index` a fost calculat ultima dată. */
   const placedForRef = useRef<FeedCard[] | undefined>(undefined);
@@ -198,6 +275,8 @@ export function SwipeDeck() {
       }
 
       haptic('light');
+      // Primul swipe reușit e dovada că gestul a fost înțeles.
+      if (!hintSeen) dismissHint();
 
       // Confirmare vizuală: cardul pleacă în direcția gestului, apoi se trimite
       // cererea. `setSettling` pornește tranziția CSS.
@@ -210,7 +289,7 @@ export function SwipeDeck() {
         direction === 'right' ? 'like' : direction === 'left' ? 'dislike' : 'super_like';
       void performSwipe(current, action);
     },
-    [busy, current, onUndo, performSwipe, resetCard],
+    [busy, current, dismissHint, hintSeen, onUndo, performSwipe, resetCard],
   );
 
   // ——— Gesturi cu evenimente de pointer ———
@@ -228,6 +307,7 @@ export function SwipeDeck() {
       y: event.clientY,
       pointerId: event.pointerId,
     };
+    movedRef.current = false;
     setSettling(false);
     // Capturarea pointerului ține gestul legat de card chiar dacă degetul iese
     // din el — fără asta, un swipe rapid „scapă" și cardul rămâne agățat.
@@ -240,6 +320,7 @@ export function SwipeDeck() {
     const dx = event.clientX - start.x;
     const dy = event.clientY - start.y;
     if (Math.abs(dx) < GESTURE_SLOP && Math.abs(dy) < GESTURE_SLOP) return;
+    movedRef.current = true;
     setOffset({ x: dx, y: dy });
   };
 
@@ -251,6 +332,18 @@ export function SwipeDeck() {
 
     const dx = event.clientX - start.x;
     const dy = event.clientY - start.y;
+
+    // ATINGERE, nu gest: degetul n-a trecut niciodată de prag. Jumătatea
+    // stângă a cardului = poza anterioară, dreapta = următoarea (ca la stories).
+    if (!movedRef.current && Math.abs(dx) < GESTURE_SLOP && Math.abs(dy) < GESTURE_SLOP) {
+      resetCard();
+      if (photoCount > 1) {
+        const rect = event.currentTarget.getBoundingClientRect();
+        showPhoto(event.clientX - rect.left < rect.width / 2 ? -1 : 1);
+      }
+      return;
+    }
+
     const direction = resolveDirection(dx, dy);
     // Gest scurt sau diagonal (indecis) → cardul revine. Nu ghicim intenția.
     if (!direction) {
@@ -262,36 +355,43 @@ export function SwipeDeck() {
 
   const onPointerCancel = () => {
     dragStart.current = null;
+    movedRef.current = false;
     resetCard();
   };
 
   // ——— Randare ———
 
+  // Ruta feedului e „pe tot ecranul" (`app-shell__content--bleed`): cadrul nu
+  // mai dă margini. Stările fără card și le pun singure, prin `.feed-status`.
   if (isLoading) {
     return (
-      <StatusScreen
-        loading
-        testId="status-feed-loading"
-        title={t('feed.loading')}
-        body={t('feed.loadingBody')}
-      />
+      <div className="feed-status">
+        <StatusScreen
+          loading
+          testId="status-feed-loading"
+          title={t('feed.loading')}
+          body={t('feed.loadingBody')}
+        />
+      </div>
     );
   }
 
   if (isError) {
     return (
-      <StatusScreen
-        testId="status-feed-error"
-        title={t('errors.network.title')}
-        body={t('feed.error')}
-        actions={[
-          {
-            label: t('actions.retry', { ns: 'common' }),
-            onClick: () => void refetch(),
-            testId: 'deck-retry',
-          },
-        ]}
-      />
+      <div className="feed-status">
+        <StatusScreen
+          testId="status-feed-error"
+          title={t('errors.network.title')}
+          body={t('feed.error')}
+          actions={[
+            {
+              label: t('actions.retry', { ns: 'common' }),
+              onClick: () => void refetch(),
+              testId: 'deck-retry',
+            },
+          ]}
+        />
+      </div>
     );
   }
 
@@ -309,7 +409,7 @@ export function SwipeDeck() {
     ) : null;
 
   const errorText = actionError ? (
-    <p className="error-text" data-testid="deck-action-error">
+    <p className="error-text feed__toast" role="alert" data-testid="deck-action-error">
       {actionError}
     </p>
   ) : null;
@@ -372,7 +472,7 @@ export function SwipeDeck() {
     }
 
     return (
-      <>
+      <div className="feed-status">
         {/* Poveștile rămân la locul lor și când nu mai sunt ankete: ele sunt
             conținut proaspăt, exact ce mai are de făcut userul aici. La fel pe
             nativ, în ramura de deck gol din `app/(tabs)/ankete.tsx`. */}
@@ -384,18 +484,24 @@ export function SwipeDeck() {
           actions={actions}
         >
           {blockPanel}
-      {errorText}
+          {errorText}
           {matchModal}
         </StatusScreen>
-      </>
+      </div>
     );
   }
 
   const rotation = Math.max(-8, Math.min(8, (offset.x / 300) * 8));
 
   return (
-    <>
-      <StoriesStrip />
+    <div className="feed" ref={rootRef} data-testid="feed-screen">
+      {/* Banda de sus: poveștile, pe sticlă mată PESTE poză. Stă înaintea
+          cardului în document (ordinea de citire: întâi poveștile), dar e
+          deasupra lui vizual. Doar ea are fundal încețoșat; restul ecranului e
+          poza însăși. */}
+      <div className="feed__top" ref={topRef}>
+        <StoriesStrip />
+      </div>
 
       <div className="deck">
         <div
@@ -410,7 +516,15 @@ export function SwipeDeck() {
           onPointerUp={endDrag}
           onPointerCancel={onPointerCancel}
         >
-          <ProfileCardView card={current} />
+          <ProfileCardView
+            key={current.userId}
+            card={current}
+            photoIndex={photoIndex}
+            interests={interestLabels(current.topInterests)}
+            onPrevPhoto={() => showPhoto(-1)}
+            onNextPhoto={() => showPhoto(1)}
+            describedBy={hintId}
+          />
 
           <span
             className="cue cue--like"
@@ -439,13 +553,35 @@ export function SwipeDeck() {
         </div>
       </div>
 
-      <div className="deck__hint">
-        <p className="caption">{t('feed.hint')}</p>
-        {blockPanel}
-      {errorText}
-      </div>
+      {/* Descrierea gesturilor rămâne MEREU pentru cititoarele de ecran. */}
+      <p id={hintId} className="visually-hidden">
+        {t('feed.hint')}
+      </p>
+
+      {!hintSeen ? (
+        <div className="feed__coach" data-testid="feed-gesture-hint">
+          <p className="feed__coach-text" aria-hidden="true">
+            {t('feed.hint')}
+          </p>
+          <button
+            type="button"
+            className="feed__coach-button"
+            data-testid="feed-gesture-hint-dismiss"
+            onClick={dismissHint}
+          >
+            {t('screens:feedCard.gotIt')}
+          </button>
+        </div>
+      ) : null}
+
+      {blockPanel || errorText ? (
+        <div className="feed__notices">
+          {blockPanel}
+          {errorText}
+        </div>
+      ) : null}
 
       {matchModal}
-    </>
+    </div>
   );
 }
