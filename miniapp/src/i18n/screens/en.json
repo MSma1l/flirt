@@ -94,7 +94,32 @@
       "step3": "Paste the text above into the payment purpose field, exactly as written.",
       "step4Declare": "Come back here and tap “I've made the transfer”.",
       "step4Proof": "Upload a screenshot or photo of the receipt below.",
-      "after": "We check payments manually, usually within a few hours. Your QR ticket appears here right after confirmation."
+      "after": "We check payments manually, usually within a few hours. Your QR ticket appears here right after confirmation.",
+      "methodLabel": "Payment method",
+      "methodMia": "MIA · instant",
+      "methodIban": "IBAN transfer",
+      "ibanAlternative": "Alternative: bank transfer (IBAN)",
+      "mia": {
+        "title": "Pay instantly by phone number",
+        "subtitle": "MIA Instant Payments — the money arrives in seconds, no IBAN needed.",
+        "phone": "Recipient phone",
+        "recipient": "Recipient name",
+        "recipientHint": "You'll see this name in your bank app — check that it matches.",
+        "amount": "Exact amount",
+        "comment": "Payment comment",
+        "step1": "Open your bank app (maib, MICB, OTP, Moldindconbank, etc.).",
+        "step2": "Choose Transfer → MIA / by phone number.",
+        "step3": "Enter the phone {{phone}} and the exact amount {{amount}}.",
+        "step4": "Paste the payment comment above, exactly as written.",
+        "step5Declare": "Come back here and confirm the payment.",
+        "step5Proof": "Come back here and upload the receipt (screenshot or PDF).",
+        "step2Qr": "Choose Pay by QR (MIA) and scan the code above — or upload the saved image.",
+        "step3Qr": "Check the recipient and enter the exact amount {{amount}}.",
+        "qrAlt": "MIA payment QR code",
+        "qrCaption": "Scan with your bank app (MIA)",
+        "qrSave": "Open the QR code full size",
+        "qrSameDevice": "Paying from this same phone? Open the QR code, save the image (long-press) and upload it in your bank app under \"Pay by QR\"."
+      }
     },
     "pass": {
       "eyebrow": "Entry ticket",
@@ -253,7 +278,17 @@
       "submit": "Send proof of payment",
       "required": "Choose your proof of payment.",
       "badType": "We only accept JPG, JPEG, PNG or WEBP images.",
-      "tooLarge": "The file exceeds the {{limit}} limit."
+      "tooLarge": "The file exceeds the {{limit}} limit.",
+      "receiptTitle": "Upload your payment receipt",
+      "receiptIntro": "After paying, send us the receipt from your bank app — we can't confirm the ticket without it.",
+      "camera": "Take a photo of the receipt",
+      "chooseFile": "Choose from gallery or a PDF",
+      "hintWithPdf": "JPG, PNG, WEBP or PDF · up to {{limit}}.",
+      "badTypeWithPdf": "We accept JPG, PNG, WEBP images or a PDF file.",
+      "previewAlt": "Receipt preview",
+      "remove": "Change",
+      "progress": "Uploading: {{percent}}%",
+      "submitReceipt": "Send receipt"
     },
     "form": {
       "pricePerTicket": "Price per ticket",
@@ -392,6 +427,75 @@
       "a11y": "Profile {{percent}}% complete",
       "photos": "At least {{min}} photos",
       "verified": "Account verification"
+    }
+  },
+  "legal": {
+    "loading": "Loading the document…",
+    "loadError": "The document could not be loaded",
+    "retry": "Try again",
+    "versionLine": "Version {{version}} · effective from {{date}}",
+    "settingsTitle": "Privacy & documents",
+    "docTitle": {
+      "privacy": "Privacy Policy",
+      "terms": "Terms of Use",
+      "consent": "Consent to data processing"
+    },
+    "consent": {
+      "title": "Your data, kept safe",
+      "lead": "Before we start, please read how we use your data and give your consent.",
+      "summaryTitle": "In short",
+      "summary": {
+        "profile": "Other users see your profile and photos, so you can get to know each other.",
+        "location": "Your city and approximate coordinates are used only to calculate distance; your exact address is never shown.",
+        "chat": "Messages, likes and matches are stored so the app can work; contact details in chats are masked automatically.",
+        "events": "For events and tickets we process your order details and proof of payment.",
+        "rights": "You can download your data, withdraw optional consents or delete your account at any time, right in the app."
+      },
+      "checkTerms": "I am at least 18 years old and accept the Terms of Use",
+      "checkPrivacy": "I agree to the processing of my personal data in accordance with the Privacy Policy",
+      "optional": "Optional",
+      "checkSensitive": "I agree to the processing of my selfie for profile verification (biometric data). I can withdraw this consent at any time.",
+      "continue": "Continue",
+      "saving": "Saving…",
+      "error": "We couldn't save your consent. Please try again.",
+      "stale": "The documents have just been updated. Please confirm them again.",
+      "footnote": "The app is for adults 18+ only. Without your consent we cannot create and run your account."
+    },
+    "sensitive": {
+      "title": "Consent for selfie verification",
+      "body": "Verification compares a selfie with your profile photos. A selfie is biometric data, so we need your explicit consent.",
+      "pointWhat": "The selfie is used only to confirm that the photos are yours.",
+      "pointStorage": "The selfie is not stored: we keep only the result (verified or not).",
+      "pointWithdraw": "You can withdraw consent at any time under “Privacy & data”. Without it, only the verified badge is missing.",
+      "check": "I explicitly consent to the processing of my selfie for verification",
+      "continue": "Accept and continue"
+    },
+    "center": {
+      "title": "Privacy & data",
+      "lead": "Legal documents, your data and your consents, in one place.",
+      "documents": "Documents",
+      "myData": "My data",
+      "exportHint": "You will get a copy of the personal data we hold about you, in JSON format.",
+      "export": "Download my data",
+      "exporting": "Preparing your data…",
+      "exportError": "We couldn't prepare your data. Please try again.",
+      "exportReady": "Your data is ready",
+      "exportReadyHint": "If the download didn't start, save or copy the data here.",
+      "save": "Save file",
+      "copy": "Copy",
+      "copied": "Your data was copied to the clipboard.",
+      "copyFailed": "Copying isn't allowed on this device.",
+      "consents": "Consents",
+      "mainConsent": "Terms and Privacy Policy: accepted (version {{version}}).",
+      "sensitiveTitle": "Selfie verification (biometric data)",
+      "sensitiveGiven": "Consent given on {{date}}.",
+      "sensitiveNotGiven": "Consent not given. We'll only ask for it if you start verification.",
+      "withdraw": "Withdraw consent",
+      "withdrawError": "We couldn't withdraw your consent. Please try again.",
+      "withdrawMainHint": "Consent to the Terms and Policy is required for an account; you withdraw it by deleting your account.",
+      "rightsTitle": "Your rights",
+      "rightsBody": "You have the rights of access, rectification, erasure, restriction, portability and objection, and the right to lodge a complaint with the National Center for Personal Data Protection (datepersonale.md).",
+      "deleteAccount": "Delete account"
     }
   }
 }

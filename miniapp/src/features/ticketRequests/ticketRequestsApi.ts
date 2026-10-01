@@ -1,9 +1,34 @@
 import { api } from '@/api/client';
 import { i18n } from '@/i18n';
-import { mapPayment, type PaymentInstructions } from '@/features/tickets/paymentModel';
+import { mapPayment, type PaymentInstructions, type PaymentMethod } from '@/features/tickets/paymentModel';
 
 export const PAYMENT_PROOF_MAX_BYTES = 8 * 1024 * 1024;
-export const PAYMENT_PROOF_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+// Chitanța: captură/fotografie SAU PDF-ul exportat din aplicația băncii.
+export const PAYMENT_PROOF_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] as const;
+
+/** Opțiunile unui upload de chitanță: metoda folosită + progresul (0–100). */
+export interface ProofUploadOptions {
+  method?: PaymentMethod | null;
+  onProgress?: (percent: number) => void;
+}
+
+/** Corpul multipart comun (`file` + opțional `method`) și configul de progres. */
+export function proofUploadRequest(file: File, options: ProofUploadOptions = {}) {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  if (options.method) form.append('method', options.method);
+  const { onProgress } = options;
+  return {
+    form,
+    config: onProgress
+      ? {
+          onUploadProgress: (event: { loaded: number; total?: number }) => {
+            if (event.total) onProgress(Math.min(100, Math.round((event.loaded * 100) / event.total)));
+          },
+        }
+      : undefined,
+  };
+}
 
 export type TicketRequestStatus =
   | 'pending_payment'
@@ -103,11 +128,14 @@ export async function fetchMyTicketRequests(): Promise<TicketRequest[]> {
   return (data ?? []).map(fromApi);
 }
 
-export async function uploadPaymentProof(requestId: string, file: File): Promise<TicketRequest> {
-  const form = new FormData();
-  form.append('file', file, file.name);
+export async function uploadPaymentProof(
+  requestId: string,
+  file: File,
+  options: ProofUploadOptions = {},
+): Promise<TicketRequest> {
+  const { form, config } = proofUploadRequest(file, options);
   const { data } = await api.post<Record<string, unknown>>(
-    `/ticket-requests/${encodeURIComponent(requestId)}/payment-proof`, form,
+    `/ticket-requests/${encodeURIComponent(requestId)}/payment-proof`, form, config,
   );
   return fromApi(data);
 }
@@ -119,7 +147,7 @@ export const PAYMENT_PROOF_MAX_LABEL = `${PAYMENT_PROOF_MAX_BYTES / (1024 * 1024
 export function validatePaymentProof(file: File | undefined): string | null {
   if (!file) return i18n.t('screens:ticketRequests.proof.required');
   if (!PAYMENT_PROOF_TYPES.includes(file.type as (typeof PAYMENT_PROOF_TYPES)[number])) {
-    return i18n.t('screens:ticketRequests.proof.badType');
+    return i18n.t('screens:ticketRequests.proof.badTypeWithPdf');
   }
   if (file.size > PAYMENT_PROOF_MAX_BYTES) {
     return i18n.t('screens:ticketRequests.proof.tooLarge', { limit: PAYMENT_PROOF_MAX_LABEL });

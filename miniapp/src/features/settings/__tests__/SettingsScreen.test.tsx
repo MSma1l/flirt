@@ -34,6 +34,14 @@ vi.mock('@/features/ai', () => ({
   AiSettingsSection: () => <div data-testid="ai-settings-section" />,
 }));
 
+/**
+ * Secțiunea „Confidențialitate și documente" conține doar legături (are nevoie de
+ * router); e testată separat în `src/features/legal/__tests__/`.
+ */
+vi.mock('@/features/legal/LegalSettingsSection', () => ({
+  LegalSettingsSection: () => <div data-testid="settings-legal" />,
+}));
+
 vi.mock('../../profile/profileApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../profile/profileApi')>();
   return { ...actual, fetchReference: vi.fn() };
@@ -92,6 +100,8 @@ describe('încărcare', () => {
     expect(screen.getByTestId('notif-match')).toBeChecked();
     expect(screen.getByTestId('notif-aiHints')).not.toBeChecked();
     expect(screen.getByTestId('profile-hidden')).not.toBeChecked();
+    // Secțiunea legală (Politica, Termenii, centrul de confidențialitate) e montată.
+    expect(screen.getByTestId('settings-legal')).toBeInTheDocument();
     // Genurile vin din referința serverului, nu sunt hardcodate în ecran.
     expect(screen.getByTestId('interested-in-m')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('interested-in-f')).toHaveAttribute('aria-pressed', 'false');

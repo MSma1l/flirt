@@ -94,7 +94,32 @@
       "step3": "La destinația plății lipește textul de mai sus, exact cum e scris.",
       "step4Declare": "Revino aici și apasă „Am făcut transferul”.",
       "step4Proof": "Încarcă mai jos o captură sau o fotografie a chitanței.",
-      "after": "Verificăm plata manual, de obicei în câteva ore. Biletul cu cod QR apare aici imediat după confirmare."
+      "after": "Verificăm plata manual, de obicei în câteva ore. Biletul cu cod QR apare aici imediat după confirmare.",
+      "methodLabel": "Metoda de plată",
+      "methodMia": "MIA · instant",
+      "methodIban": "Transfer IBAN",
+      "ibanAlternative": "Alternativă: transfer bancar (IBAN)",
+      "mia": {
+        "title": "Plătește instant după numărul de telefon",
+        "subtitle": "MIA Plăți Instant — banii ajung în câteva secunde, fără IBAN.",
+        "phone": "Telefonul destinatarului",
+        "recipient": "Numele destinatarului",
+        "recipientHint": "Vei vedea acest nume în aplicația băncii — verifică să coincidă.",
+        "amount": "Suma exactă",
+        "comment": "Comentariul plății",
+        "step1": "Deschide aplicația băncii tale (maib, MICB, OTP, Moldindconbank etc.).",
+        "step2": "Alege Transfer → MIA / după numărul de telefon.",
+        "step3": "Introdu telefonul {{phone}} și suma exactă {{amount}}.",
+        "step4": "Lipește comentariul plății de mai sus, exact cum e scris.",
+        "step5Declare": "Revino aici și confirmă plata.",
+        "step5Proof": "Revino aici și încarcă chitanța (captură de ecran sau PDF).",
+        "step2Qr": "Alege Plată prin QR (MIA) și scanează codul de mai sus — sau încarcă imaginea salvată.",
+        "step3Qr": "Verifică destinatarul și introdu suma exactă {{amount}}.",
+        "qrAlt": "Codul QR MIA pentru plată",
+        "qrCaption": "Scanează cu aplicația băncii (MIA)",
+        "qrSave": "Deschide QR-ul la mărime completă",
+        "qrSameDevice": "Plătești de pe același telefon? Deschide QR-ul, salvează imaginea (apăsare lungă) și încarc-o în aplicația băncii la „Plată prin QR\"."
+      }
     },
     "pass": {
       "eyebrow": "Bilet de intrare",
@@ -257,7 +282,17 @@
       "submit": "Trimite dovada plății",
       "required": "Alege dovada plății.",
       "badType": "Acceptăm doar imagini JPG, JPEG, PNG sau WEBP.",
-      "tooLarge": "Fișierul depășește limita de {{limit}}."
+      "tooLarge": "Fișierul depășește limita de {{limit}}.",
+      "receiptTitle": "Încarcă chitanța plății",
+      "receiptIntro": "După plată, trimite-ne chitanța din aplicația băncii — fără ea nu putem confirma biletul.",
+      "camera": "Fă o poză chitanței",
+      "chooseFile": "Alege din galerie sau un PDF",
+      "hintWithPdf": "JPG, PNG, WEBP sau PDF · maximum {{limit}}.",
+      "badTypeWithPdf": "Acceptăm imagini JPG, PNG, WEBP sau un fișier PDF.",
+      "previewAlt": "Previzualizarea chitanței",
+      "remove": "Schimbă",
+      "progress": "Încărcare: {{percent}}%",
+      "submitReceipt": "Trimite chitanța"
     },
     "form": {
       "pricePerTicket": "Preț pe bilet",
@@ -396,6 +431,75 @@
       "a11y": "Profil completat în proporție de {{percent}}%",
       "photos": "Cel puțin {{min}} poze",
       "verified": "Verificarea contului"
+    }
+  },
+  "legal": {
+    "loading": "Se încarcă documentul…",
+    "loadError": "Documentul nu s-a putut încărca",
+    "retry": "Încearcă din nou",
+    "versionLine": "Versiunea {{version}} · în vigoare din {{date}}",
+    "settingsTitle": "Confidențialitate și documente",
+    "docTitle": {
+      "privacy": "Politica de confidențialitate",
+      "terms": "Termenii de utilizare",
+      "consent": "Consimțământul pentru prelucrarea datelor"
+    },
+    "consent": {
+      "title": "Datele tale, în siguranță",
+      "lead": "Înainte să începem, te rugăm să citești cum folosim datele tale și să-ți dai acordul.",
+      "summaryTitle": "Pe scurt",
+      "summary": {
+        "profile": "Profilul și fotografiile tale le văd alți utilizatori, ca să vă puteți cunoaște.",
+        "location": "Orașul și coordonatele aproximative servesc doar la calculul distanței; adresa exactă nu se afișează nimănui.",
+        "chat": "Mesajele, aprecierile și potrivirile sunt păstrate ca aplicația să funcționeze; datele de contact din chat sunt mascate automat.",
+        "events": "Pentru evenimente și bilete prelucrăm datele comenzii și dovada plății.",
+        "rights": "Poți descărca datele tale, retrage consimțămintele opționale sau șterge contul oricând, din aplicație."
+      },
+      "checkTerms": "Am cel puțin 18 ani și accept Termenii de utilizare",
+      "checkPrivacy": "Sunt de acord cu prelucrarea datelor mele personale conform Politicii de confidențialitate",
+      "optional": "Opțional",
+      "checkSensitive": "Sunt de acord cu prelucrarea selfie-ului pentru verificarea profilului (date biometrice). Pot retrage acordul oricând.",
+      "continue": "Continuă",
+      "saving": "Se salvează…",
+      "error": "Nu am putut salva acordul. Încearcă din nou.",
+      "stale": "Documentele au fost actualizate chiar acum. Te rugăm să le confirmi din nou.",
+      "footnote": "Aplicația este doar pentru persoane de 18+. Fără acord nu putem crea și administra contul tău."
+    },
+    "sensitive": {
+      "title": "Consimțământ pentru verificarea cu selfie",
+      "body": "Verificarea compară un selfie cu fotografiile din profilul tău. Selfie-ul este o dată biometrică, deci avem nevoie de acordul tău explicit.",
+      "pointWhat": "Selfie-ul este folosit doar pentru a confirma că fotografiile îți aparțin.",
+      "pointStorage": "Selfie-ul nu se păstrează: păstrăm doar rezultatul (profil verificat sau nu).",
+      "pointWithdraw": "Poți retrage acordul oricând din „Confidențialitate și date”. Fără acord, doar insigna de verificare lipsește.",
+      "check": "Sunt de acord în mod explicit cu prelucrarea selfie-ului meu pentru verificare",
+      "continue": "Accept și continui"
+    },
+    "center": {
+      "title": "Confidențialitate și date",
+      "lead": "Documentele legale, datele tale și consimțămintele, într-un singur loc.",
+      "documents": "Documente",
+      "myData": "Datele mele",
+      "exportHint": "Primești o copie a datelor personale pe care le avem despre tine, în format JSON.",
+      "export": "Descarcă datele mele",
+      "exporting": "Se pregătesc datele…",
+      "exportError": "Nu am putut pregăti datele. Încearcă din nou.",
+      "exportReady": "Datele tale sunt gata",
+      "exportReadyHint": "Dacă descărcarea nu a pornit, salvează sau copiază datele de aici.",
+      "save": "Salvează fișierul",
+      "copy": "Copiază",
+      "copied": "Datele au fost copiate în clipboard.",
+      "copyFailed": "Copierea nu este permisă pe acest dispozitiv.",
+      "consents": "Consimțăminte",
+      "mainConsent": "Termenii și Politica de confidențialitate: acceptate (versiunea {{version}}).",
+      "sensitiveTitle": "Verificarea cu selfie (date biometrice)",
+      "sensitiveGiven": "Acord dat pe {{date}}.",
+      "sensitiveNotGiven": "Acord nedat. Ți-l vom cere doar dacă pornești verificarea.",
+      "withdraw": "Retrage acordul",
+      "withdrawError": "Nu am putut retrage acordul. Încearcă din nou.",
+      "withdrawMainHint": "Acordul pentru Termeni și Politică este necesar pentru cont; îl retragi ștergând contul.",
+      "rightsTitle": "Drepturile tale",
+      "rightsBody": "Ai dreptul de acces, rectificare, ștergere, restricționare, portabilitate și opoziție, precum și dreptul de a depune o plângere la Centrul Național pentru Protecția Datelor cu Caracter Personal (datepersonale.md).",
+      "deleteAccount": "Șterge contul"
     }
   }
 }

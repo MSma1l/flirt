@@ -46,6 +46,7 @@ import {
 
 import { StatusScreen } from '@/components/StatusScreen';
 import { AiSettingsSection } from '@/features/ai';
+import { LegalSettingsSection } from '@/features/legal/LegalSettingsSection';
 
 import { ConfirmDialog } from '../profile/ConfirmDialog';
 import { fetchReference } from '../profile/profileApi';
@@ -462,6 +463,9 @@ export function SettingsScreen() {
           ecranului, nu cunoaște câmpul, iar acel fișier e sursă comună cu
           aplicația nativă și nu se modifică de aici. */}
       <AiSettingsSection />
+
+      {/* ── Confidențialitate și documente (doar legături) ──────────────── */}
+      <LegalSettingsSection />
 
       {/* ── Cont ───────────────────────────────────────────────────────── */}
       <section className="settings-section">

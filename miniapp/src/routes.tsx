@@ -30,6 +30,15 @@ import { EventsScreen } from '@/features/events/EventsScreen';
 import { SwipeDeck } from '@/features/feed/SwipeDeck';
 import { HUMOR_PATH } from '@/features/humor/humorRoutes';
 import { HumorScreen } from '@/features/humor/HumorScreen';
+import { ConsentScreen } from '@/features/legal/ConsentScreen';
+import { LegalDocumentRoute } from '@/features/legal/LegalDocumentRoute';
+import {
+  CONSENT_DOC_ROUTE_PATTERN,
+  CONSENT_PATH,
+  LEGAL_DOC_ROUTE_PATTERN,
+  LEGAL_HUB_PATH,
+} from '@/features/legal/legalRoutes';
+import { PrivacyCenterScreen } from '@/features/legal/PrivacyCenterScreen';
 import { PASSPORT_PATH } from '@/features/passport/passportRoutes';
 import { PassportScreen } from '@/features/passport/PassportScreen';
 import {
@@ -105,6 +114,7 @@ function CompletedRoutes() {
             [TICKET_REQUEST_ROUTE_PATTERN, 'nav.event', <TicketRequestScreen key="tr" />],
             [SUBSCRIPTION_PATH, 'nav.subscription', <SubscriptionScreen key="su" />],
             [SETTINGS_PATH, 'nav.settings', <SettingsScreen key="se" />],
+            [LEGAL_HUB_PATH, 'nav.privacy', <PrivacyCenterScreen key="pc" />],
           ] as const
         ).map(([path, titleKey, element]) => (
           <Route
@@ -121,6 +131,9 @@ function CompletedRoutes() {
             `VerificationGate` decide ce se montează: fluxul, sau un mesaj scurt
             cu drum înapoi spre profil. Dacă am fi scos ruta, un link vechi ar fi
             căzut pe `*` și ar fi aruncat utilizatorul în feed, fără explicație. */}
+        {/* Documentele legale (Politica, Termenii, Consimțământul), citite în
+            aplicație, sub bara de taburi. Titlul vine din documentul cerut. */}
+        <Route path={LEGAL_DOC_ROUTE_PATTERN} element={<LegalDocumentRoute />} />
         <Route
           path={VERIFICATION_PATH}
           element={
@@ -141,6 +154,26 @@ function OnboardingShell() {
     <div className="app-shell">
       <Outlet />
     </div>
+  );
+}
+
+/**
+ * Poarta de consimțământ (Legea nr. 195/2024): cât timp serverul cere acordul
+ * pentru Termeni + Politica de confidențialitate (prima intrare sau o versiune
+ * nouă), DOAR ea există — fără bara de taburi, înaintea înregistrării.
+ */
+function ConsentRoutes() {
+  return (
+    <Routes>
+      <Route element={<OnboardingShell />}>
+        <Route path={CONSENT_PATH} element={<ConsentScreen />} />
+        <Route
+          path={CONSENT_DOC_ROUTE_PATTERN}
+          element={<LegalDocumentRoute fallbackPath={CONSENT_PATH} />}
+        />
+      </Route>
+      <Route path="*" element={<Navigate to={CONSENT_PATH} replace />} />
+    </Routes>
   );
 }
 
@@ -210,6 +243,9 @@ export function AppRoutes() {
       </div>
     );
   }
+
+  // `consent_required` e ADITIV: un server vechi nu-l trimite → nu blocăm.
+  if (data.consent_required === true) return <ConsentRoutes />;
 
   return data.profile_completed ? <CompletedRoutes /> : <OnboardingRoutes />;
 }

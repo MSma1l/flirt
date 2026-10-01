@@ -17,6 +17,7 @@ import { Icon, type IconName } from './icons';
 
 import { BLOCKLIST_PATH, FAVORITES_PATH } from '@/features/social/socialRoutes';
 import { HUMOR_PATH } from '@/features/humor/humorRoutes';
+import { LEGAL_HUB_PATH } from '@/features/legal/legalRoutes';
 import { PASSPORT_PATH } from '@/features/passport/passportRoutes';
 import { SETTINGS_PATH } from '@/features/onboarding/paths';
 import { SUBSCRIPTION_PATH } from '@/features/subscription/subscriptionRoutes';
@@ -45,6 +46,7 @@ export const MENU_ENTRIES: MenuEntry[] = [
   { to: SUBSCRIPTION_PATH, labelKey: 'nav.subscription', icon: 'crown' },
   { to: BLOCKLIST_PATH, labelKey: 'nav.blocklist', icon: 'block' },
   { to: SETTINGS_PATH, labelKey: 'nav.settings', icon: 'settings' },
+  { to: LEGAL_HUB_PATH, labelKey: 'nav.privacy', icon: 'shield' },
 ];
 
 export function MoreScreen() {

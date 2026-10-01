@@ -137,7 +137,8 @@ async def test_middleware_logheaza_ultima_intrare_nu_prima(caplog):
     record = await _access_record(
         caplog, {"X-Forwarded-For": f"{FORGED}, {REAL_PEER}"}
     )
-    assert record.client_ip == REAL_PEER
+    # IP-ul real, TRUNCHIAT (Politica de confidențialitate, secț. 10).
+    assert record.client_ip == app_logging.anonymize_ip(REAL_PEER) == "203.0.113.0"
     assert record.client_ip != FORGED
     assert FORGED not in str(record.__dict__)
 
@@ -148,4 +149,5 @@ async def test_middleware_accepta_antetul_scris_cu_alte_majuscule(caplog):
     record = await _access_record(
         caplog, {"x-FORWARDED-for": f"{FORGED}, {REAL_PEER}"}
     )
-    assert record.client_ip == REAL_PEER
+    # IP-ul real, TRUNCHIAT (Politica de confidențialitate, secț. 10).
+    assert record.client_ip == app_logging.anonymize_ip(REAL_PEER) == "203.0.113.0"

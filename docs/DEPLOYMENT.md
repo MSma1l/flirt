@@ -336,6 +336,19 @@ make restore FILE=/backups/flirt-....sql.gz FORCE=1    # restore PESTE producți
   Postgres — adică tot produsul).
 - Fiecare cerere are un `request_id`, întors și în antetul `X-Request-ID`.
 - Nu se loghează niciodată: tokenuri, parole, mesaje de chat, PII.
+- **IP trunchiat** în jurnalele de acces: nginx (formatul `flirt_anon`, fără query
+  string) și API (`client_ip` = `1.2.3.0`, IPv6 /48). Rate limiting-ul folosește
+  în continuare IP-ul complet, doar în memorie/Redis. Jurnalul de erori nginx (ex.
+  respingerile de rate limiting) poate conține IP-ul complet.
+- **Retenție în timp — pas pe HOST, o singură dată** (promisă în Politica de
+  confidențialitate: max. `LOG_RETENTION_DAYS`, implicit 30 de zile). Rotația
+  Docker e doar după mărime, deci instalează cron-ul:
+
+  ```bash
+  sudo install -m 0755 /opt/flirt/backend/scripts/prune_container_logs.sh /usr/local/sbin/flirt-prune-logs
+  echo '17 3 * * * root ENV_FILE=/opt/flirt/backend/.env /usr/local/sbin/flirt-prune-logs' | sudo tee /etc/cron.d/flirt-prune-logs
+  sudo ENV_FILE=/opt/flirt/backend/.env /usr/local/sbin/flirt-prune-logs   # probă
+  ```
 
 ```bash
 docker compose logs api | grep <request_id>
@@ -419,6 +432,19 @@ perioadă de grație (`ACCOUNT_DELETION_GRACE_DAYS`, implicit 30 de zile) a expi
 
 Rulează într-un proces **separat**, nu în API: `entrypoint.sh` pornește 4 workeri
 gunicorn, iar un task în lifespan s-ar executa de 4 ori în paralel.
+
+Ce face purjarea unui cont (`account_service.purge_user_data` +
+`services/retention_service.py`): șterge datele și **fișierele** (poze de profil,
+povești, atașamente de chat — de aceea `purge` montează volumul `mediadata`) și
+**anonimizează** comenzile de bilet (nume, telefon, e-mail, mesaje, note golite;
+suma, moneda, referința, evenimentul, datele și statusul rămân — evidență
+contabilă). Dovezile de plată ale comenzilor respinse/anulate se șterg imediat.
+
+La fiecare trecere rulează și retenția dovezilor de plată:
+- `PAYMENT_PROOF_RETENTION_DAYS` (implicit 1825 = 5 ani, de la crearea comenzii)
+  — orice dovadă mai veche e ștearsă (fișier + referință);
+- `REJECTED_PAYMENT_PROOF_RETENTION_DAYS` (implicit 90, de la decizie) — dovezile
+  comenzilor respinse/anulate.
 
 ```bash
 docker compose logs purge --tail 20

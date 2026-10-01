@@ -19,6 +19,11 @@
 
 # Rotația log-urilor: fără ea, log-urile JSON umplu discul în tăcere, iar când
 # discul e plin cade Postgres (adică tot produsul). 10 MB × 5 fișiere / serviciu.
+# Limita în TIMP (LOG_RETENTION_DAYS, implicit 30 de zile — promisă în Politica
+# de confidențialitate) NU se poate exprima aici: driverul json-file rotește doar
+# după mărime. O aplică pe host `scripts/prune_container_logs.sh` (cron zilnic,
+# vezi docs/DEPLOYMENT.md §7). IP-urile din jurnalele de acces sunt trunchiate
+# (nginx: formatul `flirt_anon`; API: `anonymize_ip`).
 # Numele proiectului, EXPLICIT. Implicit, docker compose îl deduce din numele
 # folderului — adică „backend", care e cel mai banal nume posibil. Pe un server cu
 # mai multe aplicații, două proiecte cu un folder `backend/` s-ar amesteca: `docker
@@ -242,6 +247,12 @@ services:
       db:
         condition: service_healthy
     command: ["python", "scripts/gdpr_purge.py", "--loop"]
+    # Media (STORAGE_PROVIDER=local): purjarea și retenția ȘTERG fișiere — pozele,
+    # poveștile și atașamentele de chat ale conturilor purjate, plus dovezile de
+    # plată expirate. Fără volumul ăsta ștergerile erau no-op tăcute (fișierul nu
+    # exista în container), iar fișierele rămâneau pe disc la nesfârșit.
+    volumes:
+      - mediadata:/data/media
     # Containerul moșteneşte din Dockerfile verificarea de sănătate a API-ului,
     # care interoghează un server web pe :8000. Aici rulează un script de fundal,
     # fără server web, deci verificarea NU putea trece niciodată: serviciul apărea

@@ -13,6 +13,7 @@
  * mesaj, nu la flux.
  */
 import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -153,5 +154,58 @@ describe('funcția disponibilă pe server', () => {
     expect(screen.queryByTestId('verify-unavailable')).not.toBeInTheDocument();
     // Fluxul nu trimite nimic până nu apasă utilizatorul.
     await waitFor(() => expect(post).not.toHaveBeenCalled());
+  });
+});
+
+/**
+ * Selfie-ul e o dată biometrică: fără consimțământ EXPLICIT (`sensitive_data`),
+ * în locul fluxului apare cardul de consimțământ.
+ */
+describe('consimțământul explicit pentru selfie', () => {
+  const STATUS = {
+    consent_required: false,
+    required_documents: ['terms', 'privacy'],
+    current_versions: { terms: '1.0', privacy: '1.0', sensitive_data: '1.0' },
+    accepted: { terms: null, privacy: null, sensitive_data: null },
+    sensitive_data_consent: false,
+  };
+
+  function mockWithConsent() {
+    const base = mockServer(true);
+    const original = base.getMockImplementation();
+    base.mockImplementation(async (url: string, ...rest: unknown[]) => {
+      if (url === '/legal/consent-status') return { data: STATUS } as never;
+      return (original as (u: string, ...r: unknown[]) => Promise<never>)(url, ...rest);
+    });
+    return base;
+  }
+
+  it('fără acord: cardul de consimțământ, nu fluxul', async () => {
+    mockWithConsent();
+    openVerification();
+
+    expect(await screen.findByTestId('sensitive-consent-card')).toBeInTheDocument();
+    expect(screen.queryByTestId('verify-start')).not.toBeInTheDocument();
+    expect(screen.getByTestId('sensitive-consent-continue')).toBeDisabled();
+  });
+
+  it('bifa + „Accept" trimit consimțământul și pornesc fluxul', async () => {
+    mockWithConsent();
+    post.mockImplementation(async (url: string) => {
+      if (url === '/legal/consent') {
+        return { data: { ...STATUS, sensitive_data_consent: true } } as never;
+      }
+      throw new Error('no request expected');
+    });
+    openVerification();
+
+    await userEvent.click(await screen.findByTestId('sensitive-consent-check'));
+    await userEvent.click(screen.getByTestId('sensitive-consent-continue'));
+
+    expect(post).toHaveBeenCalledWith('/legal/consent', {
+      documents: ['sensitive_data'],
+      versions: { sensitive_data: '1.0' },
+    });
+    expect(await screen.findByTestId('verify-start')).toBeInTheDocument();
   });
 });

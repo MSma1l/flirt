@@ -87,6 +87,8 @@ interface RequestOptions {
   /** Nu atașa `Authorization` și nu încerca refresh (folosit de /auth/login). */
   anonymous?: boolean;
   signal?: AbortSignal;
+  /** Upload multipart (ex. codul QR MIA); browserul pune singur `Content-Type`. */
+  formData?: FormData;
 }
 
 function buildUrl(path: string, query?: RequestOptions['query']): string {
@@ -163,16 +165,17 @@ function onSessionExpired(): void {
 /* --------------------------------- fetch core -------------------------------- */
 
 async function send(path: string, options: RequestOptions): Promise<Response> {
-  const { method = 'GET', body, query, anonymous, signal } = options;
+  const { method = 'GET', body, query, anonymous, signal, formData } = options;
   const headers: Record<string, string> = { Accept: 'application/json' };
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (body !== undefined && !formData) headers['Content-Type'] = 'application/json';
   if (!anonymous) {
     const token = getAccessToken();
     if (token) headers['Authorization'] = `Bearer ${token}`;
   }
 
   const init: RequestInit = { method, headers };
-  if (body !== undefined) init.body = JSON.stringify(body);
+  if (formData) init.body = formData;
+  else if (body !== undefined) init.body = JSON.stringify(body);
   if (signal) init.signal = signal;
 
   try {

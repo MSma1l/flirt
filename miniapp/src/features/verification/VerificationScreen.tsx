@@ -25,6 +25,7 @@ import { Link } from 'react-router';
 import { StatusScreen } from '@/components/StatusScreen';
 import { browserIo } from '@/features/onboarding/imageCompress';
 import { PROFILE_PATH } from '@/features/onboarding/paths';
+import { CONSENT_STATUS_KEY } from '@/features/legal/useLegal';
 import { fetchMyProfile } from '@/features/profile/profileApi';
 
 import { FaceVerifyError, verifyFace, type FaceVerifyReason } from './faceVerifyApi';
@@ -274,6 +275,12 @@ export function VerificationScreen() {
     } catch (error) {
       setVerified(false);
       setReason(error instanceof FaceVerifyError ? error.reason : 'unknown');
+      // Fără consimțământ explicit pentru selfie, serverul refuză (403). Recitim
+      // starea consimțămintelor: poarta din `VerificationGate` arată atunci
+      // cardul de consimțământ în locul fluxului.
+      if (error instanceof FaceVerifyError && error.consentRequired) {
+        void queryClient.invalidateQueries({ queryKey: CONSENT_STATUS_KEY });
+      }
     } finally {
       setBusy(false);
       setStage('result');

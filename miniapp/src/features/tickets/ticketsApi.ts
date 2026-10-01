@@ -21,8 +21,13 @@
  *   POST /ticket-orders/{id}/declare         → TicketOrderOut
  *   GET  /ticket-orders/mine                 → list[TicketOrderOut]
  *   GET  /ticket-orders/{id}                 → TicketOrderCreateOut
+ *   POST /ticket-orders/{id}/payment-proof   → TicketOrderOut (multipart: file, method?)
  */
 import { api } from '@/api/client';
+import {
+  proofUploadRequest,
+  type ProofUploadOptions,
+} from '@/features/ticketRequests/ticketRequestsApi';
 
 import {
   mapOrder,
@@ -43,7 +48,7 @@ export {
   type TicketPassStatus,
 } from './orderModel';
 
-export { mapPayment, type PaymentInstructions } from './paymentModel';
+export { mapPayment, type PaymentInstructions, type PaymentMethod } from './paymentModel';
 
 export { createTicketOrder, declareTicketPayment } from '@mobile/features/tickets/ticketsApi';
 
@@ -83,4 +88,22 @@ export async function fetchTicketOrder(id: string): Promise<TicketOrderDetail> {
     order: mapOrder(data.order),
     payment: data.payment ? mapPayment(data.payment) : null,
   };
+}
+
+/**
+ * Chitanța plății pe o comandă (directă SAU cerere) → comanda trece „în
+ * verificare". Imagine (jpeg/png/webp) sau PDF; `method` = metoda aleasă de om.
+ */
+export async function uploadOrderProof(
+  orderId: string,
+  file: File,
+  options: ProofUploadOptions = {},
+): Promise<TicketOrder> {
+  const { form, config } = proofUploadRequest(file, options);
+  const { data } = await api.post<Raw>(
+    `/ticket-orders/${encodeURIComponent(orderId)}/payment-proof`,
+    form,
+    config,
+  );
+  return mapOrder(data);
 }

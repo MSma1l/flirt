@@ -21,6 +21,8 @@
  * (axios + i18n). Singurul `@/` pe care îl importă e `@/i18n`, care în Mini App
  * duce la i18n-ul de aici (vezi `tsconfig.json`, `paths`).
  */
+import axios from 'axios';
+
 import { api } from '@/api/client';
 
 import { faceVerifyReason, type FaceVerifyReason } from '@mobile/features/verification/messages';
@@ -49,12 +51,32 @@ interface FaceVerifyResponse {
  */
 export class FaceVerifyError extends Error {
   readonly reason: FaceVerifyReason;
+  /** Serverul a refuzat fiindcă lipsește consimțământul explicit pentru selfie. */
+  readonly consentRequired: boolean;
 
-  constructor(reason: FaceVerifyReason) {
+  constructor(reason: FaceVerifyReason, consentRequired = false) {
     super(`face-verify:${reason}`);
     this.name = 'FaceVerifyError';
     this.reason = reason;
+    this.consentRequired = consentRequired;
   }
+}
+
+/** Codul stabil cu care backendul refuză verificarea fără consimțământ (403). */
+export const SENSITIVE_CONSENT_REQUIRED = 'sensitive_consent_required';
+
+/**
+ * 403 din cauza consimțământului lipsă pentru datele sensibile (selfie)?
+ * Acceptăm atât `detail: {code}`, cât și un `detail` text care conține codul.
+ */
+export function isSensitiveConsentRequired(error: unknown): boolean {
+  if (!axios.isAxiosError(error) || error.response?.status !== 403) return false;
+  const detail = (error.response.data as { detail?: unknown } | undefined)?.detail;
+  if (typeof detail === 'string') return detail.includes(SENSITIVE_CONSENT_REQUIRED);
+  if (detail && typeof detail === 'object') {
+    return (detail as { code?: unknown }).code === SENSITIVE_CONSENT_REQUIRED;
+  }
+  return false;
 }
 
 /**
@@ -80,6 +102,6 @@ export async function verifyFace(blob: Blob, fileName: string): Promise<FaceVeri
       similarity: Number(data.similarity) || 0,
     };
   } catch (error) {
-    throw new FaceVerifyError(faceVerifyReason(error));
+    throw new FaceVerifyError(faceVerifyReason(error), isSensitiveConsentRequired(error));
   }
 }

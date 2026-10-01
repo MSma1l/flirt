@@ -17,3 +17,17 @@
 .tr-closed__icon { flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:50%; color:var(--color-text-secondary); background:var(--color-surface-hover); }
 .tr-closed__title { margin:0; font-weight:700; }
 .tr-closed__body { margin:2px 0 0; color:var(--color-text-secondary); font-size:14px; line-height:20px; }
+
+/* Chitanța: surse (cameră / fișier), previzualizare și progresul upload-ului. */
+.tr-proof__title { margin:0; font-size:17px; line-height:22px; font-weight:700; }
+.tr-proof__intro { margin:0; color:var(--color-text-secondary); font-size:14px; line-height:20px; }
+.tr-proof__sources { display:flex; flex-direction:column; gap:var(--space-sm); }
+.tr-drop--compact { justify-content:center; padding:var(--space-md); border-style:solid; }
+.tr-preview { display:flex; align-items:center; gap:var(--space-md); padding:var(--space-sm); border:1px solid var(--color-border); border-radius:14px; background:var(--color-surface); }
+.tr-preview__img { width:56px; height:56px; object-fit:cover; border-radius:10px; flex:0 0 auto; }
+.tr-preview__doc { display:inline-flex; align-items:center; justify-content:center; width:56px; height:56px; border-radius:10px; flex:0 0 auto; font-size:13px; font-weight:800; color:#ffffff; background:linear-gradient(140deg, var(--color-link), var(--color-accent)); }
+.tr-preview__name { flex:1; min-width:0; overflow-wrap:anywhere; font-size:14px; }
+.tr-preview__remove { appearance:none; border:0; background:transparent; color:var(--color-link); font:inherit; font-size:13px; font-weight:700; cursor:pointer; }
+.tr-progress { display:flex; align-items:center; gap:var(--space-sm); }
+.tr-progress__bar { flex:1; height:8px; accent-color:var(--color-accent); }
+.tr-progress__label { font-size:13px; font-variant-numeric:tabular-nums; color:var(--color-text-secondary); }

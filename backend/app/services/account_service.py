@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, delete, or_, select
+from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -24,6 +24,7 @@ from app.models.account import (
 )
 from app.models.billing import Subscription
 from app.models.chat import Chat, Message
+from app.models.consent import UserConsent
 from app.models.device import PushDevice
 from app.models.event import EventAttendance, FlirtPassportStamp
 from app.models.profile import Profile
@@ -45,6 +46,7 @@ from app.schemas.account import (
     SettingsOut,
     TicketOut,
 )
+from app.services import retention_service
 from app.services.pagination import (
     SOCIAL_MAX_LIMIT,
     SOCIAL_PAGE_LIMIT,
@@ -911,6 +913,13 @@ async def purge_user_data(db: AsyncSession, user_id: uuid.UUID) -> None:
     Idempotentă: apelabilă de mai multe ori fără efecte secundare (ștergerile pe
     seturi goale sunt no-op, iar anonimizarea e deterministă).
     """
+    # Fișierele (poze, povești, atașamente de chat) se adună ÎNAINTE de ștergerea
+    # rândurilor — după, n-am mai ști ce fișiere au rămas orfane. Comenzile de
+    # bilet se ANONIMIZEAZĂ (evidență contabilă), nu se șterg. Vezi
+    # `retention_service` pentru regulile complete.
+    files_to_delete = await retention_service.collect_purge_media_urls(db, user_id)
+    files_to_delete += await retention_service.anonymize_ticket_orders(db, user_id)
+
     # Chat-urile la care userul participă (împreună cu mesajele lor).
     chat_ids = (
         await db.execute(
@@ -981,6 +990,14 @@ async def purge_user_data(db: AsyncSession, user_id: uuid.UUID) -> None:
     )
     await db.execute(delete(Subscription).where(Subscription.user_id == user_id))
 
+    # Evidența consimțămintelor rămâne (dovada că prelucrarea a avut temei),
+    # legată de contul anonimizat, dar FĂRĂ IP și user-agent.
+    await db.execute(
+        update(UserConsent)
+        .where(UserConsent.user_id == user_id)
+        .values(ip=None, user_agent=None)
+    )
+
     # RAPOARTELE DE MODERARE NU SE ȘTERG — INTENȚIONAT.
     # GDPR art. 17(3) permite păstrarea datelor necesare pentru constatarea sau
     # apărarea unui drept în justiție și pentru prevenirea abuzului. Dacă am fi
@@ -1004,6 +1021,10 @@ async def purge_user_data(db: AsyncSession, user_id: uuid.UUID) -> None:
         # idempotentă: la re-rulare păstrăm momentul primei purjări.
         if user.deleted_at is None:
             user.deleted_at = datetime.now(timezone.utc)
+
+    # Ultimul pas: fișierele din storage. Idempotent; o eroare de storage e
+    # logată și nu blochează ștergerea datelor din DB.
+    await retention_service.delete_files(files_to_delete)
 
 
 async def purge_expired_accounts(

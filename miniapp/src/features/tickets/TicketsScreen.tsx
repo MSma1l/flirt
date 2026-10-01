@@ -25,7 +25,6 @@ import { Link, useSearchParams } from 'react-router';
 
 import { formatEventDate } from '@/features/events/eventFormat';
 import { EVENTS_PATH } from '@/features/events/eventRoutes';
-import { ConfirmModal } from '@/features/social/ConfirmModal';
 import { ProofUpload } from '@/features/ticketRequests/ProofUpload';
 
 import { OrderStepper } from './OrderStepper';
@@ -33,7 +32,6 @@ import { PaymentDetails } from './PaymentDetails';
 import { ChevronIcon, ClockIcon, TicketIcon } from './TicketIcons';
 import { TicketPass } from './TicketPass';
 import {
-  isEventStartedError,
   isRequestOnlyStatus,
   isTicketSalesClosedError,
   orderStage,
@@ -43,15 +41,16 @@ import { useOrderStatusLabel } from './orderStatusLabel';
 import { TICKET_ORDER_PARAM } from './ticketRoutes';
 import {
   createTicketOrder,
-  declareTicketPayment,
   fetchEvent,
   fetchMyTicketOrdersWithEvent,
   fetchMyTicketRequests,
   fetchTicket,
   fetchTicketOrder,
+  uploadOrderProof,
   uploadPaymentProof,
   type EventItem,
   type PaymentInstructions,
+  type PaymentMethod,
   type Ticket,
   type TicketOrderDetail,
   type TicketOrderListItem,
@@ -153,58 +152,6 @@ function MyTicketSection() {
 /* --------------------------------------------- detaliul unei comenzi de bilet */
 
 /** Butonul „Am făcut transferul" + confirmarea lui (cumpărarea directă). */
-function DeclareAction({ orderId }: { orderId: string }) {
-  const { t } = useTranslation(['social', 'screens']);
-  const queryClient = useQueryClient();
-  const [confirming, setConfirming] = useState(false);
-
-  const declare = useMutation({
-    mutationFn: () => declareTicketPayment(orderId),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['ticket-orders'] });
-      void queryClient.invalidateQueries({ queryKey: ['ticket-order', orderId] });
-    },
-    // Fereastra se închide și la eșec: eroarea are locul ei în pagină.
-    onSettled: () => setConfirming(false),
-  });
-
-  return (
-    <>
-      {declare.isError ? (
-        <p className="error-text" role="alert">
-          {isEventStartedError(declare.error)
-            ? t('screens:tickets.eventStarted')
-            : t('social:ticket.declareError')}
-        </p>
-      ) : null}
-      <button
-        type="button"
-        className="button tk-cta"
-        disabled={declare.isPending}
-        onClick={() => setConfirming(true)}
-        data-testid="declare-btn"
-      >
-        {t('social:ticket.pay.declare')}
-      </button>
-      {/*
-       * „Am făcut transferul" trece comanda în coada adminului și nu se ia
-       * înapoi → confirmare deliberată, prin ConfirmModal (nu `confirm()`, care
-       * îngheață WebView-ul Telegram).
-       */}
-      <ConfirmModal
-        open={confirming}
-        title={t('screens:tickets.declareConfirm.title')}
-        body={t('screens:tickets.declareConfirm.body')}
-        confirmLabel={t('social:ticket.pay.declare')}
-        busy={declare.isPending}
-        onConfirm={() => declare.mutate()}
-        onCancel={() => setConfirming(false)}
-        testId="declare-confirm"
-      />
-    </>
-  );
-}
-
 function StageBlock({
   testId,
   tone,
@@ -240,6 +187,8 @@ function OrderDetail({
 }) {
   const { t } = useTranslation(['social', 'screens', 'events']);
   const queryClient = useQueryClient();
+  // Metoda aleasă în datele de plată (MIA / IBAN) — trimisă odată cu chitanța.
+  const [payMethod, setPayMethod] = useState<PaymentMethod | null>(null);
 
   const { data, isPending, isError, refetch, isFetching } = useQuery<TicketOrderDetail>({
     queryKey: ['ticket-order', item.id],
@@ -308,6 +257,9 @@ function OrderDetail({
   const stage = orderStage(order.status);
   const isRequest = Boolean(request) || isRequestOnlyStatus(order.status);
   const adminNote = order.adminNote ?? request?.admin_comment ?? null;
+  // Cererile cunoscute merg pe ruta lor istorică; orice altă comandă (inclusiv
+  // cumpărarea directă) trimite chitanța pe `/ticket-orders/{id}/payment-proof`.
+  const proofUploader = request ? uploadPaymentProof : uploadOrderProof;
 
   let content: ReactElement;
   switch (stage) {
@@ -348,13 +300,15 @@ function OrderDetail({
                 accountDetails={bank ? null : request?.payment?.account_details}
                 instructions={bank?.instructions ?? request?.payment?.instructions ?? null}
                 deadline={deadline}
-                finalStep={isRequest ? 'proof' : 'declare'}
+                miaPhone={bank?.miaPhone}
+                miaRecipientName={bank?.miaRecipientName}
+                miaQrUrl={bank?.miaQrUrl}
+                methods={bank?.methods}
+                onMethodChange={setPayMethod}
+                finalStep="proof"
               />
-              {isRequest ? (
-                <ProofUpload requestId={item.id} upload={uploadPaymentProof} />
-              ) : (
-                <DeclareAction orderId={item.id} />
-              )}
+              {/* Chitanța e obligatorie pe orice comandă: ea trece plata în verificare. */}
+              <ProofUpload requestId={item.id} upload={proofUploader} method={payMethod} />
             </>
           ) : (
             <p className="tk-note">{t('social:ticket.instructionsUnavailable')}</p>
@@ -372,7 +326,9 @@ function OrderDetail({
           title={t('social:ticket.review.title')}
         >
           <p className="tk-note">
-            {isRequest ? t('screens:tickets.review.proofBody') : t('social:ticket.review.body')}
+            {isRequest || order.paymentProofUploaded
+              ? t('screens:tickets.review.proofBody')
+              : t('social:ticket.review.body')}
           </p>
         </StageBlock>
       );
@@ -414,7 +370,7 @@ function OrderDetail({
             {isRequest ? t('screens:tickets.rejected.whatToDoProof') : t('screens:tickets.rejected.whatToDo')}
           </p>
           {isRequest ? (
-            <ProofUpload requestId={item.id} upload={uploadPaymentProof} />
+            <ProofUpload requestId={item.id} upload={proofUploader} />
           ) : salesClosed ? (
             <p className="tk-note" data-testid="order-sales-closed">
               {t('screens:events.sales.closedError')}

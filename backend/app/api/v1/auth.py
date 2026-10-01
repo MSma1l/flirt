@@ -25,7 +25,7 @@ from app.schemas.auth import (
     TokenPair,
     UserOut,
 )
-from app.services import auth_providers, auth_service, telegram_auth
+from app.services import auth_providers, auth_service, legal_service, telegram_auth
 
 log = logging.getLogger("app.auth")
 
@@ -156,6 +156,12 @@ async def phone_verify(data: PhoneVerifyIn, db: DbSession) -> TokenPair:
 
 
 @router.get("/me", response_model=UserOut)
-async def me(current_user: CurrentUser) -> UserOut:
-    """Returnează userul curent (protejat cu access token)."""
-    return current_user
+async def me(current_user: CurrentUser, db: DbSession) -> UserOut:
+    """Returnează userul curent (protejat cu access token).
+
+    `consent_required` spune clientului dacă trebuie afișat ecranul de
+    consimțământ (versiune nouă a documentelor legale sau cont fără acceptare).
+    """
+    out = UserOut.model_validate(current_user)
+    out.consent_required = await legal_service.consent_required(db, current_user)
+    return out

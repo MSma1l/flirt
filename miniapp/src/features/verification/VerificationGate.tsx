@@ -23,6 +23,7 @@ import { Link } from 'react-router';
 
 import { StatusScreen } from '@/components/StatusScreen';
 import { CAPABILITY, useCapability } from '@/features/capabilities';
+import { SensitiveConsentGate } from '@/features/legal/SensitiveConsentGate';
 import { PROFILE_PATH } from '@/features/onboarding/paths';
 
 import { VerificationScreen } from './VerificationScreen';
@@ -58,7 +59,13 @@ export function VerificationGate() {
     );
   }
 
-  return <VerificationScreen />;
+  // Selfie-ul e o dată sensibilă (biometrică): consimțământ explicit, separat,
+  // înainte de captură.
+  return (
+    <SensitiveConsentGate>
+      <VerificationScreen />
+    </SensitiveConsentGate>
+  );
 }
 
 export default VerificationGate;

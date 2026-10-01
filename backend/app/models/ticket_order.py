@@ -91,6 +91,12 @@ class TicketOrder(Base):
     # URL intern; nu este serializat direct către client. Accesul se face prin
     # endpointul autorizat de proof.
     payment_proof_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Când userul a trimis plata spre verificare (dovadă încărcată / „am plătit").
+    payment_declared_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Metoda declarată de user la încărcarea dovezii: `mia` | `iban` | NULL (necunoscută).
+    payment_method: Mapped[str | None] = mapped_column(String(8), nullable=True)
     currency: Mapped[str] = mapped_column(
         String(8), nullable=False, server_default=DEFAULT_CURRENCY, default=DEFAULT_CURRENCY
     )
@@ -99,7 +105,8 @@ class TicketOrder(Base):
     # Starea din flux (vezi constantele de mai sus). Indexată: coada de admin
     # filtrează/ordonează pe ea (declared-first).
     status: Mapped[str] = mapped_column(
-        String(24),
+        # 40: `additional_information_required` are 31 de caractere (24 era prea puțin).
+        String(40),
         nullable=False,
         server_default=STATUS_AWAITING_PAYMENT,
         default=STATUS_AWAITING_PAYMENT,
@@ -135,7 +142,7 @@ class TicketOrder(Base):
 
 
 class PaymentSettings(Base):
-    """Datele bancare GLOBALE pentru transfer — rând SINGLETON (id=1).
+    """Datele de plată GLOBALE (MIA după telefon și/sau transfer IBAN) — rând SINGLETON (id=1).
 
     Ca `AdSettings`: nu se creează niciodată mai mult de un rând. Serviciul îl
     citește pe `id == 1` și îl creează leneș cu placeholder-uri goale dacă lipsește,
@@ -159,4 +166,11 @@ class PaymentSettings(Base):
     bank_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # Instrucțiuni libere afișate userului (opțional).
     instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # --- MIA Plăți Instant (BNM): plata din aplicația băncii după NUMĂR DE TELEFON.
+    # Normalizat mereu la `+373XXXXXXXX`; NULL = metoda MIA nu e configurată.
+    mia_phone: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Numele pe care plătitorul îl vede confirmat în aplicația băncii (opțional).
+    mia_recipient_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Codul QR MIA (imagine re-encodată PNG, fără metadate) — URL public; NULL = fără QR.
+    mia_qr_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # created_at / updated_at vin din `Base` (updated_at se rescrie la fiecare PUT).

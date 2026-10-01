@@ -44,6 +44,8 @@ ACTION_AD_DELETE = "ad.delete"
 ACTION_AD_SETTINGS_UPDATE = "ad.settings.update"
 ACTION_TICKET_ORDER_APPROVE = "ticket_order.approve"
 ACTION_TICKET_ORDER_REJECT = "ticket_order.reject"
+# Schimbare manuală de stare a unei comenzi de bilet (corecții de admin).
+ACTION_TICKET_ORDER_STATUS = "ticket_order.status"
 ACTION_PAYMENT_SETTINGS_UPDATE = "payment_settings.update"
 # Intrare permisă la eveniment (scanarea QR a biletului la ușă). Doar scanările
 # REUȘITE se auditează; refuzurile nu schimbă nimic.

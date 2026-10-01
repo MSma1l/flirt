@@ -89,6 +89,23 @@ class Settings(BaseSettings):
     # se setează prin env la deploy, o singură dată, când e decis.
     operator_legal_name: str = ""
 
+    # --- Date legale (Politica de confidențialitate / Termeni, Legea 195/2024) ---
+    # Randate în documentele servite de `GET /api/v1/legal/documents/{doc}`
+    # (`app/services/legal_service.py`). Se setează prin env la deploy
+    # (LEGAL_OPERATOR_NAME, LEGAL_OPERATOR_IDNO, LEGAL_OPERATOR_ADDRESS,
+    # LEGAL_CONTACT_EMAIL, LEGAL_DPO_CONTACT). Cât timp un câmp e gol, textul
+    # afișează un marcaj vizibil „[de completat]" — nu inventăm date juridice.
+    # `legal_operator_name` gol → se folosește `operator_legal_name` (dacă e setat);
+    # `legal_contact_email` gol → adresa publică de suport din `app/api/legal.py`.
+    legal_operator_name: str = ""
+    legal_operator_idno: str = ""
+    legal_operator_address: str = ""
+    legal_contact_email: str = ""
+    legal_dpo_contact: str = ""
+    # Verificarea facială (selfie = date biometrice, categorie specială) cere
+    # consimțământ explicit separat (`sensitive_data`) înainte de procesare.
+    face_verify_requires_consent: bool = True
+
     # Database
     postgres_user: str = "flirt"
     postgres_password: str = "change_me"
@@ -403,6 +420,19 @@ class Settings(BaseSettings):
 
     # Purjarea GDPR (folosită de scripts/gdpr_purge.py, rulat ca proces separat)
     gdpr_purge_interval_seconds: int = 3600
+
+    # Retenția datelor (app/services/retention_service.py, rulată de același
+    # serviciu `purge`). Valorile apar și în Politica de confidențialitate.
+    # Dovezile de plată ale comenzilor (pot fi documente contabile primare):
+    # păstrate atâtea zile de la crearea comenzii (Legea 287/2017 a contabilității
+    # și raportării financiare). Implicit 5 ani; ajustează după contabil.
+    payment_proof_retention_days: int = 5 * 365
+    # Dovezile comenzilor RESPINSE/ANULATE nu sunt documente contabile: se șterg
+    # după atâtea zile de la decizie (timp pentru contestații).
+    rejected_payment_proof_retention_days: int = 90
+    # Cât păstrăm jurnalele tehnice. Aplicat pe host de
+    # scripts/prune_container_logs.sh (citește LOG_RETENTION_DAYS din .env).
+    log_retention_days: int = 30
 
     # Plafoane de paginare (folosite de app/services/pagination.py). Fără ele,
     # un client putea cere o pagină arbitrar de mare = vector de DoS.

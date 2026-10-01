@@ -66,6 +66,8 @@ export interface TicketOrder {
   /** Starea biletului la intrare, dacă serverul o trimite pe comandă. */
   ticketStatus?: TicketPassStatus | null;
   admittedAt?: string | null;
+  /** Chitanța a fost încărcată (lipsește pe serverele vechi). */
+  paymentProofUploaded?: boolean;
 }
 
 /** O comandă din listă, cu evenimentul alăturat. */
@@ -104,6 +106,7 @@ export function mapOrder(o: Raw): TicketOrder {
     currency: str(o.currency),
     ticketCode: str(o.ticket_code),
     adminNote: str(o.admin_note),
+    paymentProofUploaded: o.payment_proof_uploaded === true,
     ...orderTicketFields(o),
   };
 }

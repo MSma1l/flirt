@@ -112,7 +112,8 @@
     "blocklist": "Blocklist",
     "passport": "Flirt Passport",
     "tickets": "My ticket",
-    "subscription": "Subscription"
+    "subscription": "Subscription",
+    "privacy": "Privacy & data"
   },
   "welcome": {
     "title": "Welcome to FLIRT",

@@ -14,6 +14,13 @@ import { layoutMessages } from '../i18n/messages/layout';
 import { useTheme } from '../theme/ThemeContext';
 import { Badge, Button } from './ui';
 
+// Statusurile „de verificat", aceleași pe care backendul le pune primele în listă.
+const TO_VERIFY_STATUSES: ReadonlySet<string> = new Set([
+  'payment_declared',
+  'payment_proof_submitted',
+  'under_review',
+]);
+
 type NavKey = keyof (typeof layoutMessages)['ro']['nav'];
 type SectionKey = keyof (typeof layoutMessages)['ro']['sections'];
 
@@ -120,7 +127,8 @@ export function Layout(): JSX.Element {
   });
   const pending = statsQuery.data?.reports_pending ?? 0;
 
-  // Câte comenzi de bilete așteaptă verificarea (status `payment_declared`).
+  // Câte comenzi de bilete așteaptă verificarea: comenzile directe cu plata
+  // declarată și cererile cu bonul trimis sau aflate în analiză.
   // Eșecul acestei cereri nu are voie să rupă navigarea.
   const ticketOrdersQuery = useQuery({
     queryKey: ['ticket-orders'],
@@ -129,7 +137,7 @@ export function Layout(): JSX.Element {
     retry: 1,
   });
   const ticketsToReview =
-    ticketOrdersQuery.data?.filter((order) => order.status === 'payment_declared').length ?? 0;
+    ticketOrdersQuery.data?.filter((order) => TO_VERIFY_STATUSES.has(order.status)).length ?? 0;
 
   const countFor = (to: string): number =>
     to === '/moderation' ? pending : to === '/ticket-orders' ? ticketsToReview : 0;

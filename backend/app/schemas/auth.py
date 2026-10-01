@@ -68,3 +68,6 @@ class UserOut(BaseModel):
     id: uuid.UUID
     email: EmailStr
     profile_completed: bool
+    # Aditiv (Legea nr. 195/2024): true = userul trebuie să accepte versiunea
+    # curentă a Termenilor / Politicii de confidențialitate (vezi /legal/consent-status).
+    consent_required: bool = False

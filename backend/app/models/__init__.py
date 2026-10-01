@@ -35,3 +35,4 @@ from app.models.loyalty import (  # noqa: F401
     LoyaltyInviteRedemption,
     LoyaltySettings,
 )
+from app.models.consent import UserConsent  # noqa: F401

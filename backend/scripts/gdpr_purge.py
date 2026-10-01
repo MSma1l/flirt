@@ -16,6 +16,9 @@ De ce un proces SEPARAT și nu un task în lifespan-ul API-ului: `entrypoint.sh`
 pornește 4 workeri gunicorn — un task în lifespan ar rula de 4 ori în paralel.
 Aici avem o singură instanță, deci o singură purjare.
 
+La fiecare trecere rulează și retenția dovezilor de plată
+(`retention_service.purge_expired_payment_proofs`).
+
 Idempotent: după purjare cererea de ștergere e consumată, deci re-rularea (sau o
 rulare dublă accidentală) nu strică nimic.
 """
@@ -33,6 +36,7 @@ from app.core.config import settings  # noqa: E402
 from app.core.logging import configure_logging  # noqa: E402
 from app.db.session import AsyncSessionLocal, engine  # noqa: E402
 from app.services.account_service import purge_expired_accounts  # noqa: E402
+from app.services.retention_service import purge_expired_payment_proofs  # noqa: E402
 
 DEFAULT_INTERVAL_SECONDS = 3600
 
@@ -52,6 +56,12 @@ async def run_once() -> int:
         log.info("purjare GDPR", extra={"purged_accounts": purged})
     else:
         log.debug("purjare GDPR: nimic de șters")
+    # Retenția dovezilor de plată (termen contabil / comenzi respinse). Sesiune
+    # separată: o eroare aici nu anulează purjarea conturilor de mai sus.
+    async with AsyncSessionLocal() as db:
+        proofs = await purge_expired_payment_proofs(db)
+    if proofs:
+        log.info("retenție: dovezi de plată șterse", extra={"payment_proofs": proofs})
     return purged
 
 

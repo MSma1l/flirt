@@ -11,7 +11,9 @@ from app.api.v1 import (
     events,
     feed,
     humor,
+    legal,
     loyalty,
+    me,
     profiles,
     push,
     reports,
@@ -50,6 +52,10 @@ api_router.include_router(push.router, prefix="/push", tags=["push"])
 api_router.include_router(ads.router, prefix="/ads", tags=["ads"])
 api_router.include_router(telegram.router, prefix="/telegram", tags=["telegram"])
 api_router.include_router(ai.router, prefix="/ai", tags=["ai"])
+# Documente legale versionate + consimțăminte (Legea nr. 195/2024).
+api_router.include_router(legal.router, prefix="/legal", tags=["legal"])
+# Drepturile persoanei vizate (export date).
+api_router.include_router(me.router, prefix="/me", tags=["me"])
 # Panoul de administrare. `require_admin` NU se aplică aici, ci în interiorul
 # pachetului, pe fiecare sub-router (vezi `api/v1/admin/__init__.py`) — pentru că
 # `POST /admin/login` trebuie să rămână accesibil celui care încă nu are token.

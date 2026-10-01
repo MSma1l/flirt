@@ -202,6 +202,13 @@ class S3Storage:
         """
         key = key_within_namespace(url)
         if not key:
+            # Poveștile (`stories/{user_id}/…`) sunt și ele ale noastre, dar NU
+            # intră în `key_within_namespace` (folosit și de verificarea facială,
+            # unde n-au ce căuta). Le permitem DOAR la ștergere — purjarea GDPR
+            # trebuie să le poată elimina (retention_service).
+            rel = _relative_key(url)
+            key = rel if rel and rel.startswith("stories/") else None
+        if not key:
             return None
         self._client().delete_object(Bucket=settings.s3_bucket, Key=key)
         return None

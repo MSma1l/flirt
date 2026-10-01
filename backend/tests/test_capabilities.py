@@ -63,6 +63,9 @@ async def test_verificarea_faciala_refuza_in_productie_cu_provider_de_dezvoltare
 async def test_verificarea_faciala_merge_in_dezvoltare(client, monkeypatch):
     """În dezvoltare fluxul rămâne testabil — refuzul e strict o regulă de producție."""
     headers = await _make_user(client, "cap-verify-dev@example.com")
+    from tests.conftest import grant_consents
+
+    await grant_consents(client, headers)
 
     monkeypatch.setattr(settings, "environment", "development")
     monkeypatch.setattr(settings, "face_verify_provider", "stub")

@@ -318,7 +318,13 @@ export type TicketOrderStatus =
   | 'awaiting_payment'
   | 'payment_declared'
   | 'approved'
-  | 'rejected';
+  | 'rejected'
+  // Aditiv: corecțiile de admin + stările cererilor manuale (aceeași tabelă).
+  | 'additional_information_required'
+  | 'cancelled'
+  | 'pending_payment'
+  | 'payment_proof_submitted'
+  | 'under_review';
 
 /** Cine a făcut comanda. `payment_ref` = referința personală de plată a userului. */
 export interface TicketOrderUser {
@@ -348,14 +354,57 @@ export interface TicketOrder {
   user: TicketOrderUser;
   event: TicketOrderEvent;
   ticket_code?: string | null;
+  /* --- Aditiv: detaliul comenzii (server nou; un server vechi le omite) --- */
+  admin_note?: string | null;
+  decided_at?: IsoDateTime | null;
+  /** Există o chitanță încărcată (se citește prin `fetchTicketOrderProof`). */
+  payment_proof_uploaded?: boolean;
+  payment_proof_kind?: 'image' | 'pdf' | null;
+  /** Metoda declarată de user la încărcarea chitanței. */
+  payment_method?: PaymentMethod | null;
+  payment_declared_at?: IsoDateTime | null;
+  /** Cerere manuală (are propriul set de stări). */
+  is_request?: boolean;
+  ticket_quantity?: number;
+  total_amount?: number | null;
+  /** Stările în care adminul poate muta acum comanda; [] = finală. */
+  allowed_statuses?: TicketOrderStatus[];
 }
 
-/** Datele bancare globale pe care userii fac transferul. */
+/** Payload-ul `POST /admin/ticket-orders/{id}/status`. */
+export interface TicketOrderStatusChange {
+  status: TicketOrderStatus;
+  note?: string | null;
+}
+
+/** Datele de plată globale: transfer bancar (IBAN) și/sau MIA Plăți Instant. */
 export interface PaymentSettings {
   bank_beneficiary: string;
   bank_iban: string;
   bank_name: string;
   instructions: string;
+  /** MIA: telefonul normalizat `+373XXXXXXXX`; null = metoda nu e configurată. */
+  mia_phone?: string | null;
+  /** MIA: numele pe care plătitorul îl vede confirmat în aplicația băncii. */
+  mia_recipient_name?: string | null;
+  /** MIA: imaginea codului QR (URL public, PNG fără metadate); null = fără QR. */
+  mia_qr_url?: string | null;
+  /** Derivat de server: true ⇔ `mia_phone` sau `mia_qr_url` e setat. */
+  mia_enabled?: boolean;
+  /** Metodele configurate, în ordinea de afișare (`mia` înaintea lui `iban`). */
+  payment_methods?: PaymentMethod[];
+}
+
+export type PaymentMethod = 'mia' | 'iban';
+
+/** Payload-ul `PUT /admin/payment-settings` — câmpurile opționale goale pleacă `null`. */
+export interface PaymentSettingsInput {
+  bank_beneficiary: string;
+  bank_iban: string;
+  bank_name: string | null;
+  instructions: string | null;
+  mia_phone: string | null;
+  mia_recipient_name: string | null;
 }
 
 /* ------------------------ Cereri procurare bilete ------------------------ */

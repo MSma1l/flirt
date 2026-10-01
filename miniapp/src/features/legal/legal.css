@@ -1,0 +1,238 @@
+/*
+ * Stilurile ecranelor legale: poarta de consimțământ, cititorul de documente și
+ * centrul de confidențialitate. Doar variabilele temei (styles/global.css).
+ * Secțiunile, bannerul și butonul periculos vin din Setări (refolosite).
+ */
+@import '../settings/settings.css';
+
+/* ── Poarta de consimțământ ─────────────────────────────────────────────── */
+.consent-screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  padding: var(--space-xl) var(--space-lg) calc(var(--space-xxl) + var(--safe-bottom));
+  overflow-y: auto;
+  max-width: 560px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.consent-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-sm);
+}
+
+.consent-hero__title {
+  margin: var(--space-md) 0 0;
+}
+
+.consent-hero__lead {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.consent-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 12px 32px -18px var(--color-accent-glow);
+}
+
+.consent-card__title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+}
+
+.consent-summary {
+  margin: 0;
+  padding-left: 1.2em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.consent-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.consent-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px var(--space-md);
+  border-radius: var(--radius-pill);
+  background: var(--color-tag-bg);
+  color: var(--color-link);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.consent-checks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.consent-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+.consent-check--optional {
+  border-style: dashed;
+}
+
+.consent-check input {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 1px 0 0;
+  accent-color: var(--color-accent);
+}
+
+.consent-check__text {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--color-text-primary);
+}
+
+.consent-optional-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-tag-bg);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.consent-notice {
+  margin: 0;
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-warning);
+  color: var(--color-text-primary);
+  font-size: 14px;
+}
+
+.consent-footnote {
+  text-align: center;
+}
+
+.sensitive-consent {
+  margin: var(--space-lg) 0;
+}
+
+/* ── Cititorul ──────────────────────────────────────────────────────────── */
+.legal-reader {
+  padding: var(--space-md) 0 var(--space-xxl);
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.legal-reader__meta {
+  margin: 0 0 var(--space-md);
+  display: inline-block;
+  padding: 4px var(--space-md);
+  border-radius: var(--radius-pill);
+  background: var(--color-tag-bg);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.legal-markdown {
+  color: var(--color-text-primary);
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.legal-markdown__h1 {
+  margin: var(--space-sm) 0 var(--space-lg);
+  font-size: 24px;
+  line-height: 1.25;
+  font-weight: 800;
+}
+
+.legal-markdown__h2 {
+  margin: var(--space-xl) 0 var(--space-sm);
+  font-size: 18px;
+  line-height: 1.3;
+  font-weight: 700;
+}
+
+.legal-markdown__h3 {
+  margin: var(--space-lg) 0 var(--space-xs);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.legal-markdown__p {
+  margin: 0 0 var(--space-md);
+}
+
+.legal-markdown__list {
+  margin: 0 0 var(--space-md);
+  padding-left: 1.25em;
+}
+
+.legal-markdown__list li {
+  margin-bottom: var(--space-xs);
+}
+
+.legal-markdown li::marker {
+  color: var(--color-accent);
+}
+
+.legal-markdown a {
+  color: var(--color-link);
+}
+
+.legal-todo {
+  background: transparent;
+  color: var(--color-warning);
+  font-weight: 700;
+}
+
+/* ── Centrul de confidențialitate ───────────────────────────────────────── */
+.privacy-center {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+  padding: var(--space-md) 0 var(--space-xxl);
+}
+
+.privacy-center__lead {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.privacy-center__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}

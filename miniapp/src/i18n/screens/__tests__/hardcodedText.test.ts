@@ -53,6 +53,9 @@ const OWNED_FEATURES = [
   // (afișate direct sub câmpuri); acum vin din cataloage, deci intră în plasă.
   'profile',
   'settings',
+  // Documentele legale și consimțămintele (Legea nr. 195/2024): toate textele
+  // vin din `screens:legal.*` sau de pe server (documentele însele).
+  'legal',
 ];
 
 /**

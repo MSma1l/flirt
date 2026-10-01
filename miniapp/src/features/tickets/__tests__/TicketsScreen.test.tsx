@@ -37,17 +37,18 @@ vi.mock('../ticketsApi', () => ({
   createTicketOrder: vi.fn(),
   fetchMyTicketRequests: vi.fn(),
   uploadPaymentProof: vi.fn(),
+  uploadOrderProof: vi.fn(),
   fetchEvent: vi.fn(),
 }));
 
 const {
   createTicketOrder,
-  declareTicketPayment,
   fetchEvent,
   fetchMyTicketOrdersWithEvent,
   fetchMyTicketRequests,
   fetchTicket,
   fetchTicketOrder,
+  uploadOrderProof,
   uploadPaymentProof,
 } = await import('../ticketsApi');
 
@@ -375,48 +376,154 @@ describe('comandă în așteptarea plății', () => {
     expect(screen.getByTestId('pay-iban')).toHaveTextContent(PAYMENT.iban);
   });
 
-  it('„Am făcut transferul" cere confirmare, apoi declară plata și trece în „În verificare"', async () => {
-    vi.mocked(declareTicketPayment).mockResolvedValue(DECLARED_DETAIL.order as MobileTicketOrder);
+  it('cere chitanța în loc de „Am plătit": upload cu progres, apoi „În verificare"', async () => {
+    vi.mocked(uploadOrderProof).mockImplementation(async (_id, _file, options) => {
+      options?.onProgress?.(60);
+      return DECLARED_DETAIL.order;
+    });
     renderScreen();
 
     fireEvent.click(await screen.findByTestId('order-row-o1'));
-    fireEvent.click(await screen.findByTestId('declare-btn'));
+    expect(await screen.findByTestId('proof-upload')).toBeInTheDocument();
+    expect(screen.queryByTestId('declare-btn')).not.toBeInTheDocument();
+    // Fără fișier ales, trimiterea e blocată.
+    expect(screen.getByTestId('proof-submit')).toBeDisabled();
 
-    expect(await screen.findByTestId('declare-confirm')).toBeInTheDocument();
-    expect(declareTicketPayment).not.toHaveBeenCalled();
+    const file = new File(['%PDF-1.4'], 'chitanta.pdf', { type: 'application/pdf' });
+    fireEvent.change(screen.getByTestId('proof-input'), { target: { files: [file] } });
+    expect(await screen.findByTestId('proof-preview')).toHaveTextContent('chitanta.pdf');
 
-    vi.mocked(fetchTicketOrder).mockResolvedValue(DECLARED_DETAIL);
-    fireEvent.click(screen.getByTestId('declare-confirm-accept'));
+    vi.mocked(fetchTicketOrder).mockResolvedValue({
+      ...DECLARED_DETAIL,
+      order: { ...DECLARED_DETAIL.order, paymentProofUploaded: true },
+    });
+    fireEvent.click(screen.getByTestId('proof-submit'));
 
-    await waitFor(() => expect(declareTicketPayment).toHaveBeenCalledWith('o1'));
-    expect(await screen.findByTestId('order-in-review')).toHaveTextContent('În verificare');
+    await waitFor(() =>
+      expect(uploadOrderProof).toHaveBeenCalledWith('o1', file, expect.objectContaining({ method: null })),
+    );
+    expect(await screen.findByTestId('order-in-review')).toHaveTextContent('Am primit dovada plății');
     expect(screen.queryByTestId('order-instructions')).not.toBeInTheDocument();
   });
 
-  it('declararea eșuată lasă datele de plată pe ecran și scrie eroarea în pagină', async () => {
-    vi.mocked(declareTicketPayment).mockRejectedValue(new Error('500'));
+  it('upload-ul eșuat lasă datele de plată pe ecran și scrie eroarea în pagină', async () => {
+    vi.mocked(uploadOrderProof).mockRejectedValue(new Error('500'));
     renderScreen();
 
     fireEvent.click(await screen.findByTestId('order-row-o1'));
-    fireEvent.click(await screen.findByTestId('declare-btn'));
-    fireEvent.click(await screen.findByTestId('declare-confirm-accept'));
+    const file = new File(['img'], 'chitanta.png', { type: 'image/png' });
+    fireEvent.change(await screen.findByTestId('proof-input'), { target: { files: [file] } });
+    fireEvent.click(screen.getByTestId('proof-submit'));
 
-    expect(await screen.findByText('Nu am putut înregistra transferul. Reîncearcă.')).toBeInTheDocument();
+    expect(await screen.findByTestId('proof-error')).toBeInTheDocument();
     expect(screen.getByTestId('order-instructions')).toBeInTheDocument();
     expect(screen.getByTestId('pay-iban')).toHaveTextContent(PAYMENT.iban);
   });
 
   it('după începerea evenimentului, refuzul `event_started` se explică', async () => {
-    vi.mocked(declareTicketPayment).mockRejectedValue(codedError(409, 'event_started'));
+    vi.mocked(uploadOrderProof).mockRejectedValue(codedError(409, 'event_started'));
     renderScreen();
 
     fireEvent.click(await screen.findByTestId('order-row-o1'));
-    fireEvent.click(await screen.findByTestId('declare-btn'));
-    fireEvent.click(await screen.findByTestId('declare-confirm-accept'));
+    const file = new File(['img'], 'chitanta.png', { type: 'image/png' });
+    fireEvent.change(await screen.findByTestId('proof-input'), { target: { files: [file] } });
+    fireEvent.click(screen.getByTestId('proof-submit'));
 
-    expect(
-      await screen.findByText('Evenimentul a început — plata nu mai poate fi trimisă online.'),
-    ).toBeInTheDocument();
+    expect(await screen.findByTestId('proof-error')).toHaveTextContent('Evenimentul a început');
+  });
+});
+
+describe('plata prin MIA (după numărul de telefon)', () => {
+  const MIA_PAYMENT: PaymentInstructions = {
+    ...PAYMENT,
+    miaPhone: '+37369123456',
+    miaRecipientName: 'Ion Popescu',
+    methods: ['mia', 'iban'],
+  };
+
+  it('arată întâi cardul MIA, cu telefon, destinatar, sumă, comentariu și 5 pași', async () => {
+    vi.mocked(fetchTicketOrder).mockResolvedValue({ ...AWAITING_DETAIL, payment: MIA_PAYMENT });
+    renderScreen();
+    fireEvent.click(await screen.findByTestId('order-row-o1'));
+
+    const mia = await screen.findByTestId('pay-mia');
+    expect(within(mia).getByTestId('mia-phone')).toHaveTextContent('+373 69 123 456');
+    expect(within(mia).getByTestId('mia-recipient')).toHaveTextContent('Ion Popescu');
+    expect(within(mia).getByTestId('mia-amount')).toHaveTextContent('200');
+    expect(within(mia).getByTestId('mia-comment')).toHaveTextContent(PAYMENT.commentTemplate);
+    expect(within(within(mia).getByTestId('pay-steps')).getAllByRole('listitem')).toHaveLength(5);
+    expect(screen.getByTestId('pay-method-mia')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.queryByTestId('pay-iban')).not.toBeInTheDocument();
+  });
+
+  it('telefonul se copiază în forma brută', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    try {
+      vi.mocked(fetchTicketOrder).mockResolvedValue({ ...AWAITING_DETAIL, payment: MIA_PAYMENT });
+      renderScreen();
+      fireEvent.click(await screen.findByTestId('order-row-o1'));
+      fireEvent.click(await screen.findByTestId('copy-mia-phone'));
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('+37369123456'));
+    } finally {
+      Reflect.deleteProperty(navigator, 'clipboard');
+    }
+  });
+
+  it('comutatorul trece la IBAN ca alternativă, iar chitanța poartă metoda aleasă', async () => {
+    vi.mocked(fetchTicketOrder).mockResolvedValue({ ...AWAITING_DETAIL, payment: MIA_PAYMENT });
+    vi.mocked(uploadOrderProof).mockResolvedValue(DECLARED_DETAIL.order);
+    renderScreen();
+    fireEvent.click(await screen.findByTestId('order-row-o1'));
+
+    fireEvent.click(await screen.findByTestId('pay-method-iban'));
+    expect(await screen.findByTestId('pay-iban')).toHaveTextContent(PAYMENT.iban);
+    expect(screen.getByText('Alternativă: transfer bancar (IBAN)')).toBeInTheDocument();
+    expect(screen.queryByTestId('pay-mia')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('pay-method-mia'));
+    const file = new File(['img'], 'chitanta.png', { type: 'image/png' });
+    fireEvent.change(screen.getByTestId('proof-input'), { target: { files: [file] } });
+    fireEvent.click(screen.getByTestId('proof-submit'));
+    await waitFor(() =>
+      expect(uploadOrderProof).toHaveBeenCalledWith('o1', file, expect.objectContaining({ method: 'mia' })),
+    );
+  });
+
+  it('QR-ul MIA apare mare, pe placă albă, și se poate deschide la mărime completă', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    vi.mocked(fetchTicketOrder).mockResolvedValue({
+      ...AWAITING_DETAIL,
+      payment: {
+        ...MIA_PAYMENT,
+        miaPhone: null,
+        miaQrUrl: 'https://media.flrt.md/photos/payment-qr/a.png',
+        methods: ['mia'],
+      },
+    });
+    renderScreen();
+    fireEvent.click(await screen.findByTestId('order-row-o1'));
+
+    const qr = await screen.findByTestId('mia-qr');
+    expect(within(qr).getByRole('img')).toHaveAttribute('src', 'https://media.flrt.md/photos/payment-qr/a.png');
+    expect(qr).toHaveTextContent('Scanează cu aplicația băncii (MIA)');
+    // Doar QR: fără telefon de copiat.
+    expect(screen.queryByTestId('mia-phone')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('mia-qr-open'));
+    expect(open).toHaveBeenCalledWith('https://media.flrt.md/photos/payment-qr/a.png', '_blank', 'noopener,noreferrer');
+    open.mockRestore();
+  });
+
+  it('doar MIA configurat: fără comutator și fără IBAN', async () => {
+    vi.mocked(fetchTicketOrder).mockResolvedValue({
+      ...AWAITING_DETAIL,
+      payment: { ...MIA_PAYMENT, iban: '', beneficiary: '', methods: ['mia'] },
+    });
+    renderScreen();
+    fireEvent.click(await screen.findByTestId('order-row-o1'));
+    expect(await screen.findByTestId('pay-mia')).toBeInTheDocument();
+    expect(screen.queryByTestId('pay-method-iban')).not.toBeInTheDocument();
   });
 });
 
@@ -456,7 +563,9 @@ describe('cerere manuală cu dovadă de plată', () => {
     });
     fireEvent.click(screen.getByTestId('proof-submit'));
 
-    await waitFor(() => expect(uploadPaymentProof).toHaveBeenCalledWith('r1', file));
+    await waitFor(() =>
+      expect(uploadPaymentProof).toHaveBeenCalledWith('r1', file, expect.objectContaining({ method: null })),
+    );
     expect(await screen.findByTestId('order-in-review')).toHaveTextContent('Am primit dovada plății');
   });
 });

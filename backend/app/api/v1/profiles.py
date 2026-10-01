@@ -19,7 +19,7 @@ from app.schemas.profile import (
     ProfileOut,
     ReferenceOut,
 )
-from app.services import profile_service
+from app.services import legal_service, profile_service
 from app.services.photo_moderation import get_photo_moderator
 from app.services.storage import key_from_own_url
 
@@ -296,6 +296,24 @@ async def verify_face(request: Request, db: DbDep, user: UserDep) -> FaceVerifyO
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Verificarea facială nu este disponibilă pe acest server.",
+        )
+
+    # Selfie-ul e o dată biometrică (categorie specială, Legea nr. 195/2024 /
+    # GDPR art. 9): îl procesăm DOAR cu consimțământ explicit, separat
+    # (`sensitive_data`), dat prin `POST /legal/consent`. Verificat ÎNAINTE de a
+    # citi fișierul — fără consimțământ, imaginea nu e nici măcar citită.
+    if settings.face_verify_requires_consent and not await legal_service.has_sensitive_consent(
+        db, user
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "sensitive_consent_required",
+                "message": (
+                    "Verificarea facială necesită consimțământul explicit pentru "
+                    "prelucrarea datelor biometrice."
+                ),
+            },
         )
 
     content_type = request.headers.get("content-type", "")

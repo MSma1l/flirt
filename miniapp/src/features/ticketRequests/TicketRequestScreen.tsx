@@ -10,7 +10,7 @@ import { OrderStepper } from '@/features/tickets/OrderStepper';
 import { PaymentDetails } from '@/features/tickets/PaymentDetails';
 import { LockIcon } from '@/features/tickets/TicketIcons';
 import { isTicketSalesClosedError, orderStage } from '@/features/tickets/orderStage';
-import type { PaymentInstructions } from '@/features/tickets/paymentModel';
+import type { PaymentInstructions, PaymentMethod } from '@/features/tickets/paymentModel';
 import { ticketOrderPath } from '@/features/tickets/ticketRoutes';
 
 import { ProofUpload } from './ProofUpload';
@@ -29,6 +29,8 @@ function RequestSummary({ request }: { request: TicketRequest }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const stage = orderStage(request.status);
+  // Metoda aleasă în datele de plată (MIA / IBAN) — trimisă odată cu chitanța.
+  const [payMethod, setPayMethod] = useState<PaymentMethod | null>(null);
   const needsProof =
     request.status === 'pending_payment' ||
     (request.status === 'rejected' && request.can_resubmit_proof) ||
@@ -69,11 +71,16 @@ function RequestSummary({ request }: { request: TicketRequest }) {
             accountDetails={bank ? null : request.payment?.account_details}
             purpose={request.payment?.payment_description || bank?.commentTemplate || null}
             instructions={bank?.instructions ?? request.payment?.instructions ?? null}
+            miaPhone={bank?.miaPhone}
+            miaRecipientName={bank?.miaRecipientName}
+            miaQrUrl={bank?.miaQrUrl}
+            methods={bank?.methods}
+            onMethodChange={setPayMethod}
             finalStep="proof"
           />
         </section>
       ) : null}
-      {needsProof ? <ProofUpload requestId={request.id} /> : null}
+      {needsProof ? <ProofUpload requestId={request.id} method={payMethod} /> : null}
       {stage === 'approved' || stage === 'review' ? (
         <button type="button" className="button button--ghost" onClick={() => void navigate(ticketOrderPath(request.id))}>
           {t('tickets.openInTickets')}

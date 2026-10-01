@@ -114,3 +114,23 @@ describe('erorile serverului → motive distincte', () => {
     await expect(verifyFace(SELFIE, 'a.jpg')).rejects.toMatchObject({ reason: 'unknown' });
   });
 });
+
+describe('403 fără consimțământ pentru selfie', () => {
+  it('recunoaște codul stabil al backendului (obiect sau text)', async () => {
+    const { isSensitiveConsentRequired } = await import('../faceVerifyApi');
+    const { AxiosError } = await import('axios');
+    const cfg = { headers: {} } as never;
+    const make = (status: number, detail: unknown) =>
+      new AxiosError('x', 'ERR_BAD_REQUEST', cfg, null, {
+        data: { detail },
+        status,
+        statusText: '',
+        headers: {},
+        config: cfg,
+      });
+    expect(isSensitiveConsentRequired(make(403, { code: 'sensitive_consent_required' }))).toBe(true);
+    expect(isSensitiveConsentRequired(make(403, 'sensitive_consent_required'))).toBe(true);
+    expect(isSensitiveConsentRequired(make(403, 'banned'))).toBe(false);
+    expect(isSensitiveConsentRequired(make(500, { code: 'sensitive_consent_required' }))).toBe(false);
+  });
+});

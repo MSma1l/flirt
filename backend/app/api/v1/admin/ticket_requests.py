@@ -13,7 +13,7 @@ from app.db.session import get_db
 from app.schemas.ticket_order import TicketRequestOut, TicketRequestReviewIn
 from app.services import ticket_order_service
 from app.services.admin_service import request_ip
-from app.services.storage import get_storage
+from app.api.v1.ticket_orders import proof_file_response
 
 router = APIRouter(tags=["admin"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -42,11 +42,7 @@ async def get_ticket_request_proof(order_id: uuid.UUID, db: DbDep, admin: Curren
     order = await ticket_order_service._get_order_or_404(db, order_id)
     if order.full_name is None or not order.payment_proof_url:
         raise HTTPException(status_code=404, detail="Dovada plății nu există.")
-    result = await get_storage().read(order.payment_proof_url)
-    if not result:
-        raise HTTPException(status_code=404, detail="Dovada plății nu mai este disponibilă.")
-    content, content_type = result
-    return Response(content=content, media_type=content_type, headers={"Cache-Control": "private, no-store"})
+    return await proof_file_response(order.payment_proof_url)
 
 
 @router.post("/ticket-requests/{order_id}/review", response_model=TicketRequestOut)

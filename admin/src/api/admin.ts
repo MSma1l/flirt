@@ -26,9 +26,11 @@ import type {
   LoyaltyTiersInput,
   Page,
   PaymentSettings,
+  PaymentSettingsInput,
   ResolveAction,
   ScanStats,
   TicketOrder,
+  TicketOrderStatusChange,
   TicketRequest,
   TicketRequestFilters,
   TicketRequestReviewInput,
@@ -285,6 +287,35 @@ export function fetchTicketOrders(): Promise<TicketOrder[]> {
   return apiFetch<TicketOrder[]>('/admin/ticket-orders');
 }
 
+/** Lista filtrată pe stări (`?status=a,b`); fără stări = toată lista. */
+export function fetchTicketOrdersByStatus(statuses: readonly string[]): Promise<TicketOrder[]> {
+  const query =
+    statuses.length > 0 ? `?status=${encodeURIComponent(statuses.join(','))}` : '';
+  return apiFetch<TicketOrder[]>(`/admin/ticket-orders${query}`);
+}
+
+/** Detaliul unei comenzi (cu `allowed_statuses` pentru corecții). */
+export function fetchTicketOrder(id: Uuid): Promise<TicketOrder> {
+  return apiFetch<TicketOrder>(`/admin/ticket-orders/${id}`);
+}
+
+/** Chitanța (imagine sau PDF), citită autentificat și transformată local în Blob URL. */
+export function fetchTicketOrderProof(id: Uuid): Promise<Blob> {
+  return apiBlob(`/admin/ticket-orders/${id}/payment-proof`);
+}
+
+/** Schimbare manuală de stare (auditată); 409 pe o tranziție nepermisă. */
+export function changeTicketOrderStatus(
+  id: Uuid,
+  body: TicketOrderStatusChange,
+): Promise<TicketOrder> {
+  const note = body.note?.trim();
+  return apiFetch<TicketOrder>(`/admin/ticket-orders/${id}/status`, {
+    method: 'POST',
+    body: note ? { status: body.status, note } : { status: body.status },
+  });
+}
+
 /** Aprobă comanda (generează biletul). Răspunsul e comanda actualizată. */
 export function approveTicketOrder(id: Uuid): Promise<TicketOrder> {
   return apiFetch<TicketOrder>(`/admin/ticket-orders/${id}/approve`, { method: 'POST' });
@@ -302,11 +333,25 @@ export function fetchPaymentSettings(): Promise<PaymentSettings> {
   return apiFetch<PaymentSettings>('/admin/payment-settings');
 }
 
-export function updatePaymentSettings(body: PaymentSettings): Promise<PaymentSettings> {
+export function updatePaymentSettings(
+  body: PaymentSettings | PaymentSettingsInput,
+): Promise<PaymentSettings> {
   return apiFetch<PaymentSettings>('/admin/payment-settings', {
     method: 'PUT',
     body: { ...body },
   });
+}
+
+/** Încarcă/înlocuiește codul QR MIA (png/jpeg/webp, ≤ 5 MB). */
+export function uploadMiaQr(file: File): Promise<PaymentSettings> {
+  const formData = new FormData();
+  formData.append('file', file, file.name);
+  return apiFetch<PaymentSettings>('/admin/payment-settings/mia-qr', { method: 'POST', formData });
+}
+
+/** Scoate codul QR MIA (409 dacă ar fi singura metodă de plată). */
+export function deleteMiaQr(): Promise<PaymentSettings> {
+  return apiFetch<PaymentSettings>('/admin/payment-settings/mia-qr', { method: 'DELETE' });
 }
 
 /* ----------------------- Cereri procurare bilete ----------------------- */

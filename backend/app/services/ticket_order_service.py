@@ -10,10 +10,12 @@ Datele bancare globale stau într-un singur rând, `id == 1`. `_get_or_create_se
 `ad_service` cu `AdSettings`.
 
 TRANZIȚII DE STARE (impuse strict; un client nu poate „sări" pași)
-  awaiting_payment → payment_declared   (userul: `declare`)
-  awaiting_payment | payment_declared → approved   (adminul: `approve`)
-  awaiting_payment | payment_declared → rejected   (adminul: `reject`)
-O comandă deja `approved`/`rejected` e finală → orice nouă decizie dă 409.
+  awaiting_payment → payment_declared   (userul: dovada plății sau `declare`)
+  awaiting_payment | payment_declared | additional_information_required
+      → approved / rejected   (adminul: `approve` / `reject`)
+O comandă deja `approved`/`rejected` e finală pentru `approve`/`reject` (409).
+Corecțiile manuale de admin trec prin `change_status`, cu tabelul explicit
+`_ADMIN_TRANSITIONS` (409 cu mesaj clar pe o tranziție nepermisă).
 """
 from __future__ import annotations
 
@@ -30,6 +32,7 @@ from app.models.admin import (
     ACTION_PAYMENT_SETTINGS_UPDATE,
     ACTION_TICKET_ORDER_APPROVE,
     ACTION_TICKET_ORDER_REJECT,
+    ACTION_TICKET_ORDER_STATUS,
 )
 from app.models.event import Event
 from app.models.ticket_order import (
@@ -61,11 +64,13 @@ from app.schemas.ticket_order import (
     TicketRequestCreateIn,
     TicketRequestCreateOut,
     TicketRequestOut,
+    payment_methods_for,
 )
 from app.services import loyalty
 from app.services.admin_service import audit
 from app.services.ticket_lifecycle import order_ticket_status
 from app.services.push import send_to_user
+from app.services.storage import get_storage
 from app.services.pagination import (
     ADMIN_MAX_LIMIT,
     ADMIN_PAGE_LIMIT,
@@ -75,7 +80,28 @@ from app.services.pagination import (
 )
 
 # Stările din care o comandă mai poate primi o decizie de admin.
-_DECIDABLE_STATUSES = (STATUS_AWAITING_PAYMENT, STATUS_PAYMENT_DECLARED)
+_DECIDABLE_STATUSES = (
+    STATUS_AWAITING_PAYMENT,
+    STATUS_PAYMENT_DECLARED,
+    STATUS_ADDITIONAL_INFORMATION_REQUIRED,
+)
+
+# Stările în care userul își poate (re)încărca dovada plății pe o comandă DIRECTĂ.
+_ORDER_PROOF_STATUSES = (
+    STATUS_AWAITING_PAYMENT,
+    STATUS_PAYMENT_DECLARED,
+    STATUS_ADDITIONAL_INFORMATION_REQUIRED,
+)
+
+# Metodele de plată pe care userul le poate declara la încărcarea dovezii.
+_PAYMENT_METHODS = ("mia", "iban")
+
+
+def _proof_kind(url: str | None) -> str | None:
+    """`pdf` | `image` | None — după extensia cheii (generată server-side)."""
+    if not url:
+        return None
+    return "pdf" if url.lower().endswith(".pdf") else "image"
 
 
 def _now() -> datetime:
@@ -151,6 +177,11 @@ def _to_settings_out(s: PaymentSettings) -> PaymentSettingsOut:
         bank_name=s.bank_name,
         instructions=s.instructions,
         updated_at=s.updated_at,
+        mia_phone=s.mia_phone,
+        mia_recipient_name=s.mia_recipient_name,
+        mia_qr_url=s.mia_qr_url,
+        mia_enabled=bool(s.mia_phone or s.mia_qr_url),
+        payment_methods=payment_methods_for(s.mia_phone, s.bank_iban, s.mia_qr_url),
     )
 
 
@@ -165,21 +196,83 @@ async def update_payment_settings(
     ip: str | None = None,
 ) -> PaymentSettingsOut:
     s = await _get_or_create_settings(db)
+    if not data.mia_phone and not s.mia_qr_url and not data.has_iban:
+        raise HTTPException(
+            status_code=422,
+            detail="Configurați cel puțin o metodă de plată: MIA (telefon sau cod QR) sau beneficiar + IBAN.",
+        )
     s.bank_beneficiary = data.bank_beneficiary
     s.bank_iban = data.bank_iban
     s.bank_name = data.bank_name
     s.instructions = data.instructions
+    s.mia_phone = data.mia_phone
+    s.mia_recipient_name = data.mia_recipient_name
     audit(
         db,
         actor,
         ACTION_PAYMENT_SETTINGS_UPDATE,
         target_type="payment_settings",
-        meta={"bank_iban": s.bank_iban, "bank_beneficiary": s.bank_beneficiary},
+        meta={
+            "bank_iban": s.bank_iban,
+            "bank_beneficiary": s.bank_beneficiary,
+            "mia_phone": s.mia_phone or "",
+        },
         ip=ip,
     )
     await db.commit()
     await db.refresh(s)
     return _to_settings_out(s)
+
+
+async def set_mia_qr(
+    db: AsyncSession, url: str, actor: User, ip: str | None = None
+) -> PaymentSettingsOut:
+    """Salvează URL-ul noului QR MIA (deja curățat și stocat) + audit; vechiul
+    fișier se șterge best-effort după commit."""
+    s = await _get_or_create_settings(db)
+    old = s.mia_qr_url
+    s.mia_qr_url = url
+    audit(
+        db, actor, ACTION_PAYMENT_SETTINGS_UPDATE, target_type="payment_settings",
+        meta={"mia_qr": "upload"}, ip=ip,
+    )
+    await db.commit()
+    await db.refresh(s)
+    if old and old != url:
+        await _delete_file_quietly(old)
+    return _to_settings_out(s)
+
+
+async def remove_mia_qr(
+    db: AsyncSession, actor: User, ip: str | None = None
+) -> PaymentSettingsOut:
+    """Scoate QR-ul MIA. 409 dacă ar rămâne fără nicio metodă de plată."""
+    s = await _get_or_create_settings(db)
+    if s.mia_qr_url is None:
+        return _to_settings_out(s)
+    if not s.mia_phone and not (s.bank_beneficiary and s.bank_iban):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Codul QR e singura metodă de plată — adăugați întâi telefonul MIA sau IBAN-ul.",
+        )
+    old = s.mia_qr_url
+    s.mia_qr_url = None
+    audit(
+        db, actor, ACTION_PAYMENT_SETTINGS_UPDATE, target_type="payment_settings",
+        meta={"mia_qr": "remove"}, ip=ip,
+    )
+    await db.commit()
+    await db.refresh(s)
+    await _delete_file_quietly(old)
+    return _to_settings_out(s)
+
+
+async def _delete_file_quietly(url: str) -> None:
+    """Ștergerea unui fișier vechi nu are voie să strice operația reușită."""
+    try:
+        await get_storage().delete(url)
+    except Exception:  # noqa: BLE001 — best-effort, fișierul orfan e inofensiv
+        pass
 
 
 # --------------------------------------------------------------------------- #
@@ -203,7 +296,33 @@ def _payment_instructions(
         reference=order.reference,
         comment_template=_comment_template(event, order.reference),
         instructions=settings.instructions,
+        mia_phone=settings.mia_phone,
+        mia_recipient_name=settings.mia_recipient_name,
+        mia_qr_url=settings.mia_qr_url,
+        payment_methods=payment_methods_for(
+            settings.mia_phone, settings.bank_iban, settings.mia_qr_url
+        ),
     )
+
+
+def _request_payment_instructions(
+    order: TicketOrder, event: Event, settings: PaymentSettings
+) -> PaymentInstructions:
+    """Ca `_payment_instructions`, dar pentru o CERERE: suma = totalul cererii
+    (preț × cantitate), iar comentariul = descrierea plății salvată pe cerere."""
+    payment = _payment_instructions(order, event, settings)
+    if order.total_amount:
+        payment.amount = order.total_amount
+    if order.payment_description:
+        payment.comment_template = order.payment_description
+    return payment
+
+
+# Stările în care o cerere mai așteaptă plata/dovada → userul vede datele de plată.
+_REQUEST_AWAITING_PAYMENT_STATUSES = (
+    STATUS_PENDING_PAYMENT,
+    STATUS_ADDITIONAL_INFORMATION_REQUIRED,
+)
 
 
 def _to_order_out(order: TicketOrder, event: Event) -> TicketOrderOut:
@@ -224,6 +343,9 @@ def _to_order_out(order: TicketOrder, event: Event) -> TicketOrderOut:
         decided_at=order.decided_at,
         ticket_status=order_ticket_status(order, event),
         admitted_at=order.admitted_at,
+        payment_proof_uploaded=bool(order.payment_proof_url),
+        payment_method=order.payment_method,
+        payment_declared_at=order.payment_declared_at,
     )
 
 
@@ -262,7 +384,7 @@ async def create_request(
     ).order_by(TicketOrder.created_at.desc()))).scalars().first()
     if existing:
         settings = await _get_or_create_settings(db)
-        return TicketRequestCreateOut(request=_to_request_out(existing, event), payment=_payment_instructions(existing, event, settings))
+        return TicketRequestCreateOut(request=_to_request_out(existing, event), payment=_request_payment_instructions(existing, event, settings))
     # Cererea existentă (făcută la timp) se întoarce și după închidere; doar una
     # NOUĂ e refuzată.
     _ensure_sales_open(event)
@@ -278,9 +400,7 @@ async def create_request(
     db.add(order)
     await db.commit(); await db.refresh(order)
     settings = await _get_or_create_settings(db)
-    payment = _payment_instructions(order, event, settings)
-    payment.amount = total
-    payment.comment_template = description
+    payment = _request_payment_instructions(order, event, settings)
     return TicketRequestCreateOut(request=_to_request_out(order, event), payment=payment)
 
 
@@ -295,7 +415,13 @@ async def get_my_request(db: AsyncSession, user: User, order_id: uuid.UUID) -> T
     order = await _get_own_order_or_404(db, user, order_id)
     if order.full_name is None:
         raise HTTPException(status_code=404, detail="Ticket request not found")
-    return _to_request_out(order, await _get_event_or_404(db, order.event_id))
+    event = await _get_event_or_404(db, order.event_id)
+    out = _to_request_out(order, event)
+    # Aditiv: cât timp cererea așteaptă plata, userul își poate revedea datele.
+    if order.status in _REQUEST_AWAITING_PAYMENT_STATUSES:
+        settings = await _get_or_create_settings(db)
+        out.payment = _request_payment_instructions(order, event, settings)
+    return out
 
 
 async def submit_payment_proof(db: AsyncSession, user: User, order_id: uuid.UUID, proof_url: str) -> TicketRequestOut:
@@ -305,6 +431,7 @@ async def submit_payment_proof(db: AsyncSession, user: User, order_id: uuid.UUID
     _ensure_event_not_started(await _get_event_or_404(db, order.event_id))
     order.payment_proof_url = proof_url
     order.status = STATUS_PROOF_SUBMITTED
+    order.payment_declared_at = _now()
     await db.commit(); await db.refresh(order)
     # Notification is intentionally best-effort; it never changes the payment state.
     admins = (await db.execute(select(User.id).where(User.role == "admin"))).scalars().all()
@@ -492,9 +619,66 @@ async def declare(
     _ensure_event_not_started(event)
     order.status = STATUS_PAYMENT_DECLARED
     order.user_note = note
+    order.payment_declared_at = _now()
     await db.commit()
     await db.refresh(order)
     return _to_order_out(order, event)
+
+
+async def ensure_can_upload_order_proof(
+    db: AsyncSession, user: User, order_id: uuid.UUID
+) -> TicketOrder:
+    """Autorizarea ÎNAINTE de a primi bytes: proprietar (404 altfel), stare care
+    mai acceptă o dovadă (409) și eveniment neînceput (409 `event_started`)."""
+    order = await _get_own_order_or_404(db, user, order_id)
+    if order.full_name is not None:
+        # Cerere manuală: regulile ei (vezi `submit_payment_proof`).
+        if order.status in (STATUS_APPROVED, STATUS_CANCELLED):
+            raise HTTPException(status_code=409, detail="Cererea nu mai acceptă o dovadă nouă.")
+    elif order.status not in _ORDER_PROOF_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Comanda nu mai acceptă o dovadă de plată în starea curentă.",
+        )
+    _ensure_event_not_started(await _get_event_or_404(db, order.event_id))
+    return order
+
+
+async def submit_order_proof(
+    db: AsyncSession,
+    user: User,
+    order_id: uuid.UUID,
+    proof_url: str,
+    method: str | None = None,
+) -> TicketOrderOut:
+    """Dovada plății (chitanța MIA / bancară) pe o comandă → `payment_declared`.
+
+    Pe o comandă DIRECTĂ: `awaiting_payment` | `payment_declared` |
+    `additional_information_required` → `payment_declared` (în verificare); o
+    dovadă nouă o înlocuiește pe cea veche. Pe o cerere manuală se aplică fluxul
+    ei (`payment_proof_submitted`). Adminii primesc o notificare best-effort.
+    """
+    order = await ensure_can_upload_order_proof(db, user, order_id)
+    if order.full_name is not None:
+        await submit_payment_proof(db, user, order_id, proof_url)
+        if method in _PAYMENT_METHODS:
+            order.payment_method = method
+            await db.commit()
+            await db.refresh(order)
+        return _to_order_out(order, await _get_event_or_404(db, order.event_id))
+    order.payment_proof_url = proof_url
+    order.status = STATUS_PAYMENT_DECLARED
+    order.payment_declared_at = _now()
+    if method in _PAYMENT_METHODS:
+        order.payment_method = method
+    await db.commit()
+    await db.refresh(order)
+    admins = (await db.execute(select(User.id).where(User.role == "admin"))).scalars().all()
+    for admin_id in admins:
+        await send_to_user(
+            db, admin_id, "Dovadă de plată nouă", f"Comanda {order.reference} așteaptă verificarea."
+        )
+    return _to_order_out(order, await _get_event_or_404(db, order.event_id))
 
 
 async def list_mine(db: AsyncSession, user: User) -> list[TicketOrderOut]:
@@ -516,7 +700,8 @@ async def get_mine(
     """O comandă a userului + instrucțiunile de plată cât timp e neplătită.
 
     `payment` e prezent doar în `awaiting_payment` (userul are încă de făcut
-    transferul); în verificare/aprobat/respins e `None` — nu mai are ce plăti.
+    transferul) — sau, pentru o cerere manuală, în `pending_payment` /
+    `additional_information_required`; altfel e `None` — nu mai are ce plăti.
     """
     order = await _get_own_order_or_404(db, user, order_id)
     event = await _get_event_or_404(db, order.event_id)
@@ -524,6 +709,11 @@ async def get_mine(
     if order.status == STATUS_AWAITING_PAYMENT:
         settings = await _get_or_create_settings(db)
         payment = _payment_instructions(order, event, settings)
+    elif order.full_name is not None and order.status in _REQUEST_AWAITING_PAYMENT_STATUSES:
+        # Aditiv: și o CERERE (aceeași tabelă) care așteaptă plata își primește
+        # datele de plată (totalul cererii), ca ecranul de bilete să le poată arăta.
+        settings = await _get_or_create_settings(db)
+        payment = _request_payment_instructions(order, event, settings)
     return TicketOrderCreateOut(order=_to_order_out(order, event), payment=payment)
 
 
@@ -534,8 +724,9 @@ async def get_mine(
 # transfer real), apoi cele în așteptare, apoi cele deja decise. O expresie SQL,
 # nu sortare în Python — ca să rămână cheie de paginare stabilă.
 _STATUS_PRIORITY = case(
-    (TicketOrder.status == STATUS_PAYMENT_DECLARED, 0),
-    (TicketOrder.status == STATUS_AWAITING_PAYMENT, 1),
+    # „De verificat": dovadă încărcată / plată declarată / luată în verificare.
+    (TicketOrder.status.in_((STATUS_PAYMENT_DECLARED, STATUS_PROOF_SUBMITTED, STATUS_UNDER_REVIEW)), 0),
+    (TicketOrder.status.in_((STATUS_AWAITING_PAYMENT, STATUS_PENDING_PAYMENT, STATUS_ADDITIONAL_INFORMATION_REQUIRED)), 1),
     (TicketOrder.status == STATUS_APPROVED, 2),
     else_=3,
 )
@@ -561,11 +752,23 @@ def _to_admin_out(order: TicketOrder, user: User, event: Event) -> AdminTicketOr
         decided_at=order.decided_at,
         ticket_status=order_ticket_status(order, event),
         admitted_at=order.admitted_at,
+        payment_proof_uploaded=bool(order.payment_proof_url),
+        payment_proof_kind=_proof_kind(order.payment_proof_url),
+        payment_method=order.payment_method,
+        payment_declared_at=order.payment_declared_at,
+        is_request=order.full_name is not None,
+        ticket_quantity=order.ticket_quantity or 1,
+        total_amount=order.total_amount or None,
+        allowed_statuses=list(allowed_admin_transitions(order)),
     )
 
 
 async def list_orders(
-    db: AsyncSession, *, limit: int | None = None, cursor: str | None = None
+    db: AsyncSession,
+    *,
+    limit: int | None = None,
+    cursor: str | None = None,
+    statuses: list[str] | None = None,
 ) -> tuple[list[AdminTicketOrderOut], str | None]:
     """Coada de comenzi — DECLARATE primele, apoi cele mai recente.
 
@@ -581,6 +784,9 @@ async def list_orders(
     stmt = select(TicketOrder, User, Event).join(
         User, User.id == TicketOrder.user_id
     ).join(Event, Event.id == TicketOrder.event_id)
+    if statuses:
+        # Filtru aditiv (`?status=a,b`); cursorul rămâne valid în interiorul filtrului.
+        stmt = stmt.where(TicketOrder.status.in_(statuses))
 
     if cursor:
         anchor_id = decode_cursor(cursor)
@@ -708,6 +914,140 @@ async def reject(
     user = await db.get(User, order.user_id)
     event = await _get_event_or_404(db, order.event_id)
     return _to_admin_out(order, user, event)
+
+
+async def get_admin_order(db: AsyncSession, order_id: uuid.UUID) -> AdminTicketOrderOut:
+    """Detaliul unei comenzi pentru admin (orice tip: directă sau cerere)."""
+    order = await _get_order_or_404(db, order_id)
+    user = await db.get(User, order.user_id)
+    event = await _get_event_or_404(db, order.event_id)
+    return _to_admin_out(order, user, event)
+
+
+# Tranzițiile MANUALE permise adminului pe o comandă DIRECTĂ. Orice altceva → 409.
+#  - `approved` → `cancelled`: anularea unui bilet emis (nu și dacă a fost scanat);
+#  - `rejected` → redeschidere (greșeală de verificare);
+#  - `cancelled` e final.
+_ADMIN_TRANSITIONS: dict[str, tuple[str, ...]] = {
+    STATUS_AWAITING_PAYMENT: (
+        STATUS_PAYMENT_DECLARED, STATUS_ADDITIONAL_INFORMATION_REQUIRED,
+        STATUS_APPROVED, STATUS_REJECTED, STATUS_CANCELLED,
+    ),
+    STATUS_PAYMENT_DECLARED: (
+        STATUS_AWAITING_PAYMENT, STATUS_ADDITIONAL_INFORMATION_REQUIRED,
+        STATUS_APPROVED, STATUS_REJECTED, STATUS_CANCELLED,
+    ),
+    STATUS_ADDITIONAL_INFORMATION_REQUIRED: (
+        STATUS_AWAITING_PAYMENT, STATUS_PAYMENT_DECLARED,
+        STATUS_APPROVED, STATUS_REJECTED, STATUS_CANCELLED,
+    ),
+    STATUS_REJECTED: (STATUS_AWAITING_PAYMENT, STATUS_PAYMENT_DECLARED),
+    STATUS_APPROVED: (STATUS_CANCELLED,),
+    STATUS_CANCELLED: (),
+}
+
+# Mesajele push către user la o schimbare de stare (best-effort).
+_STATUS_PUSH = {
+    STATUS_APPROVED: "Plata a fost confirmată. Biletul tău e gata.",
+    STATUS_REJECTED: "Plata nu a fost confirmată.",
+    STATUS_ADDITIONAL_INFORMATION_REQUIRED: "Avem nevoie de informații suplimentare despre plată.",
+    STATUS_CANCELLED: "Comanda ta de bilet a fost anulată.",
+}
+
+
+# Stările pe care adminul le poate pune pe o CERERE manuală (ca `TicketRequestReviewIn`).
+_REQUEST_REVIEW_STATUSES = (
+    STATUS_APPROVED, STATUS_REJECTED, STATUS_UNDER_REVIEW,
+    STATUS_ADDITIONAL_INFORMATION_REQUIRED, STATUS_CANCELLED,
+)
+
+
+def allowed_admin_transitions(order: TicketOrder) -> tuple[str, ...]:
+    """Stările în care adminul poate muta MANUAL comanda (directă sau cerere)."""
+    if order.full_name is not None:
+        if order.status in (STATUS_APPROVED, STATUS_CANCELLED):
+            return ()
+        return tuple(st for st in _REQUEST_REVIEW_STATUSES if st != order.status)
+    targets = _ADMIN_TRANSITIONS.get(order.status, ())
+    if order.status == STATUS_APPROVED and order.admitted_at is not None:
+        return ()  # biletul a fost deja folosit la intrare
+    return targets
+
+
+async def change_status(
+    db: AsyncSession,
+    actor: User,
+    order_id: uuid.UUID,
+    new_status: str,
+    note: str | None,
+    ip: str | None = None,
+) -> AdminTicketOrderOut:
+    """Schimbare manuală de stare (corecții), cu tranziții validate + audit.
+
+    O CERERE manuală trece prin `review_request` (regulile ei). Pe o comandă
+    directă: tabelul `_ADMIN_TRANSITIONS`; aceeași stare sau o tranziție
+    nepermisă → 409 cu mesaj clar. `approved` emite biletul (`ticket_code`),
+    `rejected`/`additional_information_required` pun `note` ca mesaj pentru user.
+    Fiecare schimbare intră în jurnalul de audit (admin, stare veche/nouă, notă).
+    """
+    order = await _get_order_or_404(db, order_id)
+    if order.full_name is not None:
+        if new_status not in _REQUEST_REVIEW_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Tranziție nepermisă pentru o cerere: {order.status} → {new_status}.",
+            )
+        await review_request(db, actor, order_id, new_status, note, ip)
+        return await get_admin_order(db, order_id)
+
+    previous = order.status
+    if new_status == previous:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Comanda este deja în această stare.",
+        )
+    if new_status not in allowed_admin_transitions(order):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Tranziție nepermisă: {previous} → {new_status}.",
+        )
+
+    if new_status == STATUS_APPROVED:
+        order.ticket_code = order.ticket_code or uuid.uuid4().hex
+        action = ACTION_TICKET_ORDER_APPROVE
+    elif new_status == STATUS_REJECTED:
+        action = ACTION_TICKET_ORDER_REJECT
+    else:
+        action = ACTION_TICKET_ORDER_STATUS
+    if new_status == STATUS_PAYMENT_DECLARED and order.payment_declared_at is None:
+        order.payment_declared_at = _now()
+    if note is not None:
+        order.admin_note = note
+    order.status = new_status
+    order.decided_at = _now()
+    order.decided_by = actor.id
+
+    audit(
+        db,
+        actor,
+        action,
+        target_type="ticket_order",
+        target_id=order.id,
+        meta={
+            "reference": order.reference,
+            "previous_status": previous,
+            "new_status": new_status,
+            "note": note or "",
+        },
+        ip=ip,
+    )
+    await db.commit()
+    await db.refresh(order)
+
+    body = _STATUS_PUSH.get(new_status)
+    if body:
+        await send_to_user(db, order.user_id, "Actualizare comandă bilet", note or body)
+    return await get_admin_order(db, order_id)
 
 
 async def count_pending(db: AsyncSession) -> int:

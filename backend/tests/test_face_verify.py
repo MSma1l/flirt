@@ -267,6 +267,14 @@ async def test_verify_face_endpoint_stub_sets_verified(client, db_session):
     assert resp.status_code == 200, resp.text
     assert resp.json()["verified"] is False
 
+    # Fără consimțământ explicit pentru date biometrice → 403, selfie-ul nu se citește.
+    resp = await client.post(f"{API}/profiles/verify-face", json={}, headers=headers)
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["detail"]["code"] == "sensitive_consent_required"
+
+    from tests.conftest import grant_consents
+
+    await grant_consents(client, headers)
     # Apel verificare facială (body JSON simplu — stub).
     resp = await client.post(f"{API}/profiles/verify-face", json={}, headers=headers)
     assert resp.status_code == 200, resp.text

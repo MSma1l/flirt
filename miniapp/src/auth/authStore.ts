@@ -23,6 +23,8 @@ export interface AuthUser {
   id: string;
   email: string;
   profile_completed: boolean;
+  /** Aditiv (vezi `features/onboarding/useCurrentUser.ts`). */
+  consent_required?: boolean;
 }
 
 interface AuthState {

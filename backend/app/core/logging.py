@@ -20,6 +20,7 @@ Query string-ul e omis intenționat — poate conține date sensibile.
 from __future__ import annotations
 
 import json
+import ipaddress
 import logging
 import sys
 import time
@@ -55,6 +56,23 @@ from starlette.responses import Response
 # (nu "-", cum era aici) — aceeași etichetă ca în cheia de rate limiting, ca o
 # linie de access log să poată fi corelată cu un bucket de limitare.
 from app.core.ratelimit import client_ip as _client_ip
+
+
+def anonymize_ip(value: str) -> str:
+    """IP-ul TRUNCHIAT scris în jurnale (Politica de confidențialitate, secț. 10).
+
+    IPv4 → ultimul octet 0 (`1.2.3.4` → `1.2.3.0`); IPv6 → prefixul /48
+    (`2001:db8:1::`). Orice altceva (ex. `anonymous`) trece neschimbat. Regula e
+    IDENTICĂ cu formatul `flirt_anon` din `nginx/nginx.conf`. Rate limiting-ul
+    folosește în continuare adresa completă (în memorie/Redis, nu în jurnal).
+    """
+    try:
+        addr = ipaddress.ip_address(value)
+    except ValueError:
+        return value
+    prefix = 24 if addr.version == 4 else 48
+    net = ipaddress.ip_network(f"{addr}/{prefix}", strict=False)
+    return str(net.network_address)
 
 # --------------------------------------------------------------------------- #
 # Context per-cerere (corelare log-uri)
@@ -237,6 +255,6 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
                     "path": path,
                     "status": status_code,
                     "duration_ms": duration_ms,
-                    "client_ip": _client_ip(request),
+                    "client_ip": anonymize_ip(_client_ip(request)),
                 },
             )

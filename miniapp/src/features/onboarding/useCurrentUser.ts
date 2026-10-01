@@ -25,6 +25,11 @@ export interface CurrentUser {
   id: string;
   email: string;
   profile_completed: boolean;
+  /**
+   * Trebuie (re)acceptați Termenii/Politica (versiune nouă sau niciun acord)?
+   * Câmp ADITIV: un server vechi nu-l trimite → îl tratăm ca `false` (nu blocăm).
+   */
+  consent_required?: boolean;
 }
 
 export const CURRENT_USER_KEY = ['auth', 'me'] as const;

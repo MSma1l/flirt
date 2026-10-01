@@ -728,6 +728,210 @@
   line-height: 21px;
 }
 
+/* ——— MIA Plăți Instant (plata după numărul de telefon) ——————————————— */
+
+/* Comutatorul MIA | IBAN — segmentat, urmează tema clientului Telegram. */
+.tk-seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.tk-seg__btn {
+  appearance: none;
+  min-height: 38px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.tk-seg__btn--on {
+  color: #ffffff;
+  background: linear-gradient(140deg, var(--color-link), var(--color-accent));
+  box-shadow: 0 6px 14px -8px var(--color-accent-glow);
+}
+
+.tk-pay__alt-title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+}
+
+/* Cardul MIA: același registru „obiect" închis ca suma de plată (`.tk-pay__amount`),
+   cu accent verde-turcoaz — plata instant. */
+.tk-mia {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-lg);
+  border-radius: 18px;
+  color: #ffffff;
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgba(20, 200, 160, 0.35) 0%, transparent 55%),
+    radial-gradient(90% 70% at 0% 100%, rgba(255, 45, 120, 0.22) 0%, transparent 60%),
+    linear-gradient(155deg, #1f2a2a 0%, #121417 60%, #0b0a0f 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 40px -28px rgba(20, 200, 160, 0.6);
+}
+
+.tk-mia__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-sm);
+}
+
+.tk-mia__badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: #0b0a0f;
+  background: linear-gradient(120deg, #b8fff0 0%, #4de3c1 55%, #14c8a0 100%);
+}
+
+.tk-mia__heading {
+  min-width: 0;
+}
+
+.tk-mia__title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 21px;
+  font-weight: 800;
+}
+
+.tk-mia__subtitle {
+  margin: 2px 0 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.tk-mia__phone {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 28px;
+  line-height: 34px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.tk-mia .tk-copy {
+  color: #b8fff0;
+  border-color: rgba(184, 255, 240, 0.45);
+  background: rgba(184, 255, 240, 0.08);
+}
+
+.tk-mia .tk-copy--done {
+  color: #86efac;
+  border-color: rgba(134, 239, 172, 0.5);
+}
+
+.tk-mia__recipient {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tk-mia__recipient-name {
+  font-size: 17px;
+  line-height: 22px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.tk-mia__recipient-hint {
+  font-size: 12px;
+  line-height: 16px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.tk-mia__amount {
+  margin: var(--space-sm) 0 0;
+  font-size: 30px;
+  line-height: 36px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(120deg, #f2fffb 0%, #b8fff0 40%, #4de3c1 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* QR-ul MIA: mereu pe o placă ALBĂ rotunjită (contrast maxim pentru scaner),
+   indiferent de temă — ca placa QR a biletului. */
+.tk-mia__qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: 0 0 var(--space-md);
+}
+
+.tk-mia__qr-tile {
+  display: block;
+  width: min(100%, 260px);
+  aspect-ratio: 1 / 1;
+  padding: 14px;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 18px 36px -22px rgba(20, 200, 160, 0.7);
+}
+
+.tk-mia__qr-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  -webkit-touch-callout: default;
+}
+
+.tk-mia__qr-caption {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.tk-mia__qr-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tk-seg__btn {
+    transition: none;
+  }
+}
+
 /* ——— Biletul (pass) ——————————————————————————————————————————— */
 
 .tk-pass {

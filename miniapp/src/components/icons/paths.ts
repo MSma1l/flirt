@@ -42,6 +42,7 @@ export type IconName =
   | 'crown'
   | 'block'
   | 'settings'
+  | 'shield'
   // decor de listă
   | 'chevron';
 
@@ -126,6 +127,11 @@ export const ICON_PATHS: Record<IconName, string> = {
    * simetrică. Cercul din mijloc o ține „goală", ca restul setului.
    */
   settings: 'M9.87 5.65 9.99 2.92h4.02l.12 2.73a6.7 6.7 0 0 1 .86.35L17 4.16 19.84 7 18 9.01a6.7 6.7 0 0 1 .35.86l2.73.12v4.02l-2.73.12a6.7 6.7 0 0 1-.35.86L19.84 17 17 19.84 14.99 18a6.7 6.7 0 0 1-.86.35l-.12 2.73H9.99l-.12-2.73a6.7 6.7 0 0 1-.86-.35L7 19.84 4.16 17 6 14.99a6.7 6.7 0 0 1-.35-.86l-2.73-.12V9.99l2.73-.12A6.7 6.7 0 0 1 6 9.01L4.16 7 7 4.16 9.01 6ZM12 8.8a3.2 3.2 0 1 1 0 6.4 3.2 3.2 0 0 1 0-6.4Z',
+
+  /**
+   * SCUT — confidențialitate și date. Scut cu bifă: „datele tale, protejate".
+   */
+  shield: 'M12 3.2 19 5.9v5.5c0 4.4-2.9 8.1-7 9.4-4.1-1.3-7-5-7-9.4V5.9ZM8.9 12.1l2.2 2.2 4-4.1',
 
   /** SĂGEATĂ — „intră aici". Singurul desen deschis din set. */
   chevron: 'M9.5 5.5 16 12l-6.5 6.5',

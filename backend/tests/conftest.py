@@ -143,6 +143,26 @@ async def complete_humor(client, headers: dict, api: str = "/api/v1") -> None:
     assert resp.status_code == 200, resp.text
 
 
+async def grant_consents(
+    client, headers: dict, documents=("terms", "privacy", "sensitive_data"), api: str = "/api/v1"
+) -> dict:
+    """Acceptă documentele legale prin API-ul REAL, la versiunile curente.
+
+    Verificarea facială cere consimțământ explicit `sensitive_data` (date
+    biometrice) — testele care o apelează îl dau exact ca utilizatorul real.
+    """
+    status_resp = await client.get(f"{api}/legal/consent-status", headers=headers)
+    assert status_resp.status_code == 200, status_resp.text
+    versions = status_resp.json()["current_versions"]
+    resp = await client.post(
+        f"{api}/legal/consent",
+        json={"documents": list(documents), "versions": versions},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
 async def upload_photo(client, headers: dict, api: str = "/api/v1") -> str:
     """Încarcă MINIMUL de poze prin API-ul REAL, completează umorul, întoarce ultimul URL.
 
