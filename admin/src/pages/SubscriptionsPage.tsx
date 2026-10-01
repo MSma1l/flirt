@@ -20,6 +20,8 @@ import {
   TextInput,
   type BadgeTone,
 } from '../components/ui';
+import { useMessages } from '../i18n/LanguageContext';
+import { subscriptionsMessages } from '../i18n/messages/subscriptions';
 import { errorMessage } from '../lib/errors';
 import { formatDateTime } from '../lib/format';
 
@@ -31,6 +33,7 @@ const STATUS_TONE: Record<SubscriptionStatus, BadgeTone> = {
 
 export function SubscriptionsPage(): JSX.Element {
   const queryClient = useQueryClient();
+  const m = useMessages(subscriptionsMessages);
   const [granting, setGranting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -45,7 +48,7 @@ export function SubscriptionsPage(): JSX.Element {
     onSuccess: async (subscription) => {
       setGranting(false);
       setError(null);
-      setNotice(`Abonament „${subscription.plan}" acordat pentru ${subscription.user_email}.`);
+      setNotice(m.granted(subscription.plan, subscription.user_email));
       await queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
       await queryClient.invalidateQueries({ queryKey: ['stats'] });
     },
@@ -59,7 +62,7 @@ export function SubscriptionsPage(): JSX.Element {
       {notice ? <div className="alert alert--success">{notice}</div> : null}
 
       <Card
-        title="Abonamente"
+        title={m.title}
         actions={
           <Button
             variant="primary"
@@ -69,27 +72,27 @@ export function SubscriptionsPage(): JSX.Element {
               setGranting(true);
             }}
           >
-            Acordă manual
+            {m.grantManually}
           </Button>
         }
       >
         {query.isPending ? (
-          <LoadingState label="Se încarcă abonamentele…" />
+          <LoadingState label={m.loading} />
         ) : query.isError ? (
           <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} />
         ) : subscriptions.length === 0 ? (
-          <EmptyState title="Niciun abonament" hint="Aici apar abonamentele active și expirate." />
+          <EmptyState title={m.emptyTitle} hint={m.emptyHint} />
         ) : (
           <div className="table-wrap">
             <table className="table">
               <thead>
                 <tr>
-                  <th>Utilizator</th>
-                  <th>Plan</th>
-                  <th>Sursă</th>
-                  <th>Început</th>
-                  <th>Expiră</th>
-                  <th>Stare</th>
+                  <th>{m.columns.user}</th>
+                  <th>{m.columns.plan}</th>
+                  <th>{m.columns.provider}</th>
+                  <th>{m.columns.started}</th>
+                  <th>{m.columns.expires}</th>
+                  <th>{m.columns.status}</th>
                 </tr>
               </thead>
               <tbody>
@@ -139,6 +142,7 @@ function GrantModal({
   onCancel: () => void;
   onSubmit: (email: string, plan: string, days: number) => void;
 }): JSX.Element {
+  const m = useMessages(subscriptionsMessages);
   const [email, setEmail] = useState('');
   const [plan, setPlan] = useState<string>(SUBSCRIPTION_PLANS[0]);
   const [days, setDays] = useState('30');
@@ -154,9 +158,9 @@ function GrantModal({
   };
 
   return (
-    <Modal title="Acordă abonament manual" onClose={onCancel}>
+    <Modal title={m.modalTitle} onClose={onCancel}>
       <form className="modal__body" onSubmit={submit}>
-        <Field label="Emailul contului" htmlFor="grant-email">
+        <Field label={m.emailLabel} htmlFor="grant-email">
           <TextInput
             id="grant-email"
             type="email"
@@ -165,7 +169,7 @@ function GrantModal({
             onChange={(event) => setEmail(event.target.value)}
           />
         </Field>
-        <Field label="Plan" htmlFor="grant-plan">
+        <Field label={m.planLabel} htmlFor="grant-plan">
           <Select id="grant-plan" value={plan} onChange={(event) => setPlan(event.target.value)}>
             {SUBSCRIPTION_PLANS.map((option) => (
               <option key={option} value={option}>
@@ -174,7 +178,7 @@ function GrantModal({
             ))}
           </Select>
         </Field>
-        <Field label="Durata (zile)" htmlFor="grant-days">
+        <Field label={m.daysLabel} htmlFor="grant-days">
           <TextInput
             id="grant-days"
             type="number"
@@ -189,10 +193,10 @@ function GrantModal({
 
         <div className="modal__actions">
           <Button variant="ghost" onClick={onCancel} disabled={busy}>
-            Anulează
+            {m.cancel}
           </Button>
           <Button type="submit" variant="primary" disabled={!valid || busy}>
-            {busy ? 'Se acordă…' : 'Acordă abonamentul'}
+            {busy ? m.granting : m.grant}
           </Button>
         </div>
       </form>

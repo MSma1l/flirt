@@ -18,6 +18,8 @@ import {
 
 import { fetchStats, fetchTimeseries } from '../api/admin';
 import { Card, ErrorState, LoadingState, Select, StatCard } from '../components/ui';
+import { useMessages } from '../i18n/LanguageContext';
+import { coreMessages } from '../i18n/messages/core';
 import { errorMessage } from '../lib/errors';
 import { formatEur, formatNumber, formatShortDate } from '../lib/format';
 
@@ -30,6 +32,7 @@ const SUCCESS = '#2ecc71';
 const NEUTRAL = '#8a8a94';
 
 export function DashboardPage(): JSX.Element {
+  const m = useMessages(coreMessages).dashboard;
   const [days, setDays] = useState<Range>(30);
 
   const statsQuery = useQuery({ queryKey: ['stats'], queryFn: fetchStats });
@@ -38,7 +41,7 @@ export function DashboardPage(): JSX.Element {
     queryFn: () => fetchTimeseries(days),
   });
 
-  if (statsQuery.isPending) return <LoadingState label="Se încarcă statisticile…" />;
+  if (statsQuery.isPending) return <LoadingState label={m.loading} />;
   if (statsQuery.isError) {
     return (
       <ErrorState
@@ -58,50 +61,50 @@ export function DashboardPage(): JSX.Element {
     <>
       <div className="stat-grid">
         <StatCard
-          label="Utilizatori"
+          label={m.users}
           value={formatNumber(stats.users_total)}
-          hint={`${formatNumber(stats.users_new_7d)} noi în 7 zile`}
+          hint={m.usersNew(stats.users_new_7d)}
         />
         <StatCard
-          label="Activi (24h)"
+          label={m.active}
           value={formatNumber(stats.users_active_24h)}
-          hint={`${formatNumber(stats.users_banned)} conturi banate`}
+          hint={m.banned(stats.users_banned)}
         />
         <StatCard
-          label="Match-uri"
+          label={m.matches}
           value={formatNumber(stats.matches_total)}
-          hint={`${formatNumber(stats.matches_24h)} în ultimele 24h`}
+          hint={m.matches24h(stats.matches_24h)}
         />
         <StatCard
-          label="Rapoarte în așteptare"
+          label={m.reportsPending}
           value={formatNumber(stats.reports_pending)}
-          hint="Termen de răspuns: 24h"
+          hint={m.reportsHint}
           accent={stats.reports_pending > 0}
         />
         <StatCard
-          label="Abonamente active"
+          label={m.subscriptions}
           value={formatNumber(stats.subscriptions_active)}
         />
         <StatCard
-          label="Venit estimat"
+          label={m.revenue}
           value={formatEur(stats.revenue_estimated_eur)}
-          hint="Estimare pe baza abonamentelor active"
+          hint={m.revenueHint}
         />
       </div>
 
       <div className="section-head">
         <h2 className="card__title" style={{ margin: 0 }}>
-          Evoluție
+          {m.trend}
         </h2>
         <Select
-          aria-label="Interval"
+          aria-label={m.range}
           value={days}
           onChange={(event) => setDays(Number(event.target.value) as Range)}
           style={{ width: 160 }}
         >
           {RANGES.map((range) => (
             <option key={range} value={range}>
-              Ultimele {range} zile
+              {m.lastDays(range)}
             </option>
           ))}
         </Select>
@@ -114,7 +117,7 @@ export function DashboardPage(): JSX.Element {
         />
       ) : (
         <div className="chart-grid">
-          <Card title="Utilizatori noi / zi" className="chart-card">
+          <Card title={m.chartUsers} className="chart-card">
             <ResponsiveContainer width="100%" height={260}>
               <AreaChart data={series}>
                 <defs>
@@ -137,7 +140,7 @@ export function DashboardPage(): JSX.Element {
                 <Area
                   type="monotone"
                   dataKey="users"
-                  name="Utilizatori"
+                  name={m.seriesUsers}
                   stroke={ACCENT}
                   fill="url(#usersFill)"
                   strokeWidth={2}
@@ -146,7 +149,7 @@ export function DashboardPage(): JSX.Element {
             </ResponsiveContainer>
           </Card>
 
-          <Card title="Match-uri și rapoarte / zi" className="chart-card">
+          <Card title={m.chartMatches} className="chart-card">
             <ResponsiveContainer width="100%" height={260}>
               <LineChart data={series}>
                 <CartesianGrid stroke="var(--color-border)" vertical={false} />
@@ -163,7 +166,7 @@ export function DashboardPage(): JSX.Element {
                 <Line
                   type="monotone"
                   dataKey="matches"
-                  name="Match-uri"
+                  name={m.seriesMatches}
                   stroke={SUCCESS}
                   strokeWidth={2}
                   dot={false}
@@ -171,7 +174,7 @@ export function DashboardPage(): JSX.Element {
                 <Line
                   type="monotone"
                   dataKey="reports"
-                  name="Rapoarte"
+                  name={m.seriesReports}
                   stroke={NEUTRAL}
                   strokeWidth={2}
                   dot={false}

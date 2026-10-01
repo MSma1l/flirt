@@ -15,6 +15,12 @@
  * App e configul de aici, fără secțiunea `photos`. Rămâne portat, nu copiat:
  * aceiași pași, scriși pentru DOM.
  */
+import { i18n } from '@/i18n';
+
+/** Mesajele sunt traduse în limba curentă, din namespace-ul `screens`. */
+function tr(key: string, params?: Record<string, string | number>): string {
+  return i18n.t(`screens:validation.photos.${key}`, params ?? {});
+}
 
 /**
  * Limitele de poze, simetrice cu backend-ul (`app/core/config.py`:
@@ -69,7 +75,7 @@ export function resizeTarget(
 /** Mai încape o poză? Întoarce mesajul de eroare dacă nu. */
 export function validateCanAddPhoto(currentCount: number): string | null {
   if (currentCount >= PHOTO_LIMITS.max) {
-    return `Ai atins numărul maxim de ${PHOTO_LIMITS.max} poze. Șterge una ca să adaugi alta.`;
+    return tr('limitReached', { max: PHOTO_LIMITS.max });
   }
   return null;
 }
@@ -78,12 +84,9 @@ export function validateCanAddPhoto(currentCount: number): string | null {
 export function validatePhotoCount(count: number): string | null {
   if (count < PHOTO_LIMITS.min) {
     const left = PHOTO_LIMITS.min - count;
-    return (
-      `Adaugă cel puțin ${PHOTO_LIMITS.min} poze ca să continui ` +
-      `(mai ai ${left} de adăugat).`
-    );
+    return tr('needMore', { min: PHOTO_LIMITS.min, left });
   }
-  if (count > PHOTO_LIMITS.max) return `Poți avea maximum ${PHOTO_LIMITS.max} poze.`;
+  if (count > PHOTO_LIMITS.max) return tr('tooMany', { max: PHOTO_LIMITS.max });
   return null;
 }
 
@@ -96,17 +99,18 @@ export function validateSourceType(mimeType?: string | null): string | null {
   if (PHOTO_LIMITS.allowedTypes.includes(type)) return null;
   if (CONVERTIBLE_TYPES.includes(type)) return null;
   const names = PHOTO_LIMITS.allowedTypes.map((t) => t.replace('image/', '').toUpperCase());
-  return `Tip de fișier nepermis. Acceptăm doar ${names.slice(0, -1).join(', ')} sau ${
-    names[names.length - 1]
-  }.`;
+  return tr('typeNotAllowed', {
+    types: names.slice(0, -1).join(', '),
+    last: names[names.length - 1] ?? '',
+  });
 }
 
 /** Mesaj când nici la calitatea minimă poza nu intră sub limita backend-ului. */
 export function tooLargeAfterCompression(sizeBytes: number): string {
-  return (
-    `Poza rămâne prea mare (${formatMb(sizeBytes)}) chiar și după comprimare, ` +
-    `iar limita este ${formatMb(PHOTO_LIMITS.maxUploadBytes)}. Alege altă poză.`
-  );
+  return tr('tooLargeAfterCompression', {
+    size: formatMb(sizeBytes),
+    limit: formatMb(PHOTO_LIMITS.maxUploadBytes),
+  });
 }
 
 /**
@@ -114,9 +118,9 @@ export function tooLargeAfterCompression(sizeBytes: number): string {
  * Cazul real: HEIC/HEIF, formatul implicit al iPhone-ului, pe care majoritatea
  * browserelor nu îl deschid. Utilizatorul trebuie să afle CE să facă.
  */
-export const IMAGE_DECODE_FAILED_MESSAGE =
-  'Nu am putut procesa poza. Unele formate (de exemplu HEIC, cel implicit pe ' +
-  'iPhone) nu pot fi deschise aici. Alege altă poză sau salveaz-o ca JPEG.';
+export function imageDecodeFailedMessage(): string {
+  return tr('decodeFailed');
+}
 
 /** Rezultatul pregătirii unei poze. */
 export type PreparedPhoto =
@@ -167,12 +171,12 @@ export async function preparePhoto(file: File): Promise<PreparedPhoto> {
   try {
     img = await loadImage(file);
   } catch {
-    return { ok: false, message: IMAGE_DECODE_FAILED_MESSAGE };
+    return { ok: false, message: imageDecodeFailedMessage() };
   }
 
   const width = img.naturalWidth || img.width;
   const height = img.naturalHeight || img.height;
-  if (!width || !height) return { ok: false, message: IMAGE_DECODE_FAILED_MESSAGE };
+  if (!width || !height) return { ok: false, message: imageDecodeFailedMessage() };
 
   const target = resizeTarget(width, height) ?? { width, height };
 
@@ -180,13 +184,13 @@ export async function preparePhoto(file: File): Promise<PreparedPhoto> {
   canvas.width = target.width;
   canvas.height = target.height;
   const ctx = canvas.getContext('2d');
-  if (!ctx) return { ok: false, message: IMAGE_DECODE_FAILED_MESSAGE };
+  if (!ctx) return { ok: false, message: imageDecodeFailedMessage() };
   ctx.drawImage(img, 0, 0, target.width, target.height);
 
   let quality: number = PHOTO_LIMITS.compressQuality;
   for (;;) {
     const blob = await canvasToBlob(canvas, quality);
-    if (!blob) return { ok: false, message: IMAGE_DECODE_FAILED_MESSAGE };
+    if (!blob) return { ok: false, message: imageDecodeFailedMessage() };
 
     if (blob.size <= PHOTO_LIMITS.maxUploadBytes) {
       photoCounter += 1;

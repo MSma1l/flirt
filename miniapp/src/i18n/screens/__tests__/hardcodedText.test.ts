@@ -47,6 +47,12 @@ const OWNED_FEATURES = [
   // Verificarea prin selfie: ecran nou, cu texte în `verification` (cataloagele
   // mobile) și în `screens`. Intră în plasă de la început, nu după prima scăpare.
   'verification',
+  // Cererea manuală de bilet: ecran adăugat fără i18n, prins abia la audit.
+  'ticketRequests',
+  // Validările de profil și de preferințe întorceau texte românești fixe
+  // (afișate direct sub câmpuri); acum vin din cataloage, deci intră în plasă.
+  'profile',
+  'settings',
 ];
 
 /**

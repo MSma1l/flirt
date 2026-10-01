@@ -31,6 +31,8 @@ import {
   Select,
   TextInput,
 } from '../components/ui';
+import { useMessages } from '../i18n/LanguageContext';
+import { adsMessages } from '../i18n/messages/ads';
 import { errorMessage } from '../lib/errors';
 import {
   formatDateTime,
@@ -40,6 +42,8 @@ import {
 } from '../lib/format';
 
 /* --------------------------------- Reclame --------------------------------- */
+
+type AdsMessages = (typeof adsMessages)['ro'];
 
 interface FormState {
   title: string;
@@ -118,7 +122,7 @@ function toPayload(form: FormState): AdInput {
 }
 
 /** Eticheta scurtă de targetare pentru tabel: „♀ 18–30", „♂ 18+", „Toți". */
-function targetLabel(ad: Ad): string {
+function targetLabel(ad: Ad, m: AdsMessages): string {
   const genderIcon =
     ad.target_gender === 'female' ? '♀' : ad.target_gender === 'male' ? '♂' : null;
   let ageLabel: string | null = null;
@@ -130,7 +134,7 @@ function targetLabel(ad: Ad): string {
     ageLabel = `≤${ad.target_age_max}`;
   }
   const parts = [genderIcon, ageLabel].filter(Boolean);
-  return parts.length === 0 ? 'Toți' : parts.join(' ');
+  return parts.length === 0 ? m.targetAll : parts.join(' ');
 }
 
 /** CTR ca procent formatat, sau „—" când nu există afișări. */
@@ -140,16 +144,17 @@ function ctrLabel(impressions: number, clicks: number): string {
 }
 
 /** Eticheta de programare pentru tabel: „Mereu", „din …", „până …", „… – …". */
-function scheduleLabel(ad: Ad): string {
+function scheduleLabel(ad: Ad, m: AdsMessages): string {
   const start = ad.starts_at ? formatDateTime(ad.starts_at) : null;
   const end = ad.ends_at ? formatDateTime(ad.ends_at) : null;
   if (start && end) return `${start} – ${end}`;
-  if (start) return `din ${start}`;
-  if (end) return `până ${end}`;
-  return 'Mereu';
+  if (start) return m.scheduleFrom(start);
+  if (end) return m.scheduleUntil(end);
+  return m.scheduleAlways;
 }
 
 export function AdsPage(): JSX.Element {
+  const m = useMessages(adsMessages);
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<{ ad: Ad | null } | null>(null);
   const [toDelete, setToDelete] = useState<Ad | null>(null);
@@ -188,7 +193,7 @@ export function AdsPage(): JSX.Element {
       <AdSettingsCard />
 
       <Card
-        title="Reclame"
+        title={m.title}
         actions={
           <Button
             variant="primary"
@@ -197,35 +202,35 @@ export function AdsPage(): JSX.Element {
               setEditing({ ad: null });
             }}
           >
-            Reclamă nouă
+            {m.newAd}
           </Button>
         }
       >
         {query.isPending ? (
-          <LoadingState label="Se încarcă reclamele…" />
+          <LoadingState label={m.loading} />
         ) : query.isError ? (
           <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} />
         ) : ads.length === 0 ? (
           <EmptyState
-            title="Nicio reclamă"
-            hint="Adaugă prima reclamă — apare în rotația din aplicația mobilă."
+            title={m.emptyTitle}
+            hint={m.emptyHint}
           />
         ) : (
           <div className="table-wrap">
             <table className="table">
               <thead>
                 <tr>
-                  <th>Titlu</th>
-                  <th>Durată</th>
-                  <th>Weight</th>
-                  <th>Targetare</th>
-                  <th>Programare</th>
-                  <th>Afișări</th>
-                  <th>Click-uri</th>
-                  <th>CTR</th>
-                  <th>Stare</th>
-                  <th>Actualizat</th>
-                  <th aria-label="Acțiuni" />
+                  <th>{m.col.title}</th>
+                  <th>{m.col.duration}</th>
+                  <th>{m.col.weight}</th>
+                  <th>{m.col.targeting}</th>
+                  <th>{m.col.schedule}</th>
+                  <th>{m.col.impressions}</th>
+                  <th>{m.col.clicks}</th>
+                  <th>{m.col.ctr}</th>
+                  <th>{m.col.state}</th>
+                  <th>{m.col.updated}</th>
+                  <th aria-label={m.col.actions} />
                 </tr>
               </thead>
               <tbody>
@@ -234,14 +239,14 @@ export function AdsPage(): JSX.Element {
                     <td>{ad.title}</td>
                     <td className="mono">{ad.duration_seconds}s</td>
                     <td className="mono">{ad.weight}</td>
-                    <td>{targetLabel(ad)}</td>
-                    <td className="muted mono">{scheduleLabel(ad)}</td>
+                    <td>{targetLabel(ad, m)}</td>
+                    <td className="muted mono">{scheduleLabel(ad, m)}</td>
                     <td className="mono">{formatNumber(ad.impressions)}</td>
                     <td className="mono">{formatNumber(ad.clicks)}</td>
                     <td className="mono">{ctrLabel(ad.impressions, ad.clicks)}</td>
                     <td>
                       <Badge tone={ad.active ? 'success' : 'neutral'}>
-                        {ad.active ? 'activă' : 'inactivă'}
+                        {ad.active ? m.active : m.inactive}
                       </Badge>
                     </td>
                     <td className="muted mono">{formatDateTime(ad.updated_at)}</td>
@@ -254,7 +259,7 @@ export function AdsPage(): JSX.Element {
                             setEditing({ ad });
                           }}
                         >
-                          Editează
+                          {m.edit}
                         </Button>
                         <Button
                           small
@@ -264,7 +269,7 @@ export function AdsPage(): JSX.Element {
                             setToDelete(ad);
                           }}
                         >
-                          Șterge
+                          {m.delete}
                         </Button>
                       </div>
                     </td>
@@ -291,9 +296,9 @@ export function AdsPage(): JSX.Element {
 
       {toDelete ? (
         <ConfirmDialog
-          title="Șterge reclama"
-          message={`„${toDelete.title}" iese imediat din rotația din aplicație.`}
-          confirmLabel="Șterge reclama"
+          title={m.deleteTitle}
+          message={m.deleteMessage(toDelete.title)}
+          confirmLabel={m.deleteConfirm}
           busy={remove.isPending}
           errorMessage={formError}
           onCancel={() => {
@@ -320,6 +325,7 @@ function AdFormModal({
   onCancel: () => void;
   onSubmit: (input: AdInput) => void;
 }): JSX.Element {
+  const m = useMessages(adsMessages).form;
   const [form, setForm] = useState<FormState>(ad ? toForm(ad) : EMPTY_FORM);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]): void =>
@@ -337,17 +343,17 @@ function AdFormModal({
   // starts_at ≤ ends_at (când ambele sunt setate).
   const ageRangeError =
     ageMin != null && ageMax != null && ageMin > ageMax
-      ? 'Vârsta minimă nu poate depăși vârsta maximă.'
+      ? m.ageRangeError
       : null;
   const dateRangeError =
     startIso != null && endIso != null && startIso > endIso
-      ? 'Data de început trebuie să fie înaintea datei de sfârșit.'
+      ? m.dateRangeError
       : null;
   // O reclamă are nevoie de o sursă vizuală: cel puțin `video_url` sau `image_url`.
   const hasSource = form.video_url.trim() !== '' || form.image_url.trim() !== '';
   const sourceError = hasSource
     ? null
-    : 'Completează cel puțin un URL video sau un URL imagine.';
+    : m.sourceError;
   const rangeError = ageRangeError ?? dateRangeError ?? sourceError;
 
   const valid =
@@ -367,9 +373,9 @@ function AdFormModal({
   };
 
   return (
-    <Modal title={ad ? 'Editează reclama' : 'Reclamă nouă'} onClose={onCancel} wide>
+    <Modal title={ad ? m.editTitle : m.newTitle} onClose={onCancel} wide>
       <form className="modal__body" onSubmit={submit}>
-        <Field label="Titlu *" htmlFor="ad-title">
+        <Field label={m.title} htmlFor="ad-title">
           <TextInput
             id="ad-title"
             value={form.title}
@@ -379,7 +385,7 @@ function AdFormModal({
           />
         </Field>
 
-        <Field label="URL video" htmlFor="ad-video">
+        <Field label={m.videoUrl} htmlFor="ad-video">
           <TextInput
             id="ad-video"
             type="url"
@@ -388,7 +394,7 @@ function AdFormModal({
           />
         </Field>
 
-        <Field label="URL imagine (opțional)" htmlFor="ad-image">
+        <Field label={m.imageUrl} htmlFor="ad-image">
           <TextInput
             id="ad-image"
             type="url"
@@ -398,7 +404,7 @@ function AdFormModal({
         </Field>
 
         <div className="form-grid">
-          <Field label="Durată (secunde) *" htmlFor="ad-duration">
+          <Field label={m.duration} htmlFor="ad-duration">
             <TextInput
               id="ad-duration"
               type="number"
@@ -408,7 +414,7 @@ function AdFormModal({
               onChange={(e) => set('duration_seconds', e.target.value)}
             />
           </Field>
-          <Field label="Weight" htmlFor="ad-weight">
+          <Field label={m.weight} htmlFor="ad-weight">
             <TextInput
               id="ad-weight"
               type="number"
@@ -420,38 +426,38 @@ function AdFormModal({
         </div>
 
         <h3 className="card__title" style={{ margin: 0, fontSize: 'var(--text-sm, 0.9rem)' }}>
-          Targetare
+          {m.targeting}
         </h3>
         <div className="form-grid">
-          <Field label="Gen" htmlFor="ad-gender">
+          <Field label={m.gender} htmlFor="ad-gender">
             <Select
               id="ad-gender"
               value={form.target_gender}
               onChange={(e) => set('target_gender', e.target.value as FormState['target_gender'])}
             >
-              <option value="">Oricine</option>
-              <option value="male">Bărbați</option>
-              <option value="female">Femei</option>
+              <option value="">{m.genderAny}</option>
+              <option value="male">{m.genderMale}</option>
+              <option value="female">{m.genderFemale}</option>
             </Select>
           </Field>
-          <Field label="Vârstă min." htmlFor="ad-age-min">
+          <Field label={m.ageMin} htmlFor="ad-age-min">
             <TextInput
               id="ad-age-min"
               type="number"
               min={0}
               max={120}
-              placeholder="fără limită"
+              placeholder={m.noLimit}
               value={form.target_age_min}
               onChange={(e) => set('target_age_min', e.target.value)}
             />
           </Field>
-          <Field label="Vârstă max." htmlFor="ad-age-max">
+          <Field label={m.ageMax} htmlFor="ad-age-max">
             <TextInput
               id="ad-age-max"
               type="number"
               min={0}
               max={120}
-              placeholder="fără limită"
+              placeholder={m.noLimit}
               value={form.target_age_max}
               onChange={(e) => set('target_age_max', e.target.value)}
             />
@@ -459,10 +465,10 @@ function AdFormModal({
         </div>
 
         <h3 className="card__title" style={{ margin: 0, fontSize: 'var(--text-sm, 0.9rem)' }}>
-          Programare
+          {m.schedule}
         </h3>
         <div className="form-grid">
-          <Field label="Începe la (opțional)" htmlFor="ad-starts">
+          <Field label={m.startsAt} htmlFor="ad-starts">
             <TextInput
               id="ad-starts"
               type="datetime-local"
@@ -470,7 +476,7 @@ function AdFormModal({
               onChange={(e) => set('starts_at', e.target.value)}
             />
           </Field>
-          <Field label="Se termină la (opțional)" htmlFor="ad-ends">
+          <Field label={m.endsAt} htmlFor="ad-ends">
             <TextInput
               id="ad-ends"
               type="datetime-local"
@@ -488,7 +494,7 @@ function AdFormModal({
             onChange={(e) => set('active', e.target.checked)}
           />
           <span className="field__label" style={{ margin: 0 }}>
-            Activă (intră în rotație)
+            {m.activeCheck}
           </span>
         </label>
 
@@ -497,10 +503,10 @@ function AdFormModal({
 
         <div className="modal__actions">
           <Button variant="ghost" onClick={onCancel} disabled={busy}>
-            Anulează
+            {m.cancel}
           </Button>
           <Button type="submit" variant="primary" disabled={!valid || busy}>
-            {busy ? 'Se salvează…' : ad ? 'Salvează' : 'Creează reclama'}
+            {busy ? m.saving : ad ? m.save : m.create}
           </Button>
         </div>
       </form>
@@ -525,10 +531,12 @@ function toSettingsForm(settings: AdSettings): SettingsForm {
 }
 
 function AdSettingsCard(): JSX.Element {
+  const m = useMessages(adsMessages).settings;
   const queryClient = useQueryClient();
   const [form, setForm] = useState<SettingsForm | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  // Doar faptul că s-a salvat; textul vine din dicționar, deci urmează limba activă.
+  const [saved, setSaved] = useState(false);
 
   const query = useQuery({ queryKey: ['ad-settings'], queryFn: fetchAdSettings });
 
@@ -542,7 +550,7 @@ function AdSettingsCard(): JSX.Element {
     mutationFn: (body: AdSettings) => updateAdSettings(body),
     onSuccess: async (settings) => {
       setError(null);
-      setNotice('Setările reclamelor au fost salvate.');
+      setSaved(true);
       setForm(toSettingsForm(settings));
       await queryClient.invalidateQueries({ queryKey: ['ad-settings'] });
     },
@@ -564,7 +572,7 @@ function AdSettingsCard(): JSX.Element {
   const submit = (submitEvent: FormEvent): void => {
     submitEvent.preventDefault();
     if (!form || !valid || save.isPending) return;
-    setNotice(null);
+    setSaved(false);
     save.mutate({
       swipes_before_ad: Math.trunc(swipes),
       max_video_seconds: Math.trunc(maxSeconds),
@@ -573,17 +581,17 @@ function AdSettingsCard(): JSX.Element {
   };
 
   return (
-    <Card title="Setări reclame">
+    <Card title={m.title}>
       {query.isPending || form === null ? (
-        <LoadingState label="Se încarcă setările…" />
+        <LoadingState label={m.loading} />
       ) : query.isError ? (
         <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} />
       ) : (
         <form className="modal__body" onSubmit={submit}>
-          {notice ? <div className="alert alert--success">{notice}</div> : null}
+          {saved ? <div className="alert alert--success">{m.saved}</div> : null}
 
           <div className="form-grid">
-            <Field label="Swipe-uri până la reclamă *" htmlFor="settings-swipes">
+            <Field label={m.swipes} htmlFor="settings-swipes">
               <TextInput
                 id="settings-swipes"
                 type="number"
@@ -593,7 +601,7 @@ function AdSettingsCard(): JSX.Element {
                 onChange={(e) => set('swipes_before_ad', e.target.value)}
               />
             </Field>
-            <Field label="Limită video (secunde) *" htmlFor="settings-max-seconds">
+            <Field label={m.maxSeconds} htmlFor="settings-max-seconds">
               <TextInput
                 id="settings-max-seconds"
                 type="number"
@@ -613,7 +621,7 @@ function AdSettingsCard(): JSX.Element {
               onChange={(e) => set('enabled', e.target.checked)}
             />
             <span className="field__label" style={{ margin: 0 }}>
-              Reclame activate
+              {m.enabled}
             </span>
           </label>
 
@@ -621,7 +629,7 @@ function AdSettingsCard(): JSX.Element {
 
           <div className="modal__actions">
             <Button type="submit" variant="primary" disabled={!valid || save.isPending}>
-              {save.isPending ? 'Se salvează…' : 'Salvează setările'}
+              {save.isPending ? m.saving : m.save}
             </Button>
           </div>
         </form>

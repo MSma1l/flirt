@@ -34,6 +34,8 @@ import {
   LoadingState,
   TextInput,
 } from '../components/ui';
+import { useLanguage, useMessages } from '../i18n/LanguageContext';
+import { loyaltyMessages } from '../i18n/messages/loyalty';
 import { errorMessage } from '../lib/errors';
 import { formatDateTime } from '../lib/format';
 import {
@@ -60,6 +62,8 @@ function FieldError({ message }: { message?: string }): JSX.Element | null {
 }
 
 export function LoyaltyPage(): JSX.Element {
+  const m = useMessages(loyaltyMessages).page;
+  const { language } = useLanguage();
   const queryClient = useQueryClient();
   const [form, setForm] = useState<TiersFormState | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -91,16 +95,16 @@ export function LoyaltyPage(): JSX.Element {
     },
   });
 
-  if (query.isPending) return <LoadingState label="Se încarcă treptele…" />;
+  if (query.isPending) return <LoadingState label={m.loading} />;
   if (query.isError) {
     return <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} />;
   }
-  if (form === null) return <LoadingState label="Se încarcă treptele…" />;
+  if (form === null) return <LoadingState label={m.loading} />;
 
-  const errors = validateTiers(form);
+  const errors = validateTiers(form, language);
   const invalid = hasTierErrors(errors);
-  const warnings = tiersWarnings(form);
-  const changes = tierChanges(query.data, form);
+  const warnings = tiersWarnings(form, language);
+  const changes = tierChanges(query.data, form, language);
   const dirty =
     query.data !== undefined &&
     JSON.stringify(form) !== JSON.stringify(tiersToForm(query.data));
@@ -142,26 +146,20 @@ export function LoyaltyPage(): JSX.Element {
   return (
     <form onSubmit={submit}>
       <Card
-        title="Program de fidelitate"
+        title={m.programTitle}
         actions={
           <Link className="btn btn--ghost btn--sm" to="/invites">
-            Invitații speciale
+            {m.specialInvites}
           </Link>
         }
       >
-        <p className="field__hint">
-          Treapta unui utilizator vine din numărul de EVENIMENTE DISTINCTE la care are
-          check-in confirmat (ștampile Flirt Passport). Fiecare treaptă dă un procent de
-          reducere la biletul online; la un bilet se aplică CEA MAI MARE reducere dintre
-          treaptă, promo-ul evenimentului și invitație — nu se cumulează — iar rezultatul
-          se taie la plafonul de mai jos.
-        </p>
+        <p className="field__hint">{m.intro}</p>
         <p className="muted">
-          {`Ultima modificare: ${formatDateTime(query.data?.updated_at ?? null)}`}
+          {m.lastChange(formatDateTime(query.data?.updated_at ?? null))}
         </p>
 
         <div style={{ maxWidth: 260 }}>
-          <Field label="Plafon total de reducere (%)" htmlFor="loyalty-cap">
+          <Field label={m.capLabel} htmlFor="loyalty-cap">
             <TextInput
               id="loyalty-cap"
               type="number"
@@ -186,20 +184,20 @@ export function LoyaltyPage(): JSX.Element {
       </Card>
 
       <Card
-        title={`Trepte (${form.tiers.length}/${TIER_LIMITS.count})`}
+        title={m.tiersTitle(form.tiers.length, TIER_LIMITS.count)}
         actions={
           <Button
             small
             onClick={addRow}
             disabled={form.tiers.length >= TIER_LIMITS.count}
           >
-            Adaugă treaptă
+            {m.addTier}
           </Button>
         }
       >
         {form.tiers.length === 0 ? (
           <p className="muted" data-testid="tiers-empty">
-            Nicio treaptă configurată — programul de fidelitate este oprit.
+            {m.empty}
           </p>
         ) : (
           <div className="table-wrap">
@@ -207,11 +205,11 @@ export function LoyaltyPage(): JSX.Element {
               <thead>
                 <tr>
                   <th>#</th>
-                  <th>Cod</th>
-                  <th>Nume</th>
-                  <th>De la câte ștampile</th>
-                  <th>Reducere (%)</th>
-                  <th aria-label="Acțiuni" />
+                  <th>{m.colCode}</th>
+                  <th>{m.colName}</th>
+                  <th>{m.colStamps}</th>
+                  <th>{m.colDiscount}</th>
+                  <th aria-label={m.colActions} />
                 </tr>
               </thead>
               <tbody>
@@ -223,7 +221,7 @@ export function LoyaltyPage(): JSX.Element {
                       <td className="mono">{position}</td>
                       <td>
                         <TextInput
-                          aria-label={`Cod treapta ${position}`}
+                          aria-label={m.ariaCode(position)}
                           value={row.code}
                           maxLength={TIER_LIMITS.code}
                           aria-invalid={rowErrors.code ? true : undefined}
@@ -233,7 +231,7 @@ export function LoyaltyPage(): JSX.Element {
                       </td>
                       <td>
                         <TextInput
-                          aria-label={`Nume treapta ${position}`}
+                          aria-label={m.ariaName(position)}
                           value={row.name}
                           maxLength={TIER_LIMITS.name}
                           aria-invalid={rowErrors.name ? true : undefined}
@@ -243,7 +241,7 @@ export function LoyaltyPage(): JSX.Element {
                       </td>
                       <td>
                         <TextInput
-                          aria-label={`Prag ștampile treapta ${position}`}
+                          aria-label={m.ariaStamps(position)}
                           type="number"
                           inputMode="numeric"
                           min={1}
@@ -257,7 +255,7 @@ export function LoyaltyPage(): JSX.Element {
                       </td>
                       <td>
                         <TextInput
-                          aria-label={`Reducere treapta ${position}`}
+                          aria-label={m.ariaDiscount(position)}
                           type="number"
                           inputMode="numeric"
                           min={0}
@@ -277,9 +275,9 @@ export function LoyaltyPage(): JSX.Element {
                             small
                             variant="danger"
                             onClick={() => removeRow(index)}
-                            aria-label={`Șterge treapta ${position}`}
+                            aria-label={m.ariaDelete(position)}
                           >
-                            Șterge
+                            {m.delete}
                           </Button>
                         </div>
                       </td>
@@ -295,22 +293,21 @@ export function LoyaltyPage(): JSX.Element {
 
         {changes.length > 0 ? (
           <div className="alert alert--warning" data-testid="tiers-changes">
-            <strong>Ce se schimbă pentru utilizatori:</strong>
+            <strong>{m.changesTitle}</strong>
             <ul className="alert__list">
               {changes.map((line) => (
                 <li key={line}>{line}</li>
               ))}
             </ul>
             <p className="muted" style={{ margin: 0 }}>
-              Câți utilizatori sunt exact în intervalele de mai sus nu se poate afișa:
-              backendul nu expune distribuția ștampilelor pe utilizatori.
+              {m.changesNote}
             </p>
           </div>
         ) : null}
 
         {warnings.length > 0 ? (
           <div className="alert alert--warning" data-testid="tiers-warnings">
-            <strong>Se poate salva, dar:</strong>
+            <strong>{m.warningsTitle}</strong>
             <ul className="alert__list">
               {warnings.map((warning) => (
                 <li key={warning}>{warning}</li>
@@ -322,7 +319,7 @@ export function LoyaltyPage(): JSX.Element {
         {formError ? <div className="alert">{formError}</div> : null}
         {saved !== null ? (
           <div className="alert alert--success" data-testid="tiers-saved">
-            {`Treptele au fost salvate (${formatDateTime(saved)}). Se aplică imediat, fără deploy.`}
+            {m.saved(formatDateTime(saved))}
           </div>
         ) : null}
 
@@ -336,10 +333,10 @@ export function LoyaltyPage(): JSX.Element {
               setSaved(null);
             }}
           >
-            Renunță la modificări
+            {m.discard}
           </Button>
           <Button type="submit" variant="primary" disabled={invalid || save.isPending}>
-            {save.isPending ? 'Se salvează…' : 'Salvează treptele'}
+            {save.isPending ? m.saving : m.save}
           </Button>
         </div>
       </Card>

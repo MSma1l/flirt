@@ -14,29 +14,30 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { Button, Field, TextInput } from '../components/ui';
+import { useLanguage, useMessages, type Language } from '../i18n/LanguageContext';
+import { coreMessages } from '../i18n/messages/core';
 import { useTheme } from '../theme/ThemeContext';
 
-export function messageForLoginError(error: unknown): string {
+/** Limba se dă explicit: funcția e apelată din afara randării (în `catch`). */
+export function messageForLoginError(error: unknown, language: Language = 'ro'): string {
+  const m = coreMessages[language].login;
   if (error instanceof ApiError) {
-    if (error.status === 403) {
-      return 'Contul există, dar nu are drepturi de administrator. Cere-i unui admin să îți acorde rolul „admin".';
-    }
-    if (error.status === 401) return 'Email sau parolă greșite.';
-    if (error.status === 429) {
-      return 'Prea multe încercări de autentificare. Așteaptă un minut și încearcă din nou.';
-    }
-    if (error.status === 0) {
-      return 'Serverul nu răspunde. Verifică conexiunea sau adresa API-ului.';
-    }
+    if (error.status === 403) return m.forbidden;
+    if (error.status === 401) return m.badCredentials;
+    if (error.status === 429) return m.rateLimited;
+    if (error.status === 0) return m.offline;
+    // Textul vine de pe server — rămâne netradus.
     return error.detail;
   }
-  return 'Autentificare eșuată. Încearcă din nou.';
+  return m.failed;
 }
 
 export function LoginPage(): JSX.Element {
   const { status, signIn } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  const { language } = useLanguage();
+  const m = useMessages(coreMessages).login;
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -53,7 +54,7 @@ export function LoginPage(): JSX.Element {
       await signIn(email.trim(), password);
       navigate('/dashboard', { replace: true });
     } catch (caught) {
-      setError(messageForLoginError(caught));
+      setError(messageForLoginError(caught, language));
     } finally {
       setBusy(false);
     }
@@ -65,9 +66,9 @@ export function LoginPage(): JSX.Element {
         <div className="login__brand">
           FLIRT <span>admin</span>
         </div>
-        <p className="login__subtitle">Acces rezervat conturilor cu rol de administrator.</p>
+        <p className="login__subtitle">{m.subtitle}</p>
 
-        <Field label="Email" htmlFor="email">
+        <Field label={m.email} htmlFor="email">
           <TextInput
             id="email"
             type="email"
@@ -78,7 +79,7 @@ export function LoginPage(): JSX.Element {
           />
         </Field>
 
-        <Field label="Parolă" htmlFor="password">
+        <Field label={m.password} htmlFor="password">
           <TextInput
             id="password"
             type="password"
@@ -96,11 +97,11 @@ export function LoginPage(): JSX.Element {
         ) : null}
 
         <Button type="submit" variant="primary" block disabled={busy}>
-          {busy ? 'Se autentifică…' : 'Intră în panou'}
+          {busy ? m.submitting : m.submit}
         </Button>
 
         <Button variant="ghost" small onClick={toggleTheme}>
-          {theme === 'dark' ? 'Temă deschisă' : 'Temă întunecată'}
+          {theme === 'dark' ? m.themeLight : m.themeDark}
         </Button>
       </form>
     </div>

@@ -14,7 +14,8 @@
       "locationUnavailable": "Location unavailable",
       "titled": "Venue map: {{title}}",
       "untitled": "Venue map"
-    }
+    },
+    "requestTicket": "Request a ticket"
   },
   "stories": {
     "title": "Stories",
@@ -132,6 +133,82 @@
     "backToProfile": "Back to profile",
     "a11y": {
       "shot": "The selfie you just took"
+    }
+  },
+  "ticketRequests": {
+    "title": "Ticket purchase request",
+    "loading": "Loading",
+    "eventLoadError": "We couldn't load the event.",
+    "requestsLoadError": "We couldn't load your requests.",
+    "status": {
+      "pending_payment": "Awaiting payment",
+      "payment_proof_submitted": "Proof sent / Under review",
+      "under_review": "Under review",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "additional_information_required": "More information needed",
+      "cancelled": "Cancelled"
+    },
+    "ticketsCount_one": "{{count}} ticket",
+    "ticketsCount_other": "{{count}} tickets",
+    "approvedNote": "Your payment has been confirmed. Your ticket request was approved.",
+    "adminMessage": "Message from the administrator:",
+    "payment": {
+      "title": "Payment instructions",
+      "payExact": "Pay exactly <b>{{amount}}</b> by manual transfer.",
+      "phone": "Transfer phone:",
+      "account": "Account / card:",
+      "description": "Required payment reference:"
+    },
+    "proof": {
+      "label": "Proof of payment",
+      "hint": "JPG, JPEG, PNG or WEBP · up to {{limit}}.",
+      "uploadFailed": "We couldn't upload the proof. Please try again.",
+      "uploading": "Uploading…",
+      "submit": "Send proof of payment",
+      "required": "Choose your proof of payment.",
+      "badType": "We only accept JPG, JPEG, PNG or WEBP images.",
+      "tooLarge": "The file exceeds the {{limit}} limit."
+    },
+    "form": {
+      "pricePerTicket": "Price per ticket",
+      "quantity": "Number of tickets",
+      "total": "Total to pay",
+      "fullName": "Full name",
+      "phone": "Phone",
+      "emailOptional": "Email (optional)",
+      "messageOptional": "Message / comment (optional)",
+      "submitFailed": "We couldn't send the request. Check your details and try again.",
+      "submitting": "Sending…",
+      "submit": "Send request"
+    },
+    "errors": {
+      "fullName": "Enter your full name.",
+      "phone": "Enter a valid phone number.",
+      "email": "This email is not valid.",
+      "quantity": "Choose between {{min}} and {{max}} tickets."
+    }
+  },
+  "validation": {
+    "search": {
+      "interestedRequired": "Choose at least one gender.",
+      "ageMinRequired": "Enter the minimum age.",
+      "ageMinTooLow": "The minimum age cannot be below {{min}} (the app is 18+).",
+      "ageMinTooHigh": "The minimum age cannot exceed {{max}}.",
+      "ageMaxRequired": "Enter the maximum age.",
+      "ageMaxTooLow": "The maximum age cannot be below {{min}} (the app is 18+).",
+      "ageMaxTooHigh": "The maximum age cannot exceed {{max}}.",
+      "ageMaxBelowMin": "The maximum age cannot be lower than the minimum.",
+      "radiusRequired": "Enter the search radius.",
+      "radiusRange": "The radius must be between {{min}} and {{max}} km."
+    },
+    "photos": {
+      "limitReached": "You've reached the maximum of {{max}} photos. Delete one to add another.",
+      "needMore": "Add at least {{min}} photos to continue ({{left}} more to go).",
+      "tooMany": "You can have at most {{max}} photos.",
+      "typeNotAllowed": "File type not allowed. We only accept {{types}} or {{last}}.",
+      "tooLargeAfterCompression": "The photo is still too large ({{size}}) even after compression, and the limit is {{limit}}. Choose another photo.",
+      "decodeFailed": "We couldn't process the photo. Some formats (for example HEIC, the iPhone default) can't be opened here. Choose another photo or save it as JPEG."
     }
   }
 }

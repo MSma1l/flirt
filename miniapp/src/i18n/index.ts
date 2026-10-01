@@ -48,7 +48,8 @@ export const MINIAPP_NAMESPACE = 'miniapp' as const;
 /** Namespace-ul ecranelor portate, pentru textele fără corespondent pe mobil. */
 export const SCREENS_NAMESPACE = 'screens' as const;
 
-const miniappResources: Record<Language, Record<string, unknown>> = { ro, ru, en };
+/** Cataloagele `miniapp`, exportate ca testul de paritate să le poată citi. */
+export const miniappResources: Record<Language, Record<string, unknown>> = { ro, ru, en };
 
 /** Cataloagele `screens`, exportate ca testul de paritate să le poată citi. */
 export const screensResources: Record<Language, Record<string, unknown>> = {

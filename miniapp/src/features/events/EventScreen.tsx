@@ -60,7 +60,7 @@ const ORDER_RANK: Record<TicketOrder['status'], number> = {
 };
 
 export function EventScreen() {
-  const { t } = useTranslation('events');
+  const { t } = useTranslation(['events', 'screens']);
   const params = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -205,7 +205,7 @@ export function EventScreen() {
           data-testid="request-ticket-btn"
           onClick={() => void navigate(ticketRequestPath(eventId))}
         >
-          Solicită bilet
+          {t('screens:events.requestTicket')}
         </button>
         <button
           type="button"

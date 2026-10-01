@@ -4,15 +4,40 @@
  * plafoanele din config. O validăm în UI ca utilizatorul să vadă un mesaj clar,
  * nu un 422 sec de la server.
  *
- * REUTILIZEAZĂ `searchRadiusKm` și `MIN_AGE` din `mobile/src/utils/validation.ts`
+ * REUTILIZEAZĂ `MIN_AGE` și limitele razei din `mobile/src/utils/validation.ts`
  * (fișier pur, fără niciun import). `mobile/src/features/anketa/validation.ts`,
  * unde stau validatoarele de vârstă, NU se poate importa: el trage
  * `@/utils/validation`, iar în Mini App `@/` e `miniapp/src/`, unde modulul nu
  * există — aceeași limită explicată în `features/profile/validation.ts`.
  */
-import { MIN_AGE, searchRadiusKm } from '@mobile/utils/validation';
+import {
+  MAX_SEARCH_RADIUS_KM,
+  MIN_AGE,
+  MIN_SEARCH_RADIUS_KM,
+} from '@mobile/utils/validation';
 
-export { MIN_AGE, searchRadiusKm };
+import { i18n } from '@/i18n';
+
+export { MIN_AGE };
+
+/** Mesajele sunt traduse în limba curentă, din namespace-ul `screens`. */
+const tr = (key: string, params?: Record<string, number>) =>
+  i18n.t(`screens:validation.search.${key}`, params);
+
+/**
+ * Raza de căutare (km): număr întreg între 1 și 1000. Aceeași regulă ca
+ * `searchRadiusKm` din modulul mobil, dar cu mesaj tradus — cel mobil întoarce
+ * text românesc fix.
+ */
+export function searchRadiusKm(value?: string | null): string | null {
+  const v = (value ?? '').trim();
+  if (!v) return tr('radiusRequired');
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < MIN_SEARCH_RADIUS_KM || n > MAX_SEARCH_RADIUS_KM) {
+    return tr('radiusRange', { min: MIN_SEARCH_RADIUS_KM, max: MAX_SEARCH_RADIUS_KM });
+  }
+  return null;
+}
 
 /** Minimul absolut al intervalului căutat: aplicația este 18+ ONLY. */
 export const SEARCH_AGE_MIN = MIN_AGE;
@@ -33,30 +58,30 @@ export function parseAge(text: string): number | undefined {
 
 /** Cel puțin un gen căutat — altfel feed-ul i-ar arăta pe toți. */
 export function validateInterestedIn(value?: string[]): string | null {
-  return value && value.length > 0 ? null : 'Alege cel puțin un gen.';
+  return value && value.length > 0 ? null : tr('interestedRequired');
 }
 
 export function validateSearchAgeMin(value?: number): string | null {
-  if (value == null || Number.isNaN(value)) return 'Introdu vârsta minimă.';
+  if (value == null || Number.isNaN(value)) return tr('ageMinRequired');
   if (value < SEARCH_AGE_MIN) {
-    return `Vârsta minimă nu poate fi sub ${SEARCH_AGE_MIN} ani (aplicația este 18+).`;
+    return tr('ageMinTooLow', { min: SEARCH_AGE_MIN });
   }
   if (value > SEARCH_AGE_MAX_LIMIT) {
-    return `Vârsta minimă nu poate depăși ${SEARCH_AGE_MAX_LIMIT} de ani.`;
+    return tr('ageMinTooHigh', { max: SEARCH_AGE_MAX_LIMIT });
   }
   return null;
 }
 
 export function validateSearchAgeMax(value?: number, min?: number): string | null {
-  if (value == null || Number.isNaN(value)) return 'Introdu vârsta maximă.';
+  if (value == null || Number.isNaN(value)) return tr('ageMaxRequired');
   if (value < SEARCH_AGE_MIN) {
-    return `Vârsta maximă nu poate fi sub ${SEARCH_AGE_MIN} ani (aplicația este 18+).`;
+    return tr('ageMaxTooLow', { min: SEARCH_AGE_MIN });
   }
   if (value > SEARCH_AGE_MAX_LIMIT) {
-    return `Vârsta maximă nu poate depăși ${SEARCH_AGE_MAX_LIMIT} de ani.`;
+    return tr('ageMaxTooHigh', { max: SEARCH_AGE_MAX_LIMIT });
   }
   if (min != null && !Number.isNaN(min) && value < min) {
-    return 'Vârsta maximă nu poate fi mai mică decât cea minimă.';
+    return tr('ageMaxBelowMin');
   }
   return null;
 }

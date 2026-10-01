@@ -1,6 +1,15 @@
-/** Formatări de afișare (locale `ro-RO`, ca restul produsului). */
+/**
+ * Formatări de afișare. Locale-ul urmează limba panoului (`ro-RO` implicit);
+ * îl setează `LanguageProvider` la fiecare schimbare de limbă.
+ */
 
-const LOCALE = 'ro-RO';
+let LOCALE = 'ro-RO';
+
+export function setFormatLocale(locale: string): void {
+  LOCALE = locale;
+}
+
+const isRussian = (): boolean => LOCALE.startsWith('ru');
 
 export function formatNumber(value: number): string {
   return new Intl.NumberFormat(LOCALE).format(value);
@@ -42,12 +51,13 @@ export function formatRelative(iso: string): string {
   if (Number.isNaN(date.getTime())) return '—';
   const diffMs = Date.now() - date.getTime();
   const minutes = Math.round(diffMs / 60_000);
-  if (minutes < 1) return 'acum';
-  if (minutes < 60) return `acum ${minutes} min`;
+  const ru = isRussian();
+  if (minutes < 1) return ru ? 'сейчас' : 'acum';
+  if (minutes < 60) return ru ? `${minutes} мин назад` : `acum ${minutes} min`;
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `acum ${hours} h`;
+  if (hours < 24) return ru ? `${hours} ч назад` : `acum ${hours} h`;
   const days = Math.round(hours / 24);
-  return `acum ${days} z`;
+  return ru ? `${days} дн назад` : `acum ${days} z`;
 }
 
 /** Valoarea pentru `<input type="datetime-local">` din ISO UTC. */

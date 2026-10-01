@@ -47,30 +47,33 @@ import {
   TextArea,
   TextInput,
 } from '../components/ui';
+import { useLanguage, useMessages } from '../i18n/LanguageContext';
+import { invitesMessages } from '../i18n/messages/invites';
 import { errorMessage } from '../lib/errors';
 import { formatDateTime } from '../lib/format';
 import {
   EMPTY_INVITE_FORM,
   INVITE_NOTE_MAX,
-  INVITE_STATUS_LABELS,
   inviteStatusTone,
   inviteWarnings,
   selectInvites,
   toInvitePayload,
-  usageLabel,
   validateInvite,
   type InviteFormErrors,
   type InviteFormState,
   type InviteStatusFilter,
 } from '../lib/loyaltyForm';
 
-const STATUS_OPTIONS: readonly { value: InviteStatusFilter; label: string }[] = [
-  { value: 'all', label: 'Toate' },
-  { value: 'active', label: 'Active' },
-  { value: 'exhausted', label: 'Epuizate' },
-  { value: 'expired', label: 'Expirate' },
-  { value: 'revoked', label: 'Revocate' },
+// Etichetele vin din dicționar (`m.filter[value]`), în limba activă.
+const STATUS_OPTIONS: readonly InviteStatusFilter[] = [
+  'all',
+  'active',
+  'exhausted',
+  'expired',
+  'revoked',
 ] as const;
+
+type InvitesMessages = (typeof invitesMessages)['ro'];
 
 /** Mesajul de eroare al unui câmp, sub input (tiparul din EventsPage). */
 function FieldError({ message }: { message?: string }): JSX.Element | null {
@@ -84,6 +87,7 @@ function FieldError({ message }: { message?: string }): JSX.Element | null {
 
 export function InvitesPage(): JSX.Element {
   const queryClient = useQueryClient();
+  const m = useMessages(invitesMessages);
   const [searchParams, setSearchParams] = useSearchParams();
   // Evenimentul din adresă: așa ajunge adminul aici din tabelul de evenimente.
   const eventFilter = searchParams.get('event') ?? 'all';
@@ -145,20 +149,20 @@ export function InvitesPage(): JSX.Element {
   });
 
   const eventTitle = (id: string): string =>
-    events.find((event) => event.id === id)?.title ?? 'evenimentul selectat';
+    events.find((event) => event.id === id)?.title ?? m.selectedEvent;
 
   return (
     <>
       <Card
         actions={
           <Link className="btn btn--ghost btn--sm" to="/loyalty">
-            Trepte de fidelitate
+            {m.loyaltyTiers}
           </Link>
         }
       >
         <div className="toolbar">
           <div style={{ flex: '1 1 280px' }}>
-            <Field label="Eveniment" htmlFor="invite-event-filter">
+            <Field label={m.eventLabel} htmlFor="invite-event-filter">
               <Select
                 id="invite-event-filter"
                 value={eventFilter}
@@ -168,7 +172,7 @@ export function InvitesPage(): JSX.Element {
                   resetPaging();
                 }}
               >
-                <option value="all">Toate evenimentele</option>
+                <option value="all">{m.allEvents}</option>
                 {events.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.title}
@@ -178,15 +182,15 @@ export function InvitesPage(): JSX.Element {
             </Field>
           </div>
           <div style={{ width: 180 }}>
-            <Field label="Stare" htmlFor="invite-status-filter">
+            <Field label={m.statusLabel} htmlFor="invite-status-filter">
               <Select
                 id="invite-status-filter"
                 value={status}
                 onChange={(event) => setStatus(event.target.value as InviteStatusFilter)}
               >
                 {STATUS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
+                  <option key={option} value={option}>
+                    {m.filter[option]}
                   </option>
                 ))}
               </Select>
@@ -199,25 +203,22 @@ export function InvitesPage(): JSX.Element {
               setCreating(true);
             }}
           >
-            Invitație nouă
+            {m.newInvite}
           </Button>
         </div>
         {eventFilter !== 'all' ? (
           <p className="muted" data-testid="invite-event-context">
-            {`Invitațiile evenimentului „${eventTitle(eventFilter)}". `}
+            {m.eventContext(eventTitle(eventFilter))}
             <Link to={`/events?q=${encodeURIComponent(eventTitle(eventFilter))}`}>
-              Vezi evenimentul
+              {m.viewEvent}
             </Link>
           </p>
         ) : null}
       </Card>
 
       {issued ? (
-        <Card title="Invitație emisă">
-          <p className="field__hint">
-            Trimite codul persoanei invitate. Îl poți reciti oricând din tabelul de mai jos —
-            dar NU apare în jurnalul de audit, deci nu-l căuta acolo.
-          </p>
+        <Card title={m.issuedTitle}>
+          <p className="field__hint">{m.issuedHint}</p>
           <div className="toolbar" data-testid="issued-invite">
             <span className="mono" style={{ fontSize: 24, letterSpacing: 2 }}>
               {issued.code}
@@ -225,35 +226,37 @@ export function InvitesPage(): JSX.Element {
             <CopyButton
               value={issued.code}
               small={false}
-              label="Copiază codul"
-              title="Copiază codul invitației"
+              label={m.copyCode}
+              title={m.copyCodeTitle}
             />
             <span className="muted">
-              {`${issued.event_title} · ${issued.max_uses} folosiri · expiră ${formatDateTime(
-                issued.expires_at,
-              )}`}
+              {m.issuedSummary(
+                issued.event_title,
+                issued.max_uses,
+                formatDateTime(issued.expires_at),
+              )}
             </span>
             <Button small onClick={() => setIssued(null)}>
-              Am trimis codul
+              {m.codeSent}
             </Button>
           </div>
         </Card>
       ) : null}
 
-      <Card title="Invitații">
+      <Card title={m.listTitle}>
         {query.isPending ? (
-          <LoadingState label="Se încarcă invitațiile…" />
+          <LoadingState label={m.loading} />
         ) : query.isError ? (
           <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} />
         ) : invites.length === 0 ? (
           <EmptyState
-            title="Nicio invitație"
-            hint="Emite prima invitație — codul se generează pe server și apare aici."
+            title={m.emptyTitle}
+            hint={m.emptyHint}
           />
         ) : visible.length === 0 ? (
           <EmptyState
-            title="Nicio invitație în starea aleasă"
-            hint="Filtrul de stare se aplică paginii încărcate. Schimbă starea sau treci la pagina următoare."
+            title={m.emptyFilteredTitle}
+            hint={m.emptyFilteredHint}
           />
         ) : (
           <>
@@ -264,15 +267,15 @@ export function InvitesPage(): JSX.Element {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Cod</th>
-                    <th>Eveniment</th>
-                    <th>Folosiri</th>
-                    <th>Expiră</th>
-                    <th>Treaptă minimă</th>
-                    <th>Reducere</th>
-                    <th>Notă</th>
-                    <th>Stare</th>
-                    <th aria-label="Acțiuni" />
+                    <th>{m.columns.code}</th>
+                    <th>{m.columns.event}</th>
+                    <th>{m.columns.uses}</th>
+                    <th>{m.columns.expires}</th>
+                    <th>{m.columns.minTier}</th>
+                    <th>{m.columns.discount}</th>
+                    <th>{m.columns.note}</th>
+                    <th>{m.columns.status}</th>
+                    <th aria-label={m.columns.actions} />
                   </tr>
                 </thead>
                 <tbody>
@@ -283,7 +286,7 @@ export function InvitesPage(): JSX.Element {
                           <span className="mono">{invite.code}</span>
                           <CopyButton
                             value={invite.code}
-                            title={`Copiază codul invitației pentru ${invite.event_title}`}
+                            title={m.copyCodeFor(invite.event_title)}
                           />
                         </div>
                       </td>
@@ -292,7 +295,7 @@ export function InvitesPage(): JSX.Element {
                           {invite.event_title}
                         </Link>
                       </td>
-                      <td className="mono" title={usageLabel(invite)}>
+                      <td className="mono" title={m.usage(invite.used_count, invite.max_uses)}>
                         {`${invite.used_count}/${invite.max_uses}`}
                       </td>
                       <td className="muted mono">{formatDateTime(invite.expires_at)}</td>
@@ -302,7 +305,7 @@ export function InvitesPage(): JSX.Element {
                           : `${invite.min_tier}${
                               invite.min_stamps_required === null
                                 ? ''
-                                : ` (${invite.min_stamps_required} ștampile)`
+                                : ` (${m.stamps(invite.min_stamps_required)})`
                             }`}
                       </td>
                       <td className="mono">
@@ -311,7 +314,7 @@ export function InvitesPage(): JSX.Element {
                       <td>{invite.note ?? '—'}</td>
                       <td>
                         <Badge tone={inviteStatusTone(invite.status)}>
-                          {INVITE_STATUS_LABELS[invite.status]}
+                          {m.statusLabels[invite.status]}
                         </Badge>
                       </td>
                       <td>
@@ -325,7 +328,7 @@ export function InvitesPage(): JSX.Element {
                               setToRevoke(invite);
                             }}
                           >
-                            {invite.revoked_at === null ? 'Revocă' : 'Revocată'}
+                            {invite.revoked_at === null ? m.revoke : m.revoked}
                           </Button>
                         </div>
                       </td>
@@ -336,14 +339,14 @@ export function InvitesPage(): JSX.Element {
             </div>
 
             <div className="pagination">
-              <span className="muted">{`Pagina ${pageIndex + 1} · ${visible.length} afișate`}</span>
+              <span className="muted">{m.pageSummary(pageIndex + 1, visible.length)}</span>
               <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
                 <Button
                   small
                   disabled={pageIndex === 0}
                   onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
                 >
-                  Înapoi
+                  {m.previous}
                 </Button>
                 <Button
                   small
@@ -358,7 +361,7 @@ export function InvitesPage(): JSX.Element {
                     setPageIndex((index) => index + 1);
                   }}
                 >
-                  Înainte
+                  {m.next}
                 </Button>
               </div>
             </div>
@@ -383,10 +386,10 @@ export function InvitesPage(): JSX.Element {
 
       {toRevoke ? (
         <ConfirmDialog
-          title="Revocă invitația"
+          title={m.revokeTitle}
           // FĂRĂ COD în mesaj: invitația se identifică prin eveniment, notă și dată.
-          message={revokeMessage(toRevoke)}
-          confirmLabel="Revocă invitația"
+          message={revokeMessage(toRevoke, m)}
+          confirmLabel={m.revokeConfirm}
           busy={revoke.isPending}
           errorMessage={actionError}
           onCancel={() => {
@@ -401,19 +404,19 @@ export function InvitesPage(): JSX.Element {
 }
 
 /** Ce se pierde prin revocare, în cuvinte — și ce NU se pierde. */
-export function revokeMessage(invite: LoyaltyInvite): string {
+export function revokeMessage(
+  invite: LoyaltyInvite,
+  m: InvitesMessages = invitesMessages.ro,
+): string {
   const lines = [
-    `Invitația pentru „${invite.event_title}" (emisă ${formatDateTime(invite.created_at)})` +
-      `${invite.note ? `, notă: „${invite.note}"` : ''} nu va mai putea fi folosită de nimeni.`,
-    `Folosiri consumate: ${invite.used_count} din ${invite.max_uses}.`,
+    m.revokeIntro(invite.event_title, formatDateTime(invite.created_at), invite.note),
+    m.revokeUsed(invite.used_count, invite.max_uses),
   ];
   if (invite.used_count > 0) {
-    lines.push(
-      'Cele consumate RĂMÂN valabile: cine a intrat deja pe ea își păstrează reducerea.',
-    );
+    lines.push(m.revokeKept);
   }
   if (invite.uses_left > 0) {
-    lines.push(`Se pierd ${invite.uses_left} folosiri rămase. Revocarea nu se poate anula.`);
+    lines.push(m.revokeLost(invite.uses_left));
   }
   return lines.join(' ');
 }
@@ -435,6 +438,8 @@ function InviteFormModal({
   onCancel: () => void;
   onSubmit: (form: InviteFormState) => void;
 }): JSX.Element {
+  const m = useMessages(invitesMessages).form;
+  const { language } = useLanguage();
   const [form, setForm] = useState<InviteFormState>({
     ...EMPTY_INVITE_FORM,
     event_id: defaultEventId,
@@ -443,8 +448,8 @@ function InviteFormModal({
   const set = <K extends keyof InviteFormState>(key: K, value: InviteFormState[K]): void =>
     setForm((current) => ({ ...current, [key]: value }));
 
-  const errors: InviteFormErrors = validateInvite(form);
-  const hints = inviteWarnings(form);
+  const errors: InviteFormErrors = validateInvite(form, Date.now(), language);
+  const hints = inviteWarnings(form, Date.now(), language);
   const valid = Object.keys(errors).length === 0;
 
   const submit = (event: FormEvent): void => {
@@ -454,21 +459,18 @@ function InviteFormModal({
   };
 
   return (
-    <Modal title="Invitație nouă" onClose={onCancel}>
+    <Modal title={m.title} onClose={onCancel}>
       <form className="modal__body" onSubmit={submit}>
-        <p className="field__hint">
-          Codul se generează pe server, din caractere fără ambiguități (fără 0/O, 1/I/L), și
-          apare o singură dată evidențiat după emitere — de acolo se copiază.
-        </p>
+        <p className="field__hint">{m.codeHint}</p>
 
-        <Field label="Eveniment *" htmlFor="invite-event">
+        <Field label={m.event} htmlFor="invite-event">
           <Select
             id="invite-event"
             value={form.event_id}
             aria-invalid={errors.event_id ? true : undefined}
             onChange={(event) => set('event_id', event.target.value)}
           >
-            <option value="">— alege evenimentul —</option>
+            <option value="">{m.chooseEvent}</option>
             {events.map((event) => (
               <option key={event.id} value={event.id}>
                 {event.title}
@@ -480,7 +482,7 @@ function InviteFormModal({
 
         <div className="form-grid">
           <div>
-            <Field label="Număr maxim de folosiri *" htmlFor="invite-max-uses">
+            <Field label={m.maxUses} htmlFor="invite-max-uses">
               <TextInput
                 id="invite-max-uses"
                 type="number"
@@ -495,7 +497,7 @@ function InviteFormModal({
             <FieldError message={errors.max_uses} />
           </div>
           <div>
-            <Field label="Expiră la *" htmlFor="invite-expires">
+            <Field label={m.expiresAt} htmlFor="invite-expires">
               <TextInput
                 id="invite-expires"
                 type="datetime-local"
@@ -507,27 +509,24 @@ function InviteFormModal({
             <FieldError message={errors.expires_at} />
           </div>
           <div>
-            <Field label="Treaptă minimă cerută" htmlFor="invite-min-tier">
+            <Field label={m.minTier} htmlFor="invite-min-tier">
               <Select
                 id="invite-min-tier"
                 value={form.min_tier}
                 onChange={(event) => set('min_tier', event.target.value)}
               >
-                <option value="">Fără cerință</option>
+                <option value="">{m.noRequirement}</option>
                 {tiers.map((tier) => (
                   <option key={tier.code} value={tier.code}>
-                    {`${tier.name} (de la ${tier.min_stamps} ștampile)`}
+                    {m.tierOption(tier.name, tier.min_stamps)}
                   </option>
                 ))}
               </Select>
             </Field>
-            <p className="field__hint">
-              Pragul se îngheață la emitere: dacă treapta se mută mai târziu, invitația
-              păstrează cerința de azi.
-            </p>
+            <p className="field__hint">{m.tierHint}</p>
           </div>
           <div>
-            <Field label="Reducere (%)" htmlFor="invite-discount">
+            <Field label={m.discount} htmlFor="invite-discount">
               <TextInput
                 id="invite-discount"
                 type="number"
@@ -535,7 +534,7 @@ function InviteFormModal({
                 min={0}
                 max={100}
                 step={1}
-                placeholder="gol = doar acces"
+                placeholder={m.discountPlaceholder}
                 value={form.discount_percent}
                 aria-invalid={errors.discount_percent ? true : undefined}
                 onChange={(event) => set('discount_percent', event.target.value)}
@@ -545,12 +544,12 @@ function InviteFormModal({
           </div>
         </div>
 
-        <Field label="Notă internă" htmlFor="invite-note">
+        <Field label={m.note} htmlFor="invite-note">
           <TextArea
             id="invite-note"
             value={form.note}
             maxLength={INVITE_NOTE_MAX}
-            placeholder="Pentru cine e, ce campanie — se vede doar în panou."
+            placeholder={m.notePlaceholder}
             aria-invalid={errors.note ? true : undefined}
             onChange={(event) => set('note', event.target.value)}
           />
@@ -559,7 +558,7 @@ function InviteFormModal({
 
         {hints.length > 0 ? (
           <div className="alert alert--warning" data-testid="invite-warnings">
-            <strong>De verificat:</strong>
+            <strong>{m.toCheck}</strong>
             <ul className="alert__list">
               {hints.map((hint) => (
                 <li key={hint}>{hint}</li>
@@ -572,10 +571,10 @@ function InviteFormModal({
 
         <div className="modal__actions">
           <Button variant="ghost" onClick={onCancel} disabled={busy}>
-            Anulează
+            {m.cancel}
           </Button>
           <Button type="submit" variant="primary" disabled={!valid || busy}>
-            {busy ? 'Se emite…' : 'Emite invitația'}
+            {busy ? m.issuing : m.issue}
           </Button>
         </div>
       </form>

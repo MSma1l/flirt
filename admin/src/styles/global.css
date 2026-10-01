@@ -124,6 +124,36 @@ a {
   color: var(--color-text-secondary);
 }
 
+.topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.lang-switch {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-input);
+}
+
+.lang-switch__btn {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--radius-input);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.lang-switch__btn--on {
+  background: var(--color-tag-bg);
+  color: var(--color-accent);
+}
+
 .main {
   display: flex;
   flex-direction: column;

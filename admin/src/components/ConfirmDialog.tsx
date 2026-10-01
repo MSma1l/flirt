@@ -11,6 +11,8 @@
  */
 import { useState, type FormEvent } from 'react';
 
+import { useMessages } from '../i18n/LanguageContext';
+import { coreMessages } from '../i18n/messages/core';
 import { Button, Field, TextArea, TextInput } from './ui';
 import { Modal } from './Modal';
 
@@ -44,6 +46,7 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps): JSX.Element {
+  const m = useMessages(coreMessages).confirm;
   const [typed, setTyped] = useState('');
   const [reason, setReason] = useState('');
 
@@ -69,14 +72,14 @@ export function ConfirmDialog({
               value={reason}
               maxLength={500}
               onChange={(event) => setReason(event.target.value)}
-              placeholder="Motivul intră în jurnalul de audit"
+              placeholder={m.reasonPlaceholder}
             />
           </Field>
         ) : null}
 
         {confirmPhrase !== undefined ? (
           <Field
-            label={`Scrie „${confirmPhrase}" ca să confirmi. Acțiunea este IREVERSIBILĂ.`}
+            label={m.phraseLabel(confirmPhrase)}
             htmlFor="confirm-phrase"
           >
             <TextInput
@@ -92,14 +95,14 @@ export function ConfirmDialog({
 
         <div className="modal__actions">
           <Button variant="ghost" onClick={onCancel} disabled={busy}>
-            Anulează
+            {m.cancel}
           </Button>
           <Button
             type="submit"
             variant={danger ? 'danger' : 'primary'}
             disabled={!canConfirm}
           >
-            {busy ? 'Se execută…' : confirmLabel}
+            {busy ? m.busy : confirmLabel}
           </Button>
         </div>
       </form>

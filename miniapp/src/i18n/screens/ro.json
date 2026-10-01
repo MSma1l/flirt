@@ -14,7 +14,8 @@
       "locationUnavailable": "Locație indisponibilă",
       "titled": "Harta locației: {{title}}",
       "untitled": "Harta locației"
-    }
+    },
+    "requestTicket": "Solicită bilet"
   },
   "stories": {
     "title": "Povești",
@@ -135,6 +136,83 @@
     "backToProfile": "Înapoi la profil",
     "a11y": {
       "shot": "Selfie-ul făcut acum"
+    }
+  },
+  "ticketRequests": {
+    "title": "Cerere de procurare bilet",
+    "loading": "Se încarcă",
+    "eventLoadError": "Nu am putut încărca evenimentul.",
+    "requestsLoadError": "Nu am putut încărca cererile tale.",
+    "status": {
+      "pending_payment": "În așteptarea plății",
+      "payment_proof_submitted": "Dovadă trimisă / În verificare",
+      "under_review": "În verificare",
+      "approved": "Acceptată",
+      "rejected": "Refuzată",
+      "additional_information_required": "Necesită informații suplimentare",
+      "cancelled": "Anulată"
+    },
+    "ticketsCount_one": "{{count}} bilet",
+    "ticketsCount_few": "{{count}} bilete",
+    "ticketsCount_other": "{{count}} de bilete",
+    "approvedNote": "Plata a fost confirmată. Cererea ta pentru bilet a fost acceptată.",
+    "adminMessage": "Mesaj administrator:",
+    "payment": {
+      "title": "Instrucțiuni de plată",
+      "payExact": "Achită exact <b>{{amount}}</b> prin transfer manual.",
+      "phone": "Telefon transfer:",
+      "account": "Cont / card:",
+      "description": "Descriere obligatorie:"
+    },
+    "proof": {
+      "label": "Dovada plății",
+      "hint": "JPG, JPEG, PNG sau WEBP · maximum {{limit}}.",
+      "uploadFailed": "Nu am putut încărca dovada. Încearcă din nou.",
+      "uploading": "Se încarcă…",
+      "submit": "Trimite dovada plății",
+      "required": "Alege dovada plății.",
+      "badType": "Acceptăm doar imagini JPG, JPEG, PNG sau WEBP.",
+      "tooLarge": "Fișierul depășește limita de {{limit}}."
+    },
+    "form": {
+      "pricePerTicket": "Preț pe bilet",
+      "quantity": "Număr de bilete",
+      "total": "Total de achitat",
+      "fullName": "Nume complet",
+      "phone": "Telefon",
+      "emailOptional": "Email (opțional)",
+      "messageOptional": "Mesaj / comentariu (opțional)",
+      "submitFailed": "Nu am putut trimite cererea. Verifică datele și încearcă din nou.",
+      "submitting": "Se trimite…",
+      "submit": "Trimite cererea"
+    },
+    "errors": {
+      "fullName": "Introdu numele complet.",
+      "phone": "Introdu un număr de telefon valid.",
+      "email": "Emailul nu este valid.",
+      "quantity": "Alege între {{min}} și {{max}} de bilete."
+    }
+  },
+  "validation": {
+    "search": {
+      "interestedRequired": "Alege cel puțin un gen.",
+      "ageMinRequired": "Introdu vârsta minimă.",
+      "ageMinTooLow": "Vârsta minimă nu poate fi sub {{min}} ani (aplicația este 18+).",
+      "ageMinTooHigh": "Vârsta minimă nu poate depăși {{max}} de ani.",
+      "ageMaxRequired": "Introdu vârsta maximă.",
+      "ageMaxTooLow": "Vârsta maximă nu poate fi sub {{min}} ani (aplicația este 18+).",
+      "ageMaxTooHigh": "Vârsta maximă nu poate depăși {{max}} de ani.",
+      "ageMaxBelowMin": "Vârsta maximă nu poate fi mai mică decât cea minimă.",
+      "radiusRequired": "Introdu raza de căutare.",
+      "radiusRange": "Raza trebuie să fie între {{min}} și {{max}} km."
+    },
+    "photos": {
+      "limitReached": "Ai atins numărul maxim de {{max}} poze. Șterge una ca să adaugi alta.",
+      "needMore": "Adaugă cel puțin {{min}} poze ca să continui (mai ai {{left}} de adăugat).",
+      "tooMany": "Poți avea maximum {{max}} poze.",
+      "typeNotAllowed": "Tip de fișier nepermis. Acceptăm doar {{types}} sau {{last}}.",
+      "tooLargeAfterCompression": "Poza rămâne prea mare ({{size}}) chiar și după comprimare, iar limita este {{limit}}. Alege altă poză.",
+      "decodeFailed": "Nu am putut procesa poza. Unele formate (de exemplu HEIC, cel implicit pe iPhone) nu pot fi deschise aici. Alege altă poză sau salveaz-o ca JPEG."
     }
   }
 }

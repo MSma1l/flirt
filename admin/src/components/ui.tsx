@@ -13,6 +13,9 @@ import type {
   TextareaHTMLAttributes,
 } from 'react';
 
+import { useMessages } from '../i18n/LanguageContext';
+import { coreMessages } from '../i18n/messages/core';
+
 type ButtonVariant = 'primary' | 'ghost' | 'danger';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -131,14 +134,16 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>): JSX.Elem
 }
 
 export function Spinner(): JSX.Element {
-  return <div className="spinner" role="status" aria-label="Se încarcă" />;
+  const m = useMessages(coreMessages).ui;
+  return <div className="spinner" role="status" aria-label={m.loading} />;
 }
 
-export function LoadingState({ label = 'Se încarcă…' }: { label?: string }): JSX.Element {
+export function LoadingState({ label }: { label?: string }): JSX.Element {
+  const m = useMessages(coreMessages).ui;
   return (
     <div className="state">
       <Spinner />
-      <span>{label}</span>
+      <span>{label ?? m.loadingEllipsis}</span>
     </div>
   );
 }
@@ -159,13 +164,14 @@ export function ErrorState({
   message: string;
   onRetry?: () => void;
 }): JSX.Element {
+  const m = useMessages(coreMessages).ui;
   return (
     <div className="state">
-      <span className="state__title">Ceva n-a mers</span>
+      <span className="state__title">{m.errorTitle}</span>
       <span role="alert">{message}</span>
       {onRetry ? (
         <Button variant="ghost" small onClick={onRetry}>
-          Reîncearcă
+          {m.retry}
         </Button>
       ) : null}
     </div>

@@ -1,4 +1,5 @@
 import { api } from '@/api/client';
+import { i18n } from '@/i18n';
 
 export const PAYMENT_PROOF_MAX_BYTES = 8 * 1024 * 1024;
 export const PAYMENT_PROOF_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
@@ -103,11 +104,17 @@ export async function uploadPaymentProof(requestId: string, file: File): Promise
   return fromApi(data);
 }
 
+/** Limita de upload, ca text afișabil („8 MB"), pentru mesaje și indicii. */
+export const PAYMENT_PROOF_MAX_LABEL = `${PAYMENT_PROOF_MAX_BYTES / (1024 * 1024)} MB`;
+
+/** Mesajul e tradus în limba curentă (namespace-ul `screens`). */
 export function validatePaymentProof(file: File | undefined): string | null {
-  if (!file) return 'Alege dovada plății.';
+  if (!file) return i18n.t('screens:ticketRequests.proof.required');
   if (!PAYMENT_PROOF_TYPES.includes(file.type as (typeof PAYMENT_PROOF_TYPES)[number])) {
-    return 'Acceptăm doar imagini JPG, JPEG, PNG sau WEBP.';
+    return i18n.t('screens:ticketRequests.proof.badType');
   }
-  if (file.size > PAYMENT_PROOF_MAX_BYTES) return 'Fișierul depășește limita de 8 MB.';
+  if (file.size > PAYMENT_PROOF_MAX_BYTES) {
+    return i18n.t('screens:ticketRequests.proof.tooLarge', { limit: PAYMENT_PROOF_MAX_LABEL });
+  }
   return null;
 }

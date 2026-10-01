@@ -13,6 +13,8 @@ import { fetchReports, resolveReport } from '../api/admin';
 import type { AdminReport, ResolveAction } from '../api/types';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Badge, Button, Card, EmptyState, ErrorState, LoadingState } from '../components/ui';
+import { useMessages } from '../i18n/LanguageContext';
+import { coreMessages } from '../i18n/messages/core';
 import { errorMessage } from '../lib/errors';
 import { formatDateTime, formatRelative } from '../lib/format';
 
@@ -21,34 +23,15 @@ interface PendingAction {
   action: ResolveAction;
 }
 
-const ACTION_COPY: Record<
-  ResolveAction,
-  { title: string; message: string; confirm: string; danger: boolean }
-> = {
-  ban: {
-    title: 'Banează contul raportat',
-    message:
-      'Contul va fi banat: nu se mai poate autentifica, iar profilul dispare din feed. Acțiunea poate fi anulată ulterior din ecranul Utilizatori (deban).',
-    confirm: 'Banează contul',
-    danger: true,
-  },
-  hide: {
-    title: 'Ascunde profilul',
-    message:
-      'Profilul nu va mai apărea în feed, dar contul rămâne activ. Folosește-o când conținutul e problematic, dar nu justifică un ban.',
-    confirm: 'Ascunde profilul',
-    danger: true,
-  },
-  dismiss: {
-    title: 'Respinge raportul',
-    message:
-      'Raportul se închide fără nicio măsură împotriva contului raportat. Rămâne în jurnalul de audit.',
-    confirm: 'Respinge raportul',
-    danger: false,
-  },
+/** Doar ban/ascundere sunt distructive; textele vin din dicționarul `core`. */
+const ACTION_DANGER: Record<ResolveAction, boolean> = {
+  ban: true,
+  hide: true,
+  dismiss: false,
 };
 
 export function ModerationPage(): JSX.Element {
+  const m = useMessages(coreMessages).moderation;
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
@@ -78,7 +61,7 @@ export function ModerationPage(): JSX.Element {
     onError: (error: unknown) => setActionError(errorMessage(error)),
   });
 
-  if (query.isPending) return <LoadingState label="Se încarcă coada de moderare…" />;
+  if (query.isPending) return <LoadingState label={m.loading} />;
   if (query.isError) {
     return <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} />;
   }
@@ -87,18 +70,18 @@ export function ModerationPage(): JSX.Element {
     return (
       <Card>
         <EmptyState
-          title="Coada e goală"
-          hint="Nu există rapoarte în așteptare. Rapoartele noi apar aici automat."
+          title={m.emptyTitle}
+          hint={m.emptyHint}
         />
       </Card>
     );
   }
 
-  const copy = pending ? ACTION_COPY[pending.action] : null;
+  const copy = pending ? m.actions[pending.action] : null;
 
   return (
     <div className="moderation">
-      <Card title={`Rapoarte deschise (${reports.length})`}>
+      <Card title={m.openReports(reports.length)}>
         <div className="queue">
           {reports.map((report) => {
             const isActive = selected?.id === report.id;
@@ -112,10 +95,10 @@ export function ModerationPage(): JSX.Element {
               >
                 <div className="queue__head">
                   <span className="queue__name">
-                    {report.reported?.name ?? report.reported?.email ?? 'Profil necunoscut'}
+                    {report.reported?.name ?? report.reported?.email ?? m.unknownProfile}
                   </span>
                   <Badge tone={report.reporters_count > 1 ? 'danger' : 'neutral'}>
-                    {report.reporters_count} raportări
+                    {m.reportsCount(report.reporters_count)}
                   </Badge>
                 </div>
                 <div className="queue__head">
@@ -138,58 +121,58 @@ export function ModerationPage(): JSX.Element {
               onClick={() => void query.fetchNextPage()}
               disabled={query.isFetchingNextPage}
             >
-              {query.isFetchingNextPage ? 'Se încarcă…' : 'Încarcă mai multe'}
+              {query.isFetchingNextPage ? m.loadingMore : m.loadMore}
             </Button>
           </div>
         ) : null}
       </Card>
 
       {selected ? (
-        <Card title="Profil raportat">
+        <Card title={m.reportedProfile}>
           <dl className="detail-rows">
             <div className="detail-row">
-              <dt>Nume</dt>
+              <dt>{m.name}</dt>
               <dd>{selected.reported?.name ?? '—'}</dd>
             </div>
             <div className="detail-row">
-              <dt>Email</dt>
+              <dt>{m.email}</dt>
               <dd>{selected.reported?.email ?? '—'}</dd>
             </div>
             <div className="detail-row">
-              <dt>Vârstă / oraș</dt>
+              <dt>{m.ageCity}</dt>
               <dd>
                 {selected.reported?.age ?? '—'} · {selected.reported?.city ?? '—'}
               </dd>
             </div>
             <div className="detail-row">
-              <dt>Descriere</dt>
+              <dt>{m.about}</dt>
               <dd>{selected.reported?.about ?? '—'}</dd>
             </div>
             <div className="detail-row">
-              <dt>Motiv raport</dt>
+              <dt>{m.category}</dt>
               <dd>
                 <Badge tone="warning">{selected.category}</Badge>
               </dd>
             </div>
             <div className="detail-row">
-              <dt>Nota raportorului</dt>
+              <dt>{m.note}</dt>
               <dd>{selected.note ?? '—'}</dd>
             </div>
             <div className="detail-row">
-              <dt>Raportări distincte</dt>
+              <dt>{m.reporters}</dt>
               <dd className="mono">{selected.reporters_count}</dd>
             </div>
             <div className="detail-row">
-              <dt>Primit la</dt>
+              <dt>{m.receivedAt}</dt>
               <dd>{formatDateTime(selected.created_at)}</dd>
             </div>
             <div className="detail-row">
-              <dt>Stare cont</dt>
+              <dt>{m.accountState}</dt>
               <dd>
                 {selected.reported?.banned_at ? (
-                  <Badge tone="danger">Banat</Badge>
+                  <Badge tone="danger">{m.banned}</Badge>
                 ) : (
-                  <Badge tone="success">Activ</Badge>
+                  <Badge tone="success">{m.active}</Badge>
                 )}
               </dd>
             </div>
@@ -198,7 +181,7 @@ export function ModerationPage(): JSX.Element {
           {selected.reported && selected.reported.photos.length > 0 ? (
             <div className="photos" style={{ marginTop: 'var(--space-4)' }}>
               {selected.reported.photos.slice(0, 6).map((url) => (
-                <img key={url} src={url} alt="Fotografie din profilul raportat" loading="lazy" />
+                <img key={url} src={url} alt={m.photoAlt} loading="lazy" />
               ))}
             </div>
           ) : null}
@@ -211,7 +194,7 @@ export function ModerationPage(): JSX.Element {
                 setPending({ report: selected, action: 'ban' });
               }}
             >
-              Banează contul
+              {m.actions.ban.confirm}
             </Button>
             <Button
               onClick={() => {
@@ -219,7 +202,7 @@ export function ModerationPage(): JSX.Element {
                 setPending({ report: selected, action: 'hide' });
               }}
             >
-              Ascunde profilul
+              {m.actions.hide.confirm}
             </Button>
             <Button
               variant="ghost"
@@ -228,7 +211,7 @@ export function ModerationPage(): JSX.Element {
                 setPending({ report: selected, action: 'dismiss' });
               }}
             >
-              Respinge raportul
+              {m.actions.dismiss.confirm}
             </Button>
           </div>
         </Card>
@@ -239,8 +222,8 @@ export function ModerationPage(): JSX.Element {
           title={copy.title}
           message={copy.message}
           confirmLabel={copy.confirm}
-          danger={copy.danger}
-          reasonLabel="Motiv (opțional)"
+          danger={ACTION_DANGER[pending.action]}
+          reasonLabel={m.reasonLabel}
           busy={resolve.isPending}
           errorMessage={actionError}
           onCancel={() => {

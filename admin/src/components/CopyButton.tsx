@@ -13,6 +13,8 @@
  */
 import { useEffect, useRef, useState } from 'react';
 
+import { useMessages } from '../i18n/LanguageContext';
+import { coreMessages } from '../i18n/messages/core';
 import { Button } from './ui';
 
 type CopyState = 'idle' | 'done' | 'failed';
@@ -45,7 +47,7 @@ async function copyText(value: string): Promise<boolean> {
 
 export function CopyButton({
   value,
-  label = 'Copiază',
+  label: labelProp,
   title,
   small = true,
 }: {
@@ -55,6 +57,8 @@ export function CopyButton({
   title?: string;
   small?: boolean;
 }): JSX.Element {
+  const m = useMessages(coreMessages).copy;
+  const label = labelProp ?? m.label;
   const [state, setState] = useState<CopyState>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -82,7 +86,7 @@ export function CopyButton({
       // `aria-live` pe buton: schimbarea etichetei e anunțată, nu doar văzută.
       aria-live="polite"
     >
-      {state === 'done' ? 'Copiat!' : state === 'failed' ? 'Nu s-a putut copia' : label}
+      {state === 'done' ? m.done : state === 'failed' ? m.failed : label}
     </Button>
   );
 }

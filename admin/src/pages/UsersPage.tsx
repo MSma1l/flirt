@@ -22,6 +22,8 @@ import {
   Select,
   TextInput,
 } from '../components/ui';
+import { useMessages } from '../i18n/LanguageContext';
+import { usersMessages } from '../i18n/messages/users';
 import { errorMessage } from '../lib/errors';
 import { formatDateTime } from '../lib/format';
 
@@ -33,15 +35,12 @@ type Dialog =
   | { kind: 'delete'; user: AdminUser }
   | { kind: 'detail'; user: AdminUser };
 
-const STATUS_OPTIONS: readonly { value: UserStatusFilter; label: string }[] = [
-  { value: 'all', label: 'Toți' },
-  { value: 'active', label: 'Activi' },
-  { value: 'banned', label: 'Banați' },
-  { value: 'reported', label: 'Raportați' },
-] as const;
+// Etichetele vin din dicționar (`m.status[value]`), în limba activă.
+const STATUS_OPTIONS: readonly UserStatusFilter[] = ['all', 'active', 'banned', 'reported'] as const;
 
 export function UsersPage(): JSX.Element {
   const queryClient = useQueryClient();
+  const m = useMessages(usersMessages);
 
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
@@ -116,17 +115,17 @@ export function UsersPage(): JSX.Element {
       <Card>
         <form className="toolbar" onSubmit={onSearch}>
           <div style={{ flex: '1 1 260px' }}>
-            <Field label="Caută (email sau nume)" htmlFor="user-search">
+            <Field label={m.searchLabel} htmlFor="user-search">
               <TextInput
                 id="user-search"
                 value={searchInput}
-                placeholder="ana@exemplu.ro"
+                placeholder={m.searchPlaceholder}
                 onChange={(event) => setSearchInput(event.target.value)}
               />
             </Field>
           </div>
           <div style={{ width: 180 }}>
-            <Field label="Stare" htmlFor="user-status">
+            <Field label={m.statusLabel} htmlFor="user-status">
               <Select
                 id="user-status"
                 value={status}
@@ -136,40 +135,40 @@ export function UsersPage(): JSX.Element {
                 }}
               >
                 {STATUS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
+                  <option key={option} value={option}>
+                    {m.status[option]}
                   </option>
                 ))}
               </Select>
             </Field>
           </div>
           <Button type="submit" variant="primary">
-            Caută
+            {m.search}
           </Button>
         </form>
       </Card>
 
       <Card>
         {query.isPending ? (
-          <LoadingState label="Se încarcă utilizatorii…" />
+          <LoadingState label={m.loading} />
         ) : query.isError ? (
           <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} />
         ) : users.length === 0 ? (
-          <EmptyState title="Niciun utilizator" hint="Schimbă căutarea sau filtrul de stare." />
+          <EmptyState title={m.emptyTitle} hint={m.emptyHint} />
         ) : (
           <>
             <div className="table-wrap">
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Email</th>
-                    <th>Nume</th>
-                    <th>Oraș</th>
-                    <th>Înscris</th>
-                    <th>Ultima activitate</th>
-                    <th>Rapoarte</th>
-                    <th>Stare</th>
-                    <th aria-label="Acțiuni" />
+                    <th>{m.columns.email}</th>
+                    <th>{m.columns.name}</th>
+                    <th>{m.columns.city}</th>
+                    <th>{m.columns.joined}</th>
+                    <th>{m.columns.lastActive}</th>
+                    <th>{m.columns.reports}</th>
+                    <th>{m.columns.status}</th>
+                    <th aria-label={m.columns.actions} />
                   </tr>
                 </thead>
                 <tbody>
@@ -183,19 +182,19 @@ export function UsersPage(): JSX.Element {
                       <td className="mono">{user.reports_count}</td>
                       <td>
                         {user.banned_at ? (
-                          <Badge tone="danger">Banat</Badge>
+                          <Badge tone="danger">{m.banned}</Badge>
                         ) : (
-                          <Badge tone="success">Activ</Badge>
+                          <Badge tone="success">{m.active}</Badge>
                         )}
                       </td>
                       <td>
                         <div className="table__actions">
                           <Button small onClick={() => setDialog({ kind: 'detail', user })}>
-                            Detalii
+                            {m.details}
                           </Button>
                           {user.banned_at ? (
                             <Button small onClick={() => setDialog({ kind: 'unban', user })}>
-                              Deban
+                              {m.unbanShort}
                             </Button>
                           ) : (
                             <Button
@@ -203,7 +202,7 @@ export function UsersPage(): JSX.Element {
                               variant="danger"
                               onClick={() => setDialog({ kind: 'ban', user })}
                             >
-                              Ban
+                              {m.banShort}
                             </Button>
                           )}
                           <Button
@@ -211,7 +210,7 @@ export function UsersPage(): JSX.Element {
                             variant="danger"
                             onClick={() => setDialog({ kind: 'delete', user })}
                           >
-                            Șterge
+                            {m.delete}
                           </Button>
                         </div>
                       </td>
@@ -222,14 +221,14 @@ export function UsersPage(): JSX.Element {
             </div>
 
             <div className="pagination">
-              <span className="muted">Pagina {pageIndex + 1}</span>
+              <span className="muted">{m.page(pageIndex + 1)}</span>
               <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
                 <Button
                   small
                   disabled={pageIndex === 0}
                   onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
                 >
-                  Înapoi
+                  {m.previous}
                 </Button>
                 <Button
                   small
@@ -244,7 +243,7 @@ export function UsersPage(): JSX.Element {
                     setPageIndex((index) => index + 1);
                   }}
                 >
-                  Înainte
+                  {m.next}
                 </Button>
               </div>
             </div>
@@ -258,10 +257,10 @@ export function UsersPage(): JSX.Element {
 
       {dialog?.kind === 'ban' ? (
         <ConfirmDialog
-          title="Banează contul"
-          message={`Contul ${dialog.user.email} nu se va mai putea autentifica, iar profilul dispare din feed. Poate fi debanat ulterior.`}
-          confirmLabel="Banează contul"
-          reasonLabel="Motivul banului"
+          title={m.banTitle}
+          message={m.banMessage(dialog.user.email)}
+          confirmLabel={m.banConfirm}
+          reasonLabel={m.banReason}
           reasonRequired
           busy={ban.isPending}
           errorMessage={actionError}
@@ -272,9 +271,9 @@ export function UsersPage(): JSX.Element {
 
       {dialog?.kind === 'unban' ? (
         <ConfirmDialog
-          title="Ridică banul"
-          message={`Contul ${dialog.user.email} va putea folosi din nou aplicația, iar profilul revine în feed.`}
-          confirmLabel="Ridică banul"
+          title={m.unbanTitle}
+          message={m.unbanMessage(dialog.user.email)}
+          confirmLabel={m.unbanConfirm}
           danger={false}
           busy={unban.isPending}
           errorMessage={actionError}
@@ -285,11 +284,11 @@ export function UsersPage(): JSX.Element {
 
       {dialog?.kind === 'delete' ? (
         <ConfirmDialog
-          title="Ștergere GDPR — ireversibilă"
-          message={`Contul ${dialog.user.email}, profilul, fotografiile, match-urile și mesajele lui vor fi ȘTERSE definitiv. Nu există „undo" și datele NU pot fi recuperate.`}
-          confirmLabel="Șterge definitiv"
+          title={m.deleteTitle}
+          message={m.deleteMessage(dialog.user.email)}
+          confirmLabel={m.deleteConfirm}
           confirmPhrase={dialog.user.email}
-          reasonLabel="Motivul ștergerii"
+          reasonLabel={m.deleteReason}
           reasonRequired
           busy={remove.isPending}
           errorMessage={actionError}
@@ -309,9 +308,10 @@ function UserDetailModal({
   onClose: () => void;
 }): JSX.Element {
   const query = useQuery({ queryKey: ['users', userId], queryFn: () => fetchUser(userId) });
+  const m = useMessages(usersMessages).detail;
 
   return (
-    <Modal title="Detalii utilizator" onClose={onClose} wide>
+    <Modal title={m.title} onClose={onClose} wide>
       {query.isPending ? (
         <LoadingState />
       ) : query.isError ? (
@@ -320,44 +320,44 @@ function UserDetailModal({
         <>
           <dl className="detail-rows">
             <div className="detail-row">
-              <dt>Email</dt>
+              <dt>{m.email}</dt>
               <dd>{query.data.email}</dd>
             </div>
             <div className="detail-row">
-              <dt>Nume</dt>
+              <dt>{m.name}</dt>
               <dd>{query.data.name ?? '—'}</dd>
             </div>
             <div className="detail-row">
-              <dt>Vârstă</dt>
+              <dt>{m.age}</dt>
               <dd>{query.data.age ?? '—'}</dd>
             </div>
             <div className="detail-row">
-              <dt>Oraș</dt>
+              <dt>{m.city}</dt>
               <dd>{query.data.city ?? '—'}</dd>
             </div>
             <div className="detail-row">
-              <dt>Descriere</dt>
+              <dt>{m.about}</dt>
               <dd>{query.data.about ?? '—'}</dd>
             </div>
             <div className="detail-row">
-              <dt>Match-uri</dt>
+              <dt>{m.matches}</dt>
               <dd className="mono">{query.data.matches_count}</dd>
             </div>
             <div className="detail-row">
-              <dt>Rapoarte primite</dt>
+              <dt>{m.reportsReceived}</dt>
               <dd className="mono">{query.data.reports_count}</dd>
             </div>
             <div className="detail-row">
-              <dt>Abonament</dt>
-              <dd>{query.data.subscription_plan ?? 'fără'}</dd>
+              <dt>{m.subscription}</dt>
+              <dd>{query.data.subscription_plan ?? m.noSubscription}</dd>
             </div>
             <div className="detail-row">
-              <dt>Stare</dt>
+              <dt>{m.status}</dt>
               <dd>
                 {query.data.banned_at ? (
-                  <Badge tone="danger">Banat — {query.data.ban_reason ?? 'fără motiv'}</Badge>
+                  <Badge tone="danger">{m.bannedWith(query.data.ban_reason ?? null)}</Badge>
                 ) : (
-                  <Badge tone="success">Activ</Badge>
+                  <Badge tone="success">{m.active}</Badge>
                 )}
               </dd>
             </div>
@@ -365,7 +365,7 @@ function UserDetailModal({
           {query.data.photos.length > 0 ? (
             <div className="photos">
               {query.data.photos.slice(0, 6).map((url) => (
-                <img key={url} src={url} alt="Fotografie de profil" loading="lazy" />
+                <img key={url} src={url} alt={m.photoAlt} loading="lazy" />
               ))}
             </div>
           ) : null}
@@ -373,7 +373,7 @@ function UserDetailModal({
       )}
       <div className="modal__actions">
         <Button variant="ghost" onClick={onClose}>
-          Închide
+          {m.close}
         </Button>
       </div>
     </Modal>

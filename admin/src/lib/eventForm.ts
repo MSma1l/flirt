@@ -19,6 +19,8 @@
  *     deci verificarea că e o adresă http(s) e responsabilitatea panoului.
  */
 import type { AdminEvent, EventInput } from '../api/types';
+import type { Language } from '../i18n/LanguageContext';
+import { eventsMessages } from '../i18n/messages/events';
 import { fromDateTimeLocalValue, toDateTimeLocalValue } from './format';
 
 /** Lungimile maxime, aliniate 1:1 cu constantele `EVENT_*_MAX_LENGTH` din backend. */
@@ -105,11 +107,17 @@ const CONTROL_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
  * formularele de fidelitate (`lib/loyaltyForm.ts`) trec prin aceeași regulă. O a
  * doua copie ar fi început să divergă de la prima modificare a backendului.
  */
-export function textProblem(value: string, max: number, label: string): string | null {
+export function textProblem(
+  value: string,
+  max: number,
+  label: string,
+  language: Language = 'ro',
+): string | null {
+  const t = eventsMessages[language].text;
   const trimmed = value.trim();
-  if (trimmed.length > max) return `${label}: maximum ${max} de caractere.`;
-  if (HTML_RE.test(trimmed)) return `${label}: marcajele HTML nu sunt acceptate.`;
-  if (CONTROL_RE.test(trimmed)) return `${label}: conține caractere nepermise.`;
+  if (trimmed.length > max) return t.tooLong(label, max);
+  if (HTML_RE.test(trimmed)) return t.html(label);
+  if (CONTROL_RE.test(trimmed)) return t.control(label);
   return null;
 }
 
@@ -140,42 +148,45 @@ export type FormErrors = Partial<Record<keyof FormState, string>>;
  * Erorile BLOCANTE: exact ce ar întoarce backendul cu 422, prins înainte de
  * cerere. Cheia e numele câmpului, ca UI-ul să pună mesajul sub input.
  */
-export function validate(form: FormState): FormErrors {
+export function validate(form: FormState, language: Language = 'ro'): FormErrors {
   const errors: FormErrors = {};
+  const m = eventsMessages[language].validation;
+  const names = eventsMessages[language].fieldNames;
 
   // --- obligatorii (safe_str) ---
-  if (form.title.trim() === '') errors.title = 'Titlul este obligatoriu.';
+  if (form.title.trim() === '') errors.title = m.titleRequired;
   else {
-    const problem = textProblem(form.title, EVENT_LIMITS.title, 'Titlu');
+    const problem = textProblem(form.title, EVENT_LIMITS.title, names.title, language);
     if (problem) errors.title = problem;
   }
 
-  if (form.city.trim() === '') errors.city = 'Orașul este obligatoriu.';
+  if (form.city.trim() === '') errors.city = m.cityRequired;
   else {
-    const problem = textProblem(form.city, EVENT_LIMITS.city, 'Oraș');
+    const problem = textProblem(form.city, EVENT_LIMITS.city, names.city, language);
     if (problem) errors.city = problem;
   }
 
   if (form.starts_at.trim() === '') {
-    errors.starts_at = 'Data și ora sunt obligatorii.';
+    errors.starts_at = m.startsRequired;
   } else if (fromDateTimeLocalValue(form.starts_at) === '') {
-    errors.starts_at = 'Data introdusă nu este validă.';
+    errors.starts_at = m.dateInvalid;
   }
 
   // --- opționale (optional_safe_str) ---
-  const venueProblem = textProblem(form.venue, EVENT_LIMITS.venue, 'Locație');
+  const venueProblem = textProblem(form.venue, EVENT_LIMITS.venue, names.venue, language);
   if (venueProblem) errors.venue = venueProblem;
 
-  const descProblem = textProblem(form.description, EVENT_LIMITS.description, 'Descriere');
+  const descProblem = textProblem(form.description, EVENT_LIMITS.description, names.description, language);
   if (descProblem) errors.description = descProblem;
 
-  const codeProblem = textProblem(form.promo_code, EVENT_LIMITS.promoCode, 'Cod promo');
+  const codeProblem = textProblem(form.promo_code, EVENT_LIMITS.promoCode, names.promoCode, language);
   if (codeProblem) errors.promo_code = codeProblem;
 
   const promoDescProblem = textProblem(
     form.promo_description,
     EVENT_LIMITS.promoDescription,
-    'Descriere promo',
+    names.promoDescription,
+    language,
   );
   if (promoDescProblem) errors.promo_description = promoDescProblem;
 
@@ -183,9 +194,9 @@ export function validate(form: FormState): FormErrors {
   const cover = form.cover_url.trim();
   if (cover !== '') {
     if (cover.length > EVENT_LIMITS.coverUrl) {
-      errors.cover_url = `Adresa copertei: maximum ${EVENT_LIMITS.coverUrl} de caractere.`;
+      errors.cover_url = m.coverTooLong(EVENT_LIMITS.coverUrl);
     } else if (!/^https?:\/\/\S+$/i.test(cover)) {
-      errors.cover_url = 'Adresa trebuie să înceapă cu http:// sau https://.';
+      errors.cover_url = m.coverScheme;
     }
   }
 
@@ -193,43 +204,44 @@ export function validate(form: FormState): FormErrors {
   const lat = parseNumber(form.lat);
   const lng = parseNumber(form.lng);
   if (lat !== null && (!Number.isFinite(lat) || lat < -90 || lat > 90)) {
-    errors.lat = 'Latitudinea trebuie să fie un număr între −90 și 90.';
+    errors.lat = m.latRange;
   }
   if (lng !== null && (!Number.isFinite(lng) || lng < -180 || lng > 180)) {
-    errors.lng = 'Longitudinea trebuie să fie un număr între −180 și 180.';
+    errors.lng = m.lngRange;
   }
   // O singură coordonată nu înseamnă nimic pe hartă: backendul ar accepta-o,
   // aplicația ar cădea pe caseta cu orașul, iar adminul ar crede că a pus pin-ul.
   if (lat !== null && lng === null && errors.lng === undefined) {
-    errors.lng = 'Ai completat latitudinea — completeaz-o și pe cealaltă.';
+    errors.lng = m.lngMissing;
   }
   if (lng !== null && lat === null && errors.lat === undefined) {
-    errors.lat = 'Ai completat longitudinea — completeaz-o și pe cealaltă.';
+    errors.lat = m.latMissing;
   }
 
   // --- promo ---
   const percent = parseNumber(form.promo_discount_percent);
   if (percent !== null) {
     if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
-      errors.promo_discount_percent = 'Reducerea trebuie să fie între 0 și 100%.';
+      errors.promo_discount_percent = m.percentRange;
     } else if (!Number.isInteger(percent)) {
-      errors.promo_discount_percent = 'Reducerea se exprimă în procente întregi.';
+      errors.promo_discount_percent = m.percentInteger;
     }
   }
 
   // --- bilet ---
   const price = parseNumber(form.ticket_price);
   if (price !== null && (!Number.isFinite(price) || price < 0)) {
-    errors.ticket_price = 'Prețul biletului nu poate fi negativ.';
+    errors.ticket_price = m.priceNegative;
   }
   if (price !== null && Number.isFinite(price)) {
     if (form.ticket_currency.trim() === '') {
-      errors.ticket_currency = 'Un preț fără monedă nu spune nimic.';
+      errors.ticket_currency = m.currencyRequired;
     } else {
       const currencyProblem = textProblem(
         form.ticket_currency,
         EVENT_LIMITS.ticketCurrency,
-        'Monedă',
+        names.currency,
+        language,
       );
       if (currencyProblem) errors.ticket_currency = currencyProblem;
     }
@@ -243,42 +255,40 @@ export function validate(form: FormState): FormErrors {
  * evenimentul să arate prost (sau să lipsească) în aplicație. Se arată în
  * formular, nu se descoperă peste două săptămâni, când sună organizatorul.
  */
-export function warnings(form: FormState, now: number = Date.now()): string[] {
+export function warnings(
+  form: FormState,
+  now: number = Date.now(),
+  language: Language = 'ro',
+): string[] {
   const list: string[] = [];
+  const w = eventsMessages[language].warnings;
   const lat = parseNumber(form.lat);
   const lng = parseNumber(form.lng);
 
   if (!hasValidCoords(lat, lng)) {
-    list.push(
-      'Fără coordonate evenimentul NU apare pe harta din aplicație — doar în listă. ' +
-        'Copiază latitudinea și longitudinea din Google Maps (clic dreapta pe loc → primul rând).',
-    );
+    list.push(w.noCoords);
   }
   if (form.cover_url.trim() === '') {
-    list.push(
-      'Fără imagine de copertă cardul din aplicație rămâne un dreptunghi colorat, fără fotografie.',
-    );
+    list.push(w.noCover);
   }
   if (form.venue.trim() === '') {
-    list.push('Fără loc („Club Nova"), în aplicație se afișează doar orașul.');
+    list.push(w.noVenue);
   }
   if (form.description.trim() === '') {
-    list.push('Fără descriere, pagina evenimentului arată gol sub titlu.');
+    list.push(w.noDescription);
   }
   // Regula exactă din `miniapp/src/features/events/EventScreen.tsx`:
   // `hasPromo = promoDiscountPercent != null && promoCode != null`.
   const percent = parseNumber(form.promo_discount_percent);
   if (percent !== null && form.promo_code.trim() === '') {
-    list.push(
-      'Reducerea NU se afișează în aplicație fără cod promo — blocul de promo cere ambele.',
-    );
+    list.push(w.percentWithoutCode);
   }
   if (form.promo_code.trim() !== '' && percent === null) {
-    list.push('Codul promo NU se afișează în aplicație fără procentul reducerii.');
+    list.push(w.codeWithoutPercent);
   }
   const starts = fromDateTimeLocalValue(form.starts_at);
   if (starts !== '' && new Date(starts).getTime() < now) {
-    list.push('Data este în TRECUT — evenimentul nu apare în lista publică din aplicație.');
+    list.push(w.past);
   }
   return list;
 }

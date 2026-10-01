@@ -36,6 +36,8 @@ import type {
   LoyaltyTiers,
   LoyaltyTiersInput,
 } from '../api/types';
+import type { Language } from '../i18n/LanguageContext';
+import { loyaltyMessages } from '../i18n/messages/loyalty';
 import { textProblem } from './eventForm';
 import { fromDateTimeLocalValue } from './format';
 
@@ -128,7 +130,9 @@ export interface TiersErrors {
  * — PLUS cele două cazuri în care ar răspunde 200 cu altă scară decât cea
  * trimisă (praguri neordonate, coduri duplicate).
  */
-export function validateTiers(form: TiersFormState): TiersErrors {
+export function validateTiers(form: TiersFormState, language: Language = 'ro'): TiersErrors {
+  const m = loyaltyMessages[language].tiers;
+  const names = loyaltyMessages[language].fieldNames;
   const rows: TierRowErrors[] = [];
   const seen = new Map<string, number>();
   let previous: { stamps: number; label: string } | null = null;
@@ -136,20 +140,18 @@ export function validateTiers(form: TiersFormState): TiersErrors {
   form.tiers.forEach((tier, index) => {
     const errors: TierRowErrors = {};
     const code = tier.code.trim();
-    const label = tier.name.trim() || code || `treapta ${index + 1}`;
+    const label = tier.name.trim() || code || m.fallbackLabel(index + 1);
 
     // --- cod (safe_str, NON-GOL) + unicitate (`_normalize_tiers` taie duplicatele)
     if (code === '') {
-      errors.code = 'Codul treptei este obligatoriu.';
+      errors.code = m.codeRequired;
     } else {
-      const problem = textProblem(code, TIER_LIMITS.code, 'Cod');
+      const problem = textProblem(code, TIER_LIMITS.code, names.code, language);
       if (problem) {
         errors.code = problem;
       } else if (seen.has(code)) {
         const first = (seen.get(code) ?? 0) + 1;
-        errors.code =
-          `Codul „${code}" se repetă (treapta ${first}). Backendul ar păstra doar prima ` +
-          'treaptă cu acest cod și ar șterge-o tăcut pe a doua.';
+        errors.code = m.codeDuplicate(code, first);
       } else {
         seen.set(code, index);
       }
@@ -157,30 +159,26 @@ export function validateTiers(form: TiersFormState): TiersErrors {
 
     // --- nume (safe_str, NON-GOL) ---
     if (tier.name.trim() === '') {
-      errors.name = 'Numele treptei este obligatoriu.';
+      errors.name = m.nameRequired;
     } else {
-      const problem = textProblem(tier.name, TIER_LIMITS.name, 'Nume');
+      const problem = textProblem(tier.name, TIER_LIMITS.name, names.name, language);
       if (problem) errors.name = problem;
     }
 
     // --- prag (ge=1, le=10_000, întreg) + ORDINE strict crescătoare ---
     const stamps = parseIntegerField(tier.min_stamps);
     if (stamps === null) {
-      errors.min_stamps = 'Pragul este obligatoriu.';
+      errors.min_stamps = m.stampsRequired;
     } else if (Number.isNaN(stamps)) {
-      errors.min_stamps = 'Pragul se scrie ca număr întreg de ștampile.';
+      errors.min_stamps = m.stampsInteger;
     } else if (stamps < 1) {
-      errors.min_stamps = 'Pragul minim este 1 ștampilă.';
+      errors.min_stamps = m.stampsMin;
     } else if (stamps > TIER_LIMITS.minStamps) {
-      errors.min_stamps = `Pragul maxim este ${TIER_LIMITS.minStamps} de ștampile.`;
+      errors.min_stamps = m.stampsMax(TIER_LIMITS.minStamps);
     } else if (previous !== null && stamps === previous.stamps) {
-      errors.min_stamps =
-        `Două trepte nu pot începe de la același prag: „${previous.label}" începe tot ` +
-        `de la ${stamps}.`;
+      errors.min_stamps = m.stampsSame(previous.label, stamps);
     } else if (previous !== null && stamps < previous.stamps) {
-      errors.min_stamps =
-        `Pragul trebuie să fie mai mare decât al treptei precedente („${previous.label}" ` +
-        `= ${previous.stamps}). Backendul ar reordona scara în tăcere.`;
+      errors.min_stamps = m.stampsOrder(previous.label, previous.stamps);
     }
     if (errors.min_stamps === undefined && stamps !== null && !Number.isNaN(stamps)) {
       previous = { stamps, label };
@@ -189,11 +187,11 @@ export function validateTiers(form: TiersFormState): TiersErrors {
     // --- procent (ge=0, le=100, întreg) ---
     const percent = parseIntegerField(tier.discount_percent);
     if (percent === null) {
-      errors.discount_percent = 'Procentul este obligatoriu (poate fi 0).';
+      errors.discount_percent = m.percentRequired;
     } else if (Number.isNaN(percent) || !Number.isInteger(percent)) {
-      errors.discount_percent = 'Reducerea se exprimă în procente întregi.';
+      errors.discount_percent = m.percentInteger;
     } else if (percent < 0 || percent > 100) {
-      errors.discount_percent = 'Reducerea trebuie să fie între 0 și 100%.';
+      errors.discount_percent = m.percentRange;
     }
 
     rows.push(errors);
@@ -202,16 +200,16 @@ export function validateTiers(form: TiersFormState): TiersErrors {
   const result: TiersErrors = { rows };
 
   if (form.tiers.length > TIER_LIMITS.count) {
-    result.list = `Maximum ${TIER_LIMITS.count} de trepte (plafonul schemei de pe backend).`;
+    result.list = m.tooMany(TIER_LIMITS.count);
   }
 
   const cap = parseIntegerField(form.max_total_discount_percent);
   if (cap === null) {
-    result.cap = 'Plafonul este obligatoriu (0 = nicio reducere).';
+    result.cap = m.capRequired;
   } else if (Number.isNaN(cap) || !Number.isInteger(cap)) {
-    result.cap = 'Plafonul se exprimă în procente întregi.';
+    result.cap = m.capInteger;
   } else if (cap < 0 || cap > 100) {
-    result.cap = 'Plafonul trebuie să fie între 0 și 100%.';
+    result.cap = m.capRange;
   }
 
   return result;
@@ -227,40 +225,30 @@ export function hasTierErrors(errors: TiersErrors): boolean {
  * înseamnă altceva decât pare. Nu se blochează, tocmai ca panoul să rămână
  * oglinda backendului, nu o a doua autoritate.
  */
-export function tiersWarnings(form: TiersFormState): string[] {
+export function tiersWarnings(form: TiersFormState, language: Language = 'ro'): string[] {
+  const w = loyaltyMessages[language].tierWarnings;
   const list: string[] = [];
   const cap = parseIntegerField(form.max_total_discount_percent);
   const capValid = cap !== null && !Number.isNaN(cap);
 
   if (form.tiers.length === 0) {
-    list.push(
-      'Scara este GOALĂ: programul de fidelitate se oprește — niciun utilizator nu mai ' +
-        'primește reducere de treaptă (promo-urile evenimentelor rămân neatinse).',
-    );
+    list.push(w.empty);
   }
   if (capValid && cap === 0 && form.tiers.length > 0) {
-    list.push(
-      'Plafonul de 0% anulează ORICE reducere la bilet, oricât ar da treptele sau promo-ul.',
-    );
+    list.push(w.zeroCap);
   }
 
   let best: { label: string; percent: number } | null = null;
   for (const tier of form.tiers) {
     const percent = parseIntegerField(tier.discount_percent);
     if (percent === null || Number.isNaN(percent)) continue;
-    const label = tier.name.trim() || tier.code.trim() || 'treaptă';
+    const label = tier.name.trim() || tier.code.trim() || w.fallbackLabel;
 
     if (capValid && cap > 0 && percent > cap) {
-      list.push(
-        `Treapta „${label}" dă ${percent}%, peste plafonul de ${cap}% — la bilet se aplică ` +
-          `tot ${cap}%.`,
-      );
+      list.push(w.overCap(label, percent, cap));
     }
     if (best !== null && percent < best.percent) {
-      list.push(
-        `Treapta „${label}" (${percent}%) dă MAI PUȚIN decât „${best.label}" ` +
-          `(${best.percent}%), deși cere mai multe ștampile.`,
-      );
+      list.push(w.lessThanPrevious(label, percent, best.label, best.percent));
     }
     if (best === null || percent > best.percent) best = { label, percent };
   }
@@ -296,8 +284,13 @@ function stampRange(from: number, to: number): string {
  * în schimb, exact PE CINE atinge schimbarea — intervalul de ștampile care
  * câștigă sau pierde treapta — ceea ce se poate deduce corect din datele avute.
  */
-export function tierChanges(saved: LoyaltyTiers | undefined, form: TiersFormState): string[] {
+export function tierChanges(
+  saved: LoyaltyTiers | undefined,
+  form: TiersFormState,
+  language: Language = 'ro',
+): string[] {
   if (!saved) return [];
+  const c = loyaltyMessages[language].changes;
   const next = toTiersPayload(form);
   const lines: string[] = [];
 
@@ -309,44 +302,31 @@ export function tierChanges(saved: LoyaltyTiers | undefined, form: TiersFormStat
     const before = savedByCode.get(tier.code);
     const label = tier.name || tier.code;
     if (!before) {
-      lines.push(
-        `Treaptă NOUĂ „${label}": de la ${tier.min_stamps} ștampile, −${tier.discount_percent}%.`,
-      );
+      lines.push(c.added(label, tier.min_stamps, tier.discount_percent));
       continue;
     }
     if (before.min_stamps !== tier.min_stamps) {
       const range = stampRange(before.min_stamps, tier.min_stamps);
       lines.push(
         tier.min_stamps > before.min_stamps
-          ? `„${label}": pragul URCĂ de la ${before.min_stamps} la ${tier.min_stamps} ștampile — ` +
-            `utilizatorii cu ${range} ștampile PIERD treapta și reducerea ei.`
-          : `„${label}": pragul COBOARĂ de la ${before.min_stamps} la ${tier.min_stamps} ștampile — ` +
-            `utilizatorii cu ${range} ștampile PRIMESC treapta de acum.`,
+          ? c.thresholdUp(label, before.min_stamps, tier.min_stamps, range)
+          : c.thresholdDown(label, before.min_stamps, tier.min_stamps, range),
       );
     }
     if (before.discount_percent !== tier.discount_percent) {
-      lines.push(
-        `„${label}": reducerea trece de la ${before.discount_percent}% la ` +
-          `${tier.discount_percent}% pentru toți cei care au treapta.`,
-      );
+      lines.push(c.discount(label, before.discount_percent, tier.discount_percent));
     }
   }
 
   for (const tier of saved.tiers) {
     if (!nextByCode.has(tier.code)) {
-      lines.push(
-        `Treapta „${tier.name}" DISPARE (era de la ${tier.min_stamps} ștampile, ` +
-          `−${tier.discount_percent}%): cine o avea rămâne fără reducerea ei.`,
-      );
+      lines.push(c.removed(tier.name, tier.min_stamps, tier.discount_percent));
     }
   }
 
   const cap = next.max_total_discount_percent;
   if (Number.isFinite(cap) && cap !== saved.max_total_discount_percent) {
-    lines.push(
-      `Plafonul total trece de la ${saved.max_total_discount_percent}% la ${cap}%: orice ` +
-        `reducere mai mare (treaptă, promo sau invitație) se taie la ${cap}%.`,
-    );
+    lines.push(c.cap(saved.max_total_discount_percent, cap));
   }
   return lines;
 }
@@ -381,43 +361,50 @@ export type InviteFormErrors = Partial<Record<keyof InviteFormState, string>>;
 export function validateInvite(
   form: InviteFormState,
   now: number = Date.now(),
+  language: Language = 'ro',
 ): InviteFormErrors {
+  const m = loyaltyMessages[language].invite;
   const errors: InviteFormErrors = {};
 
   if (form.event_id.trim() === '') {
-    errors.event_id = 'Alege evenimentul pentru care se emite invitația.';
+    errors.event_id = m.eventRequired;
   }
 
   const uses = parseIntegerField(form.max_uses);
   if (uses === null) {
-    errors.max_uses = 'Numărul de folosiri este obligatoriu.';
+    errors.max_uses = m.usesRequired;
   } else if (Number.isNaN(uses) || !Number.isInteger(uses)) {
-    errors.max_uses = 'Numărul de folosiri se scrie ca întreg.';
+    errors.max_uses = m.usesInteger;
   } else if (uses < 1) {
-    errors.max_uses = 'O invitație are cel puțin o folosire.';
+    errors.max_uses = m.usesMin;
   }
 
   if (form.expires_at.trim() === '') {
-    errors.expires_at = 'Data de expirare este obligatorie.';
+    errors.expires_at = m.expiresRequired;
   } else {
     const iso = fromDateTimeLocalValue(form.expires_at);
     if (iso === '') {
-      errors.expires_at = 'Data introdusă nu este validă.';
+      errors.expires_at = m.dateInvalid;
     } else if (new Date(iso).getTime() <= now) {
-      errors.expires_at = 'Data de expirare trebuie să fie în viitor.';
+      errors.expires_at = m.expiresPast;
     }
   }
 
   const percent = parseIntegerField(form.discount_percent);
   if (percent !== null) {
     if (Number.isNaN(percent) || !Number.isInteger(percent)) {
-      errors.discount_percent = 'Reducerea se exprimă în procente întregi.';
+      errors.discount_percent = m.percentInteger;
     } else if (percent < 0 || percent > 100) {
-      errors.discount_percent = 'Reducerea trebuie să fie între 0 și 100%.';
+      errors.discount_percent = m.percentRange;
     }
   }
 
-  const noteProblem = textProblem(form.note, INVITE_NOTE_MAX, 'Notă');
+  const noteProblem = textProblem(
+    form.note,
+    INVITE_NOTE_MAX,
+    loyaltyMessages[language].fieldNames.note,
+    language,
+  );
   if (noteProblem) errors.note = noteProblem;
 
   return errors;
@@ -427,35 +414,28 @@ export function validateInvite(
 export function inviteWarnings(
   form: InviteFormState,
   now: number = Date.now(),
+  language: Language = 'ro',
 ): string[] {
+  const w = loyaltyMessages[language].inviteWarnings;
   const list: string[] = [];
 
   const uses = parseIntegerField(form.max_uses);
   if (uses !== null && !Number.isNaN(uses) && uses > INVITE_SERVER_DEFAULTS.maxUsesCap) {
-    list.push(
-      `Plafonul implicit al serverului e ${INVITE_SERVER_DEFAULTS.maxUsesCap} de folosiri. ` +
-        'Dacă nu a fost ridicat din configurare, serverul va respinge cererea.',
-    );
+    list.push(w.usesCap(INVITE_SERVER_DEFAULTS.maxUsesCap));
   }
 
   const iso = fromDateTimeLocalValue(form.expires_at);
   if (iso !== '') {
     const delta = new Date(iso).getTime() - now;
     if (delta > INVITE_SERVER_DEFAULTS.maxDays * DAY_MS) {
-      list.push(
-        `Expirarea depășește ${INVITE_SERVER_DEFAULTS.maxDays} de zile — limita implicită a ` +
-          'serverului. Dacă nu a fost ridicată din configurare, cererea va fi respinsă.',
-      );
+      list.push(w.tooFar(INVITE_SERVER_DEFAULTS.maxDays));
     } else if (delta > 0 && delta < DAY_MS) {
-      list.push('Invitația expiră în mai puțin de 24 de ore — ajunge codul la invitat până atunci?');
+      list.push(w.tooSoon);
     }
   }
 
   if (parseIntegerField(form.discount_percent) === null) {
-    list.push(
-      'Fără procent, invitația NU schimbă prețul biletului: dă doar dreptul de acces ' +
-        '(și trece de cerința de treaptă, dacă ai pus una).',
-    );
+    list.push(w.noPercent);
   }
   return list;
 }
@@ -480,12 +460,12 @@ export function toInvitePayload(form: InviteFormState): InviteInput {
 
 export type InviteStatusFilter = 'all' | InviteStatus;
 
-export const INVITE_STATUS_LABELS: Record<InviteStatus, string> = {
-  active: 'Activă',
-  exhausted: 'Epuizată',
-  expired: 'Expirată',
-  revoked: 'Revocată',
-};
+/** Etichetele în română (compatibilitate); pentru limba activă → `inviteStatusLabel`. */
+export const INVITE_STATUS_LABELS: Record<InviteStatus, string> = loyaltyMessages.ro.inviteStatus;
+
+export function inviteStatusLabel(status: InviteStatus, language: Language = 'ro'): string {
+  return loyaltyMessages[language].inviteStatus[status];
+}
 
 export type StatusTone = 'success' | 'neutral' | 'warning' | 'danger';
 
@@ -497,8 +477,8 @@ export function inviteStatusTone(status: InviteStatus): StatusTone {
 }
 
 /** „2 din 5 folosite" — cifra pe care adminul o caută prima. */
-export function usageLabel(invite: LoyaltyInvite): string {
-  return `${invite.used_count} din ${invite.max_uses} folosite`;
+export function usageLabel(invite: LoyaltyInvite, language: Language = 'ro'): string {
+  return loyaltyMessages[language].usage(invite.used_count, invite.max_uses);
 }
 
 /**

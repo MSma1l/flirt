@@ -44,6 +44,8 @@ import {
   TextArea,
   TextInput,
 } from '../components/ui';
+import { useLanguage, useMessages, type Language } from '../i18n/LanguageContext';
+import { eventsMessages } from '../i18n/messages/events';
 import { errorMessage } from '../lib/errors';
 import {
   EMPTY_FORM,
@@ -63,16 +65,10 @@ import {
 } from '../lib/eventForm';
 import { formatDateTime } from '../lib/format';
 
-const FILTER_OPTIONS: readonly { value: EventTimeFilter; label: string }[] = [
-  { value: 'all', label: 'Toate' },
-  { value: 'upcoming', label: 'Viitoare' },
-  { value: 'past', label: 'Trecute' },
-] as const;
+// Etichetele vin din `i18n/messages/events.ts` (`filters` / `sorts`), în limba activă.
+const FILTER_OPTIONS: readonly EventTimeFilter[] = ['all', 'upcoming', 'past'] as const;
 
-const SORT_OPTIONS: readonly { value: EventSort; label: string }[] = [
-  { value: 'soonest', label: 'Cele mai apropiate întâi' },
-  { value: 'latest', label: 'Cele mai îndepărtate întâi' },
-] as const;
+const SORT_OPTIONS: readonly EventSort[] = ['soonest', 'latest'] as const;
 
 /** Prețul biletului pentru tabel: „50 lei" sau „—" când biletul online lipsește. */
 function ticketPriceLabel(event: AdminEvent): string {
@@ -81,6 +77,8 @@ function ticketPriceLabel(event: AdminEvent): string {
 }
 
 export function EventsPage(): JSX.Element {
+  const m = useMessages(eventsMessages);
+  const { language } = useLanguage();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<{ event: AdminEvent | null } | null>(null);
   const [toDelete, setToDelete] = useState<AdminEvent | null>(null);
@@ -131,12 +129,12 @@ export function EventsPage(): JSX.Element {
   /** Secțiunile afișate: „Toate" le separă vizual, filtrele o arată pe cea cerută. */
   const sections: { key: string; title: string; rows: AdminEvent[] }[] =
     filter === 'past'
-      ? [{ key: 'past', title: 'Trecute', rows: past }]
+      ? [{ key: 'past', title: m.filters.past, rows: past }]
       : filter === 'upcoming'
-        ? [{ key: 'upcoming', title: 'Viitoare', rows: upcoming }]
+        ? [{ key: 'upcoming', title: m.filters.upcoming, rows: upcoming }]
         : [
-            { key: 'upcoming', title: 'Viitoare', rows: upcoming },
-            { key: 'past', title: 'Trecute', rows: past },
+            { key: 'upcoming', title: m.filters.upcoming, rows: upcoming },
+            { key: 'past', title: m.filters.past, rows: past },
           ];
 
   return (
@@ -144,40 +142,40 @@ export function EventsPage(): JSX.Element {
       <Card>
         <div className="toolbar">
           <div style={{ flex: '1 1 260px' }}>
-            <Field label="Caută (titlu, oraș, loc, cod promo)" htmlFor="event-search">
+            <Field label={m.searchLabel} htmlFor="event-search">
               <TextInput
                 id="event-search"
                 value={search}
-                placeholder="flirt party, Chișinău, Club Nova…"
+                placeholder={m.searchPlaceholder}
                 onChange={(event) => setSearch(event.target.value)}
               />
             </Field>
           </div>
           <div style={{ width: 160 }}>
-            <Field label="Perioadă" htmlFor="event-filter">
+            <Field label={m.periodLabel} htmlFor="event-filter">
               <Select
                 id="event-filter"
                 value={filter}
                 onChange={(event) => setFilter(event.target.value as EventTimeFilter)}
               >
                 {FILTER_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
+                  <option key={option} value={option}>
+                    {m.filters[option]}
                   </option>
                 ))}
               </Select>
             </Field>
           </div>
           <div style={{ width: 230 }}>
-            <Field label="Ordine" htmlFor="event-sort">
+            <Field label={m.sortLabel} htmlFor="event-sort">
               <Select
                 id="event-sort"
                 value={sort}
                 onChange={(event) => setSort(event.target.value as EventSort)}
               >
                 {SORT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
+                  <option key={option} value={option}>
+                    {m.sorts[option]}
                   </option>
                 ))}
               </Select>
@@ -190,30 +188,30 @@ export function EventsPage(): JSX.Element {
               setEditing({ event: null });
             }}
           >
-            Eveniment nou
+            {m.newEvent}
           </Button>
         </div>
       </Card>
 
-      <Card title="Evenimente">
+      <Card title={m.listTitle}>
         {query.isPending ? (
-          <LoadingState label="Se încarcă evenimentele…" />
+          <LoadingState label={m.loading} />
         ) : query.isError ? (
           <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} />
         ) : events.length === 0 ? (
           <EmptyState
-            title="Niciun eveniment"
-            hint="Creează primul eveniment — apare imediat în aplicația mobilă."
+            title={m.emptyTitle}
+            hint={m.emptyHint}
           />
         ) : visible.length === 0 ? (
           <EmptyState
-            title="Niciun eveniment găsit"
-            hint="Schimbă căutarea sau perioada selectată."
+            title={m.noMatchTitle}
+            hint={m.noMatchHint}
           />
         ) : (
           <>
             <p className="muted" data-testid="events-summary">
-              {`${upcoming.length} viitoare · ${past.length} trecute · ${events.length} în total`}
+              {m.summary(upcoming.length, past.length, events.length)}
             </p>
             {sections.map((section) => (
               <section key={section.key} className="events-section">
@@ -221,7 +219,7 @@ export function EventsPage(): JSX.Element {
                   {`${section.title} (${section.rows.length})`}
                 </h3>
                 {section.rows.length === 0 ? (
-                  <p className="muted">Nimic aici.</p>
+                  <p className="muted">{m.sectionEmpty}</p>
                 ) : (
                   <EventTable
                     rows={section.rows}
@@ -256,9 +254,9 @@ export function EventsPage(): JSX.Element {
 
       {toDelete ? (
         <ConfirmDialog
-          title="Șterge evenimentul"
-          message={deleteMessage(toDelete)}
-          confirmLabel="Șterge evenimentul"
+          title={m.deleteTitle}
+          message={deleteMessage(toDelete, language)}
+          confirmLabel={m.deleteConfirm}
           // Bilete deja APROBATE = bani încasați. Acolo nu ajunge un clic:
           // adminul tastează titlul, exact ca la ștergerea GDPR a unui cont.
           confirmPhrase={toDelete.ticket_approved_count > 0 ? toDelete.title : undefined}
@@ -276,23 +274,15 @@ export function EventsPage(): JSX.Element {
 }
 
 /** Ce se pierde, în cuvinte: participanți, comenzi de bilet, bilete emise. */
-export function deleteMessage(event: AdminEvent): string {
-  const lines = [
-    `„${event.title}" va dispărea din aplicație.`,
-    `Participanți înscriși: ${event.attendee_count}.`,
-  ];
+export function deleteMessage(event: AdminEvent, language: Language = 'ro'): string {
+  const m = eventsMessages[language];
+  const lines = [m.deleteGone(event.title), m.deleteAttendees(event.attendee_count)];
   if (event.ticket_approved_count > 0) {
-    lines.push(
-      `Comenzi de bilet: ${event.ticket_order_count}, dintre care ` +
-        `${event.ticket_approved_count} BILETE APROBATE (plătite). Oamenii aceia au ` +
-        'plătit: ștergerea le anulează biletul, fără rambursare automată.',
-    );
+    lines.push(m.deleteApproved(event.ticket_order_count, event.ticket_approved_count));
   } else if (event.ticket_order_count > 0) {
-    lines.push(
-      `Comenzi de bilet în așteptare: ${event.ticket_order_count}. Dispar odată cu evenimentul.`,
-    );
+    lines.push(m.deletePending(event.ticket_order_count));
   } else {
-    lines.push('Comenzi de bilet: niciuna.');
+    lines.push(m.deleteNoOrders);
   }
   return lines.join(' ');
 }
@@ -306,20 +296,22 @@ function EventTable({
   onEdit: (event: AdminEvent) => void;
   onDelete: (event: AdminEvent) => void;
 }): JSX.Element {
+  const t = useMessages(eventsMessages).table;
+  const { language } = useLanguage();
   return (
     <div className="table-wrap">
       <table className="table">
         <thead>
           <tr>
-            <th>Titlu</th>
-            <th>Când</th>
-            <th>Oraș</th>
-            <th>Locație</th>
-            <th>Tip</th>
-            <th>Preț bilet</th>
-            <th>Participanți</th>
-            <th>Bilete</th>
-            <th aria-label="Acțiuni" />
+            <th>{t.title}</th>
+            <th>{t.when}</th>
+            <th>{t.city}</th>
+            <th>{t.venue}</th>
+            <th>{t.kind}</th>
+            <th>{t.ticketPrice}</th>
+            <th>{t.attendees}</th>
+            <th>{t.tickets}</th>
+            <th aria-label={t.actions} />
           </tr>
         </thead>
         <tbody>
@@ -335,15 +327,15 @@ function EventTable({
                       event.promo_discount_percent > 0 ? (
                         <span
                           className="badge badge--promo"
-                          title={event.promo_code ?? 'Reducere la intrare'}
+                          title={event.promo_code ?? t.promoFallback}
                         >
                           {`−${event.promo_discount_percent}%`}
                         </span>
                       ) : null}
                       {onMap ? null : (
-                        <Badge tone="warning">Fără hartă</Badge>
+                        <Badge tone="warning">{t.noMap}</Badge>
                       )}
-                      {event.cover_url === null ? <Badge tone="neutral">Fără copertă</Badge> : null}
+                      {event.cover_url === null ? <Badge tone="neutral">{t.noCover}</Badge> : null}
                     </div>
                   </div>
                 </td>
@@ -351,18 +343,18 @@ function EventTable({
                   <div className="events-cell">
                     <span>{formatDateTime(event.starts_at)}</span>
                     {isUpcoming(event) ? (
-                      <Badge tone="success">Viitor</Badge>
+                      <Badge tone="success">{t.upcoming}</Badge>
                     ) : (
-                      <Badge tone="neutral">Trecut</Badge>
+                      <Badge tone="neutral">{t.past}</Badge>
                     )}
                   </div>
                 </td>
                 <td>{event.city}</td>
                 <td>{event.venue ?? '—'}</td>
-                <td>{kindLabel(event.kind)}</td>
+                <td>{kindLabel(event.kind, language)}</td>
                 <td className="mono">{ticketPriceLabel(event)}</td>
                 <td className="mono">{event.attendee_count}</td>
-                <td className="mono" title="Comenzi nerespinse (din care aprobate)">
+                <td className="mono" title={t.ticketsTitle}>
                   {event.ticket_order_count === 0
                     ? '—'
                     : `${event.ticket_order_count} (${event.ticket_approved_count})`}
@@ -370,14 +362,14 @@ function EventTable({
                 <td>
                   <div className="table__actions">
                     <Button small onClick={() => onEdit(event)}>
-                      Editează
+                      {t.edit}
                     </Button>
                     {/* Invitațiile se gândesc pe eveniment, nu ca listă globală. */}
                     <Link className="btn btn--ghost btn--sm" to={`/invites?event=${event.id}`}>
-                      Invitații
+                      {t.invites}
                     </Link>
                     <Button small variant="danger" onClick={() => onDelete(event)}>
-                      Șterge
+                      {t.delete}
                     </Button>
                   </div>
                 </td>
@@ -413,13 +405,15 @@ function EventFormModal({
   onCancel: () => void;
   onSubmit: (input: EventInput) => void;
 }): JSX.Element {
+  const f = useMessages(eventsMessages).form;
+  const { language } = useLanguage();
   const [form, setForm] = useState<FormState>(event ? toForm(event) : EMPTY_FORM);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]): void =>
     setForm((current) => ({ ...current, [key]: value }));
 
-  const errors: FormErrors = validate(form);
-  const hints = warnings(form);
+  const errors: FormErrors = validate(form, language);
+  const hints = warnings(form, Date.now(), language);
   const valid = Object.keys(errors).length === 0;
 
   const lat = parseNumber(form.lat);
@@ -433,10 +427,10 @@ function EventFormModal({
   };
 
   return (
-    <Modal title={event ? 'Editează evenimentul' : 'Eveniment nou'} onClose={onCancel} wide>
+    <Modal title={event ? f.editTitle : f.newTitle} onClose={onCancel} wide>
       <div className="event-editor">
         <form className="modal__body event-editor__form" onSubmit={submit}>
-          <Field label="Titlu *" htmlFor="event-title">
+          <Field label={f.title} htmlFor="event-title">
             <TextInput
               id="event-title"
               value={form.title}
@@ -447,7 +441,7 @@ function EventFormModal({
           </Field>
           <FieldError message={errors.title} />
 
-          <Field label="Descriere" htmlFor="event-description">
+          <Field label={f.description} htmlFor="event-description">
             <TextArea
               id="event-description"
               value={form.description}
@@ -460,7 +454,7 @@ function EventFormModal({
 
           <div className="form-grid">
             <div>
-              <Field label="Data și ora *" htmlFor="event-starts">
+              <Field label={f.startsAt} htmlFor="event-starts">
                 <TextInput
                   id="event-starts"
                   type="datetime-local"
@@ -472,18 +466,18 @@ function EventFormModal({
               <FieldError message={errors.starts_at} />
             </div>
             <div>
-              <Field label="Tip" htmlFor="event-kind">
+              <Field label={f.kind} htmlFor="event-kind">
                 <Select id="event-kind" value={form.kind} onChange={(e) => set('kind', e.target.value)}>
                   {EVENT_KINDS.map((kind) => (
                     <option key={kind} value={kind}>
-                      {kindLabel(kind)}
+                      {kindLabel(kind, language)}
                     </option>
                   ))}
                 </Select>
               </Field>
             </div>
             <div>
-              <Field label="Oraș *" htmlFor="event-city">
+              <Field label={f.city} htmlFor="event-city">
                 <TextInput
                   id="event-city"
                   value={form.city}
@@ -495,7 +489,7 @@ function EventFormModal({
               <FieldError message={errors.city} />
             </div>
             <div>
-              <Field label="Locație" htmlFor="event-venue">
+              <Field label={f.venue} htmlFor="event-venue">
                 <TextInput
                   id="event-venue"
                   value={form.venue}
@@ -510,14 +504,11 @@ function EventFormModal({
           </div>
 
           <fieldset className="form-section">
-            <legend>Poziția pe hartă</legend>
-            <p className="field__hint">
-              Evenimentul apare pe harta din aplicație DOAR cu ambele coordonate. În Google
-              Maps: clic dreapta pe loc → primul rând copiază „47.0245, 28.8322".
-            </p>
+            <legend>{f.mapLegend}</legend>
+            <p className="field__hint">{f.mapHint}</p>
             <div className="form-grid">
               <div>
-                <Field label="Latitudine" htmlFor="event-lat">
+                <Field label={f.lat} htmlFor="event-lat">
                   <TextInput
                     id="event-lat"
                     inputMode="decimal"
@@ -530,7 +521,7 @@ function EventFormModal({
                 <FieldError message={errors.lat} />
               </div>
               <div>
-                <Field label="Longitudine" htmlFor="event-lng">
+                <Field label={f.lng} htmlFor="event-lng">
                   <TextInput
                     id="event-lng"
                     inputMode="decimal"
@@ -544,7 +535,7 @@ function EventFormModal({
               </div>
             </div>
             <Field
-              label={'Lipește „lat, lng" dintr-o dată'}
+              label={f.pasteCoords}
               htmlFor="event-coords-paste"
             >
               <TextInput
@@ -564,22 +555,19 @@ function EventFormModal({
             </Field>
             {onMap ? (
               <p className="field__ok" data-testid="coords-ok">
-                Coordonate valide — evenimentul apare pe hartă.
+                {f.coordsOk}
               </p>
             ) : (
               <div className="alert" data-testid="coords-missing">
-                Fără coordonate valide evenimentul NU apare pe harta din aplicație.
+                {f.coordsMissing}
               </div>
             )}
           </fieldset>
 
           <fieldset className="form-section">
-            <legend>Imagine de copertă</legend>
-            <p className="field__hint">
-              Backendul stochează doar ADRESA imaginii (nu se încarcă fișiere din panou):
-              pune un link public https către o fotografie.
-            </p>
-            <Field label="URL copertă" htmlFor="event-cover">
+            <legend>{f.coverLegend}</legend>
+            <p className="field__hint">{f.coverHint}</p>
+            <Field label={f.coverUrl} htmlFor="event-cover">
               <TextInput
                 id="event-cover"
                 type="url"
@@ -594,17 +582,17 @@ function EventFormModal({
           </fieldset>
 
           <fieldset className="form-section">
-            <legend>Bilet online</legend>
+            <legend>{f.ticketLegend}</legend>
             <div className="form-grid">
               <div>
-                <Field label="Preț bilet" htmlFor="event-ticket-price">
+                <Field label={f.ticketPrice} htmlFor="event-ticket-price">
                   <TextInput
                     id="event-ticket-price"
                     type="number"
                     inputMode="decimal"
                     min={0}
                     step="0.01"
-                    placeholder="gol = bilet online indisponibil"
+                    placeholder={f.ticketPricePlaceholder}
                     value={form.ticket_price}
                     aria-invalid={errors.ticket_price ? true : undefined}
                     onChange={(e) => set('ticket_price', e.target.value)}
@@ -613,7 +601,7 @@ function EventFormModal({
                 <FieldError message={errors.ticket_price} />
               </div>
               <div>
-                <Field label="Monedă" htmlFor="event-ticket-currency">
+                <Field label={f.currency} htmlFor="event-ticket-currency">
                   <TextInput
                     id="event-ticket-currency"
                     value={form.ticket_currency}
@@ -629,14 +617,11 @@ function EventFormModal({
           </fieldset>
 
           <fieldset className="form-section">
-            <legend>Promo / Reducere la intrare</legend>
-            <p className="field__hint">
-              Aplicația arată blocul de promo doar când sunt completate AMBELE: procentul
-              și codul.
-            </p>
+            <legend>{f.promoLegend}</legend>
+            <p className="field__hint">{f.promoHint}</p>
             <div className="form-grid">
               <div>
-                <Field label="Reducere (%)" htmlFor="event-promo-percent">
+                <Field label={f.promoPercent} htmlFor="event-promo-percent">
                   <TextInput
                     id="event-promo-percent"
                     type="number"
@@ -644,7 +629,7 @@ function EventFormModal({
                     min={0}
                     max={100}
                     step={1}
-                    placeholder="ex. 10 — gol = fără reducere"
+                    placeholder={f.promoPercentPlaceholder}
                     value={form.promo_discount_percent}
                     aria-invalid={errors.promo_discount_percent ? true : undefined}
                     onChange={(e) => set('promo_discount_percent', e.target.value)}
@@ -653,12 +638,12 @@ function EventFormModal({
                 <FieldError message={errors.promo_discount_percent} />
               </div>
               <div>
-                <Field label="Cod promo" htmlFor="event-promo-code">
+                <Field label={f.promoCode} htmlFor="event-promo-code">
                   <TextInput
                     id="event-promo-code"
                     value={form.promo_code}
                     maxLength={EVENT_LIMITS.promoCode}
-                    placeholder="ex. FLIRT10"
+                    placeholder={f.promoCodePlaceholder}
                     aria-invalid={errors.promo_code ? true : undefined}
                     onChange={(e) => set('promo_code', e.target.value)}
                   />
@@ -666,12 +651,12 @@ function EventFormModal({
                 <FieldError message={errors.promo_code} />
               </div>
             </div>
-            <Field label="Descriere promo" htmlFor="event-promo-description">
+            <Field label={f.promoDescription} htmlFor="event-promo-description">
               <TextArea
                 id="event-promo-description"
                 value={form.promo_description}
                 maxLength={EVENT_LIMITS.promoDescription}
-                placeholder="Arată acest cod la intrare pentru 10% reducere la bilet."
+                placeholder={f.promoDescriptionPlaceholder}
                 aria-invalid={errors.promo_description ? true : undefined}
                 onChange={(e) => set('promo_description', e.target.value)}
               />
@@ -681,7 +666,7 @@ function EventFormModal({
 
           {hints.length > 0 ? (
             <div className="alert alert--warning" data-testid="event-warnings">
-              <strong>Se poate publica, dar:</strong>
+              <strong>{f.warningsTitle}</strong>
               <ul className="alert__list">
                 {hints.map((hint) => (
                   <li key={hint}>{hint}</li>
@@ -694,10 +679,10 @@ function EventFormModal({
 
           <div className="modal__actions">
             <Button variant="ghost" onClick={onCancel} disabled={busy}>
-              Anulează
+              {f.cancel}
             </Button>
             <Button type="submit" variant="primary" disabled={!valid || busy}>
-              {busy ? 'Se salvează…' : event ? 'Salvează' : 'Creează evenimentul'}
+              {busy ? f.saving : event ? f.save : f.create}
             </Button>
           </div>
         </form>

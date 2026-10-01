@@ -34,15 +34,17 @@ import {
   TextInput,
   type BadgeTone,
 } from '../components/ui';
+import { INTL_LOCALE, useLanguage, useMessages } from '../i18n/LanguageContext';
+import { ticketsMessages } from '../i18n/messages/tickets';
 import { errorMessage } from '../lib/errors';
 import { formatDateTime } from '../lib/format';
 
 /* ------------------------------ Ajutoare ---------------------------- */
 
 /** Suma + moneda, formatate. Cade elegant pe „12 EUR" dacă moneda e necunoscută. */
-function formatPrice(price: number, currency: string): string {
+function formatPrice(price: number, currency: string, locale: string): string {
   try {
-    return new Intl.NumberFormat('ro-RO', {
+    return new Intl.NumberFormat(locale, {
       style: 'currency',
       currency,
     }).format(price);
@@ -51,21 +53,19 @@ function formatPrice(price: number, currency: string): string {
   }
 }
 
-interface StatusMeta {
-  label: string;
-  tone: BadgeTone;
-}
-
-const STATUS_META: Record<TicketOrderStatus, StatusMeta> = {
-  awaiting_payment: { label: 'în așteptare', tone: 'neutral' },
-  payment_declared: { label: 'de verificat', tone: 'accent' },
-  approved: { label: 'aprobat', tone: 'success' },
-  rejected: { label: 'respins', tone: 'danger' },
+// Eticheta statusului vine din dicționar (`ticketsMessages.orders.status`).
+const STATUS_TONE: Record<TicketOrderStatus, BadgeTone> = {
+  awaiting_payment: 'neutral',
+  payment_declared: 'accent',
+  approved: 'success',
+  rejected: 'danger',
 };
 
 /* -------------------------------- Pagina ---------------------------- */
 
 export function TicketOrdersPage(): JSX.Element {
+  const m = useMessages(ticketsMessages);
+  const locale = INTL_LOCALE[useLanguage().language];
   const queryClient = useQueryClient();
   const [toApprove, setToApprove] = useState<TicketOrder | null>(null);
   const [toReject, setToReject] = useState<TicketOrder | null>(null);
@@ -103,34 +103,33 @@ export function TicketOrdersPage(): JSX.Element {
     <>
       <PaymentSettingsCard />
 
-      <Card title="Comenzi bilete">
+      <Card title={m.orders.title}>
         {query.isPending ? (
-          <LoadingState label="Se încarcă comenzile…" />
+          <LoadingState label={m.orders.loading} />
         ) : query.isError ? (
           <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} />
         ) : orders.length === 0 ? (
           <EmptyState
-            title="Nicio comandă"
-            hint="Comenzile de bilete plătite prin transfer bancar apar aici pentru verificare."
+            title={m.orders.emptyTitle}
+            hint={m.orders.emptyHint}
           />
         ) : (
           <div className="table-wrap">
             <table className="table">
               <thead>
                 <tr>
-                  <th>Utilizator</th>
-                  <th>Eveniment</th>
-                  <th>Sumă</th>
-                  <th>Referință</th>
-                  <th>Notă</th>
-                  <th>Status</th>
-                  <th>Creată</th>
-                  <th aria-label="Acțiuni" />
+                  <th>{m.orders.colUser}</th>
+                  <th>{m.common.event}</th>
+                  <th>{m.orders.colAmount}</th>
+                  <th>{m.orders.colReference}</th>
+                  <th>{m.orders.colNote}</th>
+                  <th>{m.common.status}</th>
+                  <th>{m.common.created}</th>
+                  <th aria-label={m.common.actions} />
                 </tr>
               </thead>
               <tbody>
                 {orders.map((order) => {
-                  const meta = STATUS_META[order.status];
                   const needsReview = order.status === 'payment_declared';
                   return (
                     <tr key={order.id}>
@@ -144,13 +143,13 @@ export function TicketOrdersPage(): JSX.Element {
                         <div>{order.event.title}</div>
                         <div className="muted mono">{formatDateTime(order.event.starts_at)}</div>
                       </td>
-                      <td className="mono">{formatPrice(order.price, order.currency)}</td>
+                      <td className="mono">{formatPrice(order.price, order.currency, locale)}</td>
                       <td>
                         <span className="badge badge--count mono">{order.reference}</span>
                       </td>
                       <td>{order.user_note ? order.user_note : <span className="muted">—</span>}</td>
                       <td>
-                        <Badge tone={meta.tone}>{meta.label}</Badge>
+                        <Badge tone={STATUS_TONE[order.status]}>{m.orders.status[order.status]}</Badge>
                       </td>
                       <td className="muted mono">{formatDateTime(order.created_at)}</td>
                       <td>
@@ -164,7 +163,7 @@ export function TicketOrdersPage(): JSX.Element {
                                 setToApprove(order);
                               }}
                             >
-                              Aprobă
+                              {m.orders.approve}
                             </Button>
                             <Button
                               small
@@ -174,7 +173,7 @@ export function TicketOrdersPage(): JSX.Element {
                                 setToReject(order);
                               }}
                             >
-                              Respinge
+                              {m.orders.reject}
                             </Button>
                           </div>
                         ) : order.ticket_code ? (
@@ -192,12 +191,13 @@ export function TicketOrdersPage(): JSX.Element {
 
       {toApprove ? (
         <ConfirmDialog
-          title="Aprobă comanda"
-          message={`Confirmi că ai găsit plata „${toApprove.reference}" (${formatPrice(
-            toApprove.price,
-            toApprove.currency,
-          )}) în bancă? Se generează biletul pentru ${toApprove.user.email}.`}
-          confirmLabel="Aprobă și generează biletul"
+          title={m.orders.approveTitle}
+          message={m.orders.approveMessage(
+            toApprove.reference,
+            formatPrice(toApprove.price, toApprove.currency, locale),
+            toApprove.user.email,
+          )}
+          confirmLabel={m.orders.approveConfirm}
           danger={false}
           busy={approve.isPending}
           errorMessage={actionError}
@@ -238,6 +238,7 @@ function RejectModal({
   onCancel: () => void;
   onSubmit: (reason?: string) => void;
 }): JSX.Element {
+  const m = useMessages(ticketsMessages);
   const [reason, setReason] = useState('');
 
   const submit = (event: FormEvent): void => {
@@ -247,20 +248,19 @@ function RejectModal({
   };
 
   return (
-    <Modal title="Respinge comanda" onClose={onCancel}>
+    <Modal title={m.orders.rejectTitle} onClose={onCancel}>
       <form className="modal__body" onSubmit={submit}>
         <p style={{ margin: 0 }}>
-          Comanda „{order.reference}" pentru {order.user.email} va fi respinsă. Motivul e
-          opțional și ajunge la user.
+          {m.orders.rejectIntro(order.reference, order.user.email)}
         </p>
 
-        <Field label="Motiv (opțional)" htmlFor="reject-reason">
+        <Field label={m.orders.rejectReason} htmlFor="reject-reason">
           <TextArea
             id="reject-reason"
             value={reason}
             maxLength={500}
             onChange={(event) => setReason(event.target.value)}
-            placeholder="Ex.: plata nu a fost găsită în extrasul bancar"
+            placeholder={m.orders.rejectPlaceholder}
           />
         </Field>
 
@@ -268,10 +268,10 @@ function RejectModal({
 
         <div className="modal__actions">
           <Button variant="ghost" onClick={onCancel} disabled={busy}>
-            Anulează
+            {m.common.cancel}
           </Button>
           <Button type="submit" variant="danger" disabled={busy}>
-            {busy ? 'Se respinge…' : 'Respinge comanda'}
+            {busy ? m.orders.rejecting : m.orders.rejectTitle}
           </Button>
         </div>
       </form>
@@ -298,10 +298,12 @@ function toBankForm(settings: PaymentSettings): BankForm {
 }
 
 function PaymentSettingsCard(): JSX.Element {
+  const m = useMessages(ticketsMessages);
   const queryClient = useQueryClient();
   const [form, setForm] = useState<BankForm | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  // Doar faptul că s-a salvat; textul vine din dicționar, deci urmează limba activă.
+  const [saved, setSaved] = useState(false);
 
   const query = useQuery({ queryKey: ['payment-settings'], queryFn: fetchPaymentSettings });
 
@@ -314,7 +316,7 @@ function PaymentSettingsCard(): JSX.Element {
     mutationFn: (body: PaymentSettings) => updatePaymentSettings(body),
     onSuccess: async (settings) => {
       setError(null);
-      setNotice('Datele bancare au fost salvate.');
+      setSaved(true);
       setForm(toBankForm(settings));
       await queryClient.invalidateQueries({ queryKey: ['payment-settings'] });
     },
@@ -333,7 +335,7 @@ function PaymentSettingsCard(): JSX.Element {
   const submit = (submitEvent: FormEvent): void => {
     submitEvent.preventDefault();
     if (!form || !valid || save.isPending) return;
-    setNotice(null);
+    setSaved(false);
     save.mutate({
       bank_beneficiary: form.bank_beneficiary.trim(),
       bank_iban: form.bank_iban.trim(),
@@ -343,21 +345,21 @@ function PaymentSettingsCard(): JSX.Element {
   };
 
   return (
-    <Card title="Date bancare">
+    <Card title={m.bank.title}>
       {query.isPending || form === null ? (
-        <LoadingState label="Se încarcă datele bancare…" />
+        <LoadingState label={m.bank.loading} />
       ) : query.isError ? (
         <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} />
       ) : (
         <form className="modal__body" onSubmit={submit}>
           <p className="muted" style={{ margin: 0 }}>
-            Contul global pe care utilizatorii fac transferul pentru bilete.
+            {m.bank.intro}
           </p>
 
-          {notice ? <div className="alert alert--success">{notice}</div> : null}
+          {saved ? <div className="alert alert--success">{m.bank.saved}</div> : null}
 
           <div className="form-grid">
-            <Field label="Beneficiar *" htmlFor="bank-beneficiary">
+            <Field label={m.bank.beneficiary} htmlFor="bank-beneficiary">
               <TextInput
                 id="bank-beneficiary"
                 value={form.bank_beneficiary}
@@ -366,7 +368,7 @@ function PaymentSettingsCard(): JSX.Element {
                 onChange={(e) => set('bank_beneficiary', e.target.value)}
               />
             </Field>
-            <Field label="Bancă" htmlFor="bank-name">
+            <Field label={m.bank.bankName} htmlFor="bank-name">
               <TextInput
                 id="bank-name"
                 value={form.bank_name}
@@ -376,7 +378,7 @@ function PaymentSettingsCard(): JSX.Element {
             </Field>
           </div>
 
-          <Field label="IBAN *" htmlFor="bank-iban">
+          <Field label={m.bank.iban} htmlFor="bank-iban">
             <TextInput
               id="bank-iban"
               value={form.bank_iban}
@@ -386,13 +388,13 @@ function PaymentSettingsCard(): JSX.Element {
             />
           </Field>
 
-          <Field label="Instrucțiuni (afișate userului)" htmlFor="bank-instructions">
+          <Field label={m.bank.instructions} htmlFor="bank-instructions">
             <TextArea
               id="bank-instructions"
               value={form.instructions}
               maxLength={1000}
               onChange={(e) => set('instructions', e.target.value)}
-              placeholder="Ex.: treci codul de referință în detaliile plății."
+              placeholder={m.bank.instructionsPlaceholder}
             />
           </Field>
 
@@ -400,7 +402,7 @@ function PaymentSettingsCard(): JSX.Element {
 
           <div className="modal__actions">
             <Button type="submit" variant="primary" disabled={!valid || save.isPending}>
-              {save.isPending ? 'Se salvează…' : 'Salvează datele bancare'}
+              {save.isPending ? m.common.saving : m.bank.save}
             </Button>
           </div>
         </form>

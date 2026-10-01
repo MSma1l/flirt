@@ -21,21 +21,17 @@
  */
 import { useEffect, useState } from 'react';
 
+import { INTL_LOCALE, useLanguage, type Language } from '../i18n/LanguageContext';
+import { coreMessages } from '../i18n/messages/core';
 import { hasValidCoords, parseNumber, type FormState } from '../lib/eventForm';
 import { fromDateTimeLocalValue } from '../lib/format';
 
-/** `kindLabel` din `miniapp/src/features/events/eventFormat.ts`, în română. */
-const KIND_LABELS: Record<string, string> = {
-  flirt_party: 'Flirt Party',
-  party: 'Petrecere',
-  concert: 'Concert',
-  bar: 'Bar',
-  sport: 'Sport',
-  culture: 'Cultură',
-  other: 'Altele',
-};
-
-export const kindLabel = (kind: string): string => KIND_LABELS[kind] ?? kind;
+/**
+ * `kindLabel` din `miniapp/src/features/events/eventFormat.ts`. Limba se dă
+ * explicit (funcția e folosită și în afara acestui component, ex. în tabele).
+ */
+export const kindLabel = (kind: string, language: Language = 'ro'): string =>
+  coreMessages[language].eventPreview.kinds[kind] ?? kind;
 
 /** `kindColorVar` din miniapp: accent pentru Flirt Party, link pentru concert. */
 function kindColor(kind: string): string {
@@ -45,10 +41,10 @@ function kindColor(kind: string): string {
 }
 
 /** `formatEventDate` din miniapp, cu locala panoului. */
-export function previewDate(datetimeLocal: string): string {
+export function previewDate(datetimeLocal: string, language: Language = 'ro'): string {
   const iso = fromDateTimeLocalValue(datetimeLocal);
-  if (iso === '') return 'Data nu e completată';
-  return new Date(iso).toLocaleDateString('ro-RO', {
+  if (iso === '') return coreMessages[language].eventPreview.noDate;
+  return new Date(iso).toLocaleDateString(INTL_LOCALE[language], {
     day: 'numeric',
     month: 'long',
     hour: '2-digit',
@@ -66,6 +62,8 @@ export function EventPreview({
   form: FormState;
   attendeeCount?: number;
 }): JSX.Element {
+  const { language } = useLanguage();
+  const m = coreMessages[language].eventPreview;
   const cover = form.cover_url.trim();
   const [coverState, setCoverState] = useState<CoverState>(cover === '' ? 'empty' : 'loading');
 
@@ -93,8 +91,8 @@ export function EventPreview({
     };
   }, [cover]);
 
-  const title = form.title.trim() === '' ? 'Titlul evenimentului' : form.title.trim();
-  const city = form.city.trim() === '' ? 'Oraș' : form.city.trim();
+  const title = form.title.trim() === '' ? m.titlePlaceholder : form.title.trim();
+  const city = form.city.trim() === '' ? m.cityPlaceholder : form.city.trim();
   const place = form.venue.trim() === '' ? city : `${form.venue.trim()} · ${city}`;
 
   const lat = parseNumber(form.lat);
@@ -111,13 +109,11 @@ export function EventPreview({
   const currency = form.ticket_currency.trim() === '' ? 'lei' : form.ticket_currency.trim();
 
   return (
-    <div className="evp" aria-label="Previzualizare aplicație">
-      <p className="evp__hint">
-        Așa ajunge evenimentul la utilizatori. Ordinea câmpurilor e cea din aplicație.
-      </p>
+    <div className="evp" aria-label={m.ariaLabel}>
+      <p className="evp__hint">{m.hint}</p>
 
       <section className="evp__pane">
-        <h4 className="evp__pane-title">În listă (cardul de eveniment)</h4>
+        <h4 className="evp__pane-title">{m.listPane}</h4>
         <article className="evp-card">
           <div className="evp-card__cover" style={{ background: kindColor(form.kind) }}>
             {coverState === 'ok' ? (
@@ -125,42 +121,42 @@ export function EventPreview({
             ) : null}
             {coverState === 'broken' ? (
               <span className="evp-card__cover-note" data-testid="cover-broken">
-                Adresa nu întoarce o imagine
+                {m.coverBroken}
               </span>
             ) : null}
             {coverState === 'empty' ? (
-              <span className="evp-card__cover-note">Fără copertă</span>
+              <span className="evp-card__cover-note">{m.noCover}</span>
             ) : null}
-            <span className="evp-card__badge">{kindLabel(form.kind)}</span>
+            <span className="evp-card__badge">{kindLabel(form.kind, language)}</span>
           </div>
           <div className="evp-card__body">
             <strong className="evp-card__title">{title}</strong>
-            <span className="evp-card__meta">{previewDate(form.starts_at)}</span>
+            <span className="evp-card__meta">{previewDate(form.starts_at, language)}</span>
             <span className="evp-card__meta">{place}</span>
-            <span className="evp-card__meta">{attendeeCount} participanți</span>
+            <span className="evp-card__meta">{m.attendees(attendeeCount)}</span>
           </div>
         </article>
       </section>
 
       <section className="evp__pane">
-        <h4 className="evp__pane-title">Pagina evenimentului</h4>
+        <h4 className="evp__pane-title">{m.detailPane}</h4>
         <div className="evp-detail">
           <span className="evp-detail__pill" style={{ background: kindColor(form.kind) }}>
-            {kindLabel(form.kind)}
+            {kindLabel(form.kind, language)}
           </span>
           <strong className="evp-detail__title">{title}</strong>
-          <span className="evp-detail__date">{previewDate(form.starts_at)}</span>
+          <span className="evp-detail__date">{previewDate(form.starts_at, language)}</span>
           <span className="evp-detail__place">{place}</span>
 
           {form.description.trim() !== '' ? (
             <p className="evp-detail__desc">{form.description.trim()}</p>
           ) : (
-            <p className="evp-detail__desc evp-detail__desc--empty">(fără descriere)</p>
+            <p className="evp-detail__desc evp-detail__desc--empty">{m.noDescription}</p>
           )}
 
           {hasPromo ? (
             <div className="evp-promo" data-testid="preview-promo">
-              <span className="evp-promo__discount">{`−${percent}% la intrare`}</span>
+              <span className="evp-promo__discount">{m.promo(percent)}</span>
               <span className="evp-promo__code">{code}</span>
               {form.promo_description.trim() !== '' ? (
                 <span className="evp-promo__text">{form.promo_description.trim()}</span>
@@ -170,7 +166,7 @@ export function EventPreview({
 
           {hasTicket ? (
             <span className="evp-detail__cta" data-testid="preview-ticket">
-              {`Cumpără bilet — ${price} ${currency}`}
+              {m.buyTicket(price, currency)}
             </span>
           ) : null}
 
@@ -178,21 +174,18 @@ export function EventPreview({
             <div className="evp-map" data-testid="preview-map">
               <span className="evp-map__pin">📍</span>
               <span className="mono">{`${lat}, ${lng}`}</span>
-              <span className="evp-map__note">Apare pe harta din aplicație</span>
+              <span className="evp-map__note">{m.onMap}</span>
             </div>
           ) : (
             <div className="evp-map evp-map--fallback" data-testid="preview-map-fallback">
               <span className="evp-map__pin">📍 {city}</span>
-              <span className="evp-map__note">
-                Fără coordonate: în locul hărții rămâne doar numele orașului, iar
-                evenimentul NU apare pe hartă.
-              </span>
+              <span className="evp-map__note">{m.noCoords}</span>
             </div>
           )}
 
-          <span className="evp-detail__attendees">{attendeeCount} participanți</span>
-          <span className="evp-detail__cta evp-detail__cta--ghost">Merg</span>
-          <span className="evp-detail__cta evp-detail__cta--ghost">Check-in</span>
+          <span className="evp-detail__attendees">{m.attendees(attendeeCount)}</span>
+          <span className="evp-detail__cta evp-detail__cta--ghost">{m.going}</span>
+          <span className="evp-detail__cta evp-detail__cta--ghost">{m.checkIn}</span>
         </div>
       </section>
     </div>

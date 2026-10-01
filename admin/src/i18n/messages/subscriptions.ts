@@ -1,0 +1,51 @@
+/** Pagina de abonamente: listă + acordare manuală. */
+import { defineMessages } from '../LanguageContext';
+
+export const subscriptionsMessages = defineMessages({
+  ro: {
+    granted: (plan: string, email: string) => `Abonament „${plan}" acordat pentru ${email}.`,
+    title: 'Abonamente',
+    grantManually: 'Acordă manual',
+    loading: 'Se încarcă abonamentele…',
+    emptyTitle: 'Niciun abonament',
+    emptyHint: 'Aici apar abonamentele active și expirate.',
+    columns: {
+      user: 'Utilizator',
+      plan: 'Plan',
+      provider: 'Sursă',
+      started: 'Început',
+      expires: 'Expiră',
+      status: 'Stare',
+    },
+    modalTitle: 'Acordă abonament manual',
+    emailLabel: 'Emailul contului',
+    planLabel: 'Plan',
+    daysLabel: 'Durata (zile)',
+    cancel: 'Anulează',
+    granting: 'Se acordă…',
+    grant: 'Acordă abonamentul',
+  },
+  ru: {
+    granted: (plan: string, email: string) => `Подписка «${plan}» выдана пользователю ${email}.`,
+    title: 'Подписки',
+    grantManually: 'Выдать вручную',
+    loading: 'Загрузка подписок…',
+    emptyTitle: 'Подписок нет',
+    emptyHint: 'Здесь отображаются активные и истёкшие подписки.',
+    columns: {
+      user: 'Пользователь',
+      plan: 'Тариф',
+      provider: 'Источник',
+      started: 'Начало',
+      expires: 'Истекает',
+      status: 'Статус',
+    },
+    modalTitle: 'Выдать подписку вручную',
+    emailLabel: 'Email аккаунта',
+    planLabel: 'Тариф',
+    daysLabel: 'Срок (дней)',
+    cancel: 'Отмена',
+    granting: 'Выдаём…',
+    grant: 'Выдать подписку',
+  },
+});

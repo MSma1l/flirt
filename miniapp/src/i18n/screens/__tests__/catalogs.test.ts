@@ -16,7 +16,7 @@
  */
 import { SUPPORTED_LANGUAGES, type Language } from '@mobile/i18n/config';
 
-import { i18n, SCREENS_NAMESPACE, screensResources } from '../..';
+import { i18n, miniappResources, SCREENS_NAMESPACE, screensResources } from '../..';
 
 /** Sufixele de plural pe care i18next le adaugă la cheia de bază. */
 const PLURAL_SUFFIXES = ['zero', 'one', 'two', 'few', 'many', 'other'];
@@ -192,5 +192,37 @@ describe('catalogul „screens"', () => {
     });
 
     expect(copied).toEqual([]);
+  });
+});
+
+/**
+ * Namespace-ul `miniapp` (cadrul aplicației) nu avea gardian: o cheie adăugată
+ * doar în `locales/ro.json` ar fi ajuns nevăzută în producție. Aceleași două
+ * verificări de bază: aceleași chei în toate limbile, niciun text gol.
+ */
+describe('catalogul „miniapp"', () => {
+  const keysOf = (lang: Language) =>
+    new Set(flatten(miniappResources[lang]).map(stripPluralSuffix));
+
+  it.each(SUPPORTED_LANGUAGES.filter((l) => l !== 'ro'))(
+    'are aceleași chei în „%s" ca în română',
+    (lang) => {
+      const roKeys = keysOf('ro');
+      const langKeys = keysOf(lang);
+      const missing = [...roKeys].filter((k) => !langKeys.has(k));
+      const extra = [...langKeys].filter((k) => !roKeys.has(k));
+      expect({ missing, extra }).toEqual({ missing: [], extra: [] });
+    },
+  );
+
+  it.each(SUPPORTED_LANGUAGES)('„%s" nu are texte goale', (lang) => {
+    const catalogOf = miniappResources[lang];
+    const empty = flatten(catalogOf).filter((key) => {
+      const value = key
+        .split('.')
+        .reduce<unknown>((o, k) => (o as never)?.[k], catalogOf);
+      return typeof value === 'string' && value.trim() === '';
+    });
+    expect({ lang, empty }).toEqual({ lang, empty: [] });
   });
 });
