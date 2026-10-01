@@ -4,6 +4,7 @@
  * răspuns la raportări în ≤24h, deci cifra trebuie să fie vizibilă permanent.
  */
 import { useQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
 import { fetchStats, fetchTicketOrders } from '../api/admin';
@@ -66,6 +67,22 @@ const NAV_SECTIONS: readonly NavSection[] = [
 
 const NAV_ITEMS: readonly NavItem[] = NAV_SECTIONS.flatMap((section) => section.items);
 
+// Secțiunile închise de admin; preferință de UI, deci `localStorage` e potrivit.
+const COLLAPSED_STORAGE_KEY = 'flirt_admin_nav_collapsed';
+
+function readCollapsed(): SectionKey[] {
+  try {
+    const raw = window.localStorage.getItem(COLLAPSED_STORAGE_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    const known = NAV_SECTIONS.map((section) => section.key);
+    return Array.isArray(parsed)
+      ? parsed.filter((key): key is SectionKey => known.includes(key as SectionKey))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 function titleKeyFor(pathname: string): NavKey {
   const item = NAV_ITEMS.find((entry) => pathname.startsWith(entry.to));
   return item?.key ?? 'dashboard';
@@ -77,6 +94,21 @@ export function Layout(): JSX.Element {
   const { language, setLanguage } = useLanguage();
   const m = useMessages(layoutMessages);
   const location = useLocation();
+  const [collapsed, setCollapsed] = useState<SectionKey[]>(readCollapsed);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify(collapsed));
+    } catch {
+      // Persistența meniului e opțională.
+    }
+  }, [collapsed]);
+
+  const toggleSection = (key: SectionKey): void => {
+    setCollapsed((current) =>
+      current.includes(key) ? current.filter((entry) => entry !== key) : [...current, key],
+    );
+  };
 
   // Contorul de rapoarte deschise; eșecul lui nu are voie să rupă navigarea.
   const statsQuery = useQuery({
@@ -98,6 +130,9 @@ export function Layout(): JSX.Element {
   const ticketsToReview =
     ticketOrdersQuery.data?.filter((order) => order.status === 'payment_declared').length ?? 0;
 
+  const countFor = (to: string): number =>
+    to === '/moderation' ? pending : to === '/ticket-orders' ? ticketsToReview : 0;
+
   return (
     <div className="layout">
       <aside className="sidebar">
@@ -105,28 +140,68 @@ export function Layout(): JSX.Element {
           FLIRT <span>admin</span>
         </div>
         <nav className="sidebar__nav">
-          {NAV_SECTIONS.map((section) => (
-            <div key={section.key} className="sidebar__section">
-              <div className="sidebar__section-title">{m.sections[section.key]}</div>
-              {section.items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    isActive ? 'sidebar__link sidebar__link--active' : 'sidebar__link'
-                  }
+          {NAV_SECTIONS.map((section) => {
+            const isOpen = !collapsed.includes(section.key);
+            // O secțiune închisă nu are voie să ascundă ce așteaptă răspuns:
+            // totalul contoarelor ei urcă pe titlu.
+            const hiddenCount = isOpen
+              ? 0
+              : section.items.reduce((sum, item) => sum + countFor(item.to), 0);
+            const itemsId = `sidebar-section-${section.key}`;
+            return (
+              <div key={section.key} className="sidebar__section">
+                <button
+                  type="button"
+                  className="sidebar__section-title"
+                  aria-expanded={isOpen}
+                  aria-controls={itemsId}
+                  onClick={() => toggleSection(section.key)}
                 >
-                  <span>{m.nav[item.key]}</span>
-                  {item.to === '/moderation' && pending > 0 ? (
-                    <Badge tone="count">{pending}</Badge>
-                  ) : null}
-                  {item.to === '/ticket-orders' && ticketsToReview > 0 ? (
-                    <Badge tone="count">{ticketsToReview}</Badge>
-                  ) : null}
-                </NavLink>
-              ))}
-            </div>
-          ))}
+                  <span>{m.sections[section.key]}</span>
+                  <span className="sidebar__section-meta">
+                    {hiddenCount > 0 ? <Badge tone="count">{hiddenCount}</Badge> : null}
+                    <svg
+                      className={
+                        isOpen ? 'sidebar__chevron sidebar__chevron--open' : 'sidebar__chevron'
+                      }
+                      width="12"
+                      height="12"
+                      viewBox="0 0 12 12"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M3 4.5 6 7.5 9 4.5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </span>
+                </button>
+                {isOpen ? (
+                  <div id={itemsId} className="sidebar__section-items">
+                    {section.items.map((item) => {
+                      const count = countFor(item.to);
+                      return (
+                        <NavLink
+                          key={item.to}
+                          to={item.to}
+                          className={({ isActive }) =>
+                            isActive ? 'sidebar__link sidebar__link--active' : 'sidebar__link'
+                          }
+                        >
+                          <span>{m.nav[item.key]}</span>
+                          {count > 0 ? <Badge tone="count">{count}</Badge> : null}
+                        </NavLink>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
         </nav>
         <div className="sidebar__footer">
           {admin?.email ? <span className="muted">{admin.email}</span> : null}
