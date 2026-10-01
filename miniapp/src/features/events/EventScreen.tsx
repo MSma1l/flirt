@@ -16,6 +16,12 @@
  * loc, se adaugă doar mesajul. Doar eroarea de ÎNCĂRCARE înlocuiește conținutul,
  * fiindcă atunci chiar nu avem ce arăta.
  *
+ * FEREASTRA DE VÂNZARE ONLINE (`ticketSalesEndAt` / `ticketSalesOpen`, opționale):
+ * cât timp e deschisă, arătăm când se închide, iar în ultimele 24 h o
+ * numărătoare inversă; după închidere, butoanele de cumpărare sunt înlocuite de
+ * un mesaj neutru. Dacă serverul refuză comanda cu 409 `ticket_sales_closed`
+ * (s-a închis între timp), arătăm același mesaj și reîncărcăm evenimentul.
+ *
  * PREȚUL BILETULUI e singurul lucru pe care ecranul NU-l ia din `Event`: pentru
  * un utilizator cu ștampile, cu promo sau cu o invitație, prețul de listă e o
  * minciună. Cotația vine de la `GET /loyalty/events/{id}/ticket-quote`, calculată
@@ -24,12 +30,16 @@
  * prețul întreg decât niciun preț.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router';
 
 import { TicketPriceBlock, useRefreshLoyalty, useTicketQuote } from '@/features/loyalty';
-import { TICKETS_PATH } from '@/features/tickets/ticketRoutes';
+import { OrderStepper } from '@/features/tickets/OrderStepper';
+import { ClockIcon, LockIcon, TicketIcon } from '@/features/tickets/TicketIcons';
+import { isTicketSalesClosedError, orderStage, STAGE_RANK } from '@/features/tickets/orderStage';
+import { useOrderStatusLabel } from '@/features/tickets/orderStatusLabel';
+import { ticketOrderPath } from '@/features/tickets/ticketRoutes';
 import { ticketRequestPath } from '@/features/ticketRequests/ticketRequestRoutes';
 
 import { EventMap } from './EventMap';
@@ -44,20 +54,9 @@ import {
   type EventItem,
   type TicketOrder,
 } from './eventsApi';
+import { formatCountdown, useSalesState } from './ticketSales';
 
 import './events.css';
-
-/**
- * Prioritatea comenzilor pentru ACELAȘI eveniment: cea mai „vie" prima.
- * Un utilizator poate avea mai multe încercări (una respinsă, alta în curs);
- * arătăm starea care îl interesează, nu prima venită de la server.
- */
-const ORDER_RANK: Record<TicketOrder['status'], number> = {
-  approved: 0,
-  payment_declared: 1,
-  awaiting_payment: 2,
-  rejected: 3,
-};
 
 export function EventScreen() {
   const { t } = useTranslation(['events', 'screens']);
@@ -72,6 +71,9 @@ export function EventScreen() {
   const eventId = params[EVENT_ID_PARAM] ?? '';
 
   const [stampMessage, setStampMessage] = useState<string | null>(null);
+  /** Serverul a refuzat comanda: vânzarea s-a închis între timp. */
+  const [closedByServer, setClosedByServer] = useState(false);
+  const statusLabel = useOrderStatusLabel();
 
   const { data, isPending, isError, refetch, isFetching } = useQuery<EventItem>({
     queryKey: ['event', eventId],
@@ -89,20 +91,42 @@ export function EventScreen() {
   const { data: quote } = useTicketQuote(eventId, data?.ticketPrice != null);
   const refreshLoyalty = useRefreshLoyalty();
 
-  /** Comanda de bilet cea mai relevantă pentru acest eveniment (dacă există). */
+  /**
+   * Comanda de bilet cea mai relevantă pentru acest eveniment: un utilizator
+   * poate avea mai multe încercări (una respinsă, alta în curs); arătăm starea
+   * care îl interesează, nu prima venită de la server.
+   */
   const myOrder = useMemo<TicketOrder | null>(() => {
     const forEvent = (myOrders ?? []).filter((o) => o.eventId === eventId);
-    const sorted = [...forEvent].sort((a, b) => ORDER_RANK[a.status] - ORDER_RANK[b.status]);
+    const rank = (o: TicketOrder) => STAGE_RANK[orderStage(o.status)];
+    const sorted = [...forEvent].sort((a, b) => rank(a) - rank(b));
     return sorted[0] ?? null;
   }, [myOrders, eventId]);
 
+  const sales = useSalesState(data ?? {});
+  const salesClosed = sales.closed || closedByServer;
+
+  // Ceasul local a trecut de ora anunțată: cerem verdictul serverului, ca
+  // ecranul să nu rămână pe o stare ghicită.
+  useEffect(() => {
+    if (sales.closed && eventId !== '') {
+      void queryClient.invalidateQueries({ queryKey: ['event', eventId] });
+    }
+  }, [sales.closed, eventId, queryClient]);
+
   const buyMutation = useMutation({
     mutationFn: () => createTicketOrder(eventId),
-    onSuccess: () => {
+    onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ['ticket-orders'] });
-      // Instrucțiunile de plată (IBAN, referință, comentariu) sunt treaba
-      // ecranului de bilete; aici doar predăm utilizatorul acolo.
-      void navigate(TICKETS_PATH);
+      // Instrucțiunile de plată (IBAN, destinația plății, termen) sunt treaba
+      // ecranului de bilete; predăm omul acolo cu comanda deja deschisă.
+      void navigate(ticketOrderPath(result.order.id));
+    },
+    onError: (error) => {
+      if (isTicketSalesClosedError(error)) {
+        setClosedByServer(true);
+        void queryClient.invalidateQueries({ queryKey: ['event', eventId] });
+      }
     },
   });
 
@@ -158,35 +182,57 @@ export function EventScreen() {
 
   /** Secțiunea de bilet online: starea comenzii existente sau butonul de cumpărare. */
   let ticketSection: ReactNode = null;
-  if (myOrder && myOrder.status !== 'rejected') {
-    // Comandă activă → arătăm starea și trimitem la ecranul de bilete.
-    const statusLabel =
-      myOrder.status === 'approved'
-        ? t('detail.ticketStatus.approved')
-        : myOrder.status === 'payment_declared'
-          ? t('detail.ticketStatus.declared')
-          : t('detail.ticketStatus.awaiting');
+  const activeStage = myOrder ? orderStage(myOrder.status) : null;
+  if (myOrder && activeStage !== 'rejected' && activeStage !== 'cancelled' && activeStage) {
+    // Comandă activă → starea ei, cu cronologia, și drumul direct spre ea.
     const cta =
-      myOrder.status === 'approved'
+      activeStage === 'approved'
         ? t('detail.ticketCta.approved')
-        : myOrder.status === 'payment_declared'
+        : activeStage === 'review'
           ? t('detail.ticketCta.declared')
           : t('detail.ticketCta.awaiting');
 
     ticketSection = (
-      <div className="ev-ticket" data-testid="ticket-status">
-        <p
-          className={
-            myOrder.status === 'approved'
-              ? 'ev-ticket__status ev-ticket__status--ok'
-              : 'ev-ticket__status ev-ticket__status--pending'
-          }
+      <div className={`ev-ticket ev-ticket--${activeStage}`} data-testid="ticket-status">
+        <div className="ev-ticket__head">
+          <span className="ev-ticket__icon" aria-hidden="true">
+            <TicketIcon width={22} height={22} />
+          </span>
+          <p
+            className={
+              activeStage === 'approved'
+                ? 'ev-ticket__status ev-ticket__status--ok'
+                : 'ev-ticket__status ev-ticket__status--pending'
+            }
+          >
+            {statusLabel(myOrder.status)}
+          </p>
+        </div>
+        <OrderStepper stage={activeStage} hasCode={Boolean(myOrder.ticketCode)} />
+        <button
+          type="button"
+          className="button"
+          onClick={() => void navigate(ticketOrderPath(myOrder.id))}
         >
-          {statusLabel}
-        </p>
-        <button type="button" className="button" onClick={() => void navigate(TICKETS_PATH)}>
           {cta}
         </button>
+      </div>
+    );
+  } else if (event.ticketPrice != null && salesClosed) {
+    // Vânzarea online s-a încheiat: niciun buton care ar duce la un refuz.
+    ticketSection = (
+      <div className="ev-sales-closed" data-testid="ticket-sales-closed" role="status">
+        <span className="ev-sales-closed__icon" aria-hidden="true">
+          <LockIcon width={22} height={22} />
+        </span>
+        <div className="ev-sales-closed__text">
+          <p className="ev-sales-closed__title">{t('screens:events.sales.closedTitle')}</p>
+          <p className="ev-sales-closed__body">
+            {closedByServer
+              ? t('screens:events.sales.closedError')
+              : t('screens:events.sales.closedBody')}
+          </p>
+        </div>
       </div>
     );
   } else if (event.ticketPrice != null) {
@@ -197,19 +243,26 @@ export function EventScreen() {
     // va înscrie backendul pe comandă. Fără cotație (rețea, rută indisponibilă)
     // rămâne prețul de listă din `Event`.
     ticketSection = (
-      <>
+      <div className="ev-buy">
         {quote ? <TicketPriceBlock quote={quote} /> : null}
+        {sales.endAt ? (
+          <p className="ev-sales" data-testid="ticket-sales-end">
+            <ClockIcon width={16} height={16} />
+            <span>
+              {t('screens:events.sales.endsAt', {
+                date: formatEventDate(sales.endAt.toISOString()),
+              })}
+            </span>
+          </p>
+        ) : null}
+        {sales.showCountdown && sales.msLeft !== null ? (
+          <p className="ev-sales__countdown" data-testid="ticket-sales-countdown">
+            {t('screens:events.sales.countdown', { time: formatCountdown(sales.msLeft) })}
+          </p>
+        ) : null}
         <button
           type="button"
-          className="button ev-detail__action"
-          data-testid="request-ticket-btn"
-          onClick={() => void navigate(ticketRequestPath(eventId))}
-        >
-          {t('screens:events.requestTicket')}
-        </button>
-        <button
-          type="button"
-          className="button ev-detail__action"
+          className="button ev-detail__action ev-buy__primary"
           data-testid="buy-ticket-btn"
           disabled={buyMutation.isPending}
           onClick={() => buyMutation.mutate()}
@@ -219,7 +272,16 @@ export function EventScreen() {
             currency: quote ? quote.currency : (event.ticketCurrency ?? 'lei'),
           })}
         </button>
-      </>
+        <button
+          type="button"
+          className="button button--ghost ev-detail__action"
+          data-testid="request-ticket-btn"
+          onClick={() => void navigate(ticketRequestPath(eventId))}
+        >
+          {t('screens:events.requestTicket')}
+        </button>
+        <p className="ev-buy__hint">{t('screens:events.sales.requestHint')}</p>
+      </div>
     );
   }
 
@@ -271,7 +333,7 @@ export function EventScreen() {
       ) : null}
 
       {ticketSection}
-      {buyMutation.isError ? (
+      {buyMutation.isError && !closedByServer ? (
         <p className="error-text ev-detail__error">{t('detail.createOrderError')}</p>
       ) : null}
 

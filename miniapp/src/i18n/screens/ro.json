@@ -15,7 +15,15 @@
       "titled": "Harta locației: {{title}}",
       "untitled": "Harta locației"
     },
-    "requestTicket": "Solicită bilet"
+    "requestTicket": "Solicită bilet",
+    "sales": {
+      "endsAt": "Vânzarea online se închide pe {{date}}",
+      "countdown": "Se închide în {{time}}",
+      "closedTitle": "Vânzarea online este închisă",
+      "closedBody": "Biletele pentru acest eveniment nu mai pot fi cumpărate din aplicație.",
+      "closedError": "Vânzarea online tocmai s-a închis pentru acest eveniment.",
+      "requestHint": "„Solicită bilet” — pentru mai multe bilete sau o rezervare pe nume."
+    }
   },
   "stories": {
     "title": "Povești",
@@ -51,7 +59,84 @@
     "declareConfirm": {
       "title": "Ai făcut transferul?",
       "body": "Confirmă doar după ce banii au plecat din contul tău. Verificăm plata manual."
-    }
+    },
+    "screenTitle": "Biletele mele",
+    "statusUnknown": "În procesare",
+    "stepperLabel": "Progresul comenzii",
+    "stage": {
+      "ordered": "Comandat",
+      "paid": "Plătit",
+      "approved": "Aprobat",
+      "ticket": "Bilet"
+    },
+    "stepState": {
+      "done": "finalizat",
+      "current": "în curs",
+      "upcoming": "urmează",
+      "failed": "oprit"
+    },
+    "pay": {
+      "copyField": "Copiază: {{field}}",
+      "amountLabel": "De plată",
+      "recipient": "Beneficiar",
+      "iban": "IBAN",
+      "bank": "Banca",
+      "phone": "Telefon pentru transfer",
+      "account": "Cont / card",
+      "reference": "Codul tău de plată",
+      "purpose": "Destinația plății",
+      "purposeHint": "Copiază textul exact, fără modificări — după el îți găsim plata.",
+      "deadline": "Plătește până la {{date}}",
+      "bankUnavailable": "Datele bancare apar la crearea comenzii. Dacă nu le mai vezi, scrie-ne și ți le trimitem.",
+      "stepsTitle": "Cum plătești",
+      "step1": "Deschide aplicația băncii tale (maib, MICB, Moldindconbank etc.) sau mergi la un ghișeu.",
+      "step2": "Transferă exact {{amount}} către beneficiarul și IBAN-ul de mai sus.",
+      "step3": "La destinația plății lipește textul de mai sus, exact cum e scris.",
+      "step4Declare": "Revino aici și apasă „Am făcut transferul”.",
+      "step4Proof": "Încarcă mai jos o captură sau o fotografie a chitanței.",
+      "after": "Verificăm plata manual, de obicei în câteva ore. Biletul cu cod QR apare aici imediat după confirmare."
+    },
+    "pass": {
+      "eyebrow": "Bilet de intrare",
+      "membership": "Bilet de membru",
+      "ready": "Biletul tău e gata",
+      "date": "Data",
+      "venue": "Locul",
+      "holder": "Titular",
+      "admits": "Bilete",
+      "code": "Cod",
+      "showFull": "Arată codul complet",
+      "hideFull": "Ascunde codul complet",
+      "brightness": "Mărește luminozitatea ecranului la intrare",
+      "status": {
+        "valid": "Valid · arată-l la intrare",
+        "admitted": "INTRARE PERMISĂ · {{time}}",
+        "admittedNoTime": "INTRARE PERMISĂ",
+        "used": "Folosit",
+        "expired": "Expirat",
+        "cancelled": "Anulat"
+      }
+    },
+    "moreInfo": {
+      "title": "Avem nevoie de mai multe informații",
+      "body": "Citește mesajul administratorului și trimite din nou dovada plății."
+    },
+    "review": {
+      "proofBody": "Am primit dovada plății. O verificăm manual și îți trimitem biletul imediat după confirmare."
+    },
+    "approvedPending": "Plata e confirmată. Codul biletului se generează — revino în câteva minute.",
+    "rejected": {
+      "reason": "Motiv",
+      "noReason": "Nu am putut confirma plata.",
+      "whatToDo": "Verifică suma, IBAN-ul și destinația plății, apoi încearcă din nou cu o comandă nouă.",
+      "whatToDoProof": "Verifică suma și destinația plății. Dacă ai plătit deja, trimite din nou o dovadă clară a plății."
+    },
+    "cancelled": {
+      "title": "Comandă anulată",
+      "body": "Comanda nu mai este activă. Poți cumpăra un bilet nou din pagina evenimentului."
+    },
+    "openInTickets": "Deschide în Biletele mele",
+    "eventStarted": "Evenimentul a început — plata nu mai poate fi trimisă online."
   },
   "social": {
     "unblockConfirm": "Îl deblochezi pe {{name}}? Va putea din nou să te vadă și să-ți scrie.",

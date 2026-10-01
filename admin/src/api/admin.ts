@@ -9,6 +9,7 @@ import type {
   Ad,
   AdInput,
   AdSettings,
+  Admission,
   AdminEvent,
   AdminMe,
   AdminReport,
@@ -26,10 +27,12 @@ import type {
   Page,
   PaymentSettings,
   ResolveAction,
+  ScanStats,
   TicketOrder,
   TicketRequest,
   TicketRequestFilters,
   TicketRequestReviewInput,
+  TicketScanResponse,
   TimeseriesPoint,
   TokenPair,
   Uuid,
@@ -339,4 +342,24 @@ export function reviewTicketRequest(
       admin_comment: input.admin_comment?.trim() || undefined,
     },
   });
+}
+
+/* ----------------------- Scanarea biletelor la intrare ----------------------- */
+
+/** Verifică (și admite, dacă e valid) un bilet la intrarea în eveniment. */
+export function scanTicket(code: string, eventId: Uuid): Promise<TicketScanResponse> {
+  return apiFetch<TicketScanResponse>('/admin/tickets/scan', {
+    method: 'POST',
+    body: { code, event_id: eventId },
+  });
+}
+
+/** Contorul live „intrați / vânduți". */
+export function fetchScanStats(eventId: Uuid): Promise<ScanStats> {
+  return apiFetch<ScanStats>('/admin/tickets/scan-stats', { query: { event_id: eventId } });
+}
+
+/** Intrările recente la eveniment (cele mai noi primele). */
+export function fetchAdmissions(eventId: Uuid, limit = 20): Promise<Admission[]> {
+  return apiFetch<Admission[]>(`/admin/events/${eventId}/admissions`, { query: { limit } });
 }

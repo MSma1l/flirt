@@ -1,16 +1,22 @@
 /**
- * Acces la API pentru bilete, în Mini App.
+ * Acces la API pentru bilete, în Mini App — UN SINGUR punct de tăiere pentru
+ * rețea (testele mochează acest modul, nu pe cele din `mobile/`).
  *
- * REUTILIZAT din aplicația Expo, fără copiere (`@mobile/features/tickets/ticketsApi`
- * și `@mobile/features/settings/settingsApi`): acele fișiere sunt pure, iar
- * alias-ul `@/services/api` din ele e mapat pe clientul axios de aici (vezi
- * `vite.config.ts`), deci primesc automat instanța web.
+ * Ce se reutilizează din aplicația Expo (funcții pure, fără copiere):
+ * `createTicketOrder` și `declareTicketPayment`. Ce se citește AICI, cu mapare
+ * proprie, și de ce:
  *
- * Testele mochează ACEST modul, nu pe cele din `mobile/`: ecranul importă doar
- * de aici, deci există un singur punct de tăiere pentru rețea.
+ *  - `/ticket-orders/mine` și `/ticket-orders/{id}`: mapperul mobil aruncă
+ *    `event_title`, `admin_note`, `created_at` și nu cunoaște stările noi ale
+ *    cererilor manuale (`pending_payment`, `payment_proof_submitted`, …), care
+ *    stau în ACELAȘI tabel și vin pe aceleași rute. Fără ele, motivul unui refuz
+ *    și titlul evenimentului s-ar pierde.
+ *  - `/ticket/`: contractul nou al scanerului de la intrare adaugă `status`
+ *    (`valid` | `admitted` | `used` | `expired` | `cancelled`) și `admitted_at`.
+ *    Un server vechi nu le trimite → rămân `null` și ecranul cade pe `used`.
  *
  * Rutele confirmate în `backend/app/api/v1/`:
- *   GET  /ticket/                            → TicketOut {code, used}
+ *   GET  /ticket/                            → TicketOut {code, used, status?, admitted_at?}
  *   POST /events/{event_id}/ticket-orders    → TicketOrderCreateOut (201)
  *   POST /ticket-orders/{id}/declare         → TicketOrderOut
  *   GET  /ticket-orders/mine                 → list[TicketOrderOut]
@@ -18,81 +24,63 @@
  */
 import { api } from '@/api/client';
 
-import type { TicketOrder, TicketOrderStatus } from '@mobile/features/tickets/types';
+import {
+  mapOrder,
+  parsePassStatus,
+  str,
+  type Ticket,
+  type TicketOrder,
+} from './orderModel';
+import { mapPayment, type PaymentInstructions } from './paymentModel';
 
 export {
-  createTicketOrder,
-  declareTicketPayment,
-  fetchMyTicketOrders,
-  fetchTicketOrder,
-} from '@mobile/features/tickets/ticketsApi';
+  fetchMyTicketOrdersWithEvent,
+  parsePassStatus,
+  type Ticket,
+  type TicketOrder,
+  type TicketOrderListItem,
+  type TicketOrderStatus,
+  type TicketPassStatus,
+} from './orderModel';
 
-export { fetchTicket } from '@mobile/features/settings/settingsApi';
-export type { Ticket } from '@mobile/features/settings/settingsApi';
+export { mapPayment, type PaymentInstructions } from './paymentModel';
 
-export type {
-  PaymentInstructions,
-  TicketOrder,
-  TicketOrderDetail,
-  TicketOrderStatus,
-} from '@mobile/features/tickets/types';
+export { createTicketOrder, declareTicketPayment } from '@mobile/features/tickets/ticketsApi';
 
-/**
- * O comandă din listă, cu datele evenimentului alăturate.
- *
- * DE CE există pe lângă `TicketOrder`: `TicketOrderOut`
- * (`backend/app/schemas/ticket_order.py`) trimite ÎNTOTDEAUNA `event_title`,
- * `event_starts_at`, `reference` și `created_at`, dar mapperul din
- * `mobile/src/features/tickets/ticketsApi.ts` le aruncă — pe mobil lista de
- * comenzi nu are ecran propriu, comenzile se văd doar din pagina evenimentului,
- * unde titlul e deja pe ecran. Aici lista E ecranul: fără titlu și dată, un rând
- * ar fi un UUID și un preț. Sarcina interzice modificarea fișierului din
- * `mobile/`, deci maparea bogată trăiește aici.
- */
-export interface TicketOrderListItem extends TicketOrder {
-  /** Titlul evenimentului, așa cum îl trimite backendul. */
-  eventTitle: string;
-  /** Începutul evenimentului (ISO 8601). */
-  eventStartsAt: string;
-  /** Referința userului (`U-XXXXXXXX`), de pus în comentariul transferului. */
-  reference: string;
-  /** Momentul plasării comenzii (ISO 8601) — ordinea din listă. */
-  createdAt: string;
+// Cererile manuale (cu dovadă de plată) și evenimentul trec tot pe aici, ca
+// ecranul de bilete să aibă un singur modul de mockat.
+export {
+  fetchMyTicketRequests,
+  uploadPaymentProof,
+  type TicketRequest,
+} from '@/features/ticketRequests/ticketRequestsApi';
+export { fetchEvent, type EventItem } from '@/features/events/eventsApi';
+
+export interface TicketOrderDetail {
+  order: TicketOrder;
+  payment: PaymentInstructions | null;
 }
 
-/** Forma brută (snake_case) a unei comenzi, ca în `TicketOrderOut`. */
-interface TicketOrderListResponse {
-  id: string;
-  event_id: string;
-  event_title: string;
-  event_starts_at: string;
-  price: number;
-  currency: string;
-  reference: string;
-  status: string;
-  ticket_code?: string | null;
-  created_at: string;
+type Raw = Record<string, unknown>;
+
+/** Biletul propriu, cu starea de la intrare când serverul o știe. */
+export async function fetchTicket(): Promise<Ticket> {
+  const { data } = await api.get<Raw>('/ticket/');
+  return {
+    code: String(data?.code ?? ''),
+    used: Boolean(data?.used),
+    status: parsePassStatus(data?.status),
+    admittedAt: str(data?.admitted_at),
+  };
 }
 
-/**
- * Comenzile utilizatorului curent, cu evenimentul alăturat (cea mai recentă
- * prima — ordinea o dă backendul, nu o rescriem aici).
- *
- * `ticket_code` vine doar pe comenzile `approved`; în rest e `null`, pentru că
- * un bilet neverificat n-are cod valid.
- */
-export async function fetchMyTicketOrdersWithEvent(): Promise<TicketOrderListItem[]> {
-  const { data } = await api.get<TicketOrderListResponse[]>('/ticket-orders/mine');
-  return (data ?? []).map((o) => ({
-    id: o.id,
-    eventId: o.event_id ?? null,
-    eventTitle: o.event_title,
-    eventStartsAt: o.event_starts_at,
-    status: o.status as TicketOrderStatus,
-    price: o.price ?? null,
-    currency: o.currency ?? null,
-    reference: o.reference,
-    ticketCode: o.ticket_code ?? null,
-    createdAt: o.created_at,
-  }));
+/** O comandă + instrucțiunile de plată (doar cât timp e `awaiting_payment`). */
+export async function fetchTicketOrder(id: string): Promise<TicketOrderDetail> {
+  const { data } = await api.get<{ order: Raw; payment?: Raw | null }>(
+    `/ticket-orders/${encodeURIComponent(id)}`,
+  );
+  return {
+    order: mapOrder(data.order),
+    payment: data.payment ? mapPayment(data.payment) : null,
+  };
 }

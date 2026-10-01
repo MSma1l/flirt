@@ -35,6 +35,7 @@ from app.api.v1.admin import (
     stats,
     subscriptions,
     ticket_orders,
+    ticket_scan,
     ticket_requests,
     users,
 )
@@ -58,4 +59,5 @@ router.include_router(audit.router, dependencies=_admin_only)
 router.include_router(ads.router, dependencies=_admin_only)
 router.include_router(ticket_orders.router, dependencies=_admin_only)
 router.include_router(ticket_requests.router, dependencies=_admin_only)
+router.include_router(ticket_scan.router, dependencies=_admin_only)
 router.include_router(loyalty.router, dependencies=_admin_only)

@@ -803,7 +803,25 @@ async def get_or_issue_ticket(db: AsyncSession, user: User) -> TicketOut:
         db.add(ticket)
         await db.commit()
         await db.refresh(ticket)
-    return TicketOut(code=ticket.code, used=ticket.used)
+    # Import local: `ticket_lifecycle` importă modele de bilet/eveniment; ținem
+    # dependența în afara căii de import a modulului (fără cicluri).
+    from app.models.event import Event
+    from app.services.ticket_lifecycle import party_ticket_status
+
+    admitted_event = (
+        await db.get(Event, ticket.admitted_event_id)
+        if ticket.admitted_event_id is not None
+        else None
+    )
+    return TicketOut(
+        code=ticket.code,
+        # Retrocompatibil: „folosit" = scanat la intrare SAU marcat istoric.
+        used=bool(ticket.used or ticket.admitted_at is not None),
+        status=party_ticket_status(ticket, admitted_event),
+        admitted_at=ticket.admitted_at,
+        admitted_event_id=ticket.admitted_event_id,
+        admitted_event_title=admitted_event.title if admitted_event else None,
+    )
 
 
 # --- Ștergere cont -----------------------------------------------------------

@@ -251,11 +251,30 @@
 .ev-ticket {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  gap: var(--space-md);
   padding: var(--space-lg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  background: var(--color-surface);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(120% 90% at 100% 0%, var(--color-accent-glow) 0%, transparent 55%),
+    linear-gradient(155deg, var(--color-surface-hover), var(--color-surface));
+}
+
+.ev-ticket--approved {
+  background:
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--color-success) 28%, transparent) 0%, transparent 55%),
+    linear-gradient(155deg, var(--color-surface-hover), var(--color-surface));
+}
+
+.ev-ticket__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.ev-ticket__icon {
+  display: inline-flex;
+  color: var(--color-link);
 }
 
 .ev-ticket__status {
@@ -269,6 +288,96 @@
 
 .ev-ticket__status--pending {
   color: var(--color-warning);
+}
+
+/* ——— Cumpărarea online și fereastra de vânzare ——— */
+
+.ev-buy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.ev-buy__primary {
+  min-height: 52px;
+  font-size: 16px;
+  font-weight: 800;
+  background: linear-gradient(120deg, var(--color-link), var(--color-accent) 55%, var(--color-accent-pressed));
+  box-shadow: 0 14px 30px -14px var(--color-accent-glow);
+}
+
+.ev-buy__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 17px;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.ev-sales {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--color-text-secondary);
+}
+
+.ev-sales__countdown {
+  align-self: flex-start;
+  margin: 0;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 800;
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 40%, transparent);
+}
+
+.ev-sales-closed {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  border-radius: 18px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.ev-sales-closed__icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-hover);
+}
+
+.ev-sales-closed__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ev-sales-closed__title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+}
+
+.ev-sales-closed__body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--color-text-secondary);
 }
 
 /* ——— Harta ——— */

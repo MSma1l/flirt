@@ -15,7 +15,15 @@
       "titled": "Venue map: {{title}}",
       "untitled": "Venue map"
     },
-    "requestTicket": "Request a ticket"
+    "requestTicket": "Request a ticket",
+    "sales": {
+      "endsAt": "Online sales close on {{date}}",
+      "countdown": "Closes in {{time}}",
+      "closedTitle": "Online sales are closed",
+      "closedBody": "Tickets for this event can no longer be bought in the app.",
+      "closedError": "Online sales for this event have just closed.",
+      "requestHint": "“Request ticket” — for several tickets or a named reservation."
+    }
   },
   "stories": {
     "title": "Stories",
@@ -51,7 +59,84 @@
     "declareConfirm": {
       "title": "Did you send the transfer?",
       "body": "Only confirm once the money has left your account. We check payments by hand."
-    }
+    },
+    "screenTitle": "My tickets",
+    "statusUnknown": "Processing",
+    "stepperLabel": "Order progress",
+    "stage": {
+      "ordered": "Ordered",
+      "paid": "Paid",
+      "approved": "Approved",
+      "ticket": "Ticket"
+    },
+    "stepState": {
+      "done": "done",
+      "current": "in progress",
+      "upcoming": "next",
+      "failed": "stopped"
+    },
+    "pay": {
+      "copyField": "Copy: {{field}}",
+      "amountLabel": "Amount to pay",
+      "recipient": "Recipient",
+      "iban": "IBAN",
+      "bank": "Bank",
+      "phone": "Phone for transfer",
+      "account": "Account / card",
+      "reference": "Your payment code",
+      "purpose": "Payment purpose",
+      "purposeHint": "Copy the text exactly, unchanged — it's how we match your payment.",
+      "deadline": "Pay before {{date}}",
+      "bankUnavailable": "Bank details are shown when the order is created. If you can't see them, message us and we'll send them.",
+      "stepsTitle": "How to pay",
+      "step1": "Open your bank's app (maib, MICB, Moldindconbank, etc.) or visit a branch.",
+      "step2": "Transfer exactly {{amount}} to the recipient and IBAN above.",
+      "step3": "Paste the text above into the payment purpose field, exactly as written.",
+      "step4Declare": "Come back here and tap “I've made the transfer”.",
+      "step4Proof": "Upload a screenshot or photo of the receipt below.",
+      "after": "We check payments manually, usually within a few hours. Your QR ticket appears here right after confirmation."
+    },
+    "pass": {
+      "eyebrow": "Entry ticket",
+      "membership": "Member ticket",
+      "ready": "Your ticket is ready",
+      "date": "Date",
+      "venue": "Venue",
+      "holder": "Holder",
+      "admits": "Tickets",
+      "code": "Code",
+      "showFull": "Show full code",
+      "hideFull": "Hide full code",
+      "brightness": "Increase screen brightness at the entrance",
+      "status": {
+        "valid": "Valid · show it at the entrance",
+        "admitted": "ENTRY ALLOWED · {{time}}",
+        "admittedNoTime": "ENTRY ALLOWED",
+        "used": "Used",
+        "expired": "Expired",
+        "cancelled": "Cancelled"
+      }
+    },
+    "moreInfo": {
+      "title": "We need more information",
+      "body": "Read the admin's message and send the payment proof again."
+    },
+    "review": {
+      "proofBody": "We received your payment proof. We check it manually and send your ticket right after confirmation."
+    },
+    "approvedPending": "Payment confirmed. Your ticket code is being generated — check back in a few minutes.",
+    "rejected": {
+      "reason": "Reason",
+      "noReason": "We couldn't confirm the payment.",
+      "whatToDo": "Check the amount, IBAN and payment purpose, then try again with a new order.",
+      "whatToDoProof": "Check the amount and payment purpose. If you've already paid, send a clear payment proof again."
+    },
+    "cancelled": {
+      "title": "Order cancelled",
+      "body": "This order is no longer active. You can buy a new ticket from the event page."
+    },
+    "openInTickets": "Open in My tickets",
+    "eventStarted": "The event has started — payment can no longer be sent online."
   },
   "social": {
     "unblockConfirm": "Unblock {{name}}? They’ll be able to see you and message you again.",

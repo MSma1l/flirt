@@ -424,6 +424,11 @@ class Settings(BaseSettings):
     # un cont de admin spart = tot produsul spart, iar numărul de admini e mic,
     # deci un prag mic nu deranjează pe nimeni legitim.
     rate_limit_admin_login_per_min: int = 3
+    # Scanările de bilete la intrare (`POST /admin/tickets/scan`), per IP / minut.
+    # Generos: tot staff-ul de la ușă poate ieși prin același Wi-Fi (același IP),
+    # iar scannerul continuu trimite câte o cerere per cod nou. Oprește doar
+    # ghicirea în masă de coduri.
+    rate_limit_ticket_scan_per_min: int = 240
     # Durata implicită (zile) a unui abonament acordat manual de suport.
     admin_grant_default_days: int = 30
     # Plafon absolut pentru o acordare manuală: un typo („36500 zile") nu are voie

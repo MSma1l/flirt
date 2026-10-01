@@ -141,10 +141,21 @@ class BlockPage(BaseModel):
 
 
 class TicketOut(BaseModel):
-    """Biletul Flirt Party al userului."""
+    """Biletul Flirt Party al userului.
+
+    `status` (aditiv) = starea de ciclu de viață, vezi `ticket_lifecycle`:
+    valid | admitted | used | expired | cancelled. `used` rămâne pentru clienții
+    vechi: True când biletul a fost scanat la intrare (sau marcat folosit).
+    """
 
     code: str
     used: bool
+    status: str = "valid"
+    admitted_at: datetime | None = None
+    # Evenimentul la care s-a intrat cu biletul (biletul Flirt Party nu e legat
+    # de un eveniment până la prima scanare).
+    admitted_event_id: uuid.UUID | None = None
+    admitted_event_title: str | None = None
 
 
 class AccountDeletionOut(BaseModel):

@@ -121,6 +121,16 @@ class TicketOrder(Base):
     decided_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    # --- Intrarea la eveniment (scanarea QR la ușă) ---------------------------
+    # Setate ATOMIC de `ticket_scan_service.scan` (UPDATE … WHERE admitted_at IS
+    # NULL), deci două scanări simultane nu pot admite de două ori. Stările
+    # „used"/„expired" NU se stochează: se calculează din ora evenimentului.
+    admitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    admitted_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     # created_at / updated_at vin din `Base`.
 
 

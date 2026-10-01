@@ -51,6 +51,7 @@ export const eventsMessages = defineMessages({
       upcoming: 'Viitor',
       past: 'Trecut',
       ticketsTitle: 'Comenzi nerespinse (din care aprobate)',
+      salesEnd: (when: string) => `Vânzare online până la ${when}`,
       edit: 'Editează',
       invites: 'Invitații',
       delete: 'Șterge',
@@ -82,6 +83,8 @@ export const eventsMessages = defineMessages({
       ticketPrice: 'Preț bilet',
       ticketPricePlaceholder: 'gol = bilet online indisponibil',
       currency: 'Monedă',
+      salesEnd: 'Vânzarea online se închide la',
+      salesEndHint: 'Gol = la începutul evenimentului',
       promoLegend: 'Promo / Reducere la intrare',
       promoHint:
         'Aplicația arată blocul de promo doar când sunt completate AMBELE: procentul ' +
@@ -128,6 +131,8 @@ export const eventsMessages = defineMessages({
       percentInteger: 'Reducerea se exprimă în procente întregi.',
       priceNegative: 'Prețul biletului nu poate fi negativ.',
       currencyRequired: 'Un preț fără monedă nu spune nimic.',
+      salesEndTooLate:
+        'Vânzarea online trebuie să se închidă cel târziu la 12 ore după începutul evenimentului.',
     },
     warnings: {
       noCoords:
@@ -187,6 +192,7 @@ export const eventsMessages = defineMessages({
       upcoming: 'Предстоит',
       past: 'Прошло',
       ticketsTitle: 'Неотклонённые заказы (из них одобренные)',
+      salesEnd: (when: string) => `Онлайн-продажа до ${when}`,
       edit: 'Изменить',
       invites: 'Приглашения',
       delete: 'Удалить',
@@ -218,6 +224,8 @@ export const eventsMessages = defineMessages({
       ticketPrice: 'Цена билета',
       ticketPricePlaceholder: 'пусто = онлайн-билет недоступен',
       currency: 'Валюта',
+      salesEnd: 'Онлайн-продажа закрывается в',
+      salesEndHint: 'Пусто = в момент начала события',
       promoLegend: 'Промо / Скидка на входе',
       promoHint:
         'Приложение показывает промоблок, только когда заполнены ОБА поля: процент ' +
@@ -263,6 +271,8 @@ export const eventsMessages = defineMessages({
       percentInteger: 'Скидка указывается в целых процентах.',
       priceNegative: 'Цена билета не может быть отрицательной.',
       currencyRequired: 'Цена без валюты ничего не значит.',
+      salesEndTooLate:
+        'Онлайн-продажа должна закрываться не позднее чем через 12 часов после начала события.',
     },
     warnings: {
       noCoords:

@@ -1,0 +1,123 @@
+/** Scannerul de bilete de la intrare (pagina „Scanner", folosită pe telefon). */
+import { defineMessages } from '../LanguageContext';
+
+export const scanMessages = defineMessages({
+  ro: {
+    title: 'Scanner bilete',
+    intro: 'Deschide pagina pe telefon și scanează QR-ul biletului la intrare.',
+    eventLabel: 'Eveniment',
+    noEvents: 'Nu există evenimente în desfășurare sau viitoare.',
+    today: 'azi',
+    loadingEvents: 'Se încarcă evenimentele…',
+    counterLabel: 'au intrat / bilete vândute',
+    flirtParty: (count: number) => `din care ${count} cu bilet Flirt Party`,
+    startCamera: 'Pornește camera',
+    stopCamera: 'Oprește camera',
+    starting: 'Se pornește camera…',
+    pointCamera: 'Îndreaptă camera spre QR-ul biletului',
+    checking: 'Se verifică…',
+    torchOn: 'Lanterna',
+    torchOff: 'Stinge lanterna',
+    manualTitle: 'Cod introdus manual',
+    manualHint: 'Dacă QR-ul nu se citește: tastează codul (sau primele 8 caractere).',
+    manualPlaceholder: 'ex. 3f9a1c2e',
+    manualSubmit: 'Verifică',
+    recentTitle: 'Intrări recente',
+    recentEmpty: 'Încă nu a intrat nimeni.',
+    persons: (n: number) => `×${n} persoane`,
+    tapToContinue: 'Atinge pentru a continua',
+    camera: {
+      insecure:
+        'Camera merge doar pe HTTPS. Deschide panoul prin adresa https:// (nu http://).',
+      unsupported:
+        'Browserul nu oferă acces la cameră. Folosește Safari (iPhone) sau Chrome (Android) — ori introdu codul manual mai jos.',
+      denied:
+        'Accesul la cameră a fost refuzat. iPhone: Setări → Safari → Cameră → Permite (sau „aA" în bara de adresă → Setări site). Android: lacătul din bara de adresă → Permisiuni → Cameră → Permite. Apoi reîncarcă pagina.',
+      notFound: 'Nu am găsit nicio cameră pe acest dispozitiv.',
+      busy: 'Camera e folosită de altă aplicație. Închide-o și încearcă din nou.',
+      generic: 'Camera nu a putut fi pornită. Încearcă din nou sau introdu codul manual.',
+    },
+    result: {
+      admitted: 'INTRARE PERMISĂ',
+      already_admitted: 'DEJA INTRAT',
+      wrong_event: 'ALT EVENIMENT',
+      not_paid: 'NEPLĂTIT',
+      cancelled: 'BILET ANULAT',
+      event_over: 'EVENIMENT ÎNCHEIAT',
+      not_found: 'BILET NEGĂSIT',
+      error: 'EROARE',
+    },
+    reason: {
+      alreadyAdmitted: (time: string, by: string | null) =>
+        by ? `A intrat deja la ${time}, scanat de ${by}.` : `A intrat deja la ${time}.`,
+      alreadyUsed: 'Biletul a fost deja folosit.',
+      wrongEvent: (title: string | null) =>
+        title ? `Biletul e pentru „${title}".` : 'Biletul nu e valabil la acest eveniment.',
+      notPaid: 'Plata nu a fost confirmată de admin.',
+      cancelled: 'Comanda a fost respinsă sau anulată.',
+      eventOver: 'Evenimentul s-a terminat.',
+      notFound: 'Codul nu corespunde niciunui bilet.',
+    },
+    ticketFlirtParty: 'Bilet Flirt Party',
+    ageSuffix: (age: number) => `${age} ani`,
+  },
+  ru: {
+    title: 'Сканер билетов',
+    intro: 'Откройте страницу на телефоне и сканируйте QR-код билета на входе.',
+    eventLabel: 'Событие',
+    noEvents: 'Нет текущих или предстоящих событий.',
+    today: 'сегодня',
+    loadingEvents: 'Загрузка событий…',
+    counterLabel: 'вошли / продано билетов',
+    flirtParty: (count: number) => `из них ${count} по билету Flirt Party`,
+    startCamera: 'Включить камеру',
+    stopCamera: 'Выключить камеру',
+    starting: 'Камера включается…',
+    pointCamera: 'Наведите камеру на QR-код билета',
+    checking: 'Проверка…',
+    torchOn: 'Фонарик',
+    torchOff: 'Выключить фонарик',
+    manualTitle: 'Ввод кода вручную',
+    manualHint: 'Если QR не читается: введите код (или первые 8 символов).',
+    manualPlaceholder: 'напр. 3f9a1c2e',
+    manualSubmit: 'Проверить',
+    recentTitle: 'Последние входы',
+    recentEmpty: 'Пока никто не вошёл.',
+    persons: (n: number) => `×${n} чел.`,
+    tapToContinue: 'Нажмите, чтобы продолжить',
+    camera: {
+      insecure:
+        'Камера работает только по HTTPS. Откройте панель по адресу https:// (не http://).',
+      unsupported:
+        'Браузер не даёт доступ к камере. Используйте Safari (iPhone) или Chrome (Android) — или введите код вручную ниже.',
+      denied:
+        'Доступ к камере запрещён. iPhone: Настройки → Safari → Камера → Разрешить (или «aA» в адресной строке → Настройки сайта). Android: замок в адресной строке → Разрешения → Камера → Разрешить. Затем перезагрузите страницу.',
+      notFound: 'На этом устройстве не найдена камера.',
+      busy: 'Камера занята другим приложением. Закройте его и попробуйте снова.',
+      generic: 'Не удалось включить камеру. Попробуйте снова или введите код вручную.',
+    },
+    result: {
+      admitted: 'ВХОД РАЗРЕШЁН',
+      already_admitted: 'УЖЕ ВОШЁЛ',
+      wrong_event: 'ДРУГОЕ СОБЫТИЕ',
+      not_paid: 'НЕ ОПЛАЧЕН',
+      cancelled: 'БИЛЕТ ОТМЕНЁН',
+      event_over: 'СОБЫТИЕ ЗАВЕРШЕНО',
+      not_found: 'БИЛЕТ НЕ НАЙДЕН',
+      error: 'ОШИБКА',
+    },
+    reason: {
+      alreadyAdmitted: (time: string, by: string | null) =>
+        by ? `Уже вошёл в ${time}, сканировал ${by}.` : `Уже вошёл в ${time}.`,
+      alreadyUsed: 'Билет уже использован.',
+      wrongEvent: (title: string | null) =>
+        title ? `Билет на «${title}».` : 'Билет недействителен на этом событии.',
+      notPaid: 'Оплата не подтверждена администратором.',
+      cancelled: 'Заказ отклонён или отменён.',
+      eventOver: 'Событие уже закончилось.',
+      notFound: 'Код не соответствует ни одному билету.',
+    },
+    ticketFlirtParty: 'Билет Flirt Party',
+    ageSuffix: (age: number) => `${age} лет`,
+  },
+});

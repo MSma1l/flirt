@@ -15,6 +15,8 @@
  *   * lat ∈ [-90, 90], lng ∈ [-180, 180] (`Field(ge=…, le=…)`);
  *   * promo_discount_percent ∈ [0, 100], ÎNTREG (`int | None`);
  *   * ticket_price ≥ 0;
+ *   * ticket_sales_end_at: opțional, cel mult `starts_at + 12h`
+ *     (`TICKET_SALES_END_MAX_AFTER_START` din `backend/app/models/event.py`);
  *   * cover_url: max 500 — backendul NU verifică forma (e `str`, nu `HttpUrl`),
  *     deci verificarea că e o adresă http(s) e responsabilitatea panoului.
  */
@@ -35,6 +37,9 @@ export const EVENT_LIMITS = {
   ticketCurrency: 8,
 } as const;
 
+/** Cât de târziu după start se poate închide vânzarea online (oglinda backendului). */
+export const TICKET_SALES_END_MAX_AFTER_START_MS = 12 * 60 * 60 * 1000;
+
 /** Moneda implicită a biletului (`Event.ticket_currency` server_default). */
 export const DEFAULT_CURRENCY = 'lei';
 
@@ -53,6 +58,7 @@ export interface FormState {
   promo_description: string;
   ticket_price: string;
   ticket_currency: string;
+  ticket_sales_end_at: string; // `datetime-local`; gol = la începutul evenimentului
 }
 
 export const EMPTY_FORM: FormState = {
@@ -70,6 +76,7 @@ export const EMPTY_FORM: FormState = {
   promo_description: '',
   ticket_price: '',
   ticket_currency: DEFAULT_CURRENCY,
+  ticket_sales_end_at: '',
 };
 
 export function toForm(event: AdminEvent): FormState {
@@ -89,6 +96,9 @@ export function toForm(event: AdminEvent): FormState {
     promo_description: event.promo_description ?? '',
     ticket_price: event.ticket_price === null ? '' : String(event.ticket_price),
     ticket_currency: event.ticket_currency ?? DEFAULT_CURRENCY,
+    ticket_sales_end_at: event.ticket_sales_end_at
+      ? toDateTimeLocalValue(event.ticket_sales_end_at)
+      : '',
   };
 }
 
@@ -247,6 +257,21 @@ export function validate(form: FormState, language: Language = 'ro'): FormErrors
     }
   }
 
+  // --- închiderea vânzării online (opțional; cel mult start + 12h) ---
+  if (form.ticket_sales_end_at.trim() !== '') {
+    const salesEnd = fromDateTimeLocalValue(form.ticket_sales_end_at);
+    const starts = fromDateTimeLocalValue(form.starts_at);
+    if (salesEnd === '') {
+      errors.ticket_sales_end_at = m.dateInvalid;
+    } else if (
+      starts !== '' &&
+      new Date(salesEnd).getTime() >
+        new Date(starts).getTime() + TICKET_SALES_END_MAX_AFTER_START_MS
+    ) {
+      errors.ticket_sales_end_at = m.salesEndTooLate;
+    }
+  }
+
   return errors;
 }
 
@@ -321,6 +346,11 @@ export function toPayload(form: FormState): EventInput {
     ticket_price: price,
     // Moneda are sens doar când există preț; fără preț → null (bilet indisponibil).
     ticket_currency: price === null ? null : orNull(form.ticket_currency),
+    // Gol → `null`: backendul închide vânzarea la începutul evenimentului.
+    ticket_sales_end_at:
+      form.ticket_sales_end_at.trim() === ''
+        ? null
+        : fromDateTimeLocalValue(form.ticket_sales_end_at) || null,
   };
 }
 

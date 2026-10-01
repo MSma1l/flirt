@@ -57,6 +57,7 @@ const NAV_SECTIONS: readonly NavSection[] = [
     items: [
       { to: '/ticket-orders', key: 'ticketOrders' },
       { to: '/ticket-requests', key: 'ticketRequests' },
+      { to: '/scan', key: 'scan' },
     ],
   },
   {

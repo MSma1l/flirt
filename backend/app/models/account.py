@@ -128,7 +128,23 @@ class Ticket(Base):
     )
     # Codul biletului — unic la nivel global.
     code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    # Flag-ul ISTORIC „folosit" (păstrat pentru clienții existenți). De la
+    # scanarea la intrare devine True odată cu `admitted_at`.
     used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # --- Intrarea la eveniment (scanarea QR de staff, vezi `ticket_scan_service`)
+    # Biletul Flirt Party NU e legat de un eveniment la emitere; e consumat la
+    # PRIMA scanare reușită, la un eveniment de tip `flirt_party`. Starea expusă
+    # clienților (admitted/used) se CALCULEAZĂ din aceste coloane + ora
+    # evenimentului — fără cron.
+    admitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    admitted_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    admitted_event_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("events.id", ondelete="SET NULL"), nullable=True
+    )
 
 
 class AccountDeletionRequest(Base):

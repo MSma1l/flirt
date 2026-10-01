@@ -11,14 +11,14 @@
  * pagină și NU golește ecranul. Datele evenimentului rămân pe loc.
  */
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { EventItem } from '@mobile/features/events/types';
-import type { TicketOrder } from '@mobile/features/tickets/types';
+import type { TicketOrderDetail as MobileTicketOrderDetail } from '@mobile/features/tickets/types';
 
 import type { TicketQuote } from '@/features/loyalty';
 import { TICKETS_PATH } from '@/features/tickets/ticketRoutes';
+import type { EventItem, TicketOrder } from '../eventsApi';
 import { renderWithProviders } from '@/test/harness';
 
 import { EventScreen } from '../EventScreen';
@@ -110,11 +110,34 @@ const BARE_EVENT: EventItem = {
 const ORDER: TicketOrder = {
   id: 'o1',
   eventId: 'e1',
+  eventTitle: 'Flirt Party Chișinău',
+  eventStartsAt: '2026-07-04T19:00:00.000Z',
   status: 'awaiting_payment',
   price: 150,
   currency: 'lei',
+  reference: 'U-1A2B3C4D',
   ticketCode: null,
+  createdAt: '2026-07-01T10:00:00.000Z',
 };
+
+/** Comanda nou creată, cum o întoarce `createTicketOrder` (forma mobilă). */
+const CREATED: MobileTicketOrderDetail = {
+  order: { id: 'o1', eventId: 'e1', status: 'awaiting_payment', price: 150, currency: 'lei', ticketCode: null },
+  payment: null,
+};
+
+/** O eroare axios cu cod stabil, ca de la `CodedHTTPException`. */
+function codedError(status: number, code: string) {
+  return Object.assign(new Error(code), { response: { status, data: { detail: '…', code } } });
+}
+
+const HOUR = 60 * 60 * 1000;
+
+/** Ținta navigării: arată și query-ul, ca să vedem ce comandă se deschide. */
+function TicketsProbe() {
+  const location = useLocation();
+  return <div data-testid="tickets-screen">{location.search}</div>;
+}
 
 function renderDetail() {
   return renderWithProviders(
@@ -122,7 +145,7 @@ function renderDetail() {
       <Routes>
         <Route path={EVENT_ROUTE_PATTERN} element={<EventScreen />} />
         {/* Ținta navigărilor legate de bilet, ca să le putem observa. */}
-        <Route path={TICKETS_PATH} element={<div data-testid="tickets-screen" />} />
+        <Route path={TICKETS_PATH} element={<TicketsProbe />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -253,10 +276,7 @@ describe('check-in', () => {
 
 describe('bilet online', () => {
   it('fără comandă, arată butonul de cumpărare cu preț și duce la ecranul de bilete', async () => {
-    vi.mocked(createTicketOrder).mockResolvedValue({
-      order: ORDER,
-      payment: null,
-    });
+    vi.mocked(createTicketOrder).mockResolvedValue(CREATED);
     renderDetail();
 
     const buy = await screen.findByTestId('buy-ticket-btn');
@@ -265,7 +285,8 @@ describe('bilet online', () => {
     fireEvent.click(buy);
 
     await waitFor(() => expect(createTicketOrder).toHaveBeenCalledWith('e1'));
-    expect(await screen.findByTestId('tickets-screen')).toBeInTheDocument();
+    // Ajunge pe ecranul de bilete cu comanda nouă deja deschisă.
+    expect(await screen.findByTestId('tickets-screen')).toHaveTextContent('?order=o1');
   });
 
   it('eșecul comenzii se vede în pagină, iar butonul rămâne apăsabil', async () => {
@@ -364,5 +385,97 @@ describe('prețul biletului, așa cum îl plătește utilizatorul', () => {
 
     await screen.findByText('Flirt Party Chișinău');
     expect(fetchTicketQuote).not.toHaveBeenCalled();
+  });
+});
+
+describe('fereastra de vânzare online', () => {
+  it('pe un server vechi (fără câmpuri) totul rămâne ca înainte', async () => {
+    renderDetail();
+
+    expect(await screen.findByTestId('buy-ticket-btn')).toBeEnabled();
+    expect(screen.queryByTestId('ticket-sales-end')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ticket-sales-closed')).not.toBeInTheDocument();
+  });
+
+  it('anunță când se închide vânzarea, fără numărătoare cu mai mult de o zi înainte', async () => {
+    vi.mocked(fetchEvent).mockResolvedValue({
+      ...EVENT,
+      ticketSalesEndAt: new Date(Date.now() + 3 * 24 * HOUR).toISOString(),
+      ticketSalesOpen: true,
+    });
+    renderDetail();
+
+    expect(await screen.findByTestId('ticket-sales-end')).toHaveTextContent(
+      'Vânzarea online se închide pe',
+    );
+    expect(screen.queryByTestId('ticket-sales-countdown')).not.toBeInTheDocument();
+    expect(screen.getByTestId('buy-ticket-btn')).toBeInTheDocument();
+  });
+
+  it('cu mai puțin de 24 h rămase, arată numărătoarea inversă', async () => {
+    vi.mocked(fetchEvent).mockResolvedValue({
+      ...EVENT,
+      ticketSalesEndAt: new Date(Date.now() + 5 * HOUR + 30_000).toISOString(),
+      ticketSalesOpen: true,
+    });
+    renderDetail();
+
+    expect(await screen.findByTestId('ticket-sales-countdown')).toHaveTextContent(
+      /Se închide în 05:00:\d{2}/,
+    );
+  });
+
+  it('vânzarea închisă de server înlocuiește butoanele cu un mesaj neutru', async () => {
+    vi.mocked(fetchEvent).mockResolvedValue({
+      ...EVENT,
+      ticketSalesEndAt: new Date(Date.now() + 2 * HOUR).toISOString(),
+      ticketSalesOpen: false,
+    });
+    renderDetail();
+
+    expect(await screen.findByTestId('ticket-sales-closed')).toHaveTextContent(
+      'Vânzarea online este închisă',
+    );
+    expect(screen.queryByTestId('buy-ticket-btn')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('request-ticket-btn')).not.toBeInTheDocument();
+  });
+
+  it('ora de închidere trecută închide vânzarea și pe ceasul local', async () => {
+    vi.mocked(fetchEvent).mockResolvedValue({
+      ...EVENT,
+      ticketSalesEndAt: new Date(Date.now() - HOUR).toISOString(),
+      ticketSalesOpen: null,
+    });
+    renderDetail();
+
+    expect(await screen.findByTestId('ticket-sales-closed')).toBeInTheDocument();
+    expect(screen.queryByTestId('buy-ticket-btn')).not.toBeInTheDocument();
+  });
+
+  it('o comandă activă rămâne vizibilă și după închidere, ca plata să poată fi terminată', async () => {
+    vi.mocked(fetchEvent).mockResolvedValue({ ...EVENT, ticketSalesOpen: false });
+    vi.mocked(fetchMyTicketOrders).mockResolvedValue([ORDER]);
+    renderDetail();
+
+    expect(await screen.findByTestId('ticket-status')).toHaveTextContent('Bilet: finalizează plata');
+    expect(screen.queryByTestId('ticket-sales-closed')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [409, 'după ora de închidere'],
+    [400, 'după începerea evenimentului'],
+  ])('refuzul %s `ticket_sales_closed` (%s) arată mesajul și reîncarcă evenimentul', async (status) => {
+    vi.mocked(createTicketOrder).mockRejectedValue(codedError(status, 'ticket_sales_closed'));
+    renderDetail();
+
+    fireEvent.click(await screen.findByTestId('buy-ticket-btn'));
+
+    expect(await screen.findByTestId('ticket-sales-closed')).toHaveTextContent(
+      'Vânzarea online tocmai s-a închis pentru acest eveniment.',
+    );
+    // Nu și eroarea generică: refuzul are o explicație precisă.
+    expect(screen.queryByText('Nu am putut crea comanda. Reîncearcă.')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('buy-ticket-btn')).not.toBeInTheDocument();
+    await waitFor(() => expect(vi.mocked(fetchEvent).mock.calls.length).toBeGreaterThan(1));
   });
 });

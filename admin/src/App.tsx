@@ -33,6 +33,7 @@ const TicketOrdersPage = lazy(() =>
 const TicketRequestsPage = lazy(() =>
   import('./pages/TicketRequestsPage').then((m) => ({ default: m.TicketRequestsPage })),
 );
+const ScanPage = lazy(() => import('./pages/ScanPage').then((m) => ({ default: m.ScanPage })));
 const LoyaltyPage = lazy(() =>
   import('./pages/LoyaltyPage').then((m) => ({ default: m.LoyaltyPage })),
 );
@@ -60,6 +61,8 @@ export function App(): JSX.Element {
           <Route path="/ads" element={<AdsPage />} />
           <Route path="/ticket-orders" element={<TicketOrdersPage />} />
           <Route path="/ticket-requests" element={<TicketRequestsPage />} />
+          {/* Scannerul de la intrare — folosit de staff pe telefon. */}
+          <Route path="/scan" element={<ScanPage />} />
           <Route path="/loyalty" element={<LoyaltyPage />} />
           {/* `/invites?event=<id>` — venind din tabelul de evenimente, filtrat. */}
           <Route path="/invites" element={<InvitesPage />} />

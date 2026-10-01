@@ -1,372 +1,162 @@
 /**
  * Biletele mele, în Mini App (TZ secț. 6.3).
  *
- * PORT COMBINAT al două ecrane native, pe o singură rută (`/tickets`):
- *   1. `mobile/app/ticket.tsx`       → biletul propriu Flirt Party, cu QR;
- *   2. `mobile/app/tickets/[id].tsx` → o comandă de bilet la un eveniment.
+ * Un singur ecran (`/tickets`), două secțiuni:
+ *   1. comenzile de bilete la evenimente — fiecare un card în formă de bilet,
+ *      cu cronologia Comandat → Plătit → Aprobat → Bilet; apăsat, se desface
+ *      SUB el detaliul etapei curente: datele de plată (cu copiere), dovada,
+ *      așteptarea, biletul cu QR sau motivul refuzului;
+ *   2. biletul propriu Flirt Party, ca pass cu QR.
  *
- * DE CE într-un singur ecran: harta rutelor (`src/routes.tsx`) aparține altui
- * agent, iar modulul are o singură cale declarată (`ticketRoutes.ts`). În loc să
- * cerem o a doua rută parametrizată, comanda selectată se deschide într-un
- * panou de detaliu SUB listă, în același ecran. Efectul secundar e bun: omul
- * vede și biletul, și comenzile, fără navigare.
+ * `?order=<id>` deschide direct o comandă — așa ajunge omul aici din pagina
+ * evenimentului, imediat după „Cumpără bilet".
  *
- * Stările sunt oneste pe fiecare secțiune în parte: biletul se poate încărca
- * chiar dacă lista de comenzi cade, și invers — o eroare de rețea la una nu are
- * voie să golească ecranul celeilalte.
+ * Cât timp un bilet VALID e pe ecran, îl reinterogăm la ~5 s (doar cu ecranul
+ * vizibil — React Query oprește intervalul în fundal), ca la scanarea de la
+ * intrare să se facă verde singur.
+ *
+ * Stările sunt oneste pe fiecare secțiune: biletul se poate încărca chiar dacă
+ * lista de comenzi cade, și invers.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 
 import { formatEventDate } from '@/features/events/eventFormat';
 import { EVENTS_PATH } from '@/features/events/eventRoutes';
 import { ConfirmModal } from '@/features/social/ConfirmModal';
+import { ProofUpload } from '@/features/ticketRequests/ProofUpload';
 
-import { QrCode } from './QrCode';
+import { OrderStepper } from './OrderStepper';
+import { PaymentDetails } from './PaymentDetails';
+import { ChevronIcon, ClockIcon, TicketIcon } from './TicketIcons';
+import { TicketPass } from './TicketPass';
+import {
+  isEventStartedError,
+  isRequestOnlyStatus,
+  isTicketSalesClosedError,
+  orderStage,
+  type OrderStage,
+} from './orderStage';
+import { useOrderStatusLabel } from './orderStatusLabel';
+import { TICKET_ORDER_PARAM } from './ticketRoutes';
 import {
   createTicketOrder,
   declareTicketPayment,
+  fetchEvent,
   fetchMyTicketOrdersWithEvent,
+  fetchMyTicketRequests,
   fetchTicket,
   fetchTicketOrder,
+  uploadPaymentProof,
+  type EventItem,
   type PaymentInstructions,
   type Ticket,
   type TicketOrderDetail,
   type TicketOrderListItem,
-  type TicketOrderStatus,
+  type TicketRequest,
 } from './ticketsApi';
 
 import './tickets.css';
 
-/** Cât rămâne aprins indiciul „Copiat" după o copiere reușită. */
-const COPY_FEEDBACK_MS = 1600;
+/** Cât de des reîntrebăm serverul cât timp un bilet valid e pe ecran. */
+export const LIVE_TICKET_POLL_MS = 5000;
 
-/* ------------------------------------------------------------------ copiere */
+/* ------------------------------------------------- „deschiderea" biletului */
+
+const REVEALED_KEY = 'flirt.tickets.revealed';
+
+function readRevealed(): string[] {
+  try {
+    const raw = window.localStorage.getItem(REVEALED_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
 
 /**
- * Copiere în clipboard cu indiciu vizual scurt.
- *
- * În WebView-ul Telegram `navigator.clipboard` poate lipsi cu totul (context
- * ne-securizat pe unele instalări Android) sau poate fi refuzat de utilizator.
- * De aceea totul e într-un `try/catch` și un eșec NU e o fundătură: valorile
- * rămân text selectabil (`user-select: text` în `tickets.css`), deci IBAN-ul se
- * poate copia oricum, cu degetul. Nu afișăm eroare — ar fi zgomot pentru ceva ce
- * utilizatorul poate face singur.
+ * `true` o singură dată per bilet: prima oară când omul își vede biletul
+ * aprobat. Ținut în `localStorage` (cu try/catch — în WebView poate lipsi);
+ * fără stocare, animația doar se repetă, nimic nu se strică.
  */
-function useCopy() {
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
-
-  const copy = useCallback((key: string, value: string) => {
-    void (async () => {
-      try {
-        await navigator.clipboard.writeText(value);
-        setCopiedKey(key);
-        window.setTimeout(
-          () => setCopiedKey((current) => (current === key ? null : current)),
-          COPY_FEEDBACK_MS,
-        );
-      } catch {
-        // Clipboard indisponibil sau refuzat — câmpul rămâne selectabil.
-        setCopiedKey(null);
-      }
-    })();
-  }, []);
-
-  return { copiedKey, copy };
+function useFirstReveal(id: string, ready: boolean): boolean {
+  const [reveal, setReveal] = useState(false);
+  useEffect(() => {
+    if (!ready) return;
+    const seen = readRevealed();
+    if (seen.includes(id)) return;
+    setReveal(true);
+    try {
+      window.localStorage.setItem(REVEALED_KEY, JSON.stringify([...seen, id].slice(-50)));
+    } catch {
+      /* stocare indisponibilă — animația se va repeta, atât */
+    }
+  }, [id, ready]);
+  return reveal;
 }
 
 /* ------------------------------------------------------- biletul Flirt Party */
 
 function MyTicketSection() {
-  const { t } = useTranslation('social');
+  const { t } = useTranslation(['social', 'screens']);
 
   const { data, isPending, isError, refetch, isFetching } = useQuery<Ticket>({
     queryKey: ['ticket'],
     queryFn: fetchTicket,
+    // Doar un bilet declarat VALID de server poate „deveni verde" la intrare.
+    refetchInterval: (query) =>
+      query.state.data?.status === 'valid' ? LIVE_TICKET_POLL_MS : false,
   });
 
   let body: ReactElement;
   if (isPending) {
     body = (
       <div className="tk-state">
-        <div className="spinner" role="status" aria-label={t('myTicket.title')} />
+        <div className="spinner" role="status" aria-label={t('social:myTicket.title')} />
       </div>
     );
   } else if (isError || !data) {
     body = (
       <div className="tk-state" data-testid="ticket-error">
-        <p className="error-text">{t('myTicket.loadError')}</p>
-        <button
-          type="button"
-          className="button"
-          disabled={isFetching}
-          onClick={() => void refetch()}
-        >
-          {t('myTicket.retry')}
+        <p className="error-text">{t('social:myTicket.loadError')}</p>
+        <button type="button" className="button" disabled={isFetching} onClick={() => void refetch()}>
+          {t('social:myTicket.retry')}
         </button>
       </div>
     );
   } else {
     body = (
-      <div className="tk-card">
-        <QrCode value={data.code} label={t('myTicket.code')} />
-        <span
-          className={`tk-badge ${data.used ? 'tk-badge--used' : 'tk-badge--free'}`}
-          data-testid="ticket-status"
-        >
-          {data.used ? t('myTicket.used') : t('myTicket.unused')}
-        </span>
-      </div>
+      <TicketPass
+        code={data.code}
+        title={t('screens:events.kind.flirt_party')}
+        eyebrow={t('screens:tickets.pass.membership')}
+        status={data.status ?? null}
+        legacyUsed={data.status ? undefined : data.used}
+        admittedAt={data.admittedAt ?? null}
+        testId="my-ticket-pass"
+      />
     );
   }
 
   return (
     <section className="tk-section">
-      <h1 className="title">{t('myTicket.title')}</h1>
-      <p className="body-text">{t('myTicket.hint')}</p>
+      <h2 className="tk-section__title">{t('social:myTicket.title')}</h2>
+      <p className="tk-section__hint">{t('social:myTicket.hint')}</p>
       {body}
     </section>
   );
 }
 
-/* --------------------------------------------------------- comenzi de bilete */
-
-/**
- * Eticheta stării unei comenzi.
- *
- * Primele trei chei există deja în catalogul `events` (folosite de cardul de
- * eveniment), deci le reutilizăm ca textul să fie identic în ambele locuri.
- * Pentru „respins" nu există o etichetă scurtă, așa că folosim titlul din
- * `social:ticket.rejected.title`.
- */
-function useStatusLabel(): (status: TicketOrderStatus) => string {
-  const { t } = useTranslation(['events', 'social']);
-  return (status) => {
-    switch (status) {
-      case 'approved':
-        return t('events:detail.ticketStatus.approved');
-      case 'payment_declared':
-        return t('events:detail.ticketStatus.declared');
-      case 'awaiting_payment':
-        return t('events:detail.ticketStatus.awaiting');
-      case 'rejected':
-        return t('social:ticket.rejected.title');
-    }
-  };
-}
-
-function OrderRow({
-  order,
-  selected,
-  onSelect,
-}: {
-  order: TicketOrderListItem;
-  selected: boolean;
-  onSelect: (id: string) => void;
-}) {
-  const statusLabel = useStatusLabel();
-  const price =
-    order.price !== null && order.currency ? `${order.price} ${order.currency}` : null;
-
-  return (
-    <li>
-      <button
-        type="button"
-        className={`tk-row${selected ? ' tk-row--selected' : ''}`}
-        aria-expanded={selected}
-        data-testid={`order-row-${order.id}`}
-        onClick={() => onSelect(order.id)}
-      >
-        <span className="tk-row__main">
-          <span className="tk-row__title">{order.eventTitle}</span>
-          <span className="caption">{formatEventDate(order.eventStartsAt)}</span>
-        </span>
-        <span className="tk-row__side">
-          <span className={`tk-badge tk-badge--${order.status}`}>
-            {statusLabel(order.status)}
-          </span>
-          {price ? <span className="caption">{price}</span> : null}
-        </span>
-      </button>
-    </li>
-  );
-}
-
 /* --------------------------------------------- detaliul unei comenzi de bilet */
 
-/** Un rând etichetă + valoare, cu buton de copiere. */
-function PayRow({
-  label,
-  value,
-  mono,
-  copyKey,
-  copiedKey,
-  onCopy,
-  testId,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  copyKey: string;
-  copiedKey: string | null;
-  onCopy: (key: string, value: string) => void;
-  testId?: string;
-}) {
-  const { t } = useTranslation('screens');
-  const copied = copiedKey === copyKey;
-  return (
-    <div className="tk-pay-row">
-      <span className="caption">{label}</span>
-      <div className="tk-pay-row__value">
-        <span className={`tk-selectable${mono ? ' tk-mono' : ''}`} data-testid={testId}>
-          {value}
-        </span>
-        <button
-          type="button"
-          className="tk-copy"
-          onClick={() => onCopy(copyKey, value)}
-          data-testid={`copy-${copyKey}`}
-        >
-          {/* Cataloagele mobile n-au chei pentru copiere (pe nativ nu există
-              butonul), deci vin din catalogul propriu al Mini App-ului. */}
-          {copied ? t('tickets.copied') : t('tickets.copy')}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/** Instrucțiunile de plată + pașii numerotați + butonul de declarare. */
-function AwaitingPayment({
-  payment,
-  declaring,
-  declareFailed,
-  onDeclare,
-}: {
-  payment: PaymentInstructions;
-  declaring: boolean;
-  declareFailed: boolean;
-  onDeclare: () => void;
-}) {
-  const { t } = useTranslation('social');
-  const { copiedKey, copy } = useCopy();
-  const amountLabel = `${payment.amount} ${payment.currency}`;
-
-  const steps = [
-    t('ticket.pay.step1'),
-    t('ticket.pay.step2', {
-      amount: amountLabel,
-      beneficiary: payment.beneficiary,
-      iban: payment.iban,
-    }),
-    t('ticket.pay.step3', { comment: payment.commentTemplate }),
-    t('ticket.pay.step4'),
-  ];
-
-  return (
-    <div className="tk-block" data-testid="order-instructions">
-      <h3 className="tk-block__title">{t('ticket.pay.title')}</h3>
-      <p className="body-text">{t('ticket.pay.intro')}</p>
-
-      <div className="tk-card tk-card--plain">
-        <PayRow
-          label={t('ticket.pay.beneficiary')}
-          value={payment.beneficiary}
-          copyKey="beneficiary"
-          copiedKey={copiedKey}
-          onCopy={copy}
-        />
-        <PayRow
-          label={t('ticket.pay.iban')}
-          value={payment.iban}
-          mono
-          copyKey="iban"
-          copiedKey={copiedKey}
-          onCopy={copy}
-          testId="pay-iban"
-        />
-        {payment.bankName ? (
-          <PayRow
-            label={t('ticket.pay.bank')}
-            value={payment.bankName}
-            copyKey="bank"
-            copiedKey={copiedKey}
-            onCopy={copy}
-          />
-        ) : null}
-        <PayRow
-          label={t('ticket.pay.amount')}
-          value={amountLabel}
-          copyKey="amount"
-          copiedKey={copiedKey}
-          onCopy={copy}
-          testId="pay-amount"
-        />
-        <PayRow
-          label={t('ticket.pay.reference')}
-          value={payment.reference}
-          mono
-          copyKey="reference"
-          copiedKey={copiedKey}
-          onCopy={copy}
-          testId="pay-reference"
-        />
-        <PayRow
-          label={t('ticket.pay.comment')}
-          value={payment.commentTemplate}
-          copyKey="comment"
-          copiedKey={copiedKey}
-          onCopy={copy}
-          testId="pay-comment"
-        />
-      </div>
-
-      {payment.instructions ? <p className="body-text">{payment.instructions}</p> : null}
-
-      <ol className="tk-steps">
-        {steps.map((step) => (
-          <li key={step} className="tk-steps__item">
-            <span className="tk-steps__text">{step}</span>
-          </li>
-        ))}
-      </ol>
-
-      {/* Eroarea mutației stă ÎN PAGINĂ, lângă buton: instrucțiunile de plată
-          rămân pe ecran, ca omul să poată reîncerca fără să redeschidă comanda. */}
-      {declareFailed ? <p className="error-text">{t('ticket.declareError')}</p> : null}
-
-      <button
-        type="button"
-        className="button"
-        disabled={declaring}
-        onClick={onDeclare}
-        data-testid="declare-btn"
-      >
-        {t('ticket.pay.declare')}
-      </button>
-    </div>
-  );
-}
-
-function OrderDetailPanel({
-  orderId,
-  onSelect,
-  onClose,
-}: {
-  orderId: string;
-  onSelect: (id: string) => void;
-  onClose: () => void;
-}) {
-  const { t } = useTranslation(['social', 'common', 'screens']);
+/** Butonul „Am făcut transferul" + confirmarea lui (cumpărarea directă). */
+function DeclareAction({ orderId }: { orderId: string }) {
+  const { t } = useTranslation(['social', 'screens']);
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
-
-  const { data, isPending, isError, refetch, isFetching } = useQuery<TicketOrderDetail>({
-    queryKey: ['ticket-order', orderId],
-    queryFn: () => fetchTicketOrder(orderId),
-  });
 
   const declare = useMutation({
     mutationFn: () => declareTicketPayment(orderId),
@@ -374,117 +164,32 @@ function OrderDetailPanel({
       void queryClient.invalidateQueries({ queryKey: ['ticket-orders'] });
       void queryClient.invalidateQueries({ queryKey: ['ticket-order', orderId] });
     },
-    // Fereastra de confirmare se închide și la succes, și la eșec: mesajul de
-    // eroare are locul lui în pagină, nu peste un dialog rămas deschis.
+    // Fereastra se închide și la eșec: eroarea are locul ei în pagină.
     onSettled: () => setConfirming(false),
   });
 
-  const retry = useMutation({
-    mutationFn: async () => {
-      const eventId = data?.order.eventId;
-      if (!eventId) throw new Error('missing event');
-      return createTicketOrder(eventId);
-    },
-    onSuccess: (result) => {
-      void queryClient.invalidateQueries({ queryKey: ['ticket-orders'] });
-      // Comanda veche e moartă; deschidem direct comanda nouă, cu instrucțiuni.
-      onSelect(result.order.id);
-    },
-  });
-
-  let body: ReactElement;
-  if (isPending) {
-    body = (
-      <div className="tk-state">
-        <div className="spinner" role="status" aria-label={t('social:ticket.pay.title')} />
-      </div>
-    );
-  } else if (isError || !data) {
-    body = (
-      <div className="tk-state">
-        <p className="error-text">{t('social:ticket.loadError')}</p>
-        <button
-          type="button"
-          className="button"
-          disabled={isFetching}
-          onClick={() => void refetch()}
-        >
-          {t('social:ticket.retry')}
-        </button>
-      </div>
-    );
-  } else {
-    const { order, payment } = data;
-    body = (
-      <>
-        {order.status === 'awaiting_payment' && payment ? (
-          <AwaitingPayment
-            payment={payment}
-            declaring={declare.isPending}
-            declareFailed={declare.isError}
-            onDeclare={() => setConfirming(true)}
-          />
-        ) : null}
-
-        {order.status === 'awaiting_payment' && !payment ? (
-          <p className="body-text">{t('social:ticket.instructionsUnavailable')}</p>
-        ) : null}
-
-        {order.status === 'payment_declared' ? (
-          <div className="tk-block" data-testid="order-in-review">
-            <h3 className="tk-block__title">{t('social:ticket.review.title')}</h3>
-            <p className="body-text">{t('social:ticket.review.body')}</p>
-          </div>
-        ) : null}
-
-        {order.status === 'approved' && order.ticketCode ? (
-          <div className="tk-block" data-testid="order-approved">
-            <h3 className="tk-block__title">{t('social:ticket.approved.title')}</h3>
-            <p className="body-text">{t('social:ticket.approved.body')}</p>
-            <div className="tk-card">
-              <QrCode value={order.ticketCode} label={t('social:ticket.approved.code')} />
-            </div>
-          </div>
-        ) : null}
-
-        {order.status === 'rejected' ? (
-          <div className="tk-block" data-testid="order-rejected">
-            <h3 className="tk-block__title tk-block__title--danger">
-              {t('social:ticket.rejected.title')}
-            </h3>
-            <p className="body-text">{t('social:ticket.rejected.body')}</p>
-            {retry.isError ? (
-              <p className="error-text">{t('social:ticket.retryError')}</p>
-            ) : null}
-            <button
-              type="button"
-              className="button"
-              disabled={retry.isPending || !order.eventId}
-              onClick={() => retry.mutate()}
-              data-testid="order-retry-btn"
-            >
-              {t('social:ticket.rejected.retry')}
-            </button>
-          </div>
-        ) : null}
-      </>
-    );
-  }
-
   return (
-    <div className="tk-detail" data-testid="order-detail">
-      <div className="tk-detail__head">
-        <button type="button" className="button button--ghost tk-detail__close" onClick={onClose}>
-          {t('common:actions.close')}
-        </button>
-      </div>
-      {body}
-
+    <>
+      {declare.isError ? (
+        <p className="error-text" role="alert">
+          {isEventStartedError(declare.error)
+            ? t('screens:tickets.eventStarted')
+            : t('social:ticket.declareError')}
+        </p>
+      ) : null}
+      <button
+        type="button"
+        className="button tk-cta"
+        disabled={declare.isPending}
+        onClick={() => setConfirming(true)}
+        data-testid="declare-btn"
+      >
+        {t('social:ticket.pay.declare')}
+      </button>
       {/*
-       * „Am făcut transferul" e o declarație pe proprie răspundere: trece comanda
-       * în coada de verificare a adminului și nu se poate lua înapoi. Deci cerem
-       * o confirmare deliberată — prin ConfirmModal, nu prin `confirm()`, care
-       * îngheață WebView-ul Telegram.
+       * „Am făcut transferul" trece comanda în coada adminului și nu se ia
+       * înapoi → confirmare deliberată, prin ConfirmModal (nu `confirm()`, care
+       * îngheață WebView-ul Telegram).
        */}
       <ConfirmModal
         open={confirming}
@@ -496,24 +201,349 @@ function OrderDetailPanel({
         onCancel={() => setConfirming(false)}
         testId="declare-confirm"
       />
+    </>
+  );
+}
+
+function StageBlock({
+  testId,
+  tone,
+  icon,
+  title,
+  children,
+}: {
+  testId: string;
+  tone: OrderStage;
+  icon?: ReactElement;
+  title: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div className={`tk-block tk-block--${tone}`} data-testid={testId}>
+      <h3 className="tk-block__title">
+        {icon ? <span className="tk-block__icon">{icon}</span> : null}
+        {title}
+      </h3>
+      {children}
+    </div>
+  );
+}
+
+function OrderDetail({
+  item,
+  request,
+  onSelect,
+}: {
+  item: TicketOrderListItem;
+  request: TicketRequest | undefined;
+  onSelect: (id: string) => void;
+}) {
+  const { t } = useTranslation(['social', 'screens', 'events']);
+  const queryClient = useQueryClient();
+
+  const { data, isPending, isError, refetch, isFetching } = useQuery<TicketOrderDetail>({
+    queryKey: ['ticket-order', item.id],
+    queryFn: () => fetchTicketOrder(item.id),
+    refetchInterval: (query) => {
+      const order = query.state.data?.order;
+      return order?.status === 'approved' && order.ticketStatus === 'valid'
+        ? LIVE_TICKET_POLL_MS
+        : false;
+    },
+  });
+
+  const eventId = data?.order.eventId ?? item.eventId;
+  const { data: event } = useQuery<EventItem>({
+    queryKey: ['event', eventId],
+    queryFn: () => fetchEvent(eventId ?? ''),
+    enabled: Boolean(eventId),
+  });
+
+  const [salesClosed, setSalesClosed] = useState(false);
+  const retry = useMutation({
+    mutationFn: async () => {
+      if (!eventId) throw new Error('missing event');
+      return createTicketOrder(eventId);
+    },
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['ticket-orders'] });
+      // Comanda veche e moartă; deschidem direct comanda nouă, cu instrucțiuni.
+      onSelect(result.order.id);
+    },
+    onError: (error) => {
+      if (isTicketSalesClosedError(error)) {
+        setSalesClosed(true);
+        if (eventId) void queryClient.invalidateQueries({ queryKey: ['event', eventId] });
+      }
+    },
+  });
+
+  const order = data?.order;
+  const ready = Boolean(order && order.status === 'approved' && order.ticketCode);
+  const reveal = useFirstReveal(item.id, ready);
+
+  if (isPending) {
+    return (
+      <div className="tk-detail" data-testid="order-detail">
+        <div className="tk-state">
+          <div className="spinner" role="status" aria-label={t('social:ticket.pay.title')} />
+        </div>
+      </div>
+    );
+  }
+
+  if (isError || !data || !order) {
+    return (
+      <div className="tk-detail" data-testid="order-detail">
+        <div className="tk-state">
+          <p className="error-text">{t('social:ticket.loadError')}</p>
+          <button type="button" className="button" disabled={isFetching} onClick={() => void refetch()}>
+            {t('social:ticket.retry')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const stage = orderStage(order.status);
+  const isRequest = Boolean(request) || isRequestOnlyStatus(order.status);
+  const adminNote = order.adminNote ?? request?.admin_comment ?? null;
+
+  let content: ReactElement;
+  switch (stage) {
+    case 'ordered': {
+      // Datele bancare: din detaliu (cumpărare directă), din cache-ul creării
+      // (cerere manuală — serverul nu le mai retrimite în listă), sau, în lipsă,
+      // ce știe cererea însăși (sumă, destinație, telefon/cont).
+      const bank =
+        data.payment ??
+        queryClient.getQueryData<PaymentInstructions>(['ticket-request-payment', item.id]) ??
+        null;
+      const amount = bank?.amount ?? request?.total_amount ?? order.price ?? 0;
+      const currency = bank?.currency ?? request?.currency ?? order.currency ?? 'lei';
+      const purpose = bank?.commentTemplate ?? request?.payment?.payment_description ?? null;
+      const deadline = event?.ticketSalesEndAt ?? event?.startsAt ?? item.eventStartsAt ?? null;
+      const hasAnything = Boolean(bank || purpose || request);
+
+      content = (
+        <>
+          {order.status === 'additional_information_required' ? (
+            <div className="tk-notice" data-testid="order-more-info">
+              <strong>{t('screens:tickets.moreInfo.title')}</strong>
+              <span>{adminNote ?? t('screens:tickets.moreInfo.body')}</span>
+            </div>
+          ) : null}
+          {hasAnything ? (
+            <>
+              <h3 className="tk-block__title">{t('social:ticket.pay.title')}</h3>
+              <PaymentDetails
+                amount={amount}
+                currency={currency}
+                beneficiary={bank?.beneficiary}
+                iban={bank?.iban}
+                bankName={bank?.bankName}
+                purpose={purpose}
+                reference={bank?.reference ?? item.reference ?? null}
+                phone={bank ? null : request?.payment?.phone}
+                accountDetails={bank ? null : request?.payment?.account_details}
+                instructions={bank?.instructions ?? request?.payment?.instructions ?? null}
+                deadline={deadline}
+                finalStep={isRequest ? 'proof' : 'declare'}
+              />
+              {isRequest ? (
+                <ProofUpload requestId={item.id} upload={uploadPaymentProof} />
+              ) : (
+                <DeclareAction orderId={item.id} />
+              )}
+            </>
+          ) : (
+            <p className="tk-note">{t('social:ticket.instructionsUnavailable')}</p>
+          )}
+        </>
+      );
+      break;
+    }
+    case 'review':
+      content = (
+        <StageBlock
+          testId="order-in-review"
+          tone="review"
+          icon={<ClockIcon width={22} height={22} />}
+          title={t('social:ticket.review.title')}
+        >
+          <p className="tk-note">
+            {isRequest ? t('screens:tickets.review.proofBody') : t('social:ticket.review.body')}
+          </p>
+        </StageBlock>
+      );
+      break;
+    case 'approved':
+      content = (
+        <StageBlock testId="order-approved" tone="approved" title={t('social:ticket.approved.title')}>
+          {order.ticketCode ? (
+            <>
+              <p className="tk-note">{t('social:ticket.approved.body')}</p>
+              <TicketPass
+                code={order.ticketCode}
+                title={item.eventTitle || event?.title || ''}
+                startsAt={event?.startsAt ?? item.eventStartsAt}
+                venue={event?.venue ?? request?.event_venue ?? null}
+                holder={request?.full_name ?? null}
+                admits={request?.ticket_quantity ?? null}
+                status={order.ticketStatus ?? null}
+                admittedAt={order.admittedAt ?? null}
+                reveal={reveal}
+                statusTestId="order-ticket-status"
+                testId="order-ticket-pass"
+              />
+            </>
+          ) : (
+            <p className="tk-note">{t('screens:tickets.approvedPending')}</p>
+          )}
+        </StageBlock>
+      );
+      break;
+    case 'rejected':
+      content = (
+        <StageBlock testId="order-rejected" tone="rejected" title={t('social:ticket.rejected.title')}>
+          <div className="tk-reason" data-testid="order-reject-reason">
+            <span className="tk-eyebrow">{t('screens:tickets.rejected.reason')}</span>
+            <span>{adminNote ?? t('screens:tickets.rejected.noReason')}</span>
+          </div>
+          <p className="tk-note">
+            {isRequest ? t('screens:tickets.rejected.whatToDoProof') : t('screens:tickets.rejected.whatToDo')}
+          </p>
+          {isRequest ? (
+            <ProofUpload requestId={item.id} upload={uploadPaymentProof} />
+          ) : salesClosed ? (
+            <p className="tk-note" data-testid="order-sales-closed">
+              {t('screens:events.sales.closedError')}
+            </p>
+          ) : (
+            <>
+              {retry.isError ? <p className="error-text">{t('social:ticket.retryError')}</p> : null}
+              <button
+                type="button"
+                className="button tk-cta"
+                disabled={retry.isPending || !eventId}
+                onClick={() => retry.mutate()}
+                data-testid="order-retry-btn"
+              >
+                {t('social:ticket.rejected.retry')}
+              </button>
+            </>
+          )}
+        </StageBlock>
+      );
+      break;
+    case 'cancelled':
+      content = (
+        <StageBlock testId="order-cancelled" tone="cancelled" title={t('screens:tickets.cancelled.title')}>
+          <p className="tk-note">{t('screens:tickets.cancelled.body')}</p>
+          <Link className="button button--ghost tk-link" to={EVENTS_PATH}>
+            {t('screens:tickets.seeEvents')}
+          </Link>
+        </StageBlock>
+      );
+      break;
+  }
+
+  return (
+    <div className="tk-detail" data-testid="order-detail">
+      <OrderStepper stage={stage} hasCode={Boolean(order.ticketCode)} />
+      {content}
     </div>
   );
 }
 
 /* -------------------------------------------------------------- lista + ecran */
 
+function OrderCard({
+  order,
+  request,
+  selected,
+  onToggle,
+  onSelect,
+}: {
+  order: TicketOrderListItem;
+  request: TicketRequest | undefined;
+  selected: boolean;
+  onToggle: (id: string) => void;
+  onSelect: (id: string) => void;
+}) {
+  const statusLabel = useOrderStatusLabel();
+  const stage = orderStage(order.status);
+  const amount = request?.total_amount ?? order.price;
+  const price = amount !== null && amount !== undefined && order.currency ? `${amount} ${order.currency}` : null;
+  const ref = useRef<HTMLLIElement>(null);
+
+  // Comanda deschisă din alt ecran (`?order=`) trebuie să se și VADĂ.
+  useEffect(() => {
+    if (selected && typeof ref.current?.scrollIntoView === 'function') {
+      ref.current.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+    // Doar la deschidere, nu la fiecare reîmprospătare.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
+
+  return (
+    <li ref={ref} className={`tk-order tk-order--${stage}${selected ? ' tk-order--open' : ''}`}>
+      <button
+        type="button"
+        className="tk-order__card"
+        aria-expanded={selected}
+        data-testid={`order-row-${order.id}`}
+        onClick={() => onToggle(order.id)}
+      >
+        <span className="tk-order__main">
+          <span className="tk-order__title">{order.eventTitle}</span>
+          <span className="tk-order__date">{formatEventDate(order.eventStartsAt)}</span>
+          <span className="tk-order__status-row">
+            <OrderStepper stage={stage} hasCode={Boolean(order.ticketCode)} compact />
+            <span className={`tk-pill tk-pill--${stage}`}>{statusLabel(order.status)}</span>
+          </span>
+        </span>
+        <span className="tk-order__stub">
+          {stage === 'approved' ? (
+            <span className="tk-order__ticket-icon">
+              <TicketIcon width={26} height={26} />
+            </span>
+          ) : price ? (
+            <span className="tk-order__price">{price}</span>
+          ) : null}
+          <ChevronIcon className="tk-order__chev" width={18} height={18} />
+        </span>
+      </button>
+      {selected ? <OrderDetail item={order} request={request} onSelect={onSelect} /> : null}
+    </li>
+  );
+}
+
 function OrdersSection() {
   const { t } = useTranslation(['social', 'screens']);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const [selectedId, setSelectedId] = useState<string | null>(
+    () => searchParams.get(TICKET_ORDER_PARAM),
+  );
 
   const { data, isPending, isError, refetch, isFetching } = useQuery<TicketOrderListItem[]>({
     queryKey: ['ticket-orders'],
     queryFn: fetchMyTicketOrdersWithEvent,
   });
 
+  // Cererile manuale aduc titularul, cantitatea, locul și mesajul adminului.
+  // Opționale: dacă ruta cade, cardurile merg mai departe fără ele.
+  const { data: requests } = useQuery<TicketRequest[]>({
+    queryKey: ['ticket-requests'],
+    queryFn: fetchMyTicketRequests,
+  });
+  const requestById = useMemo(
+    () => new Map((requests ?? []).map((r) => [r.id, r])),
+    [requests],
+  );
+
   const orders = data ?? [];
-  // Comanda selectată poate dispărea din listă după o reîncercare; în acel caz
-  // panoul se închide singur, în loc să rămână agățat de un id inexistent.
+  // Comanda selectată poate dispărea din listă (ex. după o reîncercare).
   const selected = orders.some((o) => o.id === selectedId) ? selectedId : null;
 
   let body: ReactElement;
@@ -527,20 +557,18 @@ function OrdersSection() {
     body = (
       <div className="tk-state" data-testid="orders-error">
         <p className="error-text">{t('screens:tickets.ordersLoadError')}</p>
-        <button
-          type="button"
-          className="button"
-          disabled={isFetching}
-          onClick={() => void refetch()}
-        >
+        <button type="button" className="button" disabled={isFetching} onClick={() => void refetch()}>
           {t('social:ticket.retry')}
         </button>
       </div>
     );
   } else if (orders.length === 0) {
     body = (
-      <div className="tk-state" data-testid="orders-empty">
-        <p className="body-text">{t('screens:tickets.ordersEmpty')}</p>
+      <div className="tk-state tk-empty" data-testid="orders-empty">
+        <span className="tk-empty__icon" aria-hidden="true">
+          <TicketIcon width={30} height={30} />
+        </span>
+        <p className="tk-note">{t('screens:tickets.ordersEmpty')}</p>
         <Link className="button button--ghost tk-link" to={EVENTS_PATH}>
           {t('screens:tickets.seeEvents')}
         </Link>
@@ -548,26 +576,18 @@ function OrdersSection() {
     );
   } else {
     body = (
-      <>
-        <ul className="tk-rows">
-          {orders.map((order) => (
-            <OrderRow
-              key={order.id}
-              order={order}
-              selected={order.id === selected}
-              onSelect={(id) => setSelectedId((current) => (current === id ? null : id))}
-            />
-          ))}
-        </ul>
-        {selected ? (
-          <OrderDetailPanel
-            key={selected}
-            orderId={selected}
+      <ul className="tk-orders">
+        {orders.map((order) => (
+          <OrderCard
+            key={order.id}
+            order={order}
+            request={requestById.get(order.id)}
+            selected={order.id === selected}
+            onToggle={(id) => setSelectedId((current) => (current === id ? null : id))}
             onSelect={setSelectedId}
-            onClose={() => setSelectedId(null)}
           />
-        ) : null}
-      </>
+        ))}
+      </ul>
     );
   }
 
@@ -580,10 +600,12 @@ function OrdersSection() {
 }
 
 export function TicketsScreen() {
+  const { t } = useTranslation('screens');
   return (
     <div className="tk-screen">
-      <MyTicketSection />
+      <h1 className="tk-screen__title">{t('tickets.screenTitle')}</h1>
       <OrdersSection />
+      <MyTicketSection />
     </div>
   );
 }

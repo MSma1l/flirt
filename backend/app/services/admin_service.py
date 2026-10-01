@@ -52,7 +52,13 @@ from app.models.admin import (
 )
 from app.models.billing import Subscription
 from app.models.chat import Chat, Message
-from app.models.event import Event, EventAttendance, FlirtPassportStamp
+from app.models.event import (
+    TICKET_SALES_END_MAX_AFTER_START,
+    Event,
+    EventAttendance,
+    FlirtPassportStamp,
+    as_utc,
+)
 from app.models.moderation import Report
 from app.models.profile import Profile
 from app.models.session import RefreshSession
@@ -1437,6 +1443,7 @@ def _to_event_out(
         promo_description=event.promo_description,
         ticket_price=event.ticket_price,
         ticket_currency=event.ticket_currency,
+        ticket_sales_end_at=event.ticket_sales_end_at,
         attendee_count=attendees,
         ticket_order_count=ticket_orders,
         ticket_approved_count=ticket_approved,
@@ -1490,6 +1497,27 @@ async def list_events(
     return items, encode_cursor(events[-1].id) if has_more else None
 
 
+def _check_ticket_sales_end(
+    sales_end_at: datetime | None, starts_at: datetime
+) -> None:
+    """422 dacă închiderea vânzării e mai târziu de `starts_at + 12h`.
+
+    Înainte de start e cazul normal (ex. vânzarea se oprește cu 2h înainte, ca să
+    nu fie haos la intrare); puțin după start e permis (concerte cu intrare
+    târzie). Mult după start e aproape sigur o greșeală de introducere.
+    """
+    if sales_end_at is None:
+        return
+    if as_utc(sales_end_at) > as_utc(starts_at) + TICKET_SALES_END_MAX_AFTER_START:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Vânzarea online trebuie să se închidă cel târziu la 12 ore "
+                "după începutul evenimentului."
+            ),
+        )
+
+
 async def create_event(
     db: AsyncSession, actor: User, data: AdminEventIn, ip: str | None = None
 ) -> AdminEventOut:
@@ -1500,6 +1528,7 @@ async def create_event(
     producție. Până acum, producția nu avea NICIO cale de a crea un eveniment —
     secțiunea Evenimente s-ar fi lansat goală și ar fi rămas goală.
     """
+    _check_ticket_sales_end(data.ticket_sales_end_at, data.starts_at)
     event = Event(
         title=data.title,
         description=data.description,
@@ -1515,6 +1544,7 @@ async def create_event(
         promo_description=data.promo_description,
         ticket_price=data.ticket_price,
         ticket_currency=data.ticket_currency,
+        ticket_sales_end_at=data.ticket_sales_end_at,
     )
     db.add(event)
     await db.flush()  # obținem event.id înainte de a scrie auditul
@@ -1557,6 +1587,12 @@ async def update_event(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Niciun câmp de actualizat.",
         )
+    # Regula se verifică pe starea REZULTATĂ: un PUT care mută doar ora de start
+    # poate invalida o închidere a vânzării setată anterior.
+    _check_ticket_sales_end(
+        changes.get("ticket_sales_end_at", event.ticket_sales_end_at),
+        changes.get("starts_at") or event.starts_at,
+    )
     for field, value in changes.items():
         setattr(event, field, value)
 

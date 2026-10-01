@@ -157,6 +157,11 @@ export interface AdminEvent {
   ticket_order_count: number;
   /** Din cele de mai sus, biletele deja APROBATE (bani încasați). Read-only. */
   ticket_approved_count: number;
+  /**
+   * Ora la care se ÎNCHIDE vânzarea online (valoarea BRUTĂ). `null` = la începutul
+   * evenimentului. Opțional doar pentru compatibilitate cu backenduri mai vechi.
+   */
+  ticket_sales_end_at?: IsoDateTime | null;
 }
 
 /** Payload de creare/editare — exact câmpurile scriibile ale modelului `Event`. */
@@ -180,6 +185,8 @@ export interface EventInput {
   ticket_price: number | null;
   /** Moneda biletului (max 8). Gol → `null` (backend implicit „lei"). */
   ticket_currency: string | null;
+  /** Închiderea vânzării online; cel mult start + 12h. Gol → `null` (= la start). */
+  ticket_sales_end_at: IsoDateTime | null;
 }
 
 export const EVENT_KINDS = [
@@ -491,4 +498,54 @@ export interface InviteInput {
 export interface Page<T> {
   items: T[];
   next_cursor: string | null;
+}
+
+/* ---------------- Scanarea biletelor la intrare ---------------- */
+
+/** Rezultatul `POST /admin/tickets/scan` (refuzurile vin tot cu 200). */
+export type TicketScanResult =
+  | 'admitted'
+  | 'already_admitted'
+  | 'wrong_event'
+  | 'not_paid'
+  | 'cancelled'
+  | 'event_over'
+  | 'not_found';
+
+export interface ScannedTicket {
+  /** `event_ticket` = bilet plătit la eveniment; `flirt_party` = biletul one-time. */
+  ticket_type: 'event_ticket' | 'flirt_party';
+  first_name: string | null;
+  age: number | null;
+  photo_url: string | null;
+  /** Evenimentul BILETULUI (la `wrong_event` diferă de cel scanat). */
+  event_id: Uuid | null;
+  event_title: string | null;
+  starts_at: IsoDateTime | null;
+  /** Câte persoane intră pe acest bilet. */
+  ticket_quantity: number;
+  admitted_at: IsoDateTime | null;
+  admitted_by_email: string | null;
+}
+
+export interface TicketScanResponse {
+  result: TicketScanResult;
+  ticket: ScannedTicket | null;
+}
+
+export interface ScanStats {
+  event_id: Uuid;
+  sold: number;
+  admitted: number;
+  flirt_party_admitted: number;
+}
+
+export interface Admission {
+  ticket_type: 'event_ticket' | 'flirt_party';
+  first_name: string | null;
+  age: number | null;
+  photo_url: string | null;
+  ticket_quantity: number;
+  admitted_at: IsoDateTime;
+  admitted_by_email: string | null;
 }

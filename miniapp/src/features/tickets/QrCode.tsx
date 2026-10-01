@@ -32,6 +32,11 @@ export interface QrCodeProps {
   /** Eticheta de deasupra codului în clar (ex. „Cod bilet"). */
   label?: string;
   testId?: string;
+  /**
+   * Codul în clar sub simbol. Biletul premium (`TicketPass`) îl oprește și își
+   * arată propria variantă scurtă, cu „arată codul complet".
+   */
+  showCode?: boolean;
 }
 
 /**
@@ -82,7 +87,13 @@ function buildDrawing(value: string): QrDrawing | null {
   }
 }
 
-export function QrCode({ value, size = 168, label, testId = 'ticket-qr' }: QrCodeProps) {
+export function QrCode({
+  value,
+  size = 168,
+  label,
+  testId = 'ticket-qr',
+  showCode = true,
+}: QrCodeProps) {
   const drawing = useMemo(() => buildDrawing(value), [value]);
 
   return (
@@ -114,10 +125,12 @@ export function QrCode({ value, size = 168, label, testId = 'ticket-qr' }: QrCod
       {/* Codul în clar: dacă scanarea eșuează (ecran murdar, lumină proastă),
           omul de la intrare îl poate citi și tasta. Selectabil, spre deosebire
           de restul Mini App-ului, unde selecția e oprită pentru gesturi. */}
-      <div className="tk-qr__code-box">
-        {label ? <span className="caption">{label}</span> : null}
-        <span className="tk-qr__code">{formatTicketCode(value)}</span>
-      </div>
+      {showCode ? (
+        <div className="tk-qr__code-box">
+          {label ? <span className="caption">{label}</span> : null}
+          <span className="tk-qr__code">{formatTicketCode(value)}</span>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { api } from '@/api/client';
 import { i18n } from '@/i18n';
+import { mapPayment, type PaymentInstructions } from '@/features/tickets/paymentModel';
 
 export const PAYMENT_PROOF_MAX_BYTES = 8 * 1024 * 1024;
 export const PAYMENT_PROOF_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
@@ -39,6 +40,12 @@ export interface TicketRequest {
   client_message?: string | null;
   admin_comment?: string | null;
   can_resubmit_proof?: boolean;
+  /**
+   * Datele bancare complete (beneficiar, IBAN, bancă). Backendul le trimite
+   * DOAR la creare (`TicketRequestCreateOut.payment`), nu și în listă — deci
+   * există doar pe răspunsul de creare; ecranul le păstrează în cache.
+   */
+  bank_payment?: PaymentInstructions | null;
   created_at: string;
   updated_at: string;
 }
@@ -87,7 +94,8 @@ export async function createTicketRequest(eventId: string, input: CreateTicketRe
   // Contractul de creare învelește cererea, ca instrucțiunile să nu devină parte
   // din lista istorică; ecranul are însă nevoie de ambele imediat după trimitere.
   const payload = data as { request?: Record<string, unknown>; payment?: Record<string, unknown> };
-  return fromApi({ ...(payload.request ?? data), payment: payload.payment });
+  const request = fromApi({ ...(payload.request ?? data), payment: payload.payment });
+  return { ...request, bank_payment: payload.payment ? mapPayment(payload.payment) : null };
 }
 
 export async function fetchMyTicketRequests(): Promise<TicketRequest[]> {

@@ -352,7 +352,12 @@ function EventTable({
                 <td>{event.city}</td>
                 <td>{event.venue ?? '—'}</td>
                 <td>{kindLabel(event.kind, language)}</td>
-                <td className="mono">{ticketPriceLabel(event)}</td>
+                <td className="mono">
+                  {ticketPriceLabel(event)}
+                  {event.ticket_price !== null && event.ticket_sales_end_at ? (
+                    <div className="muted">{t.salesEnd(formatDateTime(event.ticket_sales_end_at))}</div>
+                  ) : null}
+                </td>
                 <td className="mono">{event.attendee_count}</td>
                 <td className="mono" title={t.ticketsTitle}>
                   {event.ticket_order_count === 0
@@ -612,6 +617,19 @@ function EventFormModal({
                   />
                 </Field>
                 <FieldError message={errors.ticket_currency} />
+              </div>
+              <div>
+                <Field label={f.salesEnd} htmlFor="event-ticket-sales-end">
+                  <TextInput
+                    id="event-ticket-sales-end"
+                    type="datetime-local"
+                    value={form.ticket_sales_end_at}
+                    aria-invalid={errors.ticket_sales_end_at ? true : undefined}
+                    onChange={(e) => set('ticket_sales_end_at', e.target.value)}
+                  />
+                </Field>
+                <p className="field__hint">{f.salesEndHint}</p>
+                <FieldError message={errors.ticket_sales_end_at} />
               </div>
             </div>
           </fieldset>

@@ -48,6 +48,11 @@ class TicketOrderOut(BaseModel):
     ticket_code: str | None = None
     created_at: datetime
     decided_at: datetime | None = None
+    # Aditiv: starea BILETULUI (≠ `status`, care e starea comenzii/plății):
+    # valid | admitted | used | expired | cancelled; None cât timp plata nu e
+    # decisă (încă nu există bilet). Vezi `ticket_lifecycle`.
+    ticket_status: str | None = None
+    admitted_at: datetime | None = None
 
 
 class PaymentInstructions(BaseModel):
@@ -114,6 +119,10 @@ class TicketRequestOut(BaseModel):
     admin_comment: str | None = None
     created_at: datetime
     reviewed_at: datetime | None = None
+    # Aditiv: codul biletului (QR) — DOAR pe cererile aprobate — și starea lui.
+    ticket_code: str | None = None
+    ticket_status: str | None = None
+    admitted_at: datetime | None = None
 
 
 class TicketRequestCreateOut(BaseModel):
@@ -158,6 +167,8 @@ class AdminTicketOrderOut(BaseModel):
     ticket_code: str | None = None
     created_at: datetime
     decided_at: datetime | None = None
+    ticket_status: str | None = None
+    admitted_at: datetime | None = None
 
 
 class RejectIn(BaseModel):

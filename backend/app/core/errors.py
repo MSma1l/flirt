@@ -36,6 +36,14 @@ class ErrorCode:
     UNDERAGE = "underage"
     INTERACTION_BLOCKED = "interaction_blocked"
 
+    # Bilete online: vânzarea s-a închis (ora setată de admin sau, implicit,
+    # începutul evenimentului). Comenzile NOI sunt refuzate; cele existente se pot
+    # finaliza (dovada de plată) până la start.
+    TICKET_SALES_CLOSED = "ticket_sales_closed"
+    # Evenimentul a început: nici comenzile deja create nu mai primesc dovadă de
+    # plată / declarație — banii se rezolvă la intrare, nu online.
+    EVENT_STARTED = "event_started"
+
 
 class CodedHTTPException(HTTPException):
     """`HTTPException` cu un cod stabil, citibil de mașină.

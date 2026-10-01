@@ -248,6 +248,9 @@ class AdminEventIn(BaseModel):
     ticket_currency: (
         optional_safe_str(EVENT_TICKET_CURRENCY_MAX_LENGTH) | None
     ) = None
+    # Ora la care se închide vânzarea online. NULL = la începutul evenimentului.
+    # Cel mult `starts_at + 12h` (validat în serviciu, 422 altfel).
+    ticket_sales_end_at: datetime | None = None
 
 
 class AdminEventUpdate(BaseModel):
@@ -276,6 +279,9 @@ class AdminEventUpdate(BaseModel):
     ticket_currency: (
         optional_safe_str(EVENT_TICKET_CURRENCY_MAX_LENGTH) | None
     ) = None
+    # Ora la care se închide vânzarea online. NULL = la începutul evenimentului.
+    # Cel mult `starts_at + 12h` (validat în serviciu, 422 altfel).
+    ticket_sales_end_at: datetime | None = None
 
 
 class AdminEventOut(BaseModel):
@@ -297,6 +303,8 @@ class AdminEventOut(BaseModel):
     promo_description: str | None = None
     ticket_price: float | None = None
     ticket_currency: str | None = None
+    # Valoarea BRUTĂ setată de admin (NULL = se închide la `starts_at`).
+    ticket_sales_end_at: datetime | None = None
     attendee_count: int = 0
     # Comenzi de bilet ONLINE legate de acest eveniment. Sunt aici pentru un
     # singur motiv concret: confirmarea de ștergere din panou trebuie să spună

@@ -299,6 +299,8 @@ def _to_event_out(event: Event, attendee_count: int, i_am_going: bool) -> EventO
         promo_description=event.promo_description,
         ticket_price=event.ticket_price,
         ticket_currency=event.ticket_currency,
+        ticket_sales_end_at=event.effective_ticket_sales_end,
+        ticket_sales_open=event.ticket_sales_open(),
         attendee_count=attendee_count,
         i_am_going=i_am_going,
     )

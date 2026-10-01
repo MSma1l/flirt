@@ -7,7 +7,7 @@ Toate moștenesc `Base` (PK uuid + timestamps).
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import (
     Boolean,
@@ -68,6 +68,46 @@ class Event(Base):
     tickets_sold: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
+    # Ora la care se ÎNCHIDE vânzarea online (cererea proprietarului: fără haos la
+    # intrare). NULL = se închide la `starts_at` — comportamentul de dinainte, deci
+    # evenimentele existente nu se schimbă. Regula de validare (cel mult
+    # `starts_at + TICKET_SALES_END_MAX_AFTER_START`) e în `admin_service`.
+    ticket_sales_end_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    @property
+    def effective_ticket_sales_end(self) -> datetime:
+        """Momentul EFECTIV de închidere a vânzării online (UTC, tz-aware)."""
+        return as_utc(self.ticket_sales_end_at or self.starts_at)
+
+    def ticket_sales_open(self, now: datetime | None = None) -> bool:
+        """True doar dacă evenimentul vinde bilete online ACUM: are preț, nu s-a
+        atins ora de închidere și (dacă există capacitate) nu e sold-out."""
+        if self.ticket_price is None:
+            return False
+        now = now or datetime.now(timezone.utc)
+        if now >= self.effective_ticket_sales_end:
+            return False
+        if (
+            self.ticket_capacity is not None
+            and (self.tickets_sold or 0) >= self.ticket_capacity
+        ):
+            return False
+        return True
+
+
+# Cât de târziu după START poate fi pusă închiderea vânzării (ex. un concert la
+# care se mai vând bilete în primele ore). Peste asta e aproape sigur o greșeală
+# de introducere (zi/lună inversate), deci API-ul o refuză cu 422.
+TICKET_SALES_END_MAX_AFTER_START = timedelta(hours=12)
+
+
+def as_utc(value: datetime) -> datetime:
+    """Naive → UTC (SQLite întoarce naive), ca să comparăm mereu tz-aware."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
 
 
 class EventAttendance(Base):

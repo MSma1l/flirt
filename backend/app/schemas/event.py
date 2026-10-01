@@ -27,6 +27,14 @@ class EventOut(BaseModel):
     # Preț al biletului ONLINE (transfer bancar). NULL = biletul online indisponibil.
     ticket_price: float | None = None
     ticket_currency: str | None = None
+    # Ora EFECTIVĂ de închidere a vânzării online: valoarea setată de admin sau,
+    # dacă lipsește, `starts_at`. Mereu prezentă (clientul nu trebuie să știe
+    # regula de fallback).
+    ticket_sales_end_at: datetime | None = None
+    # True doar dacă se pot cumpăra bilete ACUM (are preț, nu s-a închis vânzarea,
+    # nu e sold-out). Clientul afișează „vânzarea online s-a închis" când e False
+    # dar `ticket_price` e setat.
+    ticket_sales_open: bool = False
     # Câți useri au going=True + dacă userul curent merge.
     attendee_count: int
     i_am_going: bool

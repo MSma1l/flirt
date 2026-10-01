@@ -21,6 +21,8 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
+
+from app.core.errors import CodedHTTPException, ErrorCode
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,6 +64,7 @@ from app.schemas.ticket_order import (
 )
 from app.services import loyalty
 from app.services.admin_service import audit
+from app.services.ticket_lifecycle import order_ticket_status
 from app.services.push import send_to_user
 from app.services.pagination import (
     ADMIN_MAX_LIMIT,
@@ -77,6 +80,47 @@ _DECIDABLE_STATUSES = (STATUS_AWAITING_PAYMENT, STATUS_PAYMENT_DECLARED)
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+# Mesajele sunt pentru oameni; contractul pentru clienți e `code` (vezi
+# `app/core/errors.py`).
+_SALES_CLOSED_DETAIL = (
+    "Vânzarea online de bilete s-a închis pentru acest eveniment. "
+    "Biletele se mai pot cumpăra doar la intrare."
+)
+_EVENT_STARTED_DETAIL = (
+    "Evenimentul a început — dovada de plată nu mai poate fi trimisă online."
+)
+
+
+def _ensure_sales_open(event: Event) -> None:
+    """409 `ticket_sales_closed` dacă a trecut ora de închidere a vânzării.
+
+    Se aplică DOAR la crearea unei comenzi NOI. Regula pentru comenzile deja
+    create (pot fi finalizate după închidere, dar doar până la start) e în
+    `_ensure_event_not_started`. Aprobarea de admin nu e limitată deloc.
+    """
+    if _now() >= event.effective_ticket_sales_end:
+        raise CodedHTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_SALES_CLOSED_DETAIL,
+            code=ErrorCode.TICKET_SALES_CLOSED,
+        )
+
+
+def _ensure_event_not_started(event: Event) -> None:
+    """409 `event_started` pentru pașii userului pe o comandă EXISTENTĂ.
+
+    Decizie: cine a comandat la timp își poate termina plata și după ce s-a închis
+    vânzarea (altfel l-am pedepsi pentru o comandă legitimă), dar NU și după ce
+    evenimentul a început — atunci verificarea se face la intrare.
+    """
+    if _now() >= _as_utc(event.starts_at):
+        raise CodedHTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_EVENT_STARTED_DETAIL,
+            code=ErrorCode.EVENT_STARTED,
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -178,6 +222,8 @@ def _to_order_out(order: TicketOrder, event: Event) -> TicketOrderOut:
         ticket_code=order.ticket_code if order.status == STATUS_APPROVED else None,
         created_at=order.created_at,
         decided_at=order.decided_at,
+        ticket_status=order_ticket_status(order, event),
+        admitted_at=order.admitted_at,
     )
 
 
@@ -193,6 +239,8 @@ def _to_request_out(order: TicketOrder, event: Event) -> TicketRequestOut:
         payment_proof_uploaded=bool(order.payment_proof_url), status=order.status,
         client_message=order.client_message, admin_comment=order.admin_note,
         created_at=order.created_at, reviewed_at=order.decided_at,
+        ticket_code=order.ticket_code if order.status == STATUS_APPROVED else None,
+        ticket_status=order_ticket_status(order, event), admitted_at=order.admitted_at,
     )
 
 
@@ -201,8 +249,11 @@ async def create_request(
 ) -> TicketRequestCreateOut:
     """Creează cererea manuală cu preț server-side și rezervare doar la aprobare."""
     event = await _get_event_or_404(db, event_id)
-    if event.ticket_price is None or _as_utc(event.starts_at) < _now():
+    if event.ticket_price is None:
         raise HTTPException(status_code=400, detail="Biletele nu sunt disponibile pentru acest eveniment.")
+    if _as_utc(event.starts_at) < _now():
+        # 400 + text păstrate (clienți existenți); `code` e adăugat pentru cei noi.
+        raise CodedHTTPException(status_code=400, detail="Biletele nu sunt disponibile pentru acest eveniment.", code=ErrorCode.TICKET_SALES_CLOSED)
     if event.ticket_capacity is not None and event.tickets_sold + data.ticket_quantity > event.ticket_capacity:
         raise HTTPException(status_code=409, detail="Nu mai sunt suficiente bilete disponibile.")
     existing = (await db.execute(select(TicketOrder).where(
@@ -212,6 +263,9 @@ async def create_request(
     if existing:
         settings = await _get_or_create_settings(db)
         return TicketRequestCreateOut(request=_to_request_out(existing, event), payment=_payment_instructions(existing, event, settings))
+    # Cererea existentă (făcută la timp) se întoarce și după închidere; doar una
+    # NOUĂ e refuzată.
+    _ensure_sales_open(event)
     price = event.ticket_price
     total = round(price * data.ticket_quantity, 2)
     reference = user_payment_ref(user)
@@ -248,6 +302,7 @@ async def submit_payment_proof(db: AsyncSession, user: User, order_id: uuid.UUID
     order = await _get_own_order_or_404(db, user, order_id)
     if order.full_name is None or order.status in (STATUS_APPROVED, STATUS_CANCELLED):
         raise HTTPException(status_code=409, detail="Cererea nu mai acceptă o dovadă nouă.")
+    _ensure_event_not_started(await _get_event_or_404(db, order.event_id))
     order.payment_proof_url = proof_url
     order.status = STATUS_PROOF_SUBMITTED
     await db.commit(); await db.refresh(order)
@@ -341,9 +396,11 @@ async def create_order(
             detail="Biletul online nu este disponibil pentru acest eveniment.",
         )
     if _as_utc(event.starts_at) < _now():
-        raise HTTPException(
+        # 400 + text păstrate pentru clienții existenți; `code` e nou.
+        raise CodedHTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Evenimentul a trecut deja — nu mai poți comanda bilet.",
+            code=ErrorCode.TICKET_SALES_CLOSED,
         )
 
     # Idempotență: reutilizăm o comandă activă (neterminată) a aceluiași user pt
@@ -370,6 +427,10 @@ async def create_order(
         return TicketOrderCreateOut(
             order=_to_order_out(existing, event), payment=payment
         )
+
+    # Doar o comandă NOUĂ e refuzată după închiderea vânzării; cea existentă
+    # (făcută la timp) s-a întors mai sus, ca userul să-și poată termina plata.
+    _ensure_sales_open(event)
 
     reference = user_payment_ref(user)
     currency = event.ticket_currency or DEFAULT_CURRENCY
@@ -427,11 +488,12 @@ async def declare(
             status_code=status.HTTP_409_CONFLICT,
             detail="Comanda nu mai poate fi declarată în starea curentă.",
         )
+    event = await _get_event_or_404(db, order.event_id)
+    _ensure_event_not_started(event)
     order.status = STATUS_PAYMENT_DECLARED
     order.user_note = note
     await db.commit()
     await db.refresh(order)
-    event = await _get_event_or_404(db, order.event_id)
     return _to_order_out(order, event)
 
 
@@ -497,6 +559,8 @@ def _to_admin_out(order: TicketOrder, user: User, event: Event) -> AdminTicketOr
         ticket_code=order.ticket_code,
         created_at=order.created_at,
         decided_at=order.decided_at,
+        ticket_status=order_ticket_status(order, event),
+        admitted_at=order.admitted_at,
     )
 
 

@@ -221,6 +221,33 @@ describe('toPayload', () => {
   });
 });
 
+describe('ticket_sales_end_at (închiderea vânzării online)', () => {
+  it('gol → null în payload și fără eroare', () => {
+    expect(validate(form()).ticket_sales_end_at).toBeUndefined();
+    expect(toPayload(form()).ticket_sales_end_at).toBeNull();
+  });
+
+  it('acceptă înainte de start și exact la start + 12h', () => {
+    expect(validate(form({ ticket_sales_end_at: '2030-05-01T19:00' }))).toEqual({});
+    expect(validate(form({ ticket_sales_end_at: '2030-05-02T09:00' }))).toEqual({});
+    expect(toPayload(form({ ticket_sales_end_at: '2030-05-01T19:00' })).ticket_sales_end_at).toMatch(
+      /^\d{4}-\d{2}-\d{2}T.*Z$/,
+    );
+  });
+
+  it('refuză mai târziu de start + 12h (oglinda celui 422 din backend)', () => {
+    expect(validate(form({ ticket_sales_end_at: '2030-05-02T09:01' })).ticket_sales_end_at).toBe(
+      'Vânzarea online trebuie să se închidă cel târziu la 12 ore după începutul evenimentului.',
+    );
+  });
+
+  it('dus-întors prin `toForm`', () => {
+    const source = event({ ticket_sales_end_at: '2030-05-01T16:00:00.000Z' });
+    expect(toPayload(toForm(source)).ticket_sales_end_at).toBe('2030-05-01T16:00:00.000Z');
+    expect(toForm(event()).ticket_sales_end_at).toBe('');
+  });
+});
+
 describe('hasValidCoords', () => {
   it('cere ambele coordonate, în intervalele reale', () => {
     expect(hasValidCoords(47.02, 28.83)).toBe(true);
