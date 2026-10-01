@@ -16,18 +16,49 @@ interface NavItem {
   label: string;
 }
 
-const NAV_ITEMS: readonly NavItem[] = [
-  { to: '/dashboard', label: 'Panou' },
-  { to: '/moderation', label: 'Moderare' },
-  { to: '/users', label: 'Utilizatori' },
-  { to: '/events', label: 'Evenimente' },
-  { to: '/subscriptions', label: 'Abonamente' },
-  { to: '/ads', label: 'Reclame' },
-  { to: '/ticket-orders', label: 'Comenzi bilete' },
-  { to: '/ticket-requests', label: 'Cereri bilete' },
-  { to: '/loyalty', label: 'Fidelitate' },
-  { to: '/invites', label: 'Invitații' },
-] as const;
+interface NavSection {
+  title: string;
+  items: readonly NavItem[];
+}
+
+// Meniul e împărțit pe teme, ca fiecare zonă de lucru să fie găsită dintr-o privire.
+const NAV_SECTIONS: readonly NavSection[] = [
+  {
+    title: 'General',
+    items: [
+      { to: '/dashboard', label: 'Panou' },
+      { to: '/moderation', label: 'Moderare' },
+    ],
+  },
+  {
+    title: 'Utilizatori și abonamente',
+    items: [
+      { to: '/users', label: 'Utilizatori' },
+      { to: '/subscriptions', label: 'Abonamente' },
+      { to: '/invites', label: 'Invitații' },
+    ],
+  },
+  {
+    title: 'Evenimente și reduceri',
+    items: [
+      { to: '/events', label: 'Evenimente' },
+      { to: '/loyalty', label: 'Fidelitate' },
+    ],
+  },
+  {
+    title: 'Bilete',
+    items: [
+      { to: '/ticket-orders', label: 'Comenzi bilete' },
+      { to: '/ticket-requests', label: 'Cereri bilete' },
+    ],
+  },
+  {
+    title: 'Reclamă',
+    items: [{ to: '/ads', label: 'Reclame' }],
+  },
+];
+
+const NAV_ITEMS: readonly NavItem[] = NAV_SECTIONS.flatMap((section) => section.items);
 
 function titleFor(pathname: string): string {
   const item = NAV_ITEMS.find((entry) => pathname.startsWith(entry.to));
@@ -66,22 +97,27 @@ export function Layout(): JSX.Element {
           FLIRT <span>admin</span>
         </div>
         <nav className="sidebar__nav">
-          {NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                isActive ? 'sidebar__link sidebar__link--active' : 'sidebar__link'
-              }
-            >
-              <span>{item.label}</span>
-              {item.to === '/moderation' && pending > 0 ? (
-                <Badge tone="count">{pending}</Badge>
-              ) : null}
-              {item.to === '/ticket-orders' && ticketsToReview > 0 ? (
-                <Badge tone="count">{ticketsToReview}</Badge>
-              ) : null}
-            </NavLink>
+          {NAV_SECTIONS.map((section) => (
+            <div key={section.title} className="sidebar__section">
+              <div className="sidebar__section-title">{section.title}</div>
+              {section.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) =>
+                    isActive ? 'sidebar__link sidebar__link--active' : 'sidebar__link'
+                  }
+                >
+                  <span>{item.label}</span>
+                  {item.to === '/moderation' && pending > 0 ? (
+                    <Badge tone="count">{pending}</Badge>
+                  ) : null}
+                  {item.to === '/ticket-orders' && ticketsToReview > 0 ? (
+                    <Badge tone="count">{ticketsToReview}</Badge>
+                  ) : null}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="sidebar__footer">
