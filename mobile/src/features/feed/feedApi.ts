@@ -1,7 +1,7 @@
 /** Acces la API pentru feed-ul de swipe (TZ secț. 4): feed, swipe, match-uri. */
 import { api } from '@/services/api';
 
-import { FeedCard, MatchItem, SwipeAction, SwipeResult, UndoResult } from './types';
+import { FallbackTier, FeedCard, MatchItem, SwipeAction, SwipeResult, UndoResult } from './types';
 
 /** Forma brută (snake_case) a unui card din backend. */
 interface FeedCardResponse {
@@ -16,6 +16,16 @@ interface FeedCardResponse {
   languages?: string[];
   compatibility: number;
   photos?: string[];
+  /** Lipsesc pe serverele vechi (fără completarea feedului pe trepte). */
+  outside_filters?: boolean | null;
+  fallback_tier?: string | null;
+}
+
+const FALLBACK_TIERS: readonly FallbackTier[] = ['relaxed', 'second_chance', 'other_gender'];
+
+/** O treaptă necunoscută (server mai nou) sau lipsă devine `null`. */
+function parseFallbackTier(value: string | null | undefined): FallbackTier | null {
+  return FALLBACK_TIERS.find((tier) => tier === value) ?? null;
 }
 
 interface SwipeResponse {
@@ -53,6 +63,8 @@ export async function fetchFeed(): Promise<FeedCard[]> {
     languages: c.languages ?? [],
     compatibility: c.compatibility,
     photos: c.photos ?? [],
+    outsideFilters: c.outside_filters === true,
+    fallbackTier: parseFallbackTier(c.fallback_tier),
   }));
 }
 

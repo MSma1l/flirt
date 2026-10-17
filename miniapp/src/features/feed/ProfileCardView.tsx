@@ -47,6 +47,19 @@ interface Props {
   describedBy?: string;
 }
 
+/**
+ * Eticheta unui card de completare (feedul s-a umplut pe trepte după ce
+ * potrivirile stricte s-au terminat), sau `null` pentru un card normal.
+ * `other_gender` primește intenționat același text ca `relaxed`: nu scoatem
+ * genul în evidență.
+ */
+export function fallbackLabelKey(card: FeedCard): string | null {
+  if (card.outsideFilters !== true) return null;
+  return card.fallbackTier === 'second_chance'
+    ? 'miniapp:feed.card.secondChance'
+    : 'miniapp:feed.card.outsideFilters';
+}
+
 /** Doar activarea de la tastatură; atingerea e a deck-ului. */
 function keyboardOnly(action: (() => void) | undefined) {
   return (event: MouseEvent<HTMLButtonElement>) => {
@@ -69,6 +82,7 @@ export function ProfileCardView({
   const initial = card.name.trim().charAt(0).toUpperCase() || '?';
   const chips = interests.slice(0, MAX_INTERESTS);
   const [lowRes, setLowRes] = useState<Record<string, boolean>>({});
+  const fallbackKey = fallbackLabelKey(card);
 
   return (
     <article className="profile-card" data-testid="profile-card" aria-describedby={describedBy}>
@@ -140,6 +154,15 @@ export function ProfileCardView({
       <CompatBadge score={card.compatibility} />
 
       <div className="profile-card__info">
+        {fallbackKey ? (
+          <span
+            className="profile-card__tier"
+            data-testid="profile-card-tier"
+            data-tier={card.fallbackTier ?? 'relaxed'}
+          >
+            {t(fallbackKey)}
+          </span>
+        ) : null}
         <h2 className="profile-card__name">
           {card.name}, {card.age}
         </h2>

@@ -26,6 +26,14 @@ class FeedCard(BaseModel):
     languages: list[str] = Field(default_factory=list)
     compatibility: int  # 0–100 (bejul cu procentul, TZ 4.2)
     photos: list[str] = Field(default_factory=list)
+    # Feed în TREPTE (când feed-ul strict s-a epuizat — vezi
+    # `feed_service.get_feed`). Câmpuri ADITIVE, cu default-uri: cartelele din
+    # feed-ul strict rămân exact ca înainte (`False` / `None`).
+    #   - `outside_filters`: profilul e în afara preferințelor userului (vârstă,
+    #     rază sau gen) — clientul poate afișa un badge;
+    #   - `fallback_tier`: treapta din care vine cartela (None = feed strict).
+    outside_filters: bool = False
+    fallback_tier: Literal["relaxed", "second_chance", "other_gender"] | None = None
 
 
 class FeedPage(BaseModel):

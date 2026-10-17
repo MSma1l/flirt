@@ -364,6 +364,25 @@
   pointer-events: none;
 }
 
+/* Eticheta cardurilor de completare („În afara filtrelor tale", „Încă o
+   șansă"): aceeași sticlă ca interesele, dar mai mică și deasupra numelui. */
+.profile-card__tier {
+  display: inline-block;
+  margin: 0 0 var(--space-sm);
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--feed-glass);
+  border: 1px solid var(--feed-glass-border);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  backdrop-filter: blur(12px) saturate(150%);
+  color: #fff;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  text-shadow: none;
+}
+
 .profile-card__name {
   margin: 0;
   font-size: 30px;

@@ -48,7 +48,31 @@ describe('fetchFeed', () => {
         languages: ['ro', 'ru'],
         compatibility: 82,
         photos: ['https://x/1.jpg'],
+        outsideFilters: false,
+        fallbackTier: null,
       },
+    ]);
+  });
+
+  it('mapează completarea pe trepte (outside_filters, fallback_tier)', async () => {
+    const base = { name: 'X', age: 25, gender: 'female', city: 'C', about: '', compatibility: 50 };
+    (api.get as jest.Mock).mockResolvedValue({
+      data: [
+        { ...base, user_id: 'a', outside_filters: true, fallback_tier: 'relaxed' },
+        { ...base, user_id: 'b', outside_filters: true, fallback_tier: 'second_chance' },
+        { ...base, user_id: 'c', outside_filters: true, fallback_tier: 'other_gender' },
+        { ...base, user_id: 'd', outside_filters: true, fallback_tier: 'viitor' },
+        { ...base, user_id: 'e', outside_filters: false, fallback_tier: null },
+      ],
+    });
+
+    const feed = await fetchFeed();
+    expect(feed.map((c) => [c.outsideFilters, c.fallbackTier])).toEqual([
+      [true, 'relaxed'],
+      [true, 'second_chance'],
+      [true, 'other_gender'],
+      [true, null],
+      [false, null],
     ]);
   });
 
@@ -72,6 +96,9 @@ describe('fetchFeed', () => {
     expect(feed[0].topInterests).toEqual([]);
     expect(feed[0].languages).toEqual([]);
     expect(feed[0].photos).toEqual([]);
+    // Server vechi: fără câmpurile completării → card normal.
+    expect(feed[0].outsideFilters).toBe(false);
+    expect(feed[0].fallbackTier).toBeNull();
   });
 });
 

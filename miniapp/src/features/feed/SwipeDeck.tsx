@@ -87,6 +87,31 @@ export function freshCards(known: readonly FeedCard[], page: readonly FeedCard[]
 }
 
 /**
+ * Cardurile DE COMPLETARE (în afara filtrelor) pe care userul le-a swipe-uit în
+ * sesiunea curentă a Mini App-ului.
+ *
+ * Când potrivirile stricte se termină, serverul umple lotul pe trepte, iar
+ * treapta `second_chance` aduce înapoi profiluri refuzate cândva. Un astfel de
+ * card, refuzat ACUM, nu trebuie să mai apară în aceeași sesiune — nici în
+ * lotul următor, nici la o reîncărcare a listei (invalidare, „Caută mai
+ * multe"). Serverul exclude deja swipe-urile normale; aici e plasa de siguranță
+ * pentru treptele care, prin definiție, readuc profiluri. La nivel de modul, ca
+ * să supraviețuiască schimbării de tab (deck-ul se demontează).
+ */
+const sessionSwipedFallback = new Set<string>();
+
+/** Doar pentru teste: o sesiune nouă. */
+export function resetSessionSwipes(): void {
+  sessionSwipedFallback.clear();
+}
+
+/** Un lot de la server, fără cardurile de completare swipe-uite în sesiune. */
+async function fetchFeedPage(): Promise<FeedCard[]> {
+  const page = await fetchFeed();
+  return page.filter((card) => !sessionSwipedFallback.has(card.userId));
+}
+
+/**
  * Unde stă userul într-o listă NOUĂ de ankete.
  *
  * Ne ținem de CARDUL pe care stătea (`anchor`), nu de poziție. Dacă nu stătea
@@ -147,7 +172,7 @@ export function SwipeDeck() {
   const queryClient = useQueryClient();
   const { data, isLoading, isError, refetch } = useQuery<FeedCard[]>({
     queryKey: FEED_QUERY_KEY,
-    queryFn: fetchFeed,
+    queryFn: fetchFeedPage,
   });
 
   const [index, setIndex] = useState(0);
@@ -268,7 +293,7 @@ export function SwipeDeck() {
     loadingMoreRef.current = true;
     setMore({ status: 'loading', list: base });
     try {
-      const page = await fetchFeed();
+      const page = await fetchFeedPage();
       const known = queryClient.getQueryData<FeedCard[]>(FEED_QUERY_KEY) ?? base;
       const fresh = freshCards(known, page);
       if (fresh.length === 0) {
@@ -302,6 +327,7 @@ export function SwipeDeck() {
     setActionError(null);
     try {
       const result = await swipe(card.userId, action);
+      if (card.outsideFilters === true) sessionSwipedFallback.add(card.userId);
       if (result.matched) setMatchName(card.name);
       setSwipeCount((c) => c + 1);
       setIndex((i) => i + 1);
@@ -329,6 +355,8 @@ export function SwipeDeck() {
     try {
       const result = await undoSwipe();
       if (result.undone) {
+        // Cardul anulat revine pe ecran: nu-l mai ascundem din loturile viitoare.
+        if (result.targetUserId) sessionSwipedFallback.delete(result.targetUserId);
         setSwipeCount((c) => Math.max(0, c - 1));
         setIndex((i) => Math.max(0, i - 1));
         setOffset(ORIGIN);

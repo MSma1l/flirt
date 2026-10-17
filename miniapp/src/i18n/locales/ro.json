@@ -56,7 +56,9 @@
       "undo": "↩ ÎNAPOI"
     },
     "card": {
-      "distance": "{{km}} km"
+      "distance": "{{km}} km",
+      "outsideFilters": "În afara filtrelor tale",
+      "secondChance": "Încă o șansă"
     },
     "match": {
       "title": "Aveți match!",

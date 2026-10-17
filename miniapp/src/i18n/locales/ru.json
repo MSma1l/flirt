@@ -56,7 +56,9 @@
       "undo": "↩ НАЗАД"
     },
     "card": {
-      "distance": "{{km}} км"
+      "distance": "{{km}} км",
+      "outsideFilters": "Вне ваших фильтров",
+      "secondChance": "Ещё один шанс"
     },
     "match": {
       "title": "У вас мэтч!",

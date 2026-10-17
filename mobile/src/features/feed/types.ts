@@ -15,7 +15,22 @@ export interface FeedCard {
   /** Scor de compatibilitate 0–100. */
   compatibility: number;
   photos: string[];
+  /**
+   * Cardul vine din completarea feedului când potrivirile stricte s-au terminat
+   * (în afara filtrelor userului). Opțional: serverele vechi nu-l trimit → false.
+   */
+  outsideFilters?: boolean;
+  /** Treapta de completare (vezi `FallbackTier`); `null` pentru potrivirile normale. */
+  fallbackTier?: FallbackTier | null;
 }
+
+/**
+ * Treapta din care vine un card de completare:
+ *   - `relaxed`       — filtrele (vârstă, distanță) relaxate;
+ *   - `second_chance` — un profil refuzat cândva, arătat din nou;
+ *   - `other_gender`  — în afara genului căutat.
+ */
+export type FallbackTier = 'relaxed' | 'second_chance' | 'other_gender';
 
 /** Rezultatul unui swipe: dacă a rezultat un match și id-ul lui. */
 export interface SwipeResult {

@@ -349,8 +349,14 @@ async def test_feed_scan_limit_caps_candidates(client, monkeypatch):
 
     resp = await client.get(f"{API}/feed/", headers=a_headers)
     assert resp.status_code == 200, resp.text
-    # Deși există 5 candidați eligibili, scanarea e plafonată la 2.
-    assert len(resp.json()) <= 2, resp.json()
+    # Deși există 5 candidați eligibili, scanarea e plafonată la 2 PER QUERY.
+    # Feed-ul în trepte rulează câte un query (cu același plafon) per treaptă
+    # de fallback, deci plafonul se verifică pe fiecare treaptă în parte.
+    per_tier: dict = {}
+    for card in resp.json():
+        per_tier[card["fallback_tier"]] = per_tier.get(card["fallback_tier"], 0) + 1
+    assert per_tier.get(None, 0) <= 2, resp.json()
+    assert all(count <= 2 for count in per_tier.values()), resp.json()
 
 
 # ============================================================================

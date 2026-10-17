@@ -56,7 +56,9 @@
       "undo": "↩ BACK"
     },
     "card": {
-      "distance": "{{km}} km"
+      "distance": "{{km}} km",
+      "outsideFilters": "Outside your filters",
+      "secondChance": "Second chance"
     },
     "match": {
       "title": "It's a match!",
