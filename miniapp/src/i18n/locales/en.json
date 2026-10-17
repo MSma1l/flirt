@@ -18,6 +18,10 @@
       "title": "Session expired",
       "body": "Your Telegram sign-in data has expired. Close the app and reopen it from the chat."
     },
+    "reused": {
+      "title": "Reopen the app from the chat",
+      "body": "The sign-in data from Telegram has already been used and can't be reused. Close the app and open it again from the FLIRT bot chat."
+    },
     "invalid": {
       "title": "Invalid sign-in data",
       "body": "Telegram could not confirm your identity. Reopen the app from the official bot chat."

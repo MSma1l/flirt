@@ -136,7 +136,40 @@ describe('cazuri de eroare', () => {
 
     expect(useAuthStore.getState().error).toBe('server');
     expect(useAuthStore.getState().user).toBeNull();
-    expect(tokenStore.getAccess()).toBeNull();
+    // Tokenurile RĂMÂN: reîncercarea le refolosește în loc să retrimită
+    // `initData`, pe care serverul l-a consumat deja (ar da `reused`).
+    expect(tokenStore.getAccess()).toBe('acces');
+  });
+
+  it('după un /auth/me picat, reîncercarea NU mai trimite initData', async () => {
+    installTelegramStub();
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ data: TOKENS } as never);
+    vi.spyOn(api, 'get')
+      .mockRejectedValueOnce(httpError(500))
+      .mockResolvedValueOnce({ data: ME } as never);
+
+    await useAuthStore.getState().signIn();
+    await useAuthStore.getState().signIn();
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(useAuthStore.getState().status).toBe('authenticated');
+  });
+
+  it('initData deja folosit (cod `init_data_reused`) → starea „reused"', async () => {
+    installTelegramStub();
+    const replay = new AxiosError('eroare', 'ERR_BAD_REQUEST', CONFIG, null, {
+      data: { detail: 'Telegram init data already used', code: 'init_data_reused' },
+      status: 401,
+      statusText: '',
+      headers: {},
+      config: CONFIG,
+    });
+    vi.spyOn(api, 'post').mockRejectedValue(replay);
+
+    await useAuthStore.getState().signIn();
+
+    expect(useAuthStore.getState().status).toBe('error');
+    expect(useAuthStore.getState().error).toBe('reused');
   });
 
   it('răspuns fără tokenuri e tratat ca eroare de server', async () => {
@@ -155,8 +188,8 @@ describe('classifyAuthError — mesajele reale ale backendului', () => {
     ['Invalid Telegram init data signature', 'invalid'],
     ['Invalid Telegram init data', 'invalid'],
     ['Malformed Telegram init data', 'invalid'],
-    // Replay: aceeași soluție ca expirarea — redeschizi Mini App-ul.
-    ['Telegram init data already used', 'expired'],
+    // Replay pe un server vechi (fără `code`): plasa după text.
+    ['Telegram init data already used', 'reused'],
   ])('„%s" → %s', (detail, expected) => {
     expect(classifyAuthError(httpError(401, detail))).toBe(expected);
   });

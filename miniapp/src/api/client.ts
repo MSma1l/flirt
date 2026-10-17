@@ -6,12 +6,14 @@
  *    ar fi serializat ca JSON de axios 1.x și uploadul ar pleca fără fișier);
  *  - interceptorul de cerere care atașează token-ul din memorie;
  *  - reînnoirea la 401, o SINGURĂ dată per cerere (`_retry`), niciodată pentru
- *    rutele `/auth/` (altfel un login greșit ar intra în buclă);
+ *    rutele `/auth/` care schimbă credențiale (altfel un login greșit ar intra
+ *    în buclă) — `/auth/me` e o cerere obișnuită și se reînnoiește;
  *  - dedublarea cererilor concurente de reînnoire printr-o promisiune comună.
  *
- * Diferența față de mobil: când nu există refresh token (cazul normal la
- * pornire, fiindcă nu persistăm nimic — vezi `tokenStore.ts`), reînnoirea cade
- * pe reautentificarea din `initData` Telegram, înregistrată de `auth/`.
+ * Diferența față de mobil: când refresh token-ul lipsește sau e respins,
+ * reînnoirea cade pe reautentificarea din `initData` Telegram, înregistrată de
+ * `auth/`. Perechea (inclusiv cea rotită aici) se salvează în `sessionStorage`
+ * de `tokenStore.ts`, ca să supraviețuiască unei reîncărcări a paginii.
  */
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
@@ -50,9 +52,9 @@ export function setUnauthorizedHandler(fn: UnauthorizedHandler | null): void {
  * `initData` nu poate fi folosit de două ori. Cum Telegram dă un singur șir per
  * deschidere, reautentificarea reușește practic DOAR la prima folosire. E o
  * plasă de siguranță, nu un mecanism pe care să te bazezi: în sesiune,
- * reînnoirea normală merge prin refresh token-ul din memorie. Când și acesta
- * cade, utilizatorul ajunge la ecranul „sesiune expirată", care îi spune exact
- * ce să facă — să redeschidă Mini App-ul din chat.
+ * reînnoirea normală merge prin refresh token-ul salvat. Când și acesta cade,
+ * utilizatorul ajunge la ecranul potrivit motivului (de obicei `reused`), care
+ * îi spune exact ce să facă — să redeschidă Mini App-ul din chat.
  */
 type ReauthHandler = () => Promise<{ access_token: string; refresh_token: string } | null>;
 let reauthHandler: ReauthHandler | null = null;
@@ -120,8 +122,12 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
     // Rutele de autentificare nu se reîncearcă: un 401 acolo ÎNSEAMNĂ credențiale
-    // respinse, iar o reîncercare ar fi o buclă garantată.
-    const isAuthCall = original?.url?.includes('/auth/');
+    // respinse, iar o reîncercare ar fi o buclă garantată. Excepție: `/auth/me`
+    // nu schimbă credențiale, e o cerere obișnuită cu Bearer — un 401 acolo
+    // înseamnă acces expirat (ex. sesiunea restaurată după o reîncărcare) și
+    // se rezolvă prin reînnoire, ca oricare altă rută.
+    const url = original?.url ?? '';
+    const isAuthCall = url.includes('/auth/') && !/\/auth\/me(?:$|[?#])/.test(url);
     if (error.response?.status === 401 && original && !original._retry && !isAuthCall) {
       original._retry = true;
       const newToken = await refreshOnce();

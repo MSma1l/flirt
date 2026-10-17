@@ -238,6 +238,32 @@ describe('acțiunile stărilor de autentificare', () => {
     expect(actions[0]?.testId).toBe('auth-support');
   });
 
+  it('„date deja folosite": chatul botului + închiderea, FĂRĂ reîncercare', async () => {
+    withBot(BOT);
+    const { webApp } = installTelegramStub();
+    const retry = vi.fn();
+    const actions = errorActions('reused', { ...labels, close: 'Închide' }, retry);
+
+    // Reîncercarea ar retrimite același initData, deja consumat: eșec garantat.
+    expect(actions.some((a) => a.testId === 'auth-retry')).toBe(false);
+    expect(actions[0]?.href).toBe(`https://t.me/${BOT}`);
+    expect(actions[0]?.ghost).toBe(false);
+    expect(actions[1]?.testId).toBe('auth-close');
+
+    render(<StatusScreen title="t" actions={actions} />);
+    await userEvent.click(screen.getByTestId('auth-close'));
+    expect(webApp.close).toHaveBeenCalledTimes(1);
+    expect(retry).not.toHaveBeenCalled();
+  });
+
+  it('„date deja folosite" în afara Telegram: fără butonul de închidere', () => {
+    withBot(BOT);
+    const actions = errorActions('reused', { ...labels, close: 'Închide' }, vi.fn());
+
+    expect(actions).toHaveLength(1);
+    expect(actions[0]?.href).toBe(`https://t.me/${BOT}`);
+  });
+
   it('reîncercarea chiar cheamă autentificarea', async () => {
     withBot(BOT);
     const retry = vi.fn();
@@ -258,6 +284,7 @@ describe('fiecare stare arată a produs și are o ieșire', () => {
   const KINDS = [
     'outside_telegram',
     'expired',
+    'reused',
     'invalid',
     'network',
     'server',
@@ -278,7 +305,7 @@ describe('fiecare stare arată a produs și are o ieșire', () => {
     expect(screen.getByRole('heading', { level: 1, name: `titlu ${kind}` })).toBeInTheDocument();
     expect(screen.getByText(`explicație ${kind}`)).toBeInTheDocument();
     // Regula: niciun ecran fără ieșire.
-    const asLink = kind === 'outside_telegram' || kind === 'banned';
+    const asLink = kind === 'outside_telegram' || kind === 'banned' || kind === 'reused';
     expect(screen.getAllByRole(asLink ? 'link' : 'button').length).toBeGreaterThan(0);
     unmount();
   });

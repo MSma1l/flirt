@@ -18,6 +18,10 @@
       "title": "Sesiune expirată",
       "body": "Datele de conectare de la Telegram au expirat. Închide și redeschide aplicația din chat."
     },
+    "reused": {
+      "title": "Deschide din nou aplicația din chat",
+      "body": "Datele de conectare primite de la Telegram au fost deja folosite și nu mai pot fi refolosite. Închide aplicația și deschide-o din nou din chatul botului FLIRT."
+    },
     "invalid": {
       "title": "Date de conectare invalide",
       "body": "Telegram nu a putut confirma identitatea ta. Redeschide aplicația din chatul oficial al botului."

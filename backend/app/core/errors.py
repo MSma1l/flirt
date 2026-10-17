@@ -61,6 +61,12 @@ class ErrorCode:
     # Fișier gol sau corupt (imaginea nu poate fi citită).
     INVALID_MEDIA = "invalid_media"
 
+    # Autentificare Telegram Mini App: același `initData` a fost deja consumat
+    # (protecția anti-replay). Clientul NU are ce reîncerca cu el — Telegram dă
+    # un `initData` nou doar la o redeschidere din chat. Distinct de expirare
+    # (`auth_date` prea vechi), unde mesajul către utilizator e altul.
+    INIT_DATA_REUSED = "init_data_reused"
+
 
 class CodedHTTPException(HTTPException):
     """`HTTPException` cu un cod stabil, citibil de mașină.

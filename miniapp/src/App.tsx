@@ -1,8 +1,9 @@
 /**
  * Rădăcina Mini App-ului: pornire Telegram → autentificare → rutare.
  *
- * Autentificarea rulează la FIECARE pornire, din `initData`. Nu există hidratare
- * dintr-o sesiune salvată — motivul stă în `api/tokenStore.ts`.
+ * Autentificarea rulează la fiecare pornire: întâi din sesiunea salvată în
+ * `sessionStorage` (supraviețuiește unei reîncărcări), abia apoi din `initData`
+ * — motivul stă în `api/tokenStore.ts`.
  *
  * DE CE `MemoryRouter` ȘI NU `HashRouter`/`BrowserRouter`
  * ------------------------------------------------------
@@ -34,7 +35,7 @@ import { useAuthStore } from '@/auth/authStore';
 import { StatusScreen, type StatusAction } from '@/components/StatusScreen';
 import { getLegalUrls } from '@/config';
 import { AppRoutes } from '@/routes';
-import { getStartParam } from '@/telegram/bridge';
+import { close as closeMiniApp, getStartParam, isInsideTelegram } from '@/telegram/bridge';
 import { telegramBotAction } from '@/telegram/botLink';
 import { initialEntriesForStartPath, initialPathFromStartParam } from '@/telegram/startParamRoute';
 import { useTelegramBootstrap, useTelegramChrome } from '@/telegram/useTelegram';
@@ -54,10 +55,15 @@ import '@/styles/forms.css';
  * „Cont interzis" e singura stare fără reîncercare deloc: acolo serverul a luat
  * o decizie despre CONT, nu despre datele de conectare, iar a mai încerca o dată
  * e garantat inutil.
+ *
+ * „Date deja folosite" (`reused`) nu are nici ea reîncercare: aplicația ar
+ * retrimite exact același `initData`, pe care serverul l-a consumat deja.
+ * Ieșirea reală e redeschiderea din chat (Telegram dă atunci un șir nou), plus
+ * închiderea Mini App-ului, când rulăm chiar în Telegram.
  */
 export function errorActions(
   error: AuthErrorKind,
-  labels: { retry: string; openTelegram: string; support: string },
+  labels: { retry: string; openTelegram: string; support: string; close?: string },
   retry: () => void,
 ): StatusAction[] {
   const toTelegram = (ghost: boolean) =>
@@ -66,6 +72,21 @@ export function errorActions(
   if (error === 'outside_telegram') {
     const action = toTelegram(false);
     return action ? [action] : [];
+  }
+
+  if (error === 'reused') {
+    const actions: StatusAction[] = [];
+    const chat = toTelegram(false);
+    if (chat) actions.push(chat);
+    if (labels.close && isInsideTelegram()) {
+      actions.push({
+        label: labels.close,
+        onClick: () => closeMiniApp(),
+        ghost: actions.length > 0,
+        testId: 'auth-close',
+      });
+    }
+    return actions;
   }
 
   if (error === 'banned') {
@@ -135,6 +156,7 @@ export function App() {
               retry: t('actions.retry', { ns: 'common' }),
               openTelegram: t('actions.openInTelegram'),
               support: t('actions.contactSupport'),
+              close: t('actions.close'),
             },
             () => void signIn(),
           )}

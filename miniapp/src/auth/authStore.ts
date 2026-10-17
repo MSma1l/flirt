@@ -1,14 +1,17 @@
 /**
  * Starea de autentificare a Mini App-ului (Zustand, ca pe mobil).
  *
- * Diferența față de `mobile/src/store/authStore.ts`: nu există login cu parolă,
- * nici hidratare dintr-un refresh token persistat. Singura cale de intrare e
- * `initData` de la Telegram, iar ea se reia la fiecare pornire.
+ * Diferența față de `mobile/src/store/authStore.ts`: nu există login cu parolă.
+ * La pornire încercăm ÎNTÂI sesiunea salvată în `sessionStorage` pentru același
+ * cont Telegram (supraviețuiește unei reîncărcări a paginii) și trimitem
+ * `initData` DOAR dacă ea lipsește sau nu mai poate fi reînnoită. Motivul:
+ * backendul consumă fiecare `initData` o singură dată, iar după o reîncărcare
+ * Telegram dă exact același șir — vezi `api/tokenStore.ts`.
  */
 import { create } from 'zustand';
 
 import { api, setReauthHandler, setUnauthorizedHandler, tokenStore } from '@/api/client';
-import { getUnsafeUser } from '@/telegram/bridge';
+import { getRawInitData, getUnsafeUser, isInsideTelegram } from '@/telegram/bridge';
 
 import {
   authenticateWithTelegram,
@@ -60,37 +63,87 @@ function errorKind(error: unknown): AuthErrorKind {
   return classifyAuthError(error) === 'banned' ? 'banned' : 'server';
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
-  status: 'idle',
-  user: null,
-  error: null,
-  optimisticName: null,
+/**
+ * Eșecuri care NU spun nimic despre identitate: tokenurile rămân valabile, iar
+ * reîncercarea le refolosește. Dacă le-am șterge, reîncercarea ar retrimite
+ * același `initData`, deja consumat — exact blocajul pe care îl evităm.
+ */
+const TRANZITORII: ReadonlySet<AuthErrorKind> = new Set<AuthErrorKind>(['network', 'server']);
 
-  signIn: async () => {
+/**
+ * Motivul ultimei reautentificări eșuate din `initData` (vezi `setReauthHandler`
+ * mai jos). Fără el, un `initData` deja folosit ar ajunge în interfață ca
+ * „sesiune expirată", cu un buton de reîncercare garantat inutil.
+ */
+let lastReauthError: AuthErrorKind | null = null;
+
+/**
+ * Pornirea în curs. React StrictMode rulează efectul de două ori, iar o a doua
+ * cerere cu același `initData` ar fi respinsă ca replay — deci toate apelurile
+ * simultane împart ACEEAȘI promisiune.
+ */
+let inFlight: Promise<void> | null = null;
+
+export const useAuthStore = create<AuthState>((set, get) => {
+  async function run(): Promise<void> {
     const unsafe = getUnsafeUser();
     set({
       status: 'loading',
+      user: null,
       error: null,
       optimisticName: unsafe?.first_name ?? null,
     });
+    lastReauthError = null;
+    tokenStore.bindOwner(unsafe?.id != null ? String(unsafe.id) : null);
 
     try {
-      const pair = await authenticateWithTelegram();
-      tokenStore.setTokens(pair.access_token, pair.refresh_token);
+      // Sesiunea salvată se folosește DOAR în Telegram, cu `initData` prezent
+      // (după o reîncărcare el e tot acolo). În afara lui nu restaurăm nimic.
+      if (!isInsideTelegram() || !getRawInitData()) {
+        throw new TelegramAuthError('outside_telegram');
+      }
+      if (!tokenStore.restore()) {
+        // Nicio sesiune utilizabilă pentru acest cont: abia acum consumăm
+        // `initData`.
+        const pair = await authenticateWithTelegram();
+        tokenStore.setTokens(pair.access_token, pair.refresh_token);
+      }
+      // Cu o sesiune restaurată, un acces expirat dă 401, iar clientul HTTP
+      // face singur `POST /auth/refresh` (cu rotație) și, dacă și acela e mort,
+      // o SINGURĂ reautentificare din `initData`.
       const user = await fetchMe();
       set({ status: 'authenticated', user, error: null });
     } catch (error) {
-      tokenStore.clear();
+      // Sesiunea s-a pierdut definitiv pe drum (refresh + `initData` refuzate):
+      // handlerul de mai jos a setat deja motivul și a golit tokenurile.
+      if (get().status === 'error') return;
       const kind = errorKind(error);
+      if (!TRANZITORII.has(kind)) tokenStore.clear();
       set({ status: 'error', user: null, error: kind });
     }
-  },
+  }
 
-  signOut: () => {
-    tokenStore.clear();
-    set({ status: 'idle', user: null, error: null });
-  },
-}));
+  return {
+    status: 'idle',
+    user: null,
+    error: null,
+    optimisticName: null,
+
+    signIn: () => {
+      if (!inFlight) {
+        inFlight = run().finally(() => {
+          inFlight = null;
+        });
+      }
+      return inFlight;
+    },
+
+    signOut: () => {
+      tokenStore.clear();
+      set({ status: 'idle', user: null, error: null });
+    },
+  };
+});
 
 /**
  * Sesiune expirată în timpul folosirii: clientul HTTP ne anunță, noi scoatem
@@ -98,18 +151,24 @@ export const useAuthStore = create<AuthState>((set) => ({
  */
 setUnauthorizedHandler(() => {
   tokenStore.clear();
-  useAuthStore.setState({ status: 'error', user: null, error: 'expired' });
+  const kind = lastReauthError ?? 'expired';
+  lastReauthError = null;
+  useAuthStore.setState({ status: 'error', user: null, error: kind });
 });
 
 /**
- * Reînnoire fără refresh token: clientul HTTP cere o reautentificare din
- * `initData`. Merge fiindcă datele Telegram sunt disponibile în permanență, nu
- * doar la pornire — de aceea nici nu persistăm nimic în browser.
+ * Reînnoire când refresh token-ul lipsește sau e respins: clientul HTTP cere o
+ * reautentificare din `initData`. Reușește doar dacă șirul n-a fost încă
+ * consumat; altfel păstrăm motivul (de obicei `reused`), ca ecranul să spună
+ * „redeschide din chat", nu „reîncearcă".
  */
 setReauthHandler(async () => {
   try {
-    return await authenticateWithTelegram();
-  } catch {
+    const pair = await authenticateWithTelegram();
+    lastReauthError = null;
+    return pair;
+  } catch (error) {
+    lastReauthError = error instanceof TelegramAuthError ? error.kind : null;
     return null;
   }
 });

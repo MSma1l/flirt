@@ -193,6 +193,19 @@ describe('protecția anti-buclă', () => {
     expect(adapter).toHaveBeenCalledTimes(1);
   });
 
+  it('/auth/me NU e rută de credențiale: un 401 acolo se reînnoiește', async () => {
+    tokenStore.setTokens('acces-vechi', 'refresh-1');
+    const refresh = vi.spyOn(axios, 'post').mockResolvedValue({
+      data: { access_token: 'acces-nou', refresh_token: 'refresh-2' },
+    } as never);
+    useAdapter((config) =>
+      config.headers.Authorization === 'Bearer acces-nou' ? ok(config) : unauthorized(config),
+    );
+
+    await expect(api.get('/auth/me')).resolves.toMatchObject({ status: 200 });
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
   it('reia cererea o SINGURĂ dată, chiar dacă și reluarea ia 401', async () => {
     tokenStore.setTokens('acces-vechi', 'refresh-1');
     vi.spyOn(axios, 'post').mockResolvedValue({
@@ -208,43 +221,116 @@ describe('protecția anti-buclă', () => {
   });
 });
 
-describe('refresh-ul supraviețuiește unei reîncărcări a paginii', () => {
+describe('sesiunea supraviețuiește unei reîncărcări a paginii', () => {
   // Regresie pentru un blocaj real: Telegram trimite ACELAȘI initData pe toată
   // durata unei lansări, iar serverul consumă fiecare semnătură o singură dată.
   // O reîncărcare golea memoria, aplicația retrimitea aceeași semnătură, serverul
   // o respingea ca deja folosită, iar utilizatorul rămânea blocat pe „sesiune
   // expirată" până închidea complet Mini App-ul.
+  const KEY = 'flirt.session';
+
+  /** Reîncărcarea paginii: memoria se golește, `sessionStorage` rămâne. */
+  function reload(owner: string) {
+    const saved = window.sessionStorage.getItem(KEY);
+    tokenStore.clear();
+    if (saved) window.sessionStorage.setItem(KEY, saved);
+    tokenStore.bindOwner(owner);
+  }
+
   beforeEach(() => {
+    tokenStore.bindOwner(null);
     tokenStore.clear();
     window.sessionStorage.clear();
   });
 
-  it('păstrează refresh-ul în sessionStorage, nu în localStorage', () => {
+  it('păstrează perechea în sessionStorage, legată de cont, nu în localStorage', () => {
+    tokenStore.bindOwner('42');
     tokenStore.setTokens('acces', 'reimprospatare');
 
-    expect(window.sessionStorage.getItem('flirt.refresh')).toBe('reimprospatare');
-    expect(window.localStorage.getItem('flirt.refresh')).toBeNull();
+    expect(JSON.parse(window.sessionStorage.getItem(KEY) ?? '{}')).toEqual({
+      owner: '42',
+      access: 'acces',
+      refresh: 'reimprospatare',
+    });
+    expect(window.localStorage.getItem(KEY)).toBeNull();
   });
 
-  it('regăsește refresh-ul după ce memoria s-a golit', () => {
+  it('fără cont cunoscut nu scrie nimic pe disc', () => {
     tokenStore.setTokens('acces', 'reimprospatare');
-    tokenStore.setAccess(null);
-    // Reîncărcarea paginii: modulul se reevaluează, memoria e goală. Simulăm
-    // scriind direct în stocare și citind prin API-ul public.
-    window.sessionStorage.setItem('flirt.refresh', 'de-pe-disc');
 
+    expect(window.sessionStorage.getItem(KEY)).toBeNull();
     expect(tokenStore.getRefresh()).toBe('reimprospatare');
   });
 
+  it('regăsește perechea după reîncărcare, pentru ACELAȘI cont', () => {
+    tokenStore.bindOwner('42');
+    tokenStore.setTokens('acces', 'reimprospatare');
+    reload('42');
+
+    expect(tokenStore.getRefresh()).toBeNull();
+    expect(tokenStore.restore()).toBe(true);
+    expect(tokenStore.getAccess()).toBe('acces');
+    expect(tokenStore.getRefresh()).toBe('reimprospatare');
+  });
+
+  it('NU dă sesiunea altui cont Telegram și o șterge', () => {
+    tokenStore.bindOwner('42');
+    tokenStore.setTokens('acces', 'reimprospatare');
+    reload('43');
+
+    expect(tokenStore.restore()).toBe(false);
+    expect(tokenStore.getAccess()).toBeNull();
+    expect(window.sessionStorage.getItem(KEY)).toBeNull();
+  });
+
+  it('schimbarea contului golește și memoria', () => {
+    tokenStore.bindOwner('42');
+    tokenStore.setTokens('acces', 'reimprospatare');
+    tokenStore.bindOwner('43');
+
+    expect(tokenStore.getAccess()).toBeNull();
+    expect(tokenStore.restore()).toBe(false);
+  });
+
+  it('reînnoirea salvează perechea ROTITĂ', async () => {
+    tokenStore.bindOwner('42');
+    tokenStore.setTokens('acces-vechi', 'refresh-1');
+    vi.spyOn(axios, 'post').mockResolvedValue({
+      data: { access_token: 'acces-nou', refresh_token: 'refresh-2' },
+    } as never);
+    useAdapter((config) =>
+      config.headers.Authorization === 'Bearer acces-nou' ? ok(config) : unauthorized(config),
+    );
+
+    await api.get('/feed/');
+
+    expect(JSON.parse(window.sessionStorage.getItem(KEY) ?? '{}')).toMatchObject({
+      access: 'acces-nou',
+      refresh: 'refresh-2',
+    });
+  });
+
+  it('ignoră o intrare coruptă și formatul vechi, nelegat de cont', () => {
+    tokenStore.bindOwner('42');
+    window.sessionStorage.setItem(KEY, '{nu-e-json');
+    window.sessionStorage.setItem('flirt.refresh', 'vechi');
+
+    expect(tokenStore.restore()).toBe(false);
+    tokenStore.setTokens('a', 'r');
+    expect(window.sessionStorage.getItem('flirt.refresh')).toBeNull();
+  });
+
   it('curățarea șterge și din stocare, nu doar din memorie', () => {
+    tokenStore.bindOwner('42');
     tokenStore.setTokens('acces', 'reimprospatare');
     tokenStore.clear();
 
-    expect(window.sessionStorage.getItem('flirt.refresh')).toBeNull();
+    expect(window.sessionStorage.getItem(KEY)).toBeNull();
     expect(tokenStore.getRefresh()).toBeNull();
+    expect(tokenStore.restore()).toBe(false);
   });
 
-  it('nu aruncă dacă stocarea e blocată', () => {
+  it('nu aruncă dacă stocarea e blocată — merge doar din memorie', () => {
     const original = Object.getOwnPropertyDescriptor(window, 'sessionStorage');
     Object.defineProperty(window, 'sessionStorage', {
       configurable: true,
@@ -253,10 +339,15 @@ describe('refresh-ul supraviețuiește unei reîncărcări a paginii', () => {
       },
     });
 
-    expect(() => tokenStore.setTokens('a', 'b')).not.toThrow();
-    expect(() => tokenStore.getRefresh()).not.toThrow();
-    expect(tokenStore.getRefresh()).toBe('b');
-
-    if (original) Object.defineProperty(window, 'sessionStorage', original);
+    try {
+      tokenStore.bindOwner('42');
+      expect(() => tokenStore.setTokens('a', 'b')).not.toThrow();
+      expect(tokenStore.getRefresh()).toBe('b');
+      expect(tokenStore.restore()).toBe(true);
+      expect(() => tokenStore.clear()).not.toThrow();
+      expect(tokenStore.restore()).toBe(false);
+    } finally {
+      if (original) Object.defineProperty(window, 'sessionStorage', original);
+    }
   });
 });

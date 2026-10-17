@@ -254,6 +254,31 @@ async def test_replay_of_same_init_data_returns_401(client: AsyncClient):
     assert second.status_code == 401
 
 
+async def test_replay_carries_stable_code_init_data_reused(client: AsyncClient):
+    """Replay-ul are un cod STABIL, ca Mini App-ul să nu decidă după text.
+
+    Clientul arată pe baza lui ecranul „redeschide din chat", fără buton de
+    reîncercare: același `initData` nu va mai trece niciodată. Codul e scris
+    literal — o redenumire trebuie să pice aici, nu în producție. `detail`-ul
+    rămâne cel vechi, pentru clienții care nu citesc codul.
+    """
+    init_data = _build_init_data(telegram_id=606_000_112)
+    assert (await _login(client, init_data)).status_code == 200
+
+    second = await _login(client, init_data)
+    assert second.status_code == 401
+    body = second.json()
+    assert body["code"] == "init_data_reused"
+    assert body["detail"] == "Telegram init data already used"
+
+
+async def test_other_init_data_errors_have_no_code(client: AsyncClient):
+    """Doar replay-ul primește cod; restul refuzurilor rămân neschimbate."""
+    resp = await _login(client, _build_init_data(hash_override="0" * 64))
+    assert resp.status_code == 401
+    assert "code" not in resp.json()
+
+
 # --------------------------------------------------------------------------- #
 # Contul din spate
 # --------------------------------------------------------------------------- #

@@ -224,7 +224,7 @@ describe('fiecare eroare a backendului are un motiv propriu', () => {
     [401, 'Invalid Telegram init data', 'invalid'],
     [401, 'Malformed Telegram init data', 'invalid'],
     [401, 'Telegram init data expired', 'expired'],
-    [401, 'Telegram init data already used', 'expired'],
+    [401, 'Telegram init data already used', 'reused'],
     // 503: login-ul Telegram nu e configurat pe server (token lipsă).
     [503, 'Telegram login is not configured', 'server'],
     // 422: schema a respins payload-ul (șir gol sau peste 4096 de caractere).
@@ -394,9 +394,10 @@ describe('datele NEVERIFICATE nu autentifică niciodată', () => {
     expect(JSON.stringify(state.user)).not.toContain('mallory');
   });
 
-  it('tokenurile se șterg la orice eșec, ca nimic să nu rămână „pe jumătate logat"', async () => {
+  it('tokenurile se șterg la un eșec de identitate, ca nimic să nu rămână „pe jumătate logat"', async () => {
+    // Fără sesiune salvată (vezi `sessionRestore.test.ts` pentru cea cu sesiune):
+    // `initData` expirat → nimic în memorie, nimic în stocare.
     installTelegramStub({ initData: REAL_INIT_DATA });
-    tokenStore.setTokens('vechi-acces', 'vechi-refresh');
     vi.spyOn(api, 'post').mockRejectedValue(httpError(401, 'Telegram init data expired'));
 
     await useAuthStore.getState().signIn();

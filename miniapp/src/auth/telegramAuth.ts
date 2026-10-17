@@ -24,6 +24,12 @@ export type AuthErrorKind =
   | 'outside_telegram'
   /** `initData` e mai vechi decât fereastra acceptată de server. */
   | 'expired'
+  /**
+   * `initData` a fost DEJA folosit (anti-replay, cod `init_data_reused`).
+   * Același șir nu va mai trece niciodată, deci nu are sens o reîncercare:
+   * doar o redeschidere din chat aduce un `initData` nou.
+   */
+  | 'reused'
   /** Semnătura nu se verifică: date fabricate sau alt bot. */
   | 'invalid'
   /**
@@ -48,6 +54,15 @@ function serverDetail(error: AxiosError): string {
   const data = error.response?.data as { detail?: unknown } | undefined;
   return typeof data?.detail === 'string' ? data.detail : '';
 }
+
+/** Codul stabil trimis de backend (`app/core/errors.py::ErrorCode`), dacă există. */
+function serverCode(error: AxiosError): string {
+  const data = error.response?.data as { code?: unknown } | undefined;
+  return typeof data?.code === 'string' ? data.code : '';
+}
+
+/** Codul backendului pentru `initData` deja consumat (anti-replay). */
+export const INIT_DATA_REUSED_CODE = 'init_data_reused';
 
 /**
  * Cuvintele care arată că răspunsul vorbește despre `initData`, nu despre cont.
@@ -103,9 +118,13 @@ export function classifyAuthError(error: unknown): AuthErrorKind {
 
   if (status === 401 || status === 403 || status === 400 || status === 422) {
     const detail = serverDetail(axiosError).toLowerCase();
+    // Replay: codul stabil e semnalul principal; textul („already used") e doar
+    // plasa pentru un server vechi, care nu trimite încă `code`.
+    if (serverCode(axiosError) === INIT_DATA_REUSED_CODE || detail.includes('already used')) {
+      return 'reused';
+    }
     // Mesajele backendului: „Telegram init data expired",
-    // „Invalid Telegram init data signature", „Malformed Telegram init data",
-    // „Telegram init data already used" (replay).
+    // „Invalid Telegram init data signature", „Malformed Telegram init data".
     if (detail.includes('expir')) return 'expired';
     if (
       detail.includes('invalid') ||
@@ -115,8 +134,8 @@ export function classifyAuthError(error: unknown): AuthErrorKind {
     ) {
       return 'invalid';
     }
-    // Restul (inclusiv replay-ul) au aceeași soluție ca expirarea: închizi și
-    // redeschizi Mini App-ul, iar Telegram dă un `initData` proaspăt.
+    // Restul au aceeași soluție ca expirarea: închizi și redeschizi Mini
+    // App-ul, iar Telegram dă un `initData` proaspăt.
     return 'expired';
   }
   return 'server';

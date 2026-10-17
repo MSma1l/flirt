@@ -47,6 +47,7 @@ from fastapi import HTTPException, status
 
 from app.core import ratelimit
 from app.core.config import settings
+from app.core.errors import ErrorCode
 
 log = logging.getLogger("app.telegram_auth")
 
@@ -93,6 +94,11 @@ class TelegramAuthError(HTTPException):
     """
 
     message = "Invalid Telegram init data"
+    # Cod stabil opțional, serializat de handlerul din `app/main.py` ca
+    # `{"detail", "code"}` (aceeași convenție ca `CodedHTTPException`). Doar
+    # replay-ul are unul: e singurul caz pe care clientul trebuie să-l trateze
+    # altfel (fără reîncercare). Restul rămân doar cu `detail` generic.
+    code: str | None = None
 
     def __init__(self, detail: str | None = None) -> None:
         super().__init__(
@@ -123,6 +129,7 @@ class ReplayedInitData(TelegramAuthError):
     """Același `initData` prezentat a doua oară (replay)."""
 
     message = "Telegram init data already used"
+    code = ErrorCode.INIT_DATA_REUSED
 
 
 def _not_configured() -> HTTPException:
