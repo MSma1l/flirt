@@ -233,6 +233,16 @@ export const TICKET_SALES_CLOSED = 'ticket_sales_closed';
 /** Codul trimis (409) la dovadă / declarare după începerea evenimentului. */
 export const EVENT_STARTED = 'event_started';
 
+/**
+ * Codul trimis (409) la crearea unei comenzi / cereri cât timp adminul a oprit
+ * vânzarea online global. Comenzile existente nu sunt afectate.
+ */
+export const ONLINE_SALES_DISABLED = 'online_sales_disabled';
+
+export function isOnlineSalesDisabledError(error: unknown): boolean {
+  return apiErrorCode(error).code === ONLINE_SALES_DISABLED;
+}
+
 export function isTicketSalesClosedError(error: unknown): boolean {
   return apiErrorCode(error).code === TICKET_SALES_CLOSED;
 }

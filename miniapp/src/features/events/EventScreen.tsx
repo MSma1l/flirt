@@ -21,6 +21,10 @@
  * numărătoare inversă; după închidere, butoanele de cumpărare sunt înlocuite de
  * un mesaj neutru. Dacă serverul refuză comanda cu 409 `ticket_sales_closed`
  * (s-a închis între timp), arătăm același mesaj și reîncărcăm evenimentul.
+ * Pauza globală (`ticketSalesPaused`, sau 409 `online_sales_disabled`) are
+ * mesajul ei — „oprită temporar, poți plăti la intrare" —, distinct de
+ * „epuizat" și „închis". Motivul vine din modelul `ticketSales` (`SalesBlock`).
+ * O comandă deja făcută rămâne vizibilă în orice caz.
  *
  * PREȚUL BILETULUI e singurul lucru pe care ecranul NU-l ia din `Event`: pentru
  * un utilizator cu ștampile, cu promo sau cu o invitație, prețul de listă e o
@@ -37,13 +41,7 @@ import { useNavigate, useParams } from 'react-router';
 import { formatAmount, TicketPriceBlock, useRefreshLoyalty, useTicketQuote } from '@/features/loyalty';
 import { OrderStepper } from '@/features/tickets/OrderStepper';
 import { ClockIcon, LockIcon, TicketIcon } from '@/features/tickets/TicketIcons';
-import {
-  hasEventStarted,
-  isSoldOutError,
-  isTicketSalesClosedError,
-  orderStage,
-  STAGE_RANK,
-} from '@/features/tickets/orderStage';
+import { hasEventStarted, orderStage, STAGE_RANK } from '@/features/tickets/orderStage';
 import { useOrderStatusText } from '@/features/tickets/orderStatusLabel';
 import { ticketOrderPath } from '@/features/tickets/ticketRoutes';
 import { ticketRequestPath } from '@/features/ticketRequests/ticketRequestRoutes';
@@ -60,7 +58,7 @@ import {
   type EventItem,
   type TicketOrder,
 } from './eventsApi';
-import { formatCountdown, useSalesState } from './ticketSales';
+import { formatCountdown, salesNotice, salesRefusal, useSalesState, type SalesBlock } from './ticketSales';
 
 import './events.css';
 
@@ -77,10 +75,8 @@ export function EventScreen() {
   const eventId = params[EVENT_ID_PARAM] ?? '';
 
   const [stampMessage, setStampMessage] = useState<string | null>(null);
-  /** Serverul a refuzat comanda: vânzarea s-a închis între timp. */
-  const [closedByServer, setClosedByServer] = useState(false);
-  /** Serverul a refuzat comanda: s-au terminat biletele între timp. */
-  const [soldOutByServer, setSoldOutByServer] = useState(false);
+  /** Serverul a refuzat comanda: vânzarea s-a închis / epuizat / oprit între timp. */
+  const [refusal, setRefusal] = useState<SalesBlock | null>(null);
   const statusText = useOrderStatusText();
 
   const { data, isPending, isError, refetch, isFetching } = useQuery<EventItem>({
@@ -112,8 +108,8 @@ export function EventScreen() {
   }, [myOrders, eventId]);
 
   const sales = useSalesState(data ?? {});
-  const salesClosed = sales.closed || closedByServer || soldOutByServer;
-  const soldOut = soldOutByServer || (sales.soldOut && !closedByServer);
+  // Refuzul proaspăt al serverului câștigă peste ce știam din eveniment.
+  const salesBlock = refusal ?? sales.block;
 
   /**
    * Ultima comandă a omului pentru eveniment, dacă a fost respinsă sau
@@ -142,11 +138,9 @@ export function EventScreen() {
       void navigate(ticketOrderPath(result.order.id));
     },
     onError: (error) => {
-      if (isTicketSalesClosedError(error)) {
-        setClosedByServer(true);
-        void queryClient.invalidateQueries({ queryKey: ['event', eventId] });
-      } else if (isSoldOutError(error)) {
-        setSoldOutByServer(true);
+      const reason = salesRefusal(error);
+      if (reason) {
+        setRefusal(reason);
         void queryClient.invalidateQueries({ queryKey: ['event', eventId] });
       }
     },
@@ -247,24 +241,24 @@ export function EventScreen() {
         </button>
       </div>
     );
-  } else if (event.ticketPrice != null && salesClosed) {
-    // Vânzarea online s-a încheiat: niciun buton care ar duce la un refuz.
+  } else if (event.ticketPrice != null && salesBlock) {
+    // Vânzarea online e oprită / epuizată / încheiată: niciun buton care ar
+    // duce la un refuz.
+    const notice = salesNotice(salesBlock, refusal !== null);
+    const paused = salesBlock === 'paused';
     ticketSection = (
-      <div className="ev-sales-closed" data-testid="ticket-sales-closed" role="status">
+      <div
+        className="ev-sales-closed"
+        data-testid={paused ? 'ticket-sales-paused' : 'ticket-sales-closed'}
+        data-sales-block={salesBlock}
+        role="status"
+      >
         <span className="ev-sales-closed__icon" aria-hidden="true">
-          <LockIcon width={22} height={22} />
+          {paused ? <ClockIcon width={22} height={22} /> : <LockIcon width={22} height={22} />}
         </span>
         <div className="ev-sales-closed__text">
-          <p className="ev-sales-closed__title">
-            {soldOut ? t('screens:events.sales.soldOutTitle') : t('screens:events.sales.closedTitle')}
-          </p>
-          <p className="ev-sales-closed__body">
-            {soldOut
-              ? t('screens:events.sales.soldOutBody')
-              : closedByServer
-                ? t('screens:events.sales.closedError')
-                : t('screens:events.sales.closedBody')}
-          </p>
+          <p className="ev-sales-closed__title">{t(notice.title)}</p>
+          <p className="ev-sales-closed__body">{t(notice.body)}</p>
         </div>
       </div>
     );
@@ -380,7 +374,7 @@ export function EventScreen() {
       ) : null}
 
       {ticketSection}
-      {buyMutation.isError && !closedByServer && !soldOutByServer ? (
+      {buyMutation.isError && !refusal ? (
         <p className="error-text ev-detail__error">{t('detail.createOrderError')}</p>
       ) : null}
 

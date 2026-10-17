@@ -24,7 +24,9 @@
       "closedError": "Vânzarea online tocmai s-a închis pentru acest eveniment.",
       "requestHint": "„Solicită bilet” — pentru mai multe bilete sau o rezervare pe nume.",
       "soldOutTitle": "Biletele online s-au epuizat",
-      "soldOutBody": "Nu mai sunt bilete disponibile în aplicație pentru acest eveniment."
+      "soldOutBody": "Nu mai sunt bilete disponibile în aplicație pentru acest eveniment.",
+      "pausedTitle": "Vânzarea online e oprită temporar",
+      "pausedBody": "Momentan biletele nu se pot cumpăra din aplicație. Poți plăti la intrare."
     }
   },
   "stories": {

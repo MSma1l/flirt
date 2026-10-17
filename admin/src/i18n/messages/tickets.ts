@@ -131,6 +131,24 @@ export const ticketsMessages = defineMessages({
       rejectPlaceholder: 'Ex.: plata nu a fost găsită în extrasul bancar',
       rejecting: 'Se respinge…',
     },
+    onlineSales: {
+      title: 'Vânzarea online a biletelor',
+      label: 'Vânzarea online',
+      active: 'ACTIVĂ',
+      stopped: 'OPRITĂ',
+      hintOn: 'Utilizatorii pot cumpăra bilete online la toate evenimentele.',
+      hintOff:
+        'Nimeni nu poate cumpăra bilete noi online, la niciun eveniment. Biletele deja cumpărate rămân valabile, iar comenzile existente pot fi verificate în continuare.',
+      turnOff: 'Oprește vânzarea online',
+      turnOn: 'Pornește vânzarea online',
+      busy: 'Se salvează…',
+      loadError: 'Nu s-a putut încărca starea vânzării online.',
+      retry: 'Reîncearcă',
+      confirmTitle: 'Oprești vânzarea online?',
+      confirmMessage:
+        'Utilizatorii NU vor mai putea cumpăra bilete noi online, la niciun eveniment, până o pornești din nou. Biletele deja cumpărate rămân valabile, iar comenzile existente (chitanțe, aprobări, scanarea la intrare) pot fi verificate în continuare.',
+      confirmButton: 'Da, oprește vânzarea',
+    },
     bank: {
       title: 'Date de plată',
       loading: 'Se încarcă datele de plată…',
@@ -361,6 +379,24 @@ export const ticketsMessages = defineMessages({
       rejectReason: 'Причина (необязательно)',
       rejectPlaceholder: 'Напр.: платёж не найден в банковской выписке',
       rejecting: 'Отклонение…',
+    },
+    onlineSales: {
+      title: 'Онлайн-продажа билетов',
+      label: 'Онлайн-продажа',
+      active: 'ВКЛЮЧЕНА',
+      stopped: 'ОСТАНОВЛЕНА',
+      hintOn: 'Пользователи могут покупать билеты онлайн на все события.',
+      hintOff:
+        'Никто не может купить новые билеты онлайн ни на одно событие. Уже купленные билеты остаются действительными, а существующие заказы можно проверять как обычно.',
+      turnOff: 'Остановить онлайн-продажу',
+      turnOn: 'Включить онлайн-продажу',
+      busy: 'Сохранение…',
+      loadError: 'Не удалось загрузить состояние онлайн-продажи.',
+      retry: 'Повторить',
+      confirmTitle: 'Остановить онлайн-продажу?',
+      confirmMessage:
+        'Пользователи НЕ смогут покупать новые билеты онлайн ни на одно событие, пока вы её снова не включите. Уже купленные билеты остаются действительными, а существующие заказы (квитанции, подтверждения, сканирование на входе) можно проверять как обычно.',
+      confirmButton: 'Да, остановить продажу',
     },
     bank: {
       title: 'Платёжные реквизиты',

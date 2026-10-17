@@ -410,6 +410,14 @@ export interface PaymentSettings {
   mia_enabled?: boolean;
   /** Metodele configurate, în ordinea de afișare (`mia` înaintea lui `iban`). */
   payment_methods?: PaymentMethod[];
+  /**
+   * Comutatorul GLOBAL al vânzării online (toate evenimentele). `false` → userii
+   * nu pot crea comenzi noi (409 `online_sales_disabled`); comenzile existente,
+   * verificarea chitanțelor și scanarea la intrare merg în continuare.
+   * Lipsă (server vechi) = vânzarea e activă. Se schimbă DOAR prin
+   * `PUT /admin/payment-settings/online-sales`, nu prin PUT-ul complet.
+   */
+  online_sales_enabled?: boolean;
 }
 
 export type PaymentMethod = 'mia' | 'iban';

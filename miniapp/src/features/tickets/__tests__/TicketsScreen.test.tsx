@@ -740,6 +740,15 @@ describe('situațiile care blocau omul', () => {
     await act(async () => resolve(DECLARED_DETAIL.order));
   });
 
+  it('vânzarea oprită global nu blochează chitanța unei comenzi existente', async () => {
+    vi.mocked(fetchEvent).mockResolvedValue({ ...EVENT, ticketSalesOpen: false, ticketSalesPaused: true });
+    renderScreen();
+    fireEvent.click(await screen.findByTestId('order-row-o1'));
+
+    expect(await screen.findByTestId('proof-input')).toBeInTheDocument();
+    expect(screen.queryByTestId('order-sales-paused')).not.toBeInTheDocument();
+  });
+
   it('respinsă după închiderea vânzării: nu mai oferă o comandă nouă', async () => {
     vi.mocked(fetchTicketOrder).mockResolvedValue(REJECTED_DETAIL);
     vi.mocked(fetchEvent).mockResolvedValue({ ...EVENT, ticketSalesOpen: false, ticketSalesEndAt: '2020-01-01T00:00:00Z' });
@@ -851,6 +860,29 @@ describe('comandă aprobată și comandă respinsă', () => {
     expect(await screen.findByTestId('order-sales-closed')).toHaveTextContent(
       'Vânzarea online tocmai s-a închis',
     );
+    expect(screen.queryByTestId('order-retry-btn')).not.toBeInTheDocument();
+  });
+
+  it('reîncercarea cu vânzarea oprită global (409 `online_sales_disabled`) arată mesajul de pauză', async () => {
+    vi.mocked(fetchTicketOrder).mockResolvedValue(REJECTED_DETAIL);
+    vi.mocked(createTicketOrder).mockRejectedValue(codedError(409, 'online_sales_disabled'));
+    renderScreen();
+
+    fireEvent.click(await screen.findByTestId('order-row-o1'));
+    fireEvent.click(await screen.findByTestId('order-retry-btn'));
+
+    expect(await screen.findByTestId('order-sales-paused')).toHaveTextContent('Poți plăti la intrare.');
+    expect(screen.queryByTestId('order-sales-closed')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('order-retry-btn')).not.toBeInTheDocument();
+  });
+
+  it('respinsă cu vânzarea oprită global: mesaj de pauză, fără comandă nouă', async () => {
+    vi.mocked(fetchTicketOrder).mockResolvedValue(REJECTED_DETAIL);
+    vi.mocked(fetchEvent).mockResolvedValue({ ...EVENT, ticketSalesOpen: false, ticketSalesPaused: true });
+    renderScreen();
+    fireEvent.click(await screen.findByTestId('order-row-o1'));
+
+    expect(await screen.findByTestId('order-sales-paused')).toHaveTextContent('Poți plăti la intrare.');
     expect(screen.queryByTestId('order-retry-btn')).not.toBeInTheDocument();
   });
 });

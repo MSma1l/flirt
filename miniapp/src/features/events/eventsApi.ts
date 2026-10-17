@@ -47,11 +47,13 @@ export { fetchMyTicketOrdersWithEvent as fetchMyTicketOrders } from '@/features/
 /**
  * Evenimentul, plus fereastra de vânzare online (contract nou, opțional):
  * `ticketSalesEndAt` = închiderea efectivă (ISO), `ticketSalesOpen` = verdictul
- * serverului acum. Pe un server vechi lipsesc → vânzarea e tratată ca deschisă.
+ * serverului acum, `ticketSalesPaused` = vânzarea online oprită global de admin.
+ * Pe un server vechi lipsesc → vânzarea e tratată ca deschisă, fără pauză.
  */
 export interface EventItem extends MobileEventItem {
   ticketSalesEndAt?: string | null;
   ticketSalesOpen?: boolean | null;
+  ticketSalesPaused?: boolean;
 }
 
 type Raw = Record<string, unknown>;
@@ -86,6 +88,7 @@ export async function fetchEvent(id: string): Promise<EventItem> {
     ticketCurrency: optStr(e.ticket_currency),
     ticketSalesEndAt: optStr(e.ticket_sales_end_at),
     ticketSalesOpen: typeof e.ticket_sales_open === 'boolean' ? e.ticket_sales_open : null,
+    ticketSalesPaused: e.ticket_sales_paused === true,
   };
 }
 export type { TicketOrderListItem as TicketOrder } from '@/features/tickets/orderModel';

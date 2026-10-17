@@ -22,7 +22,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -163,4 +163,12 @@ class PaymentSettings(Base):
     mia_recipient_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # Codul QR MIA (imagine re-encodată PNG, fără metadate) — URL public; NULL = fără QR.
     mia_qr_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Comutatorul GLOBAL al vânzării online (ex. o problemă cu contul bancar):
+    # False = nicio comandă/cerere NOUĂ, la niciun eveniment. Prețul, capacitatea
+    # și restul setărilor evenimentelor rămân neatinse, deci la repornire vânzarea
+    # revine exact cum era. Comenzile EXISTENTE merg normal (dovadă, aprobare,
+    # scanare). Se schimbă DOAR prin `PUT /admin/payment-settings/online-sales`.
+    online_sales_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="true", default=True
+    )
     # created_at / updated_at vin din `Base` (updated_at se rescrie la fiecare PUT).

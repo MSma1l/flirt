@@ -498,6 +498,46 @@ describe('fereastra de vânzare online', () => {
     await waitFor(() => expect(vi.mocked(fetchEvent).mock.calls.length).toBeGreaterThan(1));
   });
 
+  it('vânzarea oprită global arată mesajul de pauză, fără butoane și fără „epuizat"', async () => {
+    vi.mocked(fetchEvent).mockResolvedValue({
+      ...EVENT,
+      // Aceeași semnătură ca sold-out-ul — pauza trebuie să câștige.
+      ticketSalesEndAt: new Date(Date.now() + 2 * HOUR).toISOString(),
+      ticketSalesOpen: false,
+      ticketSalesPaused: true,
+    });
+    renderDetail();
+
+    const notice = await screen.findByTestId('ticket-sales-paused');
+    expect(notice).toHaveTextContent('Vânzarea online e oprită temporar');
+    expect(notice).toHaveTextContent('Poți plăti la intrare.');
+    expect(notice).not.toHaveTextContent('epuizat');
+    expect(screen.queryByTestId('ticket-sales-closed')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('buy-ticket-btn')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('request-ticket-btn')).not.toBeInTheDocument();
+  });
+
+  it('cu vânzarea oprită, o comandă existentă rămâne vizibilă și deschisă', async () => {
+    vi.mocked(fetchEvent).mockResolvedValue({ ...EVENT, ticketSalesOpen: false, ticketSalesPaused: true });
+    vi.mocked(fetchMyTicketOrders).mockResolvedValue([ORDER]);
+    renderDetail();
+
+    expect(await screen.findByTestId('ticket-status')).toHaveTextContent('Așteaptă plata');
+    expect(screen.queryByTestId('ticket-sales-paused')).not.toBeInTheDocument();
+  });
+
+  it('refuzul 409 `online_sales_disabled` arată mesajul de pauză și reîncarcă evenimentul', async () => {
+    vi.mocked(createTicketOrder).mockRejectedValue(codedError(409, 'online_sales_disabled'));
+    renderDetail();
+
+    fireEvent.click(await screen.findByTestId('buy-ticket-btn'));
+
+    expect(await screen.findByTestId('ticket-sales-paused')).toHaveTextContent('Poți plăti la intrare.');
+    expect(screen.queryByText('Nu am putut crea comanda. Reîncearcă.')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('buy-ticket-btn')).not.toBeInTheDocument();
+    await waitFor(() => expect(vi.mocked(fetchEvent).mock.calls.length).toBeGreaterThan(1));
+  });
+
   it('refuzul „nu mai sunt bilete" (409 fără cod) spune că s-au epuizat, nu „reîncearcă"', async () => {
     vi.mocked(createTicketOrder).mockRejectedValue(
       Object.assign(new Error('409'), { response: { status: 409, data: { detail: 'Nu mai sunt suficiente bilete disponibile.' } } }),

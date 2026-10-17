@@ -11,6 +11,7 @@
  * mai multe") — backend-ul trimite cele de verificat primele.
  *
  * Datele de plată (MIA / IBAN) sunt configurate în cardul de SUB coadă.
+ * DEASUPRA cozii stă comutatorul global al vânzării online (toate evenimentele).
  */
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
@@ -24,7 +25,9 @@ import {
   fetchTicketOrderCounts,
   fetchTicketOrderProof,
   fetchTicketOrdersPage,
+  isOnlineSalesOff,
   rejectTicketOrder,
+  setOnlineSalesEnabled,
   sumCounts,
   updatePaymentSettings,
   uploadMiaQr,
@@ -230,6 +233,8 @@ export function TicketOrdersPage(): JSX.Element {
 
   return (
     <>
+      <OnlineSalesCard />
+
       <Card title={m.title}>
         <p className="muted ticket-intro">{m.intro}</p>
         <div className="ticket-toolbar">
@@ -942,6 +947,100 @@ function MiaQrField({ qrUrl }: { qrUrl: string | null }): JSX.Element {
         />
       ) : null}
     </div>
+  );
+}
+
+/* ---------------------- Vânzarea online: ON / OFF ------------------ */
+
+/**
+ * Comutatorul GLOBAL al vânzării online (toate evenimentele odată). Oprirea cere
+ * confirmare — userii nu mai pot cumpăra bilete noi; pornirea e imediată.
+ * Starea vine din aceeași interogare ca datele de plată (`['payment-settings']`),
+ * deci bara laterală vede schimbarea pe loc.
+ */
+function OnlineSalesCard(): JSX.Element {
+  const m = useMessages(ticketsMessages).onlineSales;
+  const queryClient = useQueryClient();
+  const [confirmOff, setConfirmOff] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const query = useQuery({ queryKey: ['payment-settings'], queryFn: fetchPaymentSettings });
+
+  const toggle = useMutation({
+    mutationFn: (enabled: boolean) => setOnlineSalesEnabled(enabled),
+    onSuccess: async (settings) => {
+      setError(null);
+      setConfirmOff(false);
+      queryClient.setQueryData<PaymentSettings>(['payment-settings'], settings);
+      // Evenimentele pot afișa disponibilitatea vânzării — le reîncărcăm.
+      await queryClient.invalidateQueries({ queryKey: ['events'] });
+    },
+    onError: (mutationError: unknown) => setError(errorMessage(mutationError)),
+  });
+
+  const off = isOnlineSalesOff(query.data);
+  const busy = toggle.isPending;
+
+  const onToggle = (): void => {
+    if (busy) return;
+    setError(null);
+    if (off) toggle.mutate(true);
+    else setConfirmOff(true);
+  };
+
+  return (
+    <>
+      <Card className={off ? 'sales-switch sales-switch--off' : 'sales-switch sales-switch--on'}>
+        {query.isPending ? (
+          <LoadingState label={m.title} />
+        ) : query.isError ? (
+          <div className="alert sales-switch__load-error">
+            <span>{m.loadError}</span>
+            <Button small onClick={() => void query.refetch()}>
+              {m.retry}
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div className="sales-switch__row">
+              <div className="sales-switch__text">
+                <div className="sales-switch__status" data-testid="online-sales-status">
+                  <span className="sales-switch__dot" aria-hidden="true" />
+                  <span>{m.label}:</span>
+                  <strong>{off ? m.stopped : m.active}</strong>
+                </div>
+                <p className="muted sales-switch__hint">{off ? m.hintOff : m.hintOn}</p>
+              </div>
+              <Button variant={off ? 'primary' : 'danger'} disabled={busy} onClick={onToggle}>
+                {busy && !confirmOff ? m.busy : off ? m.turnOn : m.turnOff}
+              </Button>
+            </div>
+            {error && !confirmOff ? (
+              <div className="alert" role="alert">
+                {error}
+              </div>
+            ) : null}
+          </>
+        )}
+      </Card>
+
+      {confirmOff ? (
+        <ConfirmDialog
+          title={m.confirmTitle}
+          message={m.confirmMessage}
+          confirmLabel={m.confirmButton}
+          busy={busy}
+          errorMessage={error}
+          onCancel={() => {
+            setConfirmOff(false);
+            setError(null);
+          }}
+          onConfirm={() => {
+            if (!busy) toggle.mutate(false);
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 

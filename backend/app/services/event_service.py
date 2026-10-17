@@ -17,6 +17,7 @@ from app.models.event import Event, EventAttendance, FlirtPassportStamp
 from app.models.user import User
 from app.schemas.event import EventOut, EventPage, PassportQrOut, PassportStampOut
 from app.services import billing, user_codes
+from app.services.online_sales import is_online_sales_enabled
 from app.services.pagination import (
     EVENTS_MAX_LIMIT,
     EVENTS_PAGE_LIMIT,
@@ -141,9 +142,14 @@ async def list_events(
     event_ids = [e.id for e in events]
     counts = await _attendee_counts(db, event_ids)
     going = await _going_event_ids(db, user, event_ids)
+    # Comutatorul global citit O DATĂ pentru toată pagina (fără N+1).
+    online_sales = await is_online_sales_enabled(db)
 
     return EventPage(
-        items=[_to_event_out(e, counts.get(e.id, 0), e.id in going) for e in events],
+        items=[
+            _to_event_out(e, counts.get(e.id, 0), e.id in going, online_sales)
+            for e in events
+        ],
         next_cursor=encode_cursor(events[-1].id) if has_more else None,
     )
 
@@ -158,7 +164,10 @@ async def get_event(db: AsyncSession, user: User, event_id: uuid.UUID) -> EventO
 
     counts = await _attendee_counts(db, [event.id])
     going = await _going_event_ids(db, user, [event.id])
-    return _to_event_out(event, counts.get(event.id, 0), event.id in going)
+    online_sales = await is_online_sales_enabled(db)
+    return _to_event_out(
+        event, counts.get(event.id, 0), event.id in going, online_sales
+    )
 
 
 # --- Marcaj „merg la eveniment" ---------------------------------------------
@@ -292,7 +301,12 @@ async def _going_event_ids(
     return set(result.scalars().all())
 
 
-def _to_event_out(event: Event, attendee_count: int, i_am_going: bool) -> EventOut:
+def _to_event_out(
+    event: Event, attendee_count: int, i_am_going: bool, online_sales_enabled: bool
+) -> EventOut:
+    # „Ar vinde" după regulile evenimentului (preț, închidere, sold-out); comutatorul
+    # global doar o SUSPENDĂ, fără să atingă setările evenimentului.
+    would_sell = event.ticket_sales_open()
     return EventOut(
         id=event.id,
         title=event.title,
@@ -310,7 +324,8 @@ def _to_event_out(event: Event, attendee_count: int, i_am_going: bool) -> EventO
         ticket_price=event.ticket_price,
         ticket_currency=event.ticket_currency,
         ticket_sales_end_at=event.effective_ticket_sales_end,
-        ticket_sales_open=event.ticket_sales_open(),
+        ticket_sales_open=would_sell and online_sales_enabled,
+        ticket_sales_paused=would_sell and not online_sales_enabled,
         attendee_count=attendee_count,
         i_am_going=i_am_going,
     )

@@ -28,6 +28,8 @@ export const layoutMessages = defineMessages({
     themeLight: 'Temă deschisă',
     themeDark: 'Temă întunecată',
     languageLabel: 'Limba',
+    salesOffBadge: 'Oprită',
+    salesOffTitle: 'Vânzarea online a biletelor este OPRITĂ',
   },
   ru: {
     sections: {
@@ -55,5 +57,7 @@ export const layoutMessages = defineMessages({
     themeLight: 'Светлая тема',
     themeDark: 'Тёмная тема',
     languageLabel: 'Язык',
+    salesOffBadge: 'Выкл.',
+    salesOffTitle: 'Онлайн-продажа билетов ОСТАНОВЛЕНА',
   },
 });

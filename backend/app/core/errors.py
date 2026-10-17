@@ -48,6 +48,10 @@ class ErrorCode:
     TICKETS_SOLD_OUT = "tickets_sold_out"
     # Adminul a încercat să coboare capacitatea sub numărul de bilete deja vândute.
     CAPACITY_BELOW_SOLD = "capacity_below_sold"
+    # Adminul a OPRIT global vânzarea online (comutatorul din setările de plată).
+    # Comenzile/cererile NOI sunt refuzate la toate evenimentele; cele existente
+    # se finalizează normal. Temporar — clientul afișează „vânzare suspendată".
+    ONLINE_SALES_DISABLED = "online_sales_disabled"
 
 
 class CodedHTTPException(HTTPException):

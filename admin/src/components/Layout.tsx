@@ -2,12 +2,21 @@
  * Cadrul panoului: bară laterală de navigare + antet.
  * Coada de moderare afișează numărul de rapoarte în așteptare — Apple cere
  * răspuns la raportări în ≤24h, deci cifra trebuie să fie vizibilă permanent.
+ * Când vânzarea online e OPRITĂ, „Comenzi bilete" poartă un semn roșu — ca adminul
+ * să nu uite că a oprit-o.
  */
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
-import { TICKET_ORDERS_TO_VERIFY, fetchStats, fetchTicketOrderCounts, sumCounts } from '../api/admin';
+import {
+  TICKET_ORDERS_TO_VERIFY,
+  fetchPaymentSettings,
+  fetchStats,
+  fetchTicketOrderCounts,
+  isOnlineSalesOff,
+  sumCounts,
+} from '../api/admin';
 import { useAuth } from '../auth/AuthContext';
 import { LANGUAGES, useLanguage, useMessages } from '../i18n/LanguageContext';
 import { layoutMessages } from '../i18n/messages/layout';
@@ -133,6 +142,22 @@ export function Layout(): JSX.Element {
   });
   const ticketsToReview = sumCounts(ticketOrdersQuery.data, TICKET_ORDERS_TO_VERIFY);
 
+  // Comutatorul global al vânzării online: aceeași cheie ca pagina de comenzi,
+  // deci schimbarea de acolo se vede imediat aici. Eșecul nu rupe navigarea.
+  const paymentSettingsQuery = useQuery({
+    queryKey: ['payment-settings'],
+    queryFn: fetchPaymentSettings,
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+  const salesOff = isOnlineSalesOff(paymentSettingsQuery.data);
+  const salesOffFor = (to: string): boolean => salesOff && to === '/ticket-orders';
+  const salesOffBadge = (
+    <span title={m.salesOffTitle} data-testid="sales-off-indicator">
+      <Badge tone="danger">{m.salesOffBadge}</Badge>
+    </span>
+  );
+
   const countFor = (to: string): number =>
     to === '/moderation' ? pending : to === '/ticket-orders' ? ticketsToReview : 0;
 
@@ -150,6 +175,7 @@ export function Layout(): JSX.Element {
             const hiddenCount = isOpen
               ? 0
               : section.items.reduce((sum, item) => sum + countFor(item.to), 0);
+            const hiddenSalesOff = !isOpen && section.items.some((item) => salesOffFor(item.to));
             const itemsId = `sidebar-section-${section.key}`;
             return (
               <div key={section.key} className="sidebar__section">
@@ -162,6 +188,7 @@ export function Layout(): JSX.Element {
                 >
                   <span>{m.sections[section.key]}</span>
                   <span className="sidebar__section-meta">
+                    {hiddenSalesOff ? salesOffBadge : null}
                     {hiddenCount > 0 ? <Badge tone="count">{hiddenCount}</Badge> : null}
                     <svg
                       className={
@@ -196,7 +223,12 @@ export function Layout(): JSX.Element {
                           }
                         >
                           <span>{m.nav[item.key]}</span>
-                          {count > 0 ? <Badge tone="count">{count}</Badge> : null}
+                          {count > 0 || salesOffFor(item.to) ? (
+                            <span className="sidebar__section-meta">
+                              {salesOffFor(item.to) ? salesOffBadge : null}
+                              {count > 0 ? <Badge tone="count">{count}</Badge> : null}
+                            </span>
+                          ) : null}
                         </NavLink>
                       );
                     })}

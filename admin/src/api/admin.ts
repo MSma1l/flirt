@@ -396,6 +396,19 @@ export function updatePaymentSettings(
   });
 }
 
+/** Pornește/oprește GLOBAL vânzarea online a biletelor (toate evenimentele). */
+export function setOnlineSalesEnabled(enabled: boolean): Promise<PaymentSettings> {
+  return apiFetch<PaymentSettings>('/admin/payment-settings/online-sales', {
+    method: 'PUT',
+    body: { enabled },
+  });
+}
+
+/** Vânzarea online e oprită explicit (lipsa câmpului = server vechi = activă). */
+export function isOnlineSalesOff(settings: PaymentSettings | undefined): boolean {
+  return settings?.online_sales_enabled === false;
+}
+
 /** Încarcă/înlocuiește codul QR MIA (png/jpeg/webp, ≤ 5 MB). */
 export function uploadMiaQr(file: File): Promise<PaymentSettings> {
   const formData = new FormData();

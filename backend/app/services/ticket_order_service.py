@@ -30,6 +30,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.admin import (
+    ACTION_ONLINE_SALES_DISABLED,
+    ACTION_ONLINE_SALES_ENABLED,
     ACTION_PAYMENT_SETTINGS_UPDATE,
     ACTION_TICKET_ORDER_APPROVE,
     ACTION_TICKET_ORDER_REJECT,
@@ -68,6 +70,10 @@ from app.schemas.ticket_order import (
     payment_methods_for,
 )
 from app.services import loyalty
+from app.services.online_sales import (
+    ensure_online_sales_enabled,
+    is_online_sales_enabled,
+)
 from app.services.user_codes import ensure_payment_code
 from app.services.admin_service import audit
 from app.services.ticket_lifecycle import order_ticket_status
@@ -252,6 +258,7 @@ def _to_settings_out(s: PaymentSettings) -> PaymentSettingsOut:
         mia_qr_url=s.mia_qr_url,
         mia_enabled=bool(s.mia_phone or s.mia_qr_url),
         payment_methods=payment_methods_for(s.mia_phone, s.bank_iban, s.mia_qr_url),
+        online_sales_enabled=s.online_sales_enabled,
     )
 
 
@@ -287,6 +294,33 @@ async def update_payment_settings(
             "bank_beneficiary": s.bank_beneficiary,
             "mia_phone": s.mia_phone or "",
         },
+        ip=ip,
+    )
+    await db.commit()
+    await db.refresh(s)
+    return _to_settings_out(s)
+
+
+async def set_online_sales_enabled(
+    db: AsyncSession, enabled: bool, actor: User, ip: str | None = None
+) -> PaymentSettingsOut:
+    """Pornește / oprește GLOBAL vânzarea online (toate evenimentele odată).
+
+    Merge și înainte de configurarea datelor bancare/MIA (singleton-ul se creează
+    leneș). Atinge DOAR comutatorul — prețurile, capacitățile și restul setărilor
+    rămân neschimbate, deci la repornire vânzarea revine exact cum era. Auditat
+    doar când starea chiar se schimbă (un dublu-click nu umple jurnalul).
+    """
+    s = await _get_or_create_settings(db)
+    if s.online_sales_enabled == enabled:
+        return _to_settings_out(s)
+    s.online_sales_enabled = enabled
+    audit(
+        db,
+        actor,
+        ACTION_ONLINE_SALES_ENABLED if enabled else ACTION_ONLINE_SALES_DISABLED,
+        target_type="payment_settings",
+        meta={"online_sales_enabled": enabled},
         ip=ip,
     )
     await db.commit()
@@ -457,6 +491,9 @@ async def create_request(
     if _as_utc(event.starts_at) < _now():
         # 400 + text păstrate (clienți existenți); `code` e adăugat pentru cei noi.
         raise CodedHTTPException(status_code=400, detail="Biletele nu sunt disponibile pentru acest eveniment.", code=ErrorCode.TICKET_SALES_CLOSED)
+    # Comutatorul global citit ÎNAINTE de lock (o coloană, fără lock pe setări);
+    # se aplică doar unei cereri NOI, mai jos — cea existentă se întoarce oricum.
+    online_sales = await is_online_sales_enabled(db)
     await _lock_user(db, user)
     existing = (await db.execute(select(TicketOrder).where(
         TicketOrder.user_id == user.id, TicketOrder.event_id == event.id,
@@ -469,6 +506,7 @@ async def create_request(
     # doar una NOUĂ e refuzată.
     _ensure_sales_open(event)
     _ensure_not_sold_out(event, data.ticket_quantity)
+    ensure_online_sales_enabled(online_sales)
     price = event.ticket_price
     total = round(price * data.ticket_quantity, 2)
     reference = await ensure_payment_code(db, user)
@@ -737,6 +775,8 @@ async def create_order(
     # Calculat ÎNAINTE de lock (prudență): nu face commit — setările de fidelitate
     # create leneș se persistă odată cu comanda — dar ține lock-ul cât mai scurt.
     breakdown = await loyalty.price_breakdown(db, user, event)
+    # Comutatorul global, tot înainte de lock (vezi `create_request`).
+    online_sales = await is_online_sales_enabled(db)
 
     # Idempotență: reutilizăm o comandă activă (neterminată) a aceluiași user pt
     # același eveniment. Lock-ul pe user serializează cererile simultane (dublu-tap),
@@ -769,6 +809,9 @@ async def create_order(
     # (făcută la timp) s-a întors mai sus, ca userul să-și poată termina plata.
     _ensure_sales_open(event)
     _ensure_not_sold_out(event)
+    # Vânzarea oprită global de admin: nicio comandă NOUĂ (închiderea / sold-out
+    # au prioritate — sunt definitive, suspendarea e temporară).
+    ensure_online_sales_enabled(online_sales)
 
     reference = await ensure_payment_code(db, user)
     currency = event.ticket_currency or DEFAULT_CURRENCY

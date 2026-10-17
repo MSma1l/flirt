@@ -4,7 +4,8 @@ manuală de admin.
 
 CONTRACT (consumat de aplicația mobilă ȘI de panoul de admin):
   * Public user  → TicketOrderOut, PaymentInstructions, TicketOrderCreateOut, DeclareIn
-  * Admin        → AdminTicketOrderOut, RejectIn, PaymentSettingsIn, PaymentSettingsOut
+  * Admin        → AdminTicketOrderOut, RejectIn, PaymentSettingsIn, PaymentSettingsOut,
+                   OnlineSalesIn
 
 Ca peste tot în `schemas/`, ieșirile enumeră EXPLICIT câmpurile expuse (fără
 `from_attributes` peste modelul ORM întreg), iar intrările de text trec prin
@@ -336,6 +337,15 @@ class PaymentSettingsOut(BaseModel):
     # Derivat: True ⇔ `mia_phone` SAU `mia_qr_url` e setat.
     mia_enabled: bool = False
     payment_methods: list[str] = Field(default_factory=list)
+    # Comutatorul GLOBAL al vânzării online (False = vânzare suspendată la toate
+    # evenimentele). Se schimbă doar prin `PUT /admin/payment-settings/online-sales`.
+    online_sales_enabled: bool
+
+
+class OnlineSalesIn(BaseModel):
+    """Payload la `PUT /admin/payment-settings/online-sales`."""
+
+    enabled: bool
 
 
 class TicketStatusCountsOut(BaseModel):

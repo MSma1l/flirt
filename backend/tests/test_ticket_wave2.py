@@ -405,8 +405,12 @@ async def test_alembic_has_a_single_head_on_the_recompute_migration():
 
     cfg = Config(str(BACKEND / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND / "alembic"))
-    heads = ScriptDirectory.from_config(cfg).get_heads()
-    assert heads == ["b8e1d4f7a2c3"]
+    script = ScriptDirectory.from_config(cfg)
+    heads = script.get_heads()
+    # Un singur head; migrarea de recalculare rămâne în lanț (peste ea pot veni
+    # migrări noi, ex. comutatorul global al vânzării online).
+    assert len(heads) == 1, heads
+    assert "b8e1d4f7a2c3" in {r.revision for r in script.walk_revisions()}
     assert _load_migration().down_revision == "a7d3f5c9b2e8"
 
 

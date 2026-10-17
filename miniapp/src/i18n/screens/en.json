@@ -24,7 +24,9 @@
       "closedError": "Online sales for this event have just closed.",
       "requestHint": "“Request ticket” — for several tickets or a named reservation.",
       "soldOutTitle": "Online tickets are sold out",
-      "soldOutBody": "There are no more tickets available in the app for this event."
+      "soldOutBody": "There are no more tickets available in the app for this event.",
+      "pausedTitle": "Online sales are paused for now",
+      "pausedBody": "Tickets can't be bought in the app right now. You can pay at the entrance."
     }
   },
   "stories": {

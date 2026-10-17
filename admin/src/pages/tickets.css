@@ -255,3 +255,74 @@
   padding-top: var(--space-3);
   border-top: 1px solid var(--color-border);
 }
+
+/* --- Comutatorul global al vânzării online (deasupra cozii) --- */
+.sales-switch {
+  border-left: 4px solid var(--color-success);
+}
+
+.sales-switch--off {
+  border-color: var(--color-danger);
+  background: rgba(255, 77, 77, 0.06);
+}
+
+.sales-switch__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-4);
+}
+
+.sales-switch__text {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.sales-switch__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.sales-switch__status strong {
+  color: var(--color-success);
+  letter-spacing: 0.04em;
+}
+
+.sales-switch--off .sales-switch__status strong {
+  color: var(--color-danger);
+}
+
+.sales-switch__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow: 0 0 0 4px rgba(46, 204, 113, 0.18);
+}
+
+.sales-switch--off .sales-switch__dot {
+  background: var(--color-danger);
+  box-shadow: 0 0 0 4px rgba(255, 77, 77, 0.18);
+}
+
+.sales-switch__hint {
+  margin: var(--space-2) 0 0;
+}
+
+.sales-switch .alert {
+  margin-top: var(--space-3);
+}
+
+.sales-switch .sales-switch__load-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: 0;
+}

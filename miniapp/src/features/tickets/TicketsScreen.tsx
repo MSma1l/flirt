@@ -30,7 +30,7 @@ import { Link, useSearchParams } from 'react-router';
 
 import { formatEventDate } from '@/features/events/eventFormat';
 import { EVENTS_PATH } from '@/features/events/eventRoutes';
-import { useSalesState } from '@/features/events/ticketSales';
+import { salesNotice, salesRefusal, useSalesState, type SalesBlock } from '@/features/events/ticketSales';
 import { formatPrice } from '@/features/loyalty/priceFormat';
 import { ProofUpload } from '@/features/ticketRequests/ProofUpload';
 
@@ -41,8 +41,6 @@ import { TicketPass } from './TicketPass';
 import {
   hasEventStarted,
   isRequestOnlyStatus,
-  isSoldOutError,
-  isTicketSalesClosedError,
   orderStage,
   type OrderStage,
 } from './orderStage';
@@ -265,7 +263,7 @@ function OrderDetail({
   });
   const sales = useSalesState(event ?? {});
 
-  const [salesClosed, setSalesClosed] = useState<'closed' | 'soldOut' | null>(null);
+  const [salesClosed, setSalesClosed] = useState<SalesBlock | null>(null);
   const retry = useMutation({
     mutationFn: async () => {
       if (!eventId) throw new Error('missing event');
@@ -277,7 +275,7 @@ function OrderDetail({
       onSelect(result.order.id);
     },
     onError: (error) => {
-      const reason = isTicketSalesClosedError(error) ? 'closed' : isSoldOutError(error) ? 'soldOut' : null;
+      const reason = salesRefusal(error);
       if (reason) {
         setSalesClosed(reason);
         if (eventId) void queryClient.invalidateQueries({ queryKey: ['event', eventId] });
@@ -455,7 +453,7 @@ function OrderDetail({
     case 'rejected': {
       // Cererea manuală își poate retrimite chitanța; comanda directă se reia
       // cu o comandă nouă — doar cât timp vânzarea online e deschisă.
-      const directClosed = salesClosed !== null || sales.closed;
+      const directBlock = salesClosed ?? sales.block;
       content = (
         <StageBlock testId="order-rejected" tone="rejected" title={t('social:ticket.rejected.title')}>
           <div className="tk-reason" data-testid="order-reject-reason">
@@ -471,13 +469,12 @@ function OrderDetail({
                 <ProofUpload requestId={item.id} upload={proofUploader} />
               </>
             )
-          ) : directClosed ? (
-            <p className="tk-note" data-testid="order-sales-closed">
-              {salesClosed === 'closed'
-                ? t('screens:events.sales.closedError')
-                : salesClosed === 'soldOut' || sales.soldOut
-                  ? t('screens:events.sales.soldOutBody')
-                  : t('screens:events.sales.closedBody')}
+          ) : directBlock ? (
+            <p
+              className="tk-note"
+              data-testid={directBlock === 'paused' ? 'order-sales-paused' : 'order-sales-closed'}
+            >
+              {t(salesNotice(directBlock, salesClosed !== null).body)}
             </p>
           ) : (
             <>

@@ -114,6 +114,10 @@ from app.schemas.loyalty import (
     TiersOut,
 )
 from app.services.admin_service import audit
+from app.services.online_sales import (
+    ensure_online_sales_enabled,
+    is_online_sales_enabled,
+)
 from app.services.pagination import (
     ADMIN_MAX_LIMIT,
     ADMIN_PAGE_LIMIT,
@@ -482,6 +486,9 @@ async def ticket_quote(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Biletul online nu este disponibil pentru acest eveniment.",
         )
+    # Vânzarea oprită global: nu cotăm un preț pentru o comandă care n-ar trece
+    # (409 `online_sales_disabled`, ca la `create_order`).
+    ensure_online_sales_enabled(await is_online_sales_enabled(db))
 
     row = await _get_or_create_settings(db)
     tiers = _normalize_tiers(list(row.tiers or []))

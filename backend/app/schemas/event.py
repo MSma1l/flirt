@@ -34,7 +34,13 @@ class EventOut(BaseModel):
     # True doar dacă se pot cumpăra bilete ACUM (are preț, nu s-a închis vânzarea,
     # nu e sold-out). Clientul afișează „vânzarea online s-a închis" când e False
     # dar `ticket_price` e setat.
+    # False și cât timp adminul a oprit GLOBAL vânzarea online (comutatorul din
+    # setările de plată).
     ticket_sales_open: bool = False
+    # True ⇔ vânzarea e oprită global DAR evenimentul altfel ar vinde (are preț,
+    # nu s-a închis, nu e sold-out) — clientul afișează „vânzare suspendată
+    # temporar" în loc de „s-a închis".
+    ticket_sales_paused: bool = False
     # Câți useri au going=True + dacă userul curent merge.
     attendee_count: int
     i_am_going: bool

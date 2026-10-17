@@ -171,6 +171,44 @@ describe('formularul', () => {
     await waitFor(() => expect(screen.queryByTestId('request-form')).not.toBeInTheDocument());
   });
 
+  it('refuzul 409 `online_sales_disabled` înlocuiește formularul cu mesajul de pauză', async () => {
+    vi.mocked(createTicketRequest).mockRejectedValue(codedError(409, 'online_sales_disabled'));
+    renderScreen();
+
+    fireEvent.change(await screen.findByRole('textbox', { name: /Nume complet/ }), { target: { value: 'Ana Popescu' } });
+    fireEvent.change(screen.getByRole('textbox', { name: /Telefon/ }), { target: { value: '069123456' } });
+    fireEvent.click(screen.getByTestId('request-submit'));
+
+    expect(await screen.findByTestId('request-sales-paused')).toHaveTextContent('Poți plăti la intrare.');
+    await waitFor(() => expect(screen.queryByTestId('request-form')).not.toBeInTheDocument());
+    expect(screen.queryByTestId('request-sold-out')).not.toBeInTheDocument();
+    await waitFor(() => expect(vi.mocked(fetchEvent).mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it('vânzarea oprită global: mesaj de pauză (nu „epuizat"), fără formular', async () => {
+    vi.mocked(fetchEvent).mockResolvedValue({ ...EVENT, ticketSalesOpen: false, ticketSalesPaused: true });
+    renderScreen();
+
+    const notice = await screen.findByTestId('request-sales-paused');
+    expect(notice).toHaveTextContent('Vânzarea online e oprită temporar');
+    expect(notice).not.toHaveTextContent('epuizat');
+    expect(screen.queryByTestId('request-sales-closed')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('request-form')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('request-another-btn')).not.toBeInTheDocument();
+  });
+
+  it('vânzarea oprită global nu ascunde o cerere existentă: plata și chitanța rămân', async () => {
+    vi.mocked(fetchEvent).mockResolvedValue({ ...EVENT, ticketSalesOpen: false, ticketSalesPaused: true });
+    vi.mocked(fetchMyTicketRequests).mockResolvedValue([REQUEST]);
+    renderScreen();
+
+    const card = await screen.findByTestId('ticket-request-r1');
+    expect(within(card).getByTestId('request-status')).toHaveTextContent('Așteaptă plata');
+    expect(await within(card).findByTestId('pay-iban')).toHaveTextContent(PAYMENT.iban);
+    expect(within(card).getByTestId('proof-upload')).toBeInTheDocument();
+    expect(screen.queryByTestId('request-sales-paused')).not.toBeInTheDocument();
+  });
+
   it('bilete epuizate (serverul închide înainte de ora anunțată): fără formular', async () => {
     vi.mocked(fetchEvent).mockResolvedValue({ ...EVENT, ticketSalesOpen: false });
     renderScreen();

@@ -24,6 +24,7 @@ from app.models.ticket_order import TICKET_ORDER_STATUSES
 from app.schemas.ticket_order import (
     AdminStatusChangeIn,
     AdminTicketOrderOut,
+    OnlineSalesIn,
     PaymentSettingsIn,
     PaymentSettingsOut,
     RejectIn,
@@ -104,6 +105,21 @@ async def update_payment_settings(
     """Actualizează datele bancare globale (auditat: `payment_settings.update`)."""
     return await ticket_order_service.update_payment_settings(
         db, data, actor=admin, ip=request_ip(request)
+    )
+
+
+@router.put("/payment-settings/online-sales", response_model=PaymentSettingsOut)
+async def set_online_sales(
+    data: OnlineSalesIn, request: Request, db: DbDep, admin: CurrentAdmin
+) -> PaymentSettingsOut:
+    """Comutatorul GLOBAL al vânzării online (toate evenimentele odată).
+
+    Oprit = nicio comandă/cerere NOUĂ (409 `online_sales_disabled`); comenzile
+    existente merg normal. Nu atinge datele bancare și nici setările
+    evenimentelor. Auditat: `payment_settings.online_sales_enabled|disabled`.
+    """
+    return await ticket_order_service.set_online_sales_enabled(
+        db, data.enabled, actor=admin, ip=request_ip(request)
     )
 
 

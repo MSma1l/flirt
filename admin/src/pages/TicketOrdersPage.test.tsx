@@ -628,3 +628,123 @@ describe('TicketOrdersPage — coada: contoare, paginare, decizii', () => {
     expect(screen.queryByText('Se încarcă datele de plată…')).not.toBeInTheDocument();
   });
 });
+
+describe('TicketOrdersPage — vânzarea online (comutator global)', () => {
+  it('oprirea cere confirmare, trimite {enabled:false} și arată OPRITĂ', async () => {
+    seedAdminSession();
+    const api = mockFetch({
+      'GET /admin/payment-settings': { body: { ...SETTINGS, online_sales_enabled: true } },
+      'GET /admin/ticket-orders': { body: [] },
+      'PUT /admin/payment-settings/online-sales': {
+        body: { ...SETTINGS, online_sales_enabled: false },
+      },
+    });
+    const person = userEvent.setup();
+    renderWithProviders(<TicketOrdersPage />);
+
+    const status = await screen.findByTestId('online-sales-status');
+    expect(status).toHaveTextContent('Vânzarea online:ACTIVĂ');
+
+    await person.click(screen.getByRole('button', { name: 'Oprește vânzarea online' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/Biletele deja cumpărate rămân valabile/)).toBeInTheDocument();
+    // Nimic nu pleacă spre backend înainte de confirmare.
+    expect(api.callsTo('PUT /admin/payment-settings/online-sales')).toHaveLength(0);
+
+    await person.click(within(dialog).getByRole('button', { name: 'Da, oprește vânzarea' }));
+    await waitFor(() => {
+      expect(api.callsTo('PUT /admin/payment-settings/online-sales')).toHaveLength(1);
+    });
+    expect(api.callsTo('PUT /admin/payment-settings/online-sales')[0]?.body).toEqual({
+      enabled: false,
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByTestId('online-sales-status')).toHaveTextContent('OPRITĂ');
+    expect(screen.getByRole('button', { name: 'Pornește vânzarea online' })).toBeInTheDocument();
+    // PUT-ul complet al datelor de plată nu e atins.
+    expect(api.callsTo('PUT /admin/payment-settings')).toHaveLength(0);
+  });
+
+  it('anularea confirmării nu oprește nimic', async () => {
+    seedAdminSession();
+    const api = mockFetch({
+      'GET /admin/payment-settings': { body: { ...SETTINGS, online_sales_enabled: true } },
+      'GET /admin/ticket-orders': { body: [] },
+    });
+    const person = userEvent.setup();
+    renderWithProviders(<TicketOrdersPage />);
+
+    await person.click(await screen.findByRole('button', { name: 'Oprește vânzarea online' }));
+    const dialog = await screen.findByRole('dialog');
+    await person.click(within(dialog).getByRole('button', { name: 'Anulează' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(api.callsTo('PUT /admin/payment-settings/online-sales')).toHaveLength(0);
+    expect(screen.getByTestId('online-sales-status')).toHaveTextContent('ACTIVĂ');
+  });
+
+  it('pornirea e imediată (fără confirmare) și trimite {enabled:true}', async () => {
+    seedAdminSession();
+    const api = mockFetch({
+      'GET /admin/payment-settings': { body: { ...SETTINGS, online_sales_enabled: false } },
+      'GET /admin/ticket-orders': { body: [] },
+      'PUT /admin/payment-settings/online-sales': {
+        body: { ...SETTINGS, online_sales_enabled: true },
+      },
+    });
+    const person = userEvent.setup();
+    renderWithProviders(<TicketOrdersPage />);
+
+    expect(await screen.findByTestId('online-sales-status')).toHaveTextContent('OPRITĂ');
+    await person.click(screen.getByRole('button', { name: 'Pornește vânzarea online' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(api.callsTo('PUT /admin/payment-settings/online-sales')).toHaveLength(1);
+    });
+    expect(api.callsTo('PUT /admin/payment-settings/online-sales')[0]?.body).toEqual({
+      enabled: true,
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('online-sales-status')).toHaveTextContent('ACTIVĂ'),
+    );
+  });
+
+  it('o eroare la comutare e afișată, iar starea rămâne neschimbată', async () => {
+    seedAdminSession();
+    mockFetch({
+      'GET /admin/payment-settings': { body: { ...SETTINGS, online_sales_enabled: false } },
+      'GET /admin/ticket-orders': { body: [] },
+      'PUT /admin/payment-settings/online-sales': {
+        status: 500,
+        body: { detail: 'Comutarea a eșuat' },
+      },
+    });
+    const person = userEvent.setup();
+    renderWithProviders(<TicketOrdersPage />);
+
+    await person.click(await screen.findByRole('button', { name: 'Pornește vânzarea online' }));
+
+    expect(await screen.findByText('Comutarea a eșuat')).toBeInTheDocument();
+    expect(screen.getByTestId('online-sales-status')).toHaveTextContent('OPRITĂ');
+    expect(screen.getByRole('button', { name: 'Pornește vânzarea online' })).toBeEnabled();
+  });
+
+  it('o eroare la oprire rămâne în dialogul de confirmare', async () => {
+    seedAdminSession();
+    mockFetch({
+      'GET /admin/payment-settings': { body: { ...SETTINGS, online_sales_enabled: true } },
+      'GET /admin/ticket-orders': { body: [] },
+      'PUT /admin/payment-settings/online-sales': { status: 500, body: { detail: 'Eroare DB' } },
+    });
+    const person = userEvent.setup();
+    renderWithProviders(<TicketOrdersPage />);
+
+    await person.click(await screen.findByRole('button', { name: 'Oprește vânzarea online' }));
+    const dialog = await screen.findByRole('dialog');
+    await person.click(within(dialog).getByRole('button', { name: 'Da, oprește vânzarea' }));
+
+    expect(await within(dialog).findByText('Eroare DB')).toBeInTheDocument();
+    expect(screen.getByTestId('online-sales-status')).toHaveTextContent('ACTIVĂ');
+  });
+});

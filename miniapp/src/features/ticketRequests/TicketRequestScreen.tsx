@@ -19,17 +19,12 @@ import { useNavigate, useParams } from 'react-router';
 
 import { formatEventDate } from '@/features/events/eventFormat';
 import { fetchEvent, type EventItem } from '@/features/events/eventsApi';
-import { useSalesState } from '@/features/events/ticketSales';
+import { salesNotice, salesRefusal, useSalesState, type SalesBlock } from '@/features/events/ticketSales';
 import { formatPrice } from '@/features/loyalty/priceFormat';
 import { OrderStepper } from '@/features/tickets/OrderStepper';
 import { PaymentDetails } from '@/features/tickets/PaymentDetails';
-import { LockIcon } from '@/features/tickets/TicketIcons';
-import {
-  hasEventStarted,
-  isSoldOutError,
-  isTicketSalesClosedError,
-  orderStage,
-} from '@/features/tickets/orderStage';
+import { ClockIcon, LockIcon } from '@/features/tickets/TicketIcons';
+import { hasEventStarted, orderStage } from '@/features/tickets/orderStage';
 import { useOrderStatusText } from '@/features/tickets/orderStatusLabel';
 import type { PaymentInstructions, PaymentMethod } from '@/features/tickets/paymentModel';
 import { ticketOrderPath } from '@/features/tickets/ticketRoutes';
@@ -182,7 +177,8 @@ export function TicketRequestScreen() {
   }));
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [wantsAnother, setWantsAnother] = useState(false);
-  const [closedByServer, setClosedByServer] = useState(false);
+  /** Serverul a închis / oprit vânzarea între timp (refuz la creare). */
+  const [blockedByServer, setBlockedByServer] = useState<Exclude<SalesBlock, 'soldOut'> | null>(null);
   const [soldOutByServer, setSoldOutByServer] = useState(false);
 
   const { data: event, isPending: eventPending, isError: eventError } = useQuery<EventItem>({
@@ -210,14 +206,14 @@ export function TicketRequestScreen() {
       void client.invalidateQueries({ queryKey: ['ticket-orders'] });
     },
     onError: (error) => {
-      if (isTicketSalesClosedError(error)) {
-        setClosedByServer(true);
-        void client.invalidateQueries({ queryKey: ['event', eventId] });
-      } else if (isSoldOutError(error)) {
+      const reason = salesRefusal(error);
+      if (reason === 'soldOut') {
         // Capacitatea nu mai ajunge pentru câte bilete s-au cerut — poate pentru mai puține.
         setSoldOutByServer(true);
-        void client.invalidateQueries({ queryKey: ['event', eventId] });
+      } else if (reason) {
+        setBlockedByServer(reason);
       }
+      if (reason) void client.invalidateQueries({ queryKey: ['event', eventId] });
     },
   });
 
@@ -277,7 +273,11 @@ export function TicketRequestScreen() {
   const displayedRequests =
     ownForEvent.length > 0 ? ownForEvent : create.data ? [create.data] : [];
   const hasActive = displayedRequests.some((r) => ACTIVE.has(r.status));
-  const salesClosed = sales.closed || closedByServer;
+  // Epuizarea anunțată de server la creare NU închide formularul (poate merge
+  // cu mai puține bilete); închiderea și pauza, da.
+  const salesBlock = blockedByServer ?? sales.block;
+  const salesClosed = salesBlock !== null;
+  const notice = salesBlock ? salesNotice(salesBlock, blockedByServer !== null) : null;
   const showForm = !salesClosed && !hasActive && (displayedRequests.length === 0 || wantsAnother);
   const price = event.ticketPrice ?? 0;
   const currency = event.ticketCurrency ?? 'lei';
@@ -296,22 +296,19 @@ export function TicketRequestScreen() {
         <RequestSummary key={request.id} request={request} />
       ))}
 
-      {salesClosed && !hasActive ? (
-        <div className="tr-closed" role="status" data-testid="request-sales-closed">
+      {notice && !hasActive ? (
+        <div
+          className="tr-closed"
+          role="status"
+          data-testid={salesBlock === 'paused' ? 'request-sales-paused' : 'request-sales-closed'}
+          data-sales-block={salesBlock}
+        >
           <span className="tr-closed__icon" aria-hidden="true">
-            <LockIcon width={22} height={22} />
+            {salesBlock === 'paused' ? <ClockIcon width={22} height={22} /> : <LockIcon width={22} height={22} />}
           </span>
           <div>
-            <p className="tr-closed__title">
-              {sales.soldOut && !closedByServer ? t('events.sales.soldOutTitle') : t('events.sales.closedTitle')}
-            </p>
-            <p className="tr-closed__body">
-              {closedByServer
-                ? t('events.sales.closedError')
-                : sales.soldOut
-                  ? t('events.sales.soldOutBody')
-                  : t('events.sales.closedBody')}
-            </p>
+            <p className="tr-closed__title">{t(notice.title)}</p>
+            <p className="tr-closed__body">{t(notice.body)}</p>
           </div>
         </div>
       ) : null}
@@ -449,7 +446,7 @@ export function TicketRequestScreen() {
             <p className="error-text" role="alert" data-testid="request-sold-out">
               {t('ticketRequests.errors.soldOut')}
             </p>
-          ) : create.isError && !closedByServer ? (
+          ) : create.isError && !blockedByServer ? (
             <p className="error-text" role="alert">
               {t('ticketRequests.form.submitFailed')}
             </p>

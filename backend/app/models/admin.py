@@ -47,6 +47,9 @@ ACTION_TICKET_ORDER_REJECT = "ticket_order.reject"
 # Schimbare manuală de stare a unei comenzi de bilet (corecții de admin).
 ACTION_TICKET_ORDER_STATUS = "ticket_order.status"
 ACTION_PAYMENT_SETTINGS_UPDATE = "payment_settings.update"
+# Comutatorul global al vânzării online de bilete (pornit / oprit).
+ACTION_ONLINE_SALES_ENABLED = "payment_settings.online_sales_enabled"
+ACTION_ONLINE_SALES_DISABLED = "payment_settings.online_sales_disabled"
 # Intrare permisă la eveniment (scanarea QR a biletului la ușă). Doar scanările
 # REUȘITE se auditează; refuzurile nu schimbă nimic.
 ACTION_TICKET_ADMIT = "ticket.admit"

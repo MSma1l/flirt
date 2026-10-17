@@ -13,8 +13,25 @@
  * atins capacitatea (`Event.ticket_sales_open()`). Dacă spune „închis" deși ora
  * de închidere e încă în viitor, singurul motiv posibil e sold-out-ul — iar
  * omului îi spunem asta, nu „vânzarea s-a închis".
+ *
+ * PAUZĂ GLOBALĂ (`ticket_sales_paused`, opțional): adminul poate opri vânzarea
+ * online pentru toate evenimentele. Serverul trimite atunci `ticket_sales_open =
+ * false` + `ticket_sales_paused = true` — deci „închis" fără ca ora să fi trecut,
+ * exact semnătura sold-out-ului. Pauza câștigă: altfel i-am spune omului că
+ * biletele s-au epuizat. Un server vechi nu trimite câmpul → nu e pauză.
+ *
+ * MOTIVUL BLOCĂRII (`SalesBlock`) e singurul lucru pe care ecranele îl citesc ca
+ * să aleagă mesajul: `paused` / `soldOut` / `closed`. Refuzurile serverului (409
+ * la creare) se traduc în același model prin `salesRefusal`, iar `salesNotice`
+ * dă titlul și textul — niciun ecran nu-și compune singur mesajele.
  */
 import { useEffect, useState } from 'react';
+
+import {
+  isOnlineSalesDisabledError,
+  isSoldOutError,
+  isTicketSalesClosedError,
+} from '@/features/tickets/orderStage';
 
 const HOUR = 60 * 60 * 1000;
 export const COUNTDOWN_WINDOW_MS = 24 * HOUR;
@@ -22,7 +39,12 @@ export const COUNTDOWN_WINDOW_MS = 24 * HOUR;
 export interface SalesFields {
   ticketSalesEndAt?: string | null;
   ticketSalesOpen?: boolean | null;
+  /** Vânzarea online e oprită global de admin (server nou; lipsă = nu). */
+  ticketSalesPaused?: boolean | null;
 }
+
+/** De ce nu se poate cumpăra acum online: pauză, epuizat sau închis. */
+export type SalesBlock = 'paused' | 'soldOut' | 'closed';
 
 export interface SalesState {
   /** Momentul închiderii, dacă serverul l-a anunțat și e o dată validă. */
@@ -30,6 +52,10 @@ export interface SalesState {
   closed: boolean;
   /** Închis pentru că s-au terminat biletele (nu pentru că a trecut ora). */
   soldOut: boolean;
+  /** Vânzarea online e oprită temporar (comutatorul global al adminului). */
+  paused: boolean;
+  /** Motivul blocării, sau `null` cât timp se poate cumpăra. */
+  block: SalesBlock | null;
   /** Milisecunde rămase până la închidere (doar când e deschis și știm ora). */
   msLeft: number | null;
   /** Mai puțin de 24 h → numărătoare inversă. */
@@ -41,16 +67,55 @@ export function computeSalesState(fields: SalesFields, now: number): SalesState 
   const endAt = parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
   const closedByServer = fields.ticketSalesOpen === false;
   const closedByClock = endAt !== null && now >= endAt.getTime();
-  const closed = closedByServer || closedByClock;
-  const soldOut = closedByServer && !closedByClock && endAt !== null;
+  // Ora a trecut → vânzarea s-a încheiat oricum; pauza nu mai e informație.
+  const paused = fields.ticketSalesPaused === true && !closedByClock;
+  const closed = closedByServer || closedByClock || paused;
+  const soldOut = !paused && closedByServer && !closedByClock && endAt !== null;
   const msLeft = !closed && endAt ? endAt.getTime() - now : null;
   return {
     endAt,
     closed,
     soldOut,
+    paused,
+    block: paused ? 'paused' : soldOut ? 'soldOut' : closed ? 'closed' : null,
     msLeft,
     showCountdown: msLeft !== null && msLeft < COUNTDOWN_WINDOW_MS,
   };
+}
+
+/**
+ * Refuzul serverului la crearea unei comenzi / cereri, în modelul de mai sus.
+ * `null` = altă eroare (rețea, validare) — ecranul arată mesajul generic.
+ */
+export function salesRefusal(error: unknown): SalesBlock | null {
+  if (isOnlineSalesDisabledError(error)) return 'paused';
+  if (isTicketSalesClosedError(error)) return 'closed';
+  if (isSoldOutError(error)) return 'soldOut';
+  return null;
+}
+
+/** Cheile de traducere (namespace `screens`) ale mesajului pentru o blocare. */
+export interface SalesNotice {
+  title: string;
+  body: string;
+}
+
+/**
+ * Mesajul pentru o blocare. `refused` = serverul tocmai a refuzat comanda:
+ * pentru „închis" spunem atunci că s-a închis ACUM, nu că e închis demult.
+ */
+export function salesNotice(block: SalesBlock, refused = false): SalesNotice {
+  switch (block) {
+    case 'paused':
+      return { title: 'screens:events.sales.pausedTitle', body: 'screens:events.sales.pausedBody' };
+    case 'soldOut':
+      return { title: 'screens:events.sales.soldOutTitle', body: 'screens:events.sales.soldOutBody' };
+    case 'closed':
+      return {
+        title: 'screens:events.sales.closedTitle',
+        body: refused ? 'screens:events.sales.closedError' : 'screens:events.sales.closedBody',
+      };
+  }
 }
 
 /** „05:07:09" — ore:minute:secunde, fără zile (numărătoarea apare sub 24 h). */
