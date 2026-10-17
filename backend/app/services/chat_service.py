@@ -27,6 +27,7 @@ from app.services.pagination import (
     encode_cursor,
 )
 from app.services.storage import get_storage
+from app.services import tg_notify
 
 logger = logging.getLogger("app.chat")
 
@@ -378,7 +379,23 @@ async def send_message(
     db.add(message)
     await db.commit()
     await db.refresh(message)
+    _notify_recipient(chat, user, message)
     return MessageOut.model_validate(message)
+
+
+def _notify_recipient(chat: Chat, sender: User, message: Message) -> None:
+    """Notificarea din botul Telegram către celălalt participant — DUPĂ commit.
+
+    Doar programează trimiterea în fundal (`tg_notify`), cu date simple: cererea
+    nu așteaptă și nu poate pica din cauza ei. `body` e deja mascat de contacte.
+    """
+    tg_notify.notify_message(
+        chat_id=chat.id,
+        sender_id=sender.id,
+        recipient_id=_other_id(chat, sender.id),
+        kind=message.kind or "text",
+        body=message.body,
+    )
 
 
 async def get_writable_chat(
@@ -439,6 +456,7 @@ async def send_attachment(
             logger.warning("Atașament orfan neșters: %s", url, exc_info=True)
         raise
     await db.refresh(message)
+    _notify_recipient(chat, user, message)
     return MessageOut.model_validate(message)
 
 

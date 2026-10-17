@@ -106,6 +106,28 @@ class User(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Limba în care îi scrie botul (ro | ru | en), derivată din `language_code`
+    # al userului Telegram la fiecare login prin Mini App (`bot_texts.lang_for`).
+    # NULL = necunoscută → notificările pleacă în română (limba implicită).
+    telegram_language: Mapped[str | None] = mapped_column(String(8), nullable=True)
+
+    # Preferințele notificărilor trimise de BOT în Telegram (`tg_notify`), câte
+    # un comutator per tip de eveniment. Pornite implicit (`server_default` →
+    # conturile existente le primesc fără backfill); userul le stinge din Mini App
+    # prin `PUT /api/v1/notifications/telegram`. Push-ul nativ NU depinde de ele.
+    tg_notify_messages: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true", nullable=False
+    )
+    tg_notify_likes: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true", nullable=False
+    )
+    tg_notify_stories: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true", nullable=False
+    )
+    tg_notify_matches: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true", nullable=False
+    )
+
     # Codul de plată SIMPLU al userului: 6 cifre, prima ≠ 0 (ex. `482719`).
     # Userul îl scrie SINGUR în comentariul transferului, adminul îl caută în
     # extrasul băncii. Generat LENEȘ, aleator (`user_codes.ensure_payment_code`);

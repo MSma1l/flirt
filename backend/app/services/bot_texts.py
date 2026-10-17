@@ -16,7 +16,9 @@ Descrierile de profil (`setMyDescription` etc.) sunt TEXT SIMPLU, fără HTML.
 LIMITE TELEGRAM (verificate în teste):
   - descrierea botului ≤ 512 caractere, descrierea scurtă ≤ 120;
   - descrierea unei comenzi 1–256 caractere;
-  - legenda unei poze (`caption`) ≤ 1024 de caractere.
+  - legenda unei poze (`caption`) ≤ 1024 de caractere;
+  - textul unui mesaj (`sendMessage`) ≤ 4096 de caractere (notificările `tg_notify`
+    sunt mult sub: numele e tăiat la 32, previzualizarea la 80).
 """
 from __future__ import annotations
 
@@ -158,6 +160,12 @@ BUTTONS: dict[str, dict[str, str]] = {
         "privacy": "🔐 Confidențialitate",
         "write_support": "💬 Scrie-ne în Telegram",
         "website": "🌐 Site",
+        # Notificări (`tg_notify`) — scurte, încap pe un rând de buton.
+        "notify_reply": "💬 Răspunde",
+        "notify_see_likes": "💘 Deschide FLIRT",
+        "notify_see_profile": "🔥 Deschide FLIRT",
+        "notify_write_first": "💌 Scrie-i primul",
+        "notify_see_story": "✨ Vezi povestea",
     },
     "ru": {
         "open": "💘 Открыть FLIRT",
@@ -169,6 +177,11 @@ BUTTONS: dict[str, dict[str, str]] = {
         "privacy": "🔐 Конфиденциальность",
         "write_support": "💬 Написать в Telegram",
         "website": "🌐 Сайт",
+        "notify_reply": "💬 Ответить",
+        "notify_see_likes": "💘 Открыть FLIRT",
+        "notify_see_profile": "🔥 Открыть FLIRT",
+        "notify_write_first": "💌 Написать",
+        "notify_see_story": "✨ Смотреть историю",
     },
     "en": {
         "open": "💘 Open FLIRT",
@@ -180,6 +193,11 @@ BUTTONS: dict[str, dict[str, str]] = {
         "privacy": "🔐 Privacy",
         "write_support": "💬 Message us on Telegram",
         "website": "🌐 Website",
+        "notify_reply": "💬 Reply",
+        "notify_see_likes": "💘 Open FLIRT",
+        "notify_see_profile": "🔥 Open FLIRT",
+        "notify_write_first": "💌 Say hi",
+        "notify_see_story": "✨ View story",
     },
 }
 
@@ -440,3 +458,192 @@ def no_miniapp_text(lang: str) -> str:
         "ru": "Приложение FLIRT сейчас недоступно. Загляни чуть позже 🙏",
         "en": "The FLIRT app isn't available right now. Please check back a bit later 🙏",
     }.get(lang, "Aplicația FLIRT nu e disponibilă momentan. Revino puțin mai târziu 🙏")
+
+
+
+# --------------------------------------------------------------------------- #
+# Notificări (`tg_notify`): ce s-a întâmplat în aplicație cât userul lipsea
+# --------------------------------------------------------------------------- #
+#
+# Ton: cald, scurt, cu un emoji de deschidere — o notificare e o invitație, nu un
+# raport. Formulări NEUTRE ca gen (nu știm genul destinatarului sau al autorului
+# în momentul compunerii, iar rusa/româna l-ar cere în verb).
+# Tot ce vine de la useri (nume, text de mesaj) trece prin `_e`, iar textul
+# mesajului e deja mascat de contacte (vine din `messages.body`).
+
+# Lungimi maxime pentru ce vine de la useri.
+NOTIFY_NAME_MAX = 32
+NOTIFY_PREVIEW_MAX = 80
+
+_SOMEONE = {"ro": "Cineva", "ru": "Кто-то", "en": "Someone"}
+
+# Eticheta unui atașament în previzualizare (după `messages.kind`).
+_ATTACHMENT_LABELS: dict[str, dict[str, str]] = {
+    "ro": {"image": "📷 Foto", "video": "🎬 Video", "voice": "🎤 Mesaj vocal"},
+    "ru": {"image": "📷 Фото", "video": "🎬 Видео", "voice": "🎤 Голосовое сообщение"},
+    "en": {"image": "📷 Photo", "video": "🎬 Video", "voice": "🎤 Voice message"},
+}
+_ATTACHMENT_FALLBACK = {"ro": "📎 Atașament", "ru": "📎 Вложение", "en": "📎 Attachment"}
+
+# Ghilimelele tipografice ale fiecărei limbi pentru citatul din mesaj.
+_QUOTES = {"ro": ("«", "»"), "ru": ("«", "»"), "en": ("“", "”")}
+
+
+def _lang(lang: str | None) -> str:
+    return lang if lang in LANGS else DEFAULT_LANG
+
+
+# Rusa cere genitivul după „от" / „у" („от кого-то", nu „от Кто-то").
+_SOMEONE_GENITIVE = {"ro": "Cineva", "ru": "кого-то", "en": "Someone"}
+
+
+def _first_name(name: str | None, lang: str, *, genitive: bool = False) -> str:
+    """Prenumele (primul cuvânt din `Profile.name`), tăiat și escapat HTML.
+
+    Fără nume → „Cineva" (în rusă, la genitiv când `genitive=True`).
+    """
+    first = (name or "").strip().split(maxsplit=1)
+    value = first[0][:NOTIFY_NAME_MAX] if first else ""
+    fallback = (_SOMEONE_GENITIVE if genitive else _SOMEONE)[lang]
+    return _e(value or fallback)
+
+
+def _truncate(text: str, limit: int) -> str:
+    text = " ".join((text or "").split())  # fără rânduri noi / spații multiple
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def attachment_label(lang: str, kind: str | None) -> str:
+    lang = _lang(lang)
+    return _ATTACHMENT_LABELS[lang].get(kind or "", _ATTACHMENT_FALLBACK[lang])
+
+
+def message_preview(lang: str, kind: str | None, body: str | None) -> str:
+    """Previzualizarea unui mesaj (HTML escapat, ≤ ~80 caractere de text).
+
+    Text → corpul (deja mascat), tăiat. Atașament → eticheta tipului, plus legenda
+    dacă există („📷 Foto · Ne vedem?").
+    """
+    lang = _lang(lang)
+    text = _truncate(body or "", NOTIFY_PREVIEW_MAX)
+    if kind and kind != "text":
+        label = attachment_label(lang, kind)
+        return _e(f"{label} · {text}" if text else label)
+    return _e(text)
+
+
+def _plural(lang: str, n: int, forms: tuple[str, str, str]) -> str:
+    """Forma corectă după număr. `forms` = (unu, câțiva, mulți).
+
+    ro: 1 → unu; 2–19 (și x01–x19) → câțiva; 0, 20+ → mulți („de").
+    ru: 1/21/31… → unu; 2–4/22–24… → câțiva; restul → mulți (11–14 incluse).
+    en: 1 → unu; restul → câțiva (al treilea nu se folosește).
+    """
+    one, few, many = forms
+    if lang == "ru":
+        if n % 10 == 1 and n % 100 != 11:
+            return one
+        if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+            return few
+        return many
+    if n == 1:
+        return one
+    if lang == "en":
+        return few
+    return few if 1 <= n % 100 <= 19 else many
+
+
+def _more_messages(lang: str, n: int) -> str:
+    if lang == "ru":
+        word = _plural(lang, n, ("сообщение", "сообщения", "сообщений"))
+        return f"<i>…и ещё {n} {word}</i>"
+    if lang == "en":
+        return f"<i>…and {n} more {_plural(lang, n, ('message', 'messages', ''))}</i>"
+    if n == 1:
+        return "<i>…și încă un mesaj</i>"
+    return f"<i>…și încă {n} {_plural(lang, n, ('mesaj', 'mesaje', 'de mesaje'))}</i>"
+
+
+def _quoted(lang: str, preview_html: str) -> str:
+    left, right = _QUOTES[lang]
+    return f"{left}{preview_html}{right}"
+
+
+def notify_message(
+    lang: str, name: str | None, kind: str | None, body: str | None, more: int = 0
+) -> str:
+    """„💌 <b>Ana</b> ți-a scris: «…»" (+ „…și încă N mesaje" după agregare)."""
+    lang = _lang(lang)
+    who = _first_name(name, lang)
+    quote = _quoted(lang, message_preview(lang, kind, body))
+    head = {
+        "ru": f"💌 <b>{who}</b> пишет тебе:",
+        "en": f"💌 <b>{who}</b> sent you a message:",
+    }.get(lang, f"💌 <b>{who}</b> ți-a scris:")
+    text = f"{head}\n{quote}"
+    if more > 0:
+        text += f"\n\n{_more_messages(lang, more)}"
+    return text
+
+
+def notify_like(lang: str, name: str | None = None, count: int = 1) -> str:
+    """Like nou. Cu `count > 1` → agregat („Ai primit 3 like-uri noi").
+
+    `name=None` → ANONIM („Cineva te-a plăcut"): folosit când politica de produs nu
+    permite dezvăluirea autorului (vezi `tg_notify.LIKE_REVEALS_NAME`).
+    """
+    lang = _lang(lang)
+    if count > 1:
+        if lang == "ru":
+            word = _plural(lang, count, ("новый лайк", "новых лайка", "новых лайков"))
+            return f"💘 У тебя <b>{count}</b> {word}!\nЗаходи посмотреть, кто это 👀"
+        if lang == "en":
+            return f"💘 You've got <b>{count}</b> new likes!\nCome see who likes you 👀"
+        word = _plural(lang, count, ("like nou", "like-uri noi", "de like-uri noi"))
+        return f"💘 Ai primit <b>{count}</b> {word}!\nIntră să vezi cine te-a plăcut 👀"
+    if not name:
+        return {
+            "ru": "💘 Тебе поставили лайк!\nЗаходи посмотреть, кто это 👀",
+            "en": "💘 Someone likes you!\nCome see who it is 👀",
+        }.get(lang, "💘 Cineva te-a plăcut!\nIntră să vezi cine e 👀")
+    who = _first_name(name, lang, genitive=lang == "ru")
+    return {
+        "ru": f"💘 У тебя новый лайк от <b>{who}</b>!\nЛайкни в ответ — вдруг это начало истории 😉",
+        "en": f"💘 <b>{who}</b> likes you!\nLike them back — this could be the start of something 😉",
+    }.get(lang, f"💘 <b>{who}</b> te-a plăcut!\nDă-i și tu like — poate e începutul unei povești 😉")
+
+
+def notify_super_like(lang: str, name: str | None) -> str:
+    lang = _lang(lang)
+    who = _first_name(name, lang, genitive=lang == "ru")
+    return {
+        "ru": f"🔥 SUPER LIKE от <b>{who}</b>!\nКажется, это серьёзно ✨",
+        "en": f"🔥 <b>{who}</b> sent you a SUPER LIKE!\nSomeone's seriously into you ✨",
+    }.get(lang, f"🔥 <b>{who}</b> ți-a dat SUPER LIKE!\nAi atras serios atenția cuiva ✨")
+
+
+def notify_match(
+    lang: str, name: str | None, kind: str | None = None, first_message: str | None = None
+) -> str:
+    """Match nou; cu `first_message` (mesajul lăsat la like) îl citează."""
+    lang = _lang(lang)
+    who = _first_name(name, lang)
+    if first_message:
+        quote = _quoted(lang, message_preview(lang, kind, first_message))
+        return {
+            "ru": f"💜 У вас мэтч с <b>{who}</b>!\n\nТебе уже написали:\n{quote}",
+            "en": f"💜 It's a match with <b>{who}</b>!\n\nThey already wrote:\n{quote}",
+        }.get(lang, f"💜 Aveți un match cu <b>{who}</b>!\n\nȚi-a scris deja:\n{quote}")
+    return {
+        "ru": f"💜 У вас мэтч с <b>{who}</b>!\nВы понравились друг другу — не тяни, скажи «привет» 👋",
+        "en": f"💜 It's a match with <b>{who}</b>!\nYou liked each other — go ahead, say hi 👋",
+    }.get(lang, f"💜 Aveți un match cu <b>{who}</b>!\nV-ați plăcut reciproc — spune-i primul „salut” 👋")
+
+
+def notify_story(lang: str, name: str | None) -> str:
+    lang = _lang(lang)
+    who = _first_name(name, lang, genitive=lang == "ru")
+    return {
+        "ru": f"✨ У <b>{who}</b> новая история\nПосмотри, пока не исчезла ⏳",
+        "en": f"✨ <b>{who}</b> posted a new story\nTake a look before it's gone ⏳",
+    }.get(lang, f"✨ <b>{who}</b> a pus o poveste nouă\nAruncă o privire înainte să dispară ⏳")

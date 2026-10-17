@@ -569,5 +569,26 @@
     "nextPhoto": "Next photo",
     "gotIt": "Got it",
     "gestureTitle": "How to choose"
+  },
+  "telegramNotifications": {
+    "title": "Telegram notifications",
+    "hint": "The FLIRT bot messages you in Telegram when something important happens.",
+    "kinds": {
+      "messages": "New messages",
+      "likes": "Likes and super likes",
+      "stories": "New stories",
+      "matches": "New matches"
+    },
+    "loading": "Loading preferences…",
+    "loadError": "Couldn't load your notification preferences.",
+    "retry": "Try again",
+    "saveError": "Couldn't save. We restored the previous setting.",
+    "writeAccess": {
+      "title": "Want us to ping you in Telegram when someone writes?",
+      "body": "Telegram will ask you once to let the FLIRT bot send you messages. You can turn notifications off anytime in Settings.",
+      "settingsBody": "To receive notifications, allow the FLIRT bot to message you in Telegram.",
+      "allow": "Yes, notify me",
+      "later": "Not now"
+    }
   }
 }

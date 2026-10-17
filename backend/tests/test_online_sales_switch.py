@@ -289,5 +289,9 @@ async def test_migration_single_head():
     cfg = Config(str(BACKEND / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND / "alembic"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_heads() == ["c9e2f6a4d1b7"]
+    # Un singur head (fără ramuri); migrarea comutatorului rămâne în lanț, chiar
+    # dacă au apărut migrări noi peste ea.
+    heads = script.get_heads()
+    assert len(heads) == 1
+    assert "c9e2f6a4d1b7" in {r.revision for r in script.walk_revisions("base", heads[0])}
     assert script.get_revision("c9e2f6a4d1b7").down_revision == "b8e1d4f7a2c3"

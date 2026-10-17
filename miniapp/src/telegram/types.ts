@@ -43,6 +43,8 @@ export interface TelegramUser {
   language_code?: string;
   is_premium?: boolean;
   photo_url?: string;
+  /** Utilizatorul a permis botului să-i scrie. Telegram îl omite când e fals. */
+  allows_write_to_pm?: boolean;
 }
 
 export interface TelegramInitDataUnsafe {
@@ -128,6 +130,8 @@ export interface TelegramWebApp {
   setHeaderColor?: (color: string) => void;
   setBackgroundColor?: (color: string) => void;
   disableVerticalSwipes?: () => void;
+  /** Cere permisiunea ca botul să-i scrie utilizatorului. Bot API 6.9+. */
+  requestWriteAccess?: (callback?: (allowed: boolean) => void) => void;
   onEvent: (event: TelegramEvent, cb: () => void) => void;
   offEvent: (event: TelegramEvent, cb: () => void) => void;
 }

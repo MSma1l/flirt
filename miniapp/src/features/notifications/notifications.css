@@ -1,0 +1,54 @@
+/*
+ * Notificările din Telegram: rândul de încărcare/eroare din Setări și cardul
+ * de invitație „Vrei să te anunțăm?". Culorile vin din variabilele temei
+ * (`theme/applyTheme.ts`), ca restul ecranelor.
+ */
+.tn-inline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.tn-inline .error-text {
+  margin: 0;
+}
+
+.tn-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-lg);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-accent);
+  background: var(--color-tag-bg);
+}
+
+/* În lista de conversații stă între titlu și rânduri. */
+.tn-card--chats {
+  flex: none;
+  margin-bottom: var(--space-lg);
+}
+
+.tn-card__title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.tn-card .caption {
+  margin: 0;
+}
+
+.tn-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+.tn-card__actions .button {
+  flex: 1 1 140px;
+}

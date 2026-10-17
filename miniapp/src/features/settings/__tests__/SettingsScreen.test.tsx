@@ -34,6 +34,11 @@ vi.mock('@/features/ai', () => ({
   AiSettingsSection: () => <div data-testid="ai-settings-section" />,
 }));
 
+/** „Notificări în Telegram" — testată în `src/features/notifications/__tests__/`. */
+vi.mock('@/features/notifications', () => ({
+  TelegramNotificationsSection: () => <div data-testid="telegram-notifications-section" />,
+}));
+
 /**
  * Secțiunea „Confidențialitate și documente" conține doar legături (are nevoie de
  * router); e testată separat în `src/features/legal/__tests__/`.

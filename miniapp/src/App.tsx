@@ -36,7 +36,7 @@ import { getLegalUrls } from '@/config';
 import { AppRoutes } from '@/routes';
 import { getStartParam } from '@/telegram/bridge';
 import { telegramBotAction } from '@/telegram/botLink';
-import { initialPathFromStartParam } from '@/telegram/startParamRoute';
+import { initialEntriesForStartPath, initialPathFromStartParam } from '@/telegram/startParamRoute';
 import { useTelegramBootstrap, useTelegramChrome } from '@/telegram/useTelegram';
 
 import '@/styles/shell.css';
@@ -143,11 +143,9 @@ export function App() {
     );
   }
 
-  // Un ecran de start în adâncime (ex. `/tickets`) primește `/` dedesubt:
-  // altfel `navigate(-1)` din `DeepScreen` n-ar avea unde să întoarcă și
-  // butonul ÎNAPOI (nativ sau din antet) n-ar face nimic.
-  const startPath = initialPathFromStartParam(getStartParam());
-  const initialEntries = startPath === '/' ? ['/'] : ['/', startPath];
+  // Un ecran de start în adâncime (ex. `/tickets`, o conversație deschisă din
+  // notificarea botului) primește `/` dedesubt — vezi `initialEntriesForStartPath`.
+  const initialEntries = initialEntriesForStartPath(initialPathFromStartParam(getStartParam()));
 
   return (
     <MemoryRouter initialEntries={initialEntries} initialIndex={initialEntries.length - 1}>

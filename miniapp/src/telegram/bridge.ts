@@ -402,3 +402,36 @@ export function disableVerticalSwipes(): void {
   if (!isVersionAtLeast('7.7')) return;
   safely((app) => app.disableVerticalSwipes?.(), undefined);
 }
+
+/**
+ * Botul are voie să-i scrie utilizatorului? (`allows_write_to_pm`)
+ *
+ * NEVERIFICAT, ca tot `initDataUnsafe`: îl folosim doar ca să decidem dacă
+ * merită să ARĂTĂM o invitație, niciodată pentru altceva. Telegram omite
+ * câmpul când e fals, deci lipsa lui înseamnă „nu".
+ */
+export function allowsWriteToPm(): boolean {
+  return getUnsafeUser()?.allows_write_to_pm === true;
+}
+
+/** Clientul știe să ceară permisiunea de scriere (Bot API 6.9+)? */
+export function canRequestWriteAccess(): boolean {
+  if (!isVersionAtLeast('6.9')) return false;
+  return safely((app) => typeof app.requestWriteAccess === 'function', false);
+}
+
+/**
+ * Cere permisiunea ca botul să-i scrie utilizatorului (fereastra nativă a
+ * Telegramului). Se rezolvă cu `true` dacă a acceptat, `false` dacă a refuzat
+ * sau dacă clientul nu poate cere — nu aruncă niciodată.
+ */
+export function requestWriteAccess(): Promise<boolean> {
+  if (!canRequestWriteAccess()) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const ok = safely((app) => {
+      app.requestWriteAccess?.((allowed) => resolve(allowed === true));
+      return true;
+    }, false);
+    if (!ok) resolve(false);
+  });
+}

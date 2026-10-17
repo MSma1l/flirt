@@ -56,6 +56,8 @@ const OWNED_FEATURES = [
   // Documentele legale și consimțămintele (Legea nr. 195/2024): toate textele
   // vin din `screens:legal.*` sau de pe server (documentele însele).
   'legal',
+  // Notificările din Telegram (comutatoarele din Setări + invitația de scriere).
+  'notifications',
 ];
 
 /**

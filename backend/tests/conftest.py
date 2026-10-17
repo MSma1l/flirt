@@ -248,3 +248,17 @@ async def client(db_session):
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _tg_notify_isolated():
+    """Notificările botului (`tg_notify`) pleacă în fundal, după răspunsul HTTP.
+
+    Le așteptăm la finalul FIECĂRUI test, ca o sarcină rămasă în zbor să nu ruleze
+    peste TRUNCATE-ul testului următor; contoarele anti-spam din proces se golesc.
+    """
+    from app.services import tg_notify
+
+    tg_notify.reset_state()
+    yield
+    await tg_notify.drain()

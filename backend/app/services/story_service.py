@@ -25,7 +25,7 @@ from app.schemas.story import (
     UserStories,
     UserStoriesPage,
 )
-from app.services import chat_service
+from app.services import chat_service, tg_notify
 from app.services.pagination import (
     STORIES_MAX_LIMIT,
     STORIES_PAGE_LIMIT,
@@ -80,6 +80,9 @@ async def create_story(db: AsyncSession, user: User, data: StoryIn) -> StoryOut:
     db.add(story)
     await db.commit()
     await db.refresh(story)
+    # Match-urile autorului află din botul Telegram (în fundal, după commit;
+    # max 1 notificare / autor / destinatar / 6h — vezi `tg_notify`).
+    tg_notify.notify_story(author_id=user.id)
     return _to_story_out(story)
 
 

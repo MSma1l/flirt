@@ -573,5 +573,26 @@
     "nextPhoto": "Poza următoare",
     "gotIt": "Am înțeles",
     "gestureTitle": "Cum alegi"
+  },
+  "telegramNotifications": {
+    "title": "Notificări în Telegram",
+    "hint": "Botul FLIRT îți scrie în Telegram când se întâmplă ceva important pentru tine.",
+    "kinds": {
+      "messages": "Mesaje noi",
+      "likes": "Like-uri și super like-uri",
+      "stories": "Povești noi",
+      "matches": "Match-uri noi"
+    },
+    "loading": "Se încarcă preferințele…",
+    "loadError": "Nu am putut încărca preferințele de notificare.",
+    "retry": "Reîncearcă",
+    "saveError": "Nu am putut salva. Am revenit la setarea anterioară.",
+    "writeAccess": {
+      "title": "Vrei să te anunțăm în Telegram când cineva îți scrie?",
+      "body": "Telegram îți cere o singură dată permisiunea ca botul FLIRT să-ți trimită mesaje. Poți opri oricând notificările din Setări.",
+      "settingsBody": "Ca notificările să ajungă la tine, permite botului FLIRT să-ți scrie în Telegram.",
+      "allow": "Da, anunță-mă",
+      "later": "Nu acum"
+    }
   }
 }

@@ -14,6 +14,7 @@ from app.api.v1 import (
     legal,
     loyalty,
     me,
+    notifications,
     profiles,
     push,
     reports,
@@ -49,6 +50,10 @@ api_router.include_router(humor.router, prefix="/humor", tags=["humor"])
 api_router.include_router(reports.router, prefix="/reports", tags=["moderation"])
 api_router.include_router(subscriptions.router, prefix="/subscriptions", tags=["billing"])
 api_router.include_router(push.router, prefix="/push", tags=["push"])
+# Preferințele notificărilor trimise de botul Telegram (Mini App).
+api_router.include_router(
+    notifications.router, prefix="/notifications", tags=["notifications"]
+)
 api_router.include_router(ads.router, prefix="/ads", tags=["ads"])
 api_router.include_router(telegram.router, prefix="/telegram", tags=["telegram"])
 api_router.include_router(ai.router, prefix="/ai", tags=["ai"])

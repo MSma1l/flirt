@@ -20,6 +20,8 @@ import { useTranslation } from 'react-i18next';
 
 import type { ChatSummary } from '@mobile/features/chat/types';
 
+import { WriteAccessCard } from '@/features/notifications';
+
 import { ChatListRow } from './ChatListRow';
 import { fetchChats } from './chatApi';
 import { usePollInterval } from './usePollInterval';
@@ -126,6 +128,9 @@ export function ChatListScreen() {
   return (
     <div className="chat-list">
       <h1 className="title chat-list__title">{t('chat:title')}</h1>
+      {/* Invitația unică „te anunțăm în Telegram?" — apare doar dacă botul nu
+          are încă voie să scrie; regulile stau în `features/notifications`. */}
+      <WriteAccessCard slot="chats" />
       {body}
     </div>
   );

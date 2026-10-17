@@ -25,6 +25,7 @@ from app.core.security import (
 from app.models.session import RefreshSession
 from app.models.user import User
 from app.schemas.auth import TokenPair
+from app.services import bot_texts
 from app.services.telegram_auth import TelegramUser
 
 # RO: Hash Argon2 „dummy", constant, pentru a rula MEREU o verificare de parolă
@@ -227,6 +228,10 @@ async def login_with_telegram(
     # Intrarea în Mini App e activitate reală a contului — vezi
     # `account_service.touch_last_active` pentru semnificația câmpului.
     user.last_active_at = now
+    # Limba în care îi va scrie botul (notificări `tg_notify`): reîmprospătată la
+    # fiecare login, ca o schimbare de limbă în Telegram să ajungă și la noi.
+    # `lang_for` mapează orice cod pe ro/ru/en (necunoscut → ro).
+    user.telegram_language = bot_texts.lang_for(telegram_user.language_code)
 
     pair = await _issue_token_pair(db, user, family_id=uuid.uuid4().hex)
     await db.commit()

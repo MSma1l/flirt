@@ -35,7 +35,7 @@ from app.models.profile import Profile
 from app.models.swipe import Like, Match
 from app.models.user import User
 from app.schemas.feed import FeedCard, FeedPage, MatchOut, SwipeResult, UndoResult
-from app.services import account_service, billing, chat_service, geo, push
+from app.services import account_service, billing, chat_service, geo, push, tg_notify
 from app.services.compatibility import behavior_score, compute_compatibility
 from app.services.contact_masker import mask_contacts
 
@@ -658,6 +658,10 @@ async def swipe(
         )
     )
     like = existing_result.scalar_one_or_none()
+    # Starea DINAINTEA swipe-ului: notificarea de like/super like pleacă doar la o
+    # TRECERE (nou, dislike → like, like → super like), nu la fiecare re-swipe.
+    was_like = bool(like is not None and like.is_like)
+    was_super = bool(like is not None and like.is_super)
     if like is None:
         # Limită de swipe/zi pentru non-premium (TZ 4.5) — se aplică DOAR la un
         # swipe NOU (re-swipe pe același target nu consumă din cotă).
@@ -696,6 +700,11 @@ async def swipe(
     reciprocal = reciprocal_result.scalar_one_or_none()
     if reciprocal is None:
         await db.commit()
+        # Fără match → ținta află din botul Telegram că a primit (super) like.
+        if (is_super and not was_super) or (not is_super and not was_like):
+            tg_notify.notify_like(
+                actor_id=user.id, recipient_id=target_user_id, is_super=is_super
+            )
         return SwipeResult(matched=False, match_id=None)
 
     # Match! Stocăm perechea normalizată (idempotent).
@@ -704,6 +713,7 @@ async def swipe(
         select(Match).where(Match.user_a_id == a_id, Match.user_b_id == b_id)
     )
     match = match_result.scalar_one_or_none()
+    match_created = match is None
     if match is None:
         match = Match(user_a_id=a_id, user_b_id=b_id)
         db.add(match)
@@ -712,6 +722,11 @@ async def swipe(
     # La producerea unui match asigurăm (idempotent) un chat pentru el, ca
     # dialogul să existe imediat (TZ 4.7/5.1). Refolosim logica din chat_service.
     chat = await chat_service.ensure_chat_for_match(db, match)
+
+    # Mesajul lăsat de MINE la like ajunge la țintă odată cu match-ul: îl citez în
+    # notificarea de match (mascat exact ca în chat), în loc de două notificări.
+    # Citit ACUM — `_deliver_deferred_messages` îl consumă (golește câmpul).
+    first_message = mask_contacts(like.deferred_message)[0] if like.deferred_message else None
 
     # Livrăm mesajele deferred: pentru fiecare like din pereche (A->B și B->A)
     # care are `deferred_message`, creăm un mesaj în chat de la autorul like-ului
@@ -724,6 +739,13 @@ async def swipe(
     # Doar către CELĂLALT user: cel care tocmai a dat swipe vede match-ul direct
     # în răspunsul HTTP (`matched: True`), deci n-are ce să-l anunțe.
     await _notify_match(db, target_user_id)
+    if match_created:
+        tg_notify.notify_match(
+            actor_id=user.id,
+            recipient_id=target_user_id,
+            chat_id=chat.id,
+            first_message=first_message,
+        )
 
     return SwipeResult(matched=True, match_id=match.id, chat_id=chat.id)
 

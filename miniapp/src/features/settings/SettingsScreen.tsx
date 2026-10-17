@@ -47,6 +47,7 @@ import {
 import { StatusScreen } from '@/components/StatusScreen';
 import { AiSettingsSection } from '@/features/ai';
 import { LegalSettingsSection } from '@/features/legal/LegalSettingsSection';
+import { TelegramNotificationsSection } from '@/features/notifications';
 
 import { ConfirmDialog } from '../profile/ConfirmDialog';
 import { fetchReference } from '../profile/profileApi';
@@ -454,6 +455,11 @@ export function SettingsScreen() {
           />
         ))}
       </section>
+
+      {/* ── Notificări în Telegram (mesajele botului) ───────────────────
+          Secțiune de sine stătătoare din `features/notifications/`; pe un
+          server fără ruta nouă (404) nu se randează deloc. */}
+      <TelegramNotificationsSection />
 
       {/* ── Asistent AI ────────────────────────────────────────────────
           Secțiunea se randează integral din `features/ai/`: rețeaua, stările și

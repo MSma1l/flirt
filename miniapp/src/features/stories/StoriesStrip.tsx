@@ -26,9 +26,11 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router';
 
 import { StoriesBar, STORIES_GESTURE_ZONE } from './StoriesBar';
 import { StoryComposer } from './StoryComposer';
+import { OPEN_STORY_PARAM } from './storyRoutes';
 import { StoryViewer } from './StoryViewer';
 import { useStoriesQuery } from './useStories';
 
@@ -52,6 +54,31 @@ export function StoriesStrip() {
   const groups = stories.data ?? [];
   const group = mode.kind === 'viewer' ? groups.find((g) => g.userId === mode.userId) : undefined;
   const close = () => setMode(CLOSED);
+
+  /**
+   * Legătura din notificarea botului: `/feed?story=<autor>` deschide poveștile
+   * autorului peste feed. Parametrul se consumă O SINGURĂ DATĂ — îl ștergem din
+   * adresă după ce lista s-a încărcat, ca închiderea poveștii (sau o remontare a
+   * benzii) să nu o redeschidă. Dacă autorul nu mai are povești active (au
+   * expirat între notificare și deschidere) sau lista nu se încarcă, rămâne
+   * pur și simplu feedul.
+   */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedAuthor = searchParams.get(OPEN_STORY_PARAM);
+  useEffect(() => {
+    if (!requestedAuthor || stories.isPending) return;
+    const wanted = requestedAuthor.toLowerCase();
+    const target = stories.data?.find((g) => g.userId.toLowerCase() === wanted);
+    if (target) setMode({ kind: 'viewer', userId: target.userId });
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete(OPEN_STORY_PARAM);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [requestedAuthor, stories.isPending, stories.data, setSearchParams]);
 
   /**
    * Grupul poate dispărea sub noi: povestea a expirat (24h) sau a fost ștearsă,
