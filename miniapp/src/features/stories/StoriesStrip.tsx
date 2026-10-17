@@ -17,8 +17,14 @@
  * Vizualizatorul e `position: fixed` peste tot ecranul (`storiesBar.css`), deci
  * cât e deschis niciun gest nu ajunge la card — nici geometric, nici prin
  * propagare (zona de gesturi e marcată și aici).
+ *
+ * E randat printr-un PORTAL în `document.body`: în bandă (`.feed__top`, cu
+ * `z-index` propriu) și în zona care derulează a `AppShell`, WebView-ul
+ * Telegram îl tăia și lăsa bara de taburi PESTE el — acoperind butonul
+ * „Publică" al compozitorului. Din `body` acoperă sigur tot ecranul.
  */
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import { StoriesBar, STORIES_GESTURE_ZONE } from './StoriesBar';
@@ -82,23 +88,26 @@ export function StoriesStrip() {
         onOpenGroup={(userId) => setMode({ kind: 'viewer', userId })}
       />
 
-      {content ? (
-        <div
-          className="st-overlay"
-          data-testid="stories-overlay"
-          data-gesture-zone={STORIES_GESTURE_ZONE}
-          role="dialog"
-          aria-modal="true"
-          aria-label={t('screens:stories.title')}
-          onPointerDown={keepGesture}
-          onPointerMove={keepGesture}
-          onPointerUp={keepGesture}
-          onPointerCancel={keepGesture}
-          onTouchMove={keepGesture}
-        >
-          <div className="st-overlay__panel">{content}</div>
-        </div>
-      ) : null}
+      {content
+        ? createPortal(
+            <div
+              className="st-overlay"
+              data-testid="stories-overlay"
+              data-gesture-zone={STORIES_GESTURE_ZONE}
+              role="dialog"
+              aria-modal="true"
+              aria-label={t('screens:stories.title')}
+              onPointerDown={keepGesture}
+              onPointerMove={keepGesture}
+              onPointerUp={keepGesture}
+              onPointerCancel={keepGesture}
+              onTouchMove={keepGesture}
+            >
+              <div className="st-overlay__panel">{content}</div>
+            </div>,
+            document.body,
+          )
+        : null}
     </>
   );
 }

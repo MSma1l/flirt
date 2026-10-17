@@ -58,10 +58,9 @@
   top: 0;
   left: 0;
   right: 0;
-  /* Peste card. FĂRĂ filtru sau transform pe element: ar deveni bloc
-     conținător pentru `position: fixed`, iar vizualizatorul de povești
-     (`.st-overlay`) s-ar strânge în bandă în loc să acopere ecranul. Sticla e
-     deci pe un pseudo-element. */
+  /* Peste card. Sticla e pe un pseudo-element (fără filtru pe element).
+     Vizualizatorul de povești NU mai stă aici: e randat prin portal în `body`
+     (`StoriesStrip.tsx`), altfel bara de taburi ajungea peste el. */
   z-index: 2;
   padding-top: calc(var(--safe-top) + var(--space-sm));
   padding-bottom: var(--space-sm);
@@ -111,13 +110,6 @@
 .feed__top .st-bar__ring--add {
   border-color: rgba(255, 255, 255, 0.7);
   color: #fff;
-}
-
-/* Vizualizatorul de povești se deschide DIN bandă (e `fixed`, pe tot ecranul):
-   nu moștenește nici textul alb pentru poză, nici atingerile oprite. */
-.feed__top .st-overlay {
-  pointer-events: auto;
-  color: var(--color-text-primary);
 }
 
 /* Fără suport de blur (WebView vechi): un fundal mai dens ține textul lizibil. */

@@ -216,6 +216,16 @@ describe('izolarea gesturilor între bară și cărți', () => {
 });
 
 describe('vizualizarea unei povești', () => {
+  it('stă direct în body, nu în banda feedului (altfel bara de taburi o acoperă)', async () => {
+    await renderFeed();
+
+    fireEvent.click(await screen.findByTestId('story-group-u1'));
+    const overlay = await screen.findByTestId('stories-overlay');
+
+    expect(overlay.parentElement).toBe(document.body);
+    expect(overlay.closest('.feed__top')).toBeNull();
+  });
+
   it('se deschide peste tot ecranul și se închide înapoi în feed', async () => {
     await renderFeed();
 
