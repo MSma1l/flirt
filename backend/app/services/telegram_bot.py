@@ -31,10 +31,14 @@ ROBUSTEȚE
 ---------
 Nicio funcție publică nu ridică excepții: un webhook care crapă înseamnă că
 Telegram reîncearcă update-ul la nesfârșit. Erorile se loghează și se întorc ca
-`{"ok": False, "error": ...}`.
+`{"ok": False, "error": ...}`; `delivery(result)` spune apelantului dacă eșecul e
+sigur (se poate încerca altă formă) sau dacă mesajul POATE să fi ajuns (timeout
+după trimitere → fără reîncercare, altfel userul primește dubluri).
 """
 from __future__ import annotations
 
+import enum
+import functools
 import hashlib
 import json
 import logging
@@ -45,6 +49,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
+from app.core import ratelimit
 from app.core.config import settings
 
 logger = logging.getLogger("app.telegram")
@@ -245,6 +250,28 @@ def web_app_button(text: str, start_param: str | None = None) -> dict:
     return {"text": text, "web_app": {"url": build_miniapp_url(start_param)}}
 
 
+# Username de bot valid (regula Telegram): altfel nu-l punem într-un URL.
+_USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{5,32}$")
+
+
+def bot_link_button(text: str, start_param: str | None = None) -> dict | None:
+    """Buton URL spre chatul privat cu botul (`t.me/<bot>?start=<param>`).
+
+    Pentru GRUPURI: Telegram acceptă butoane `web_app` doar în chat privat (altfel
+    respinge tot mesajul). Linkul deschide botul în privat, iar `/start <param>`
+    de acolo dă butonul `web_app` cu același deep link. `None` dacă username-ul
+    botului nu e configurat (sau e invalid).
+    """
+    username = bot_username()
+    if not _USERNAME_RE.match(username):
+        return None
+    url = f"https://t.me/{username}"
+    param = normalize_start_param(start_param)
+    if param:
+        url += "?" + urlencode({"start": param})
+    return {"text": text, "url": url}
+
+
 def web_app_keyboard(text: str, start_param: str | None = None) -> dict:
     """Tastatură inline cu UN buton `web_app` care deschide Mini App-ul."""
     return {
@@ -282,16 +309,37 @@ async def _call(method: str, payload: dict) -> dict:
     except httpx.HTTPStatusError as exc:
         return _status_error(method, exc)
     except httpx.HTTPError as exc:
-        # `str(exc)` conține URL-ul cererii → tokenul. Redactăm ÎNAINTE de log.
-        message = _redact(exc)
-        logger.warning("telegram: apelul %s a eșuat: %s", method, message)
-        return {"ok": False, "method": method, "error": message}
+        return _transport_error(method, exc)
     except ValueError as exc:  # răspuns care nu e JSON valid
-        message = _redact(exc)
-        logger.warning("telegram: răspuns invalid la %s: %s", method, message)
-        return {"ok": False, "method": method, "error": message}
+        return _invalid_response(method, exc)
 
     return _checked(method, data)
+
+
+# Erori de transport după care cererea SIGUR n-a ajuns la Telegram (conexiunea nu
+# s-a deschis). Orice altceva (timeout la citire/scriere, conexiune ruptă) e
+# incert: Telegram poate să fi primit și executat deja cererea.
+_NOT_SENT_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
+
+
+def _transport_error(method: str, exc: httpx.HTTPError) -> dict:
+    # `str(exc)` conține URL-ul cererii → tokenul. Redactăm ÎNAINTE de log.
+    message = _redact(exc)
+    logger.warning("telegram: apelul %s a eșuat: %s", method, message)
+    return {
+        "ok": False,
+        "method": method,
+        "error": message,
+        "transport_error": True,
+        "uncertain": not isinstance(exc, _NOT_SENT_ERRORS),
+    }
+
+
+def _invalid_response(method: str, exc: ValueError) -> dict:
+    # Telegram a răspuns 2xx, dar corpul nu e JSON: cererea probabil s-a executat.
+    message = _redact(exc)
+    logger.warning("telegram: răspuns invalid la %s: %s", method, message)
+    return {"ok": False, "method": method, "error": message, "uncertain": True}
 
 
 def _checked(method: str, data: Any) -> dict:
@@ -358,14 +406,61 @@ async def _call_multipart(
     except httpx.HTTPStatusError as exc:
         return _status_error(method, exc)
     except httpx.HTTPError as exc:
-        message = _redact(exc)
-        logger.warning("telegram: apelul %s a eșuat: %s", method, message)
-        return {"ok": False, "method": method, "error": message}
+        return _transport_error(method, exc)
     except ValueError as exc:
-        message = _redact(exc)
-        logger.warning("telegram: răspuns invalid la %s: %s", method, message)
-        return {"ok": False, "method": method, "error": message}
+        return _invalid_response(method, exc)
     return _checked(method, body)
+
+
+# --------------------------------------------------------------------------- #
+# Ce s-a întâmplat cu o trimitere (decide fallback-ul apelantului)
+# --------------------------------------------------------------------------- #
+
+
+class Delivery(str, enum.Enum):
+    """Rezultatul unei trimiteri, din punctul de vedere al unei REÎNCERCĂRI."""
+
+    SENT = "sent"
+    # Telegram a refuzat SIGUR acest mesaj (ex. 400): altă formă poate merge.
+    REJECTED = "rejected"
+    # Eșec sigur, dar altă formă n-ar ajuta acum: bot blocat (403), token
+    # invalid (401), flood (429), rețea indisponibilă (conexiunea nu s-a deschis).
+    FAILED = "failed"
+    # Timeout / conexiune ruptă DUPĂ trimitere: mesajul poate să fi ajuns.
+    # Nu se reîncearcă — altfel userul primește dubluri.
+    UNCERTAIN = "uncertain"
+
+
+_GIVE_UP_CODES = frozenset({401, 403, 429})
+
+
+def delivery(result: dict) -> Delivery:
+    """Clasifică rezultatul unui apel (`_call` / `_call_multipart`)."""
+    if result.get("ok"):
+        return Delivery.SENT
+    if result.get("uncertain"):
+        return Delivery.UNCERTAIN
+    if result.get("transport_error") or result.get("error_code") in _GIVE_UP_CODES:
+        return Delivery.FAILED
+    return Delivery.REJECTED
+
+
+# Fragmente din `description` când Telegram respinge chiar `file_id`-ul (alt bot,
+# fișier expirat, id corupt) — singurul caz în care merită uitat și reîncărcat.
+_FILE_ID_REJECTION_MARKERS = (
+    "wrong file identifier",
+    "wrong remote file",
+    "file_reference_",
+    "file_id",
+)
+
+
+def is_file_id_rejected(result: dict) -> bool:
+    """True dacă Telegram a respins `file_id`-ul însuși (400 + descriere specifică)."""
+    if result.get("ok") or result.get("error_code") != 400:
+        return False
+    description = str(result.get("description") or "").lower()
+    return any(marker in description for marker in _FILE_ID_REJECTION_MARKERS)
 
 
 # --------------------------------------------------------------------------- #
@@ -452,7 +547,6 @@ AVATAR_IMAGE = ASSETS_DIR / "avatar.png"
 
 FILE_ID_CACHE_PREFIX = "telegram:file_id:"
 FILE_ID_CACHE_TTL_SECONDS = 90 * 24 * 3600
-_REDIS_TIMEOUT_SECONDS = 1.0
 
 _file_id_cache: dict[str, str] = {}
 
@@ -461,11 +555,23 @@ def _bot_id() -> str:
     return bot_token().split(":", 1)[0] or "nobot"
 
 
-def _file_fingerprint(path: Path) -> str:
+@functools.lru_cache(maxsize=16)
+def _hash_file(path: str, mtime_ns: int, size: int) -> str:
+    """sha256 al fișierului, calculat O SINGURĂ DATĂ per (cale, mtime, mărime)."""
     try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:16]
     except OSError:
         return "missing"
+
+
+def _file_fingerprint(path: Path) -> str:
+    # Doar `stat` la fiecare /start; hash-ul (~400 KB citiți) rămâne în cache
+    # până se schimbă fișierul.
+    try:
+        info = path.stat()
+    except OSError:
+        return "missing"
+    return _hash_file(str(path), info.st_mtime_ns, info.st_size)
 
 
 def file_id_cache_key(path: Path) -> str:
@@ -473,28 +579,19 @@ def file_id_cache_key(path: Path) -> str:
 
 
 async def _get_redis():
-    """Client Redis NOU (închis de apelant), sau `None` dacă nu e configurat.
+    """Clientul Redis PARTAJAT al rate-limiter-ului, sau `None` dacă nu e configurat.
 
-    Client nou la fiecare folosire: cache-ul din memorie face ca Redis să fie
-    atins doar la prima poză per proces, iar un client partajat ar rămâne legat
-    de event loop-ul în care a fost creat.
+    Ca în `telegram_auth._get_redis`: refolosim pool-ul din `app/core/ratelimit.py`
+    (aceleași timeout-uri scurte, același URL) în loc să deschidem unul nou la
+    fiecare operație. Erorile de creare (pachet lipsă, URL greșit) urcă în
+    `_redis_op`, care le transformă în „cache indisponibil".
     """
-    url = getattr(settings, "redis_url", "") or ""
-    if not url:
-        return None
-    import redis.asyncio as aioredis  # import lazy (dependență opțională)
-
-    return aioredis.from_url(
-        url,
-        decode_responses=True,
-        socket_connect_timeout=_REDIS_TIMEOUT_SECONDS,
-        socket_timeout=_REDIS_TIMEOUT_SECONDS,
-    )
+    limiter = ratelimit._get_redis_limiter()
+    return limiter._get_client() if limiter is not None else None
 
 
 async def _redis_op(op: str, key: str, value: str | None = None) -> str | None:
     """get / set / delete în Redis; orice eroare ⇒ `None`, fără excepții."""
-    client = None
     try:
         client = await _get_redis()
         if client is None:
@@ -507,12 +604,6 @@ async def _redis_op(op: str, key: str, value: str | None = None) -> str | None:
             await client.delete(key)
     except Exception as exc:  # Redis căzut nu are voie să strice botul
         logger.info("telegram: cache file_id indisponibil (%s)", type(exc).__name__)
-    finally:
-        if client is not None:
-            try:
-                await client.aclose()
-            except Exception:
-                pass
     return None
 
 
@@ -554,15 +645,18 @@ async def send_cached_photo(
 ) -> dict:
     """Trimite poza locală `path`, refolosind `file_id` memorat când există.
 
-    `file_id` memorat dar respins (bot schimbat, fișier expirat) ⇒ îl uităm și
-    reîncărcăm o singură dată. Întoarce rezultatul ultimului apel; apelantul
-    decide fallback-ul (ex. mesaj text) dacă `ok` e fals.
+    DOAR dacă Telegram respinge `file_id`-ul însuși (bot schimbat, fișier
+    expirat — vezi `is_file_id_rejected`) îl uităm și reîncărcăm o singură dată.
+    Orice alt eșec (bot blocat, flood, timeout, rețea) se întoarce ca atare:
+    `file_id` rămâne valid, iar o reîncărcare n-ar ajuta (sau ar dubla poza).
+    Întoarce rezultatul ultimului apel; apelantul decide fallback-ul după
+    `delivery(result)`.
     """
     key = file_id_cache_key(path)
     file_id = await cached_file_id(key)
     if file_id:
         result = await send_photo(chat_id, file_id, caption, reply_markup, parse_mode)
-        if result.get("ok"):
+        if result.get("ok") or not is_file_id_rejected(result):
             return result
         logger.info("telegram: file_id memorat respins → reîncarc poza")
         await forget_file_id(key)

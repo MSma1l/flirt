@@ -788,7 +788,9 @@ async def test_contacts_cu_email_telegram_si_site(client, live_bot, telegram_cal
     await _post(client, _update_from("/contacts"))
     call = telegram_calls[0]
     text = call["json"]["text"]
-    assert '<a href="mailto:help@flrt.md">help@flrt.md</a>' in text
+    # Adresa simplă (fără `mailto:`, nesigur în Telegram) — o auto-leagă clientul.
+    assert "✉️ Email: help@flrt.md" in text
+    assert "mailto:" not in text
     assert '<a href="https://t.me/flirt_support">@flirt_support</a>' in text
     assert '<a href="https://flrt.md">flrt.md</a>' in text
     urls = [b.get("url") for b in _all_buttons(call)]
@@ -883,12 +885,164 @@ async def test_callback_fara_secret_e_respins(client, live_bot, telegram_calls):
 
 @pytest.mark.asyncio
 async def test_callback_respecta_rate_limit(client, live_bot, telegram_calls, monkeypatch):
+    """Peste limită: butonul e totuși confirmat (fără „ceas"), dar nu trimitem nimic."""
     async def over_limit(chat_id):
         return False
 
     monkeypatch.setattr(telegram_api, "_within_rate_limit", over_limit)
     await _post(client, _callback_update("help"))
-    assert telegram_calls == []
+    assert [_method(c) for c in telegram_calls] == ["answerCallbackQuery"]
+    assert telegram_calls[0]["json"] == {"callback_query_id": "cbq-1"}
+
+
+# --- Grupuri: fără butoane `web_app` -------------------------------------------
+def _in_group(update: dict) -> dict:
+    """Mută update-ul (mesaj sau callback) într-un supergrup."""
+    message = update.get("message") or update["callback_query"]["message"]
+    message["chat"] = {"id": -100123, "type": "supergroup", "title": "Party"}
+    return update
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "update",
+    [_update_from("/start events"), _update_from("/help"), _update_from("/contacts"),
+     _update_from("/events"), _update_from("salut"), _callback_update("help"),
+     _callback_update("privacy")],
+)
+async def test_in_grup_nu_trimitem_butoane_web_app(client, live_bot, telegram_calls, update):
+    await _post(client, _in_group(update))
+    sent = [c for c in telegram_calls if _method(c) != "answerCallbackQuery"]
+    assert sent
+    for call in sent:
+        body = call["json"] if call["json"] is not None else call["data"]
+        assert str(body["chat_id"]) == "-100123"
+        markup = body.get("reply_markup")
+        if isinstance(markup, str):
+            markup = json.loads(markup)
+        buttons = [b for row in (markup or {}).get("inline_keyboard", []) for b in row]
+        assert all("web_app" not in b for b in buttons)
+
+
+@pytest.mark.asyncio
+async def test_in_grup_butonul_app_devine_link_spre_bot(
+    client, live_bot, telegram_calls, monkeypatch
+):
+    monkeypatch.setattr(telegram_bot.settings, "telegram_bot_username", "@flrt_party_bot")
+    await _post(client, _in_group(_update_from("/start promo-1")))
+    rows = _markup(telegram_calls[0])["inline_keyboard"]
+    assert rows[0] == [{"text": bot_texts.button("ro", "open"),
+                        "url": "https://t.me/flrt_party_bot?start=promo-1"}]
+    assert [b["url"] for b in rows[1]] == [
+        "https://t.me/flrt_party_bot?start=events",
+        "https://t.me/flrt_party_bot?start=tickets",
+    ]
+    # În privat rămâne butonul `web_app`.
+    await _post(client, _update_from("/help"))
+    assert "web_app" in _button(telegram_calls[1])
+
+
+# --- file_id: uitat DOAR când Telegram îl respinge ------------------------------
+@pytest.mark.parametrize(
+    ("result", "rejected"),
+    [
+        ({"ok": False, "error_code": 400, "description": "Bad Request: wrong file identifier/HTTP URL specified"}, True),
+        ({"ok": False, "error_code": 400, "description": "Bad Request: wrong remote file identifier specified"}, True),
+        ({"ok": False, "error_code": 400, "description": "Bad Request: FILE_REFERENCE_EXPIRED"}, True),
+        ({"ok": False, "error_code": 400, "description": "Bad Request: can't parse entities"}, False),
+        ({"ok": False, "error_code": 403, "description": "Forbidden: bot was blocked by the user"}, False),
+        ({"ok": False, "error_code": 429, "description": "Too Many Requests: retry after 5"}, False),
+        ({"ok": False, "error": "timeout", "transport_error": True, "uncertain": True}, False),
+    ],
+)
+def test_is_file_id_rejected(result, rejected):
+    assert telegram_bot.is_file_id_rejected(result) is rejected
+
+
+def _raise(exc):
+    def handler(call):
+        raise exc
+    return handler
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response",
+    [
+        _StatusResponse({"ok": False, "error_code": 403,
+                         "description": "Forbidden: bot was blocked by the user"}, 403),
+        _StatusResponse({"ok": False, "error_code": 429,
+                         "description": "Too Many Requests: retry after 5"}, 429),
+        _raise(httpx.ReadTimeout("read timed out")),
+        _raise(httpx.ConnectError("connect failed")),
+    ],
+    ids=["403-blocat", "429-flood", "timeout", "retea"],
+)
+async def test_file_id_ramane_memorat_la_alte_erori_si_nu_reincarcam(
+    client, live_bot, scripted_calls, response
+):
+    """Blocat / flood / timeout / rețea: un singur apel, fără reîncărcare și fără text."""
+    calls, responses = scripted_calls
+    key = telegram_bot.file_id_cache_key(telegram_bot.WELCOME_IMAGE)
+    telegram_bot._file_id_cache[key] = "GOOD-ID"
+    responses["sendPhoto"] = response
+
+    await _post(client, _update_from("/start"))
+
+    assert [_method(c) for c in calls] == ["sendPhoto"]
+    assert calls[0]["json"]["photo"] == "GOOD-ID"
+    assert telegram_bot._file_id_cache[key] == "GOOD-ID"
+
+
+@pytest.mark.asyncio
+async def test_timeout_la_incarcare_nu_trimite_si_varianta_text(client, live_bot, scripted_calls):
+    """Poza poate să fi ajuns → fără fallback (altfel userul are doi „bun venit")."""
+    calls, responses = scripted_calls
+    responses["sendPhoto"] = _raise(httpx.WriteTimeout("write timed out"))
+    await _post(client, _update_from("/start"))
+    assert [_method(c) for c in calls] == ["sendPhoto"]
+    assert calls[0]["files"] is not None
+
+
+@pytest.mark.asyncio
+async def test_bun_venitul_are_buget_de_timp(client, live_bot, telegram_calls, monkeypatch):
+    import asyncio
+
+    async def hanging(*args, **kwargs):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(telegram_api, "WELCOME_BUDGET_SECONDS", 0.05)
+    monkeypatch.setattr(telegram_bot, "send_cached_photo", hanging)
+    await _post(client, _update_from("/start"))
+    assert telegram_calls == []  # nici fallback text după depășirea bugetului
+
+
+def test_amprenta_pozei_se_calculeaza_o_singura_data(live_bot):
+    telegram_bot._hash_file.cache_clear()
+    first = telegram_bot.file_id_cache_key(telegram_bot.WELCOME_IMAGE)
+    second = telegram_bot.file_id_cache_key(telegram_bot.WELCOME_IMAGE)
+    assert first == second
+    info = telegram_bot._hash_file.cache_info()
+    assert (info.misses, info.hits) == (1, 1)
+
+
+# --- Username de suport invalid -------------------------------------------------
+@pytest.mark.asyncio
+@pytest.mark.parametrize("username", ["@ab", "flirt support", "x/../evil?a=b", "@" + "a" * 33])
+async def test_username_de_suport_invalid_ascunde_butonul(
+    client, live_bot, telegram_calls, monkeypatch, caplog, username
+):
+    bot_texts._warned_usernames.clear()
+    monkeypatch.setattr(telegram_bot.settings, "support_telegram_username", username)
+    with caplog.at_level(logging.WARNING, logger="app.telegram"):
+        await _post(client, _update_from("/contacts"))
+        await _post(client, _update_from("/contacts"))
+
+    for call in telegram_calls:
+        assert "t.me/" not in call["json"]["text"]
+        assert all("t.me/" not in (b.get("url") or "") for b in _all_buttons(call))
+    warnings = [r for r in caplog.records if "SUPPORT_TELEGRAM_USERNAME" in r.getMessage()]
+    assert len(warnings) == 1
 
 
 # --- Textele profilului: limitele Telegram ------------------------------------

@@ -21,8 +21,12 @@ LIMITE TELEGRAM (verificate în teste):
 from __future__ import annotations
 
 import html
+import logging
+import re
 
 from app.core.config import settings
+
+log = logging.getLogger("app.telegram")
 
 # Limbile suportate. Româna e implicită (publicul principal: Moldova).
 DEFAULT_LANG = "ro"
@@ -194,10 +198,21 @@ def support_email() -> str:
     return value or DEFAULT_SUPPORT_EMAIL
 
 
+# Regula Telegram pentru username-uri; altfel valoarea nu ajunge într-un URL `t.me`.
+_TG_USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{5,32}$")
+# Valorile invalide deja raportate (avertismentul se loghează o singură dată).
+_warned_usernames: set[str] = set()
+
+
 def support_telegram_username() -> str:
-    """Username-ul contului de suport, fără `@` (gol = nesetat)."""
-    value = getattr(settings, "support_telegram_username", "") or ""
-    return value.strip().lstrip("@")
+    """Username-ul contului de suport, fără `@` (gol = nesetat SAU invalid)."""
+    value = (getattr(settings, "support_telegram_username", "") or "").strip().lstrip("@")
+    if value and not _TG_USERNAME_RE.match(value):
+        if value not in _warned_usernames:
+            _warned_usernames.add(value)
+            log.warning("telegram: SUPPORT_TELEGRAM_USERNAME invalid → ignorat")
+        return ""
+    return value
 
 
 def website_url() -> str:
@@ -340,7 +355,8 @@ def contacts_text(lang: str) -> str:
         "en": "Questions about the app, a payment or a ticket? Write to us — we'll reply as soon as we can.",
     }.get(lang, "Ai o întrebare despre aplicație, plată sau bilet? Scrie-ne — îți răspundem cât de repede putem.")
     lines = [title, "", intro, ""]
-    lines.append(f"✉️ Email: {_link('mailto:' + email, email)}")
+    # Adresa simplă, fără `mailto:` (Telegram nu-l suportă sigur); o auto-leagă singur.
+    lines.append(f"✉️ Email: {_e(email)}")
     if tg:
         lines.append(f"💬 Telegram: {_link('https://t.me/' + tg, '@' + tg)}")
     if site:

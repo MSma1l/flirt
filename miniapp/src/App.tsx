@@ -143,8 +143,14 @@ export function App() {
     );
   }
 
+  // Un ecran de start în adâncime (ex. `/tickets`) primește `/` dedesubt:
+  // altfel `navigate(-1)` din `DeepScreen` n-ar avea unde să întoarcă și
+  // butonul ÎNAPOI (nativ sau din antet) n-ar face nimic.
+  const startPath = initialPathFromStartParam(getStartParam());
+  const initialEntries = startPath === '/' ? ['/'] : ['/', startPath];
+
   return (
-    <MemoryRouter initialEntries={[initialPathFromStartParam(getStartParam())]}>
+    <MemoryRouter initialEntries={initialEntries} initialIndex={initialEntries.length - 1}>
       <AppRoutes />
     </MemoryRouter>
   );

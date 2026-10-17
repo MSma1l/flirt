@@ -4,7 +4,7 @@
 CE PRODUCE
 ----------
 - `app/assets/bot/welcome.png` — 1280x720, trimis ca POZĂ la `/start` (vezi
-  `services/telegram_bot.send_welcome_photo`). Fundal închis în degradeu, o
+  `services/telegram_bot.send_cached_photo`). Fundal închis în degradeu, o
   strălucire roz de brand (#ff2d78) în spatele logoului, logoul pe centru și o
   linie scurtă dedesubt.
 - `app/assets/bot/avatar.png` — 640x640, poza de profil a botului. Telegram o

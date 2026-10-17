@@ -181,14 +181,26 @@ def _current(result: dict, field: str) -> str | None:
 
 
 def _validate_texts() -> None:
-    """Limitele Telegram, verificate ÎNAINTE de orice apel."""
+    """Limitele Telegram, verificate ÎNAINTE de orice apel.
+
+    Verificări explicite, nu `assert`: sub `python -O` aserțiunile dispar și
+    texte prea lungi ar ajunge la Telegram.
+    """
+    errors: list[str] = []
     for lang in bot_texts.LANGS:
-        assert len(bot_texts.DESCRIPTION[lang]) <= 512, f"descriere {lang} > 512"
-        assert len(bot_texts.SHORT_DESCRIPTION[lang]) <= 120, f"descriere scurtă {lang} > 120"
-        assert 1 <= len(bot_texts.BOT_NAME[lang]) <= 64, f"nume {lang}"
+        if len(bot_texts.DESCRIPTION[lang]) > 512:
+            errors.append(f"descriere {lang} > 512")
+        if len(bot_texts.SHORT_DESCRIPTION[lang]) > 120:
+            errors.append(f"descriere scurtă {lang} > 120")
+        if not 1 <= len(bot_texts.BOT_NAME[lang]) <= 64:
+            errors.append(f"nume {lang}")
         for name, desc in bot_texts.COMMANDS[lang]:
-            assert 1 <= len(name) <= 32 and name.islower(), f"comandă {name}"
-            assert 1 <= len(desc) <= 256, f"descriere comandă {name}"
+            if not (1 <= len(name) <= 32 and name.islower()):
+                errors.append(f"comandă {name}")
+            if not 1 <= len(desc) <= 256:
+                errors.append(f"descriere comandă {name}")
+    if errors:
+        raise SystemExit("Texte invalide pentru Telegram:\n  " + "\n  ".join(errors))
 
 
 def _print_plan(webhook_url: str, with_photo: bool) -> None:

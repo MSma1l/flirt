@@ -24,9 +24,14 @@ CE ÎNȚELEGE BOTUL
 spre ecranul potrivit din Mini App; butoanele callback „Ajutor" / „Contacte" /
 „Confidențialitate" (`callback_query`). Orice alt text → indiciu + butonul app-ului.
 Limba: din `from.language_code` (ro implicit, ru pentru ru/uk/be, en).
+
+GRUPURI: Telegram acceptă butoane `web_app` doar în chat PRIVAT — într-un grup
+ar respinge tot mesajul. Acolo butonul app-ului devine un link spre chatul privat
+cu botul (`t.me/<bot>?start=<param>`), sau lipsește dacă username-ul nu e setat.
 """
 from __future__ import annotations
 
+import asyncio
 import hmac
 import logging
 
@@ -50,6 +55,11 @@ DEFAULT_WEBHOOK_PER_MIN = 30
 
 # Textele (ro/ru/en) stau în `services/bot_texts.py` — comune cu scriptul de setup.
 HTML = "HTML"
+
+# Bugetul TOTAL al bunului venit (poză după file_id → încărcare → text). Webhookul
+# trebuie să răspundă mult sub fereastra după care Telegram retrimite update-ul
+# (care ar produce încă un bun venit).
+WELCOME_BUDGET_SECONDS = 20.0
 
 
 def _forbidden() -> HTTPException:
@@ -141,15 +151,24 @@ def _lang(user: dict | None) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def _app_row(lang: str, key: str, start_param: str | None) -> list[dict]:
-    return [telegram_bot.web_app_button(bot_texts.button(lang, key), start_param)]
+def _app_button(lang: str, key: str, start_param: str | None, private: bool) -> dict | None:
+    """Butonul care deschide Mini App-ul: `web_app` în privat, link `t.me` în grup."""
+    text = bot_texts.button(lang, key)
+    if private:
+        return telegram_bot.web_app_button(text, start_param)
+    return telegram_bot.bot_link_button(text, start_param)
+
+
+def _app_row(lang: str, key: str, start_param: str | None, private: bool) -> list[dict]:
+    button = _app_button(lang, key, start_param, private)
+    return [button] if button else []
 
 
 def _callback(lang: str, key: str, data: str) -> dict:
     return {"text": bot_texts.button(lang, key), "callback_data": data}
 
 
-def _welcome_keyboard(lang: str, start_param: str | None) -> dict:
+def _welcome_keyboard(lang: str, start_param: str | None, private: bool = True) -> dict:
     """Meniul de sub poza de bun venit.
 
     Fără URL de Mini App rămân doar butoanele callback — un buton `web_app` fără
@@ -157,16 +176,16 @@ def _welcome_keyboard(lang: str, start_param: str | None) -> dict:
     """
     rows: list[list[dict]] = []
     if telegram_bot.miniapp_url():
-        rows.append(_app_row(lang, "open", start_param))
-        rows.append([
-            telegram_bot.web_app_button(bot_texts.button(lang, "events"), bot_texts.START_EVENTS),
-            telegram_bot.web_app_button(bot_texts.button(lang, "tickets"), bot_texts.START_TICKETS),
-        ])
+        rows.append(_app_row(lang, "open", start_param, private))
+        rows.append(
+            _app_row(lang, "events", bot_texts.START_EVENTS, private)
+            + _app_row(lang, "tickets", bot_texts.START_TICKETS, private)
+        )
     rows.append([
         _callback(lang, "help", bot_texts.CB_HELP),
         _callback(lang, "contacts", bot_texts.CB_CONTACTS),
     ])
-    return {"inline_keyboard": rows}
+    return {"inline_keyboard": [row for row in rows if row]}
 
 
 def _keyboard(rows: list[list[dict]]) -> dict | None:
@@ -174,9 +193,14 @@ def _keyboard(rows: list[list[dict]]) -> dict | None:
     return {"inline_keyboard": rows} if rows else None
 
 
-def _open_rows(lang: str, key: str = "open", start_param: str | None = None) -> list[list[dict]]:
+def _open_rows(
+    lang: str, private: bool, key: str = "open", start_param: str | None = None
+) -> list[list[dict]]:
     """Rândul cu butonul care deschide Mini App-ul (gol dacă nu e configurat)."""
-    return [_app_row(lang, key, start_param)] if telegram_bot.miniapp_url() else []
+    if not telegram_bot.miniapp_url():
+        return []
+    row = _app_row(lang, key, start_param, private)
+    return [row] if row else []
 
 
 # --------------------------------------------------------------------------- #
@@ -191,24 +215,53 @@ async def _send(chat_id: int | str, text: str, rows: list[list[dict]]) -> None:
 
 
 async def _send_welcome(
-    chat_id: int | str, lang: str, first_name: str | None, start_param: str | None
+    chat_id: int | str,
+    lang: str,
+    first_name: str | None,
+    start_param: str | None,
+    private: bool = True,
 ) -> None:
-    """Poza de bun venit cu legendă + meniu; la eșec, același conținut ca text."""
+    """Poza de bun venit cu legendă + meniu, în bugetul `WELCOME_BUDGET_SECONDS`."""
+    try:
+        await asyncio.wait_for(
+            _deliver_welcome(chat_id, lang, first_name, start_param, private),
+            timeout=WELCOME_BUDGET_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        # Livrarea e incertă (cererea în curs poate să fi ajuns) → nu reîncercăm.
+        log.warning("telegram: bun venitul a depășit bugetul de timp, renunț")
+
+
+async def _deliver_welcome(
+    chat_id: int | str,
+    lang: str,
+    first_name: str | None,
+    start_param: str | None,
+    private: bool,
+) -> None:
+    """Poza; DOAR dacă Telegram a respins-o sigur, același conținut ca text.
+
+    Timeout / conexiune ruptă ⇒ poza poate să fi ajuns: fără fallback (altfel
+    dublură). Bot blocat / flood ⇒ nici textul n-ar trece: tot fără fallback.
+    """
     caption = bot_texts.welcome(lang, first_name)
-    keyboard = _welcome_keyboard(lang, start_param)
+    keyboard = _welcome_keyboard(lang, start_param, private)
     result = await telegram_bot.send_cached_photo(
         chat_id, telegram_bot.WELCOME_IMAGE, caption, keyboard, HTML
     )
-    if result.get("ok"):
+    outcome = telegram_bot.delivery(result)
+    if outcome is not telegram_bot.Delivery.REJECTED:
+        if outcome is not telegram_bot.Delivery.SENT:
+            log.warning("telegram: poza de bun venit nu a plecat (%s), fără fallback", outcome.value)
         return
-    log.warning("telegram: poza de bun venit a eșuat → trimit varianta text")
+    log.warning("telegram: poza de bun venit a fost respinsă → trimit varianta text")
     await telegram_bot.send_message(
         chat_id, caption, reply_markup=keyboard, parse_mode=HTML, disable_preview=True
     )
 
 
-async def _send_help(chat_id: int | str, lang: str) -> None:
-    rows = _open_rows(lang)
+async def _send_help(chat_id: int | str, lang: str, private: bool) -> None:
+    rows = _open_rows(lang, private)
     rows.append([
         _callback(lang, "contacts", bot_texts.CB_CONTACTS),
         _callback(lang, "privacy", bot_texts.CB_PRIVACY),
@@ -216,51 +269,60 @@ async def _send_help(chat_id: int | str, lang: str) -> None:
     await _send(chat_id, bot_texts.help_text(lang), rows)
 
 
-async def _send_contacts(chat_id: int | str, lang: str) -> None:
+async def _send_contacts(chat_id: int | str, lang: str, private: bool) -> None:
     rows: list[list[dict]] = []
-    tg = bot_texts.support_telegram_username()
+    tg = bot_texts.support_telegram_username()  # gol dacă lipsește sau e invalid
     if tg:
         rows.append([{"text": bot_texts.button(lang, "write_support"), "url": f"https://t.me/{tg}"}])
     site = bot_texts.website_url()
     if site.startswith("https://"):
         rows.append([{"text": bot_texts.button(lang, "website"), "url": site}])
-    rows += _open_rows(lang)
+    rows += _open_rows(lang, private)
     await _send(chat_id, bot_texts.contacts_text(lang), rows)
 
 
-async def _send_privacy(chat_id: int | str, lang: str) -> None:
-    rows = _open_rows(lang, "privacy_app", bot_texts.START_PRIVACY)
+async def _send_privacy(chat_id: int | str, lang: str, private: bool) -> None:
+    rows = _open_rows(lang, private, "privacy_app", bot_texts.START_PRIVACY)
     await _send(chat_id, bot_texts.privacy_text(lang), rows)
 
 
-async def _send_events(chat_id: int | str, lang: str) -> None:
+async def _send_events(chat_id: int | str, lang: str, private: bool) -> None:
     if not telegram_bot.miniapp_url():
         await _send(chat_id, bot_texts.no_miniapp_text(lang), [])
         return
     await _send(
-        chat_id, bot_texts.events_text(lang), _open_rows(lang, "events", bot_texts.START_EVENTS)
+        chat_id,
+        bot_texts.events_text(lang),
+        _open_rows(lang, private, "events", bot_texts.START_EVENTS),
     )
 
 
-async def _send_tickets(chat_id: int | str, lang: str) -> None:
+async def _send_tickets(chat_id: int | str, lang: str, private: bool) -> None:
     if not telegram_bot.miniapp_url():
         await _send(chat_id, bot_texts.no_miniapp_text(lang), [])
         return
     await _send(
-        chat_id, bot_texts.tickets_text(lang), _open_rows(lang, "tickets", bot_texts.START_TICKETS)
+        chat_id,
+        bot_texts.tickets_text(lang),
+        _open_rows(lang, private, "tickets", bot_texts.START_TICKETS),
     )
 
 
-async def _send_fallback(chat_id: int | str, lang: str) -> None:
+async def _send_fallback(chat_id: int | str, lang: str, private: bool) -> None:
     if not telegram_bot.miniapp_url():
         # Fără URL de Mini App un buton `web_app` ar fi respins de Telegram.
         log.warning("telegram: TELEGRAM_MINIAPP_URL lipsește → răspund fără buton")
         await _send(chat_id, bot_texts.no_miniapp_text(lang), [])
         return
-    await _send(chat_id, bot_texts.fallback_text(lang), _open_rows(lang))
+    await _send(chat_id, bot_texts.fallback_text(lang), _open_rows(lang, private))
 
 
-# Comenzile/callback-urile simple: nume → funcție (chat_id, lang).
+def _is_private(chat: dict) -> bool:
+    """True pentru chatul privat cu userul (singurul unde merg butoanele `web_app`)."""
+    return chat.get("type", "private") == "private"
+
+
+# Comenzile/callback-urile simple: nume → funcție (chat_id, lang, private).
 _SIMPLE_HANDLERS = {
     "help": _send_help,
     "contacts": _send_contacts,
@@ -283,20 +345,21 @@ async def _handle_message(message: dict) -> None:
 
     user = message.get("from") if isinstance(message.get("from"), dict) else {}
     lang = _lang(user)
+    private = _is_private(chat)
     text = (message.get("text") or "").strip()
     command = _command(text)
 
     if command == "start":
-        await _send_welcome(chat_id, lang, user.get("first_name"), _start_param(text))
+        await _send_welcome(chat_id, lang, user.get("first_name"), _start_param(text), private)
         return
     handler = _SIMPLE_HANDLERS.get(command or "")
     if handler is not None:
-        await handler(chat_id, lang)
+        await handler(chat_id, lang, private)
         return
     if text.startswith("/") and command is None:
         # Comandă adresată altui bot din grup — tăcem.
         return
-    await _send_fallback(chat_id, lang)
+    await _send_fallback(chat_id, lang, private)
 
 
 async def _handle_callback(callback: dict) -> None:
@@ -304,23 +367,28 @@ async def _handle_callback(callback: dict) -> None:
     query_id = callback.get("id")
     user = callback.get("from") if isinstance(callback.get("from"), dict) else {}
     message = callback.get("message") if isinstance(callback.get("message"), dict) else {}
-    chat_id = (message.get("chat") or {}).get("id") or user.get("id")
+    chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
+    # Fără `message` (buton dintr-un mesaj inline) răspundem în privat, userului.
+    chat_id = chat.get("id") or user.get("id")
+    private = _is_private(chat) if chat.get("id") else True
     data = callback.get("data")
 
     if not isinstance(query_id, str) or chat_id is None:
         log.info("telegram: callback_query incomplet, ignorat")
         return
 
+    # Răspundem MEREU la callback, ÎNAINTE de rate limit (altfel butonul rămâne
+    # „în încărcare" ~15s exact când userul apasă des).
+    await telegram_bot.answer_callback_query(query_id)
+
     if not await _within_rate_limit(chat_id):
         log.warning("telegram: rate limit atins pentru chat_id=%s", chat_id)
         return
 
-    # Răspundem MEREU la callback (altfel butonul rămâne „în încărcare" ~15s).
-    await telegram_bot.answer_callback_query(query_id)
     if data not in bot_texts.CALLBACKS:
         log.info("telegram: callback necunoscut, ignorat")
         return
-    await _SIMPLE_HANDLERS[data](chat_id, _lang(user))
+    await _SIMPLE_HANDLERS[data](chat_id, _lang(user), private)
 
 
 async def _handle_update(update: dict) -> None:
