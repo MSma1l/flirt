@@ -55,13 +55,17 @@ export const scanMessages = defineMessages({
       alreadyAdmitted: (time: string, by: string | null) =>
         by ? `A intrat deja la ${time}, scanat de ${by}.` : `A intrat deja la ${time}.`,
       alreadyUsed: 'Biletul a fost deja folosit.',
-      wrongEvent: (title: string | null) =>
-        title ? `Biletul e pentru „${title}".` : 'Biletul nu e valabil la acest eveniment.',
+      wrongEvent: (title: string | null, when: string | null) =>
+        title
+          ? `Biletul e pentru „${title}"${when ? ` (${when})` : ''}, nu pentru evenimentul ales.`
+          : 'Biletul nu e valabil la acest eveniment.',
       notPaid: 'Plata nu a fost confirmată de admin.',
       cancelled: 'Comanda a fost respinsă sau anulată.',
       eventOver: 'Evenimentul s-a terminat.',
-      notFound: 'Codul nu corespunde niciunui bilet.',
+      notFound: 'Codul nu corespunde niciunui bilet. Verifică dacă e codul corect sau cere biletul din aplicație.',
+      eventMissing: 'Evenimentul ales nu mai există. Reîncarcă pagina și alege alt eveniment.',
     },
+    doNotAdmit: 'Nu permite intrarea',
     ticketFlirtParty: 'Bilet Flirt Party',
     viaPassport: 'Bilet online găsit prin Flirt Passport',
     doorCashAdmitted: 'Intrare cash înregistrată · ștampilă adăugată',
@@ -130,13 +134,17 @@ export const scanMessages = defineMessages({
       alreadyAdmitted: (time: string, by: string | null) =>
         by ? `Уже вошёл в ${time}, сканировал ${by}.` : `Уже вошёл в ${time}.`,
       alreadyUsed: 'Билет уже использован.',
-      wrongEvent: (title: string | null) =>
-        title ? `Билет на «${title}».` : 'Билет недействителен на этом событии.',
+      wrongEvent: (title: string | null, when: string | null) =>
+        title
+          ? `Билет на «${title}»${when ? ` (${when})` : ''}, а не на выбранное событие.`
+          : 'Билет недействителен на этом событии.',
       notPaid: 'Оплата не подтверждена администратором.',
       cancelled: 'Заказ отклонён или отменён.',
       eventOver: 'Событие уже закончилось.',
-      notFound: 'Код не соответствует ни одному билету.',
+      notFound: 'Код не соответствует ни одному билету. Проверьте код или попросите показать билет в приложении.',
+      eventMissing: 'Выбранное событие больше не существует. Перезагрузите страницу и выберите другое.',
     },
+    doNotAdmit: 'Не пропускать',
     ticketFlirtParty: 'Билет Flirt Party',
     viaPassport: 'Онлайн-билет найден через Flirt Passport',
     doorCashAdmitted: 'Вход за наличные записан · штамп добавлен',

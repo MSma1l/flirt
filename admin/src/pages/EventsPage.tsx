@@ -28,6 +28,7 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import { createEvent, deleteEvent, fetchEvents, updateEvent } from '../api/admin';
+import { ApiError } from '../api/client';
 import { EVENT_KINDS, type AdminEvent, type EventInput } from '../api/types';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { EventPreview, kindLabel } from '../components/EventPreview';
@@ -63,7 +64,7 @@ import {
   type FormErrors,
   type FormState,
 } from '../lib/eventForm';
-import { formatDateTime } from '../lib/format';
+import { formatDateTime, formatMoney } from '../lib/format';
 
 // Etichetele vin din `i18n/messages/events.ts` (`filters` / `sorts`), în limba activă.
 const FILTER_OPTIONS: readonly EventTimeFilter[] = ['all', 'upcoming', 'past'] as const;
@@ -73,7 +74,7 @@ const SORT_OPTIONS: readonly EventSort[] = ['soonest', 'latest'] as const;
 /** Prețul biletului pentru tabel: „50 lei" sau „—" când biletul online lipsește. */
 function ticketPriceLabel(event: AdminEvent): string {
   if (event.ticket_price === null) return '—';
-  return `${event.ticket_price} ${event.ticket_currency ?? 'lei'}`;
+  return formatMoney(event.ticket_price, event.ticket_currency);
 }
 
 export function EventsPage(): JSX.Element {
@@ -83,6 +84,8 @@ export function EventsPage(): JSX.Element {
   const [editing, setEditing] = useState<{ event: AdminEvent | null } | null>(null);
   const [toDelete, setToDelete] = useState<AdminEvent | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  // 409 `capacity_below_sold`: eroarea stă sub câmpul „Capacitate bilete".
+  const [capacityError, setCapacityError] = useState<string | null>(null);
   // `?q=` vine din ecranul de invitații („Vezi evenimentul"): legătura dintre un
   // cod și petrecerea lui trebuie să meargă în ambele sensuri.
   const [searchParams] = useSearchParams();
@@ -101,9 +104,20 @@ export function EventsPage(): JSX.Element {
     onSuccess: async () => {
       setEditing(null);
       setFormError(null);
+      setCapacityError(null);
       await invalidate();
     },
-    onError: (error: unknown) => setFormError(errorMessage(error)),
+    onError: (error: unknown) => {
+      if (error instanceof ApiError && error.code === 'capacity_below_sold') {
+        // Numărul local de vândute e vechi (validarea locală l-a lăsat să treacă):
+        // mesaj fără număr + reîmprospătăm lista ca editorul să afle cifra nouă.
+        setFormError(null);
+        setCapacityError(m.validation.capacityBelowSoldServer);
+        void invalidate();
+        return;
+      }
+      setFormError(errorMessage(error));
+    },
   });
 
   const remove = useMutation({
@@ -244,9 +258,12 @@ export function EventsPage(): JSX.Element {
           event={editing.event}
           busy={save.isPending}
           errorMessage={formError}
+          capacityError={capacityError}
+          onCapacityChange={() => setCapacityError(null)}
           onCancel={() => {
             setEditing(null);
             setFormError(null);
+            setCapacityError(null);
           }}
           onSubmit={(input) => save.mutate({ id: editing.event?.id ?? null, input })}
         />
@@ -363,6 +380,11 @@ function EventTable({
                   {event.ticket_order_count === 0
                     ? '—'
                     : `${event.ticket_order_count} (${event.ticket_approved_count})`}
+                  {event.tickets_sold !== undefined ? (
+                    <div className="muted" data-testid={`event-sold-${event.id}`}>
+                      {t.soldOf(event.tickets_sold, event.ticket_capacity ?? null)}
+                    </div>
+                  ) : null}
                 </td>
                 <td>
                   <div className="table__actions">
@@ -401,12 +423,17 @@ function EventFormModal({
   event,
   busy,
   errorMessage: error,
+  capacityError = null,
+  onCapacityChange,
   onCancel,
   onSubmit,
 }: {
   event: AdminEvent | null;
   busy: boolean;
   errorMessage: string | null;
+  /** Eroarea serverului pentru capacitate (409 `capacity_below_sold`). */
+  capacityError?: string | null;
+  onCapacityChange?: () => void;
   onCancel: () => void;
   onSubmit: (input: EventInput) => void;
 }): JSX.Element {
@@ -417,7 +444,8 @@ function EventFormModal({
   const set = <K extends keyof FormState>(key: K, value: FormState[K]): void =>
     setForm((current) => ({ ...current, [key]: value }));
 
-  const errors: FormErrors = validate(form, language);
+  const ticketsSold = event?.tickets_sold ?? 0;
+  const errors: FormErrors = validate(form, language, ticketsSold);
   const hints = warnings(form, Date.now(), language);
   const valid = Object.keys(errors).length === 0;
 
@@ -630,6 +658,31 @@ function EventFormModal({
                 </Field>
                 <p className="field__hint">{f.salesEndHint}</p>
                 <FieldError message={errors.ticket_sales_end_at} />
+              </div>
+              <div>
+                <Field label={f.ticketCapacity} htmlFor="event-ticket-capacity">
+                  <TextInput
+                    id="event-ticket-capacity"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    step={1}
+                    placeholder={f.ticketCapacityPlaceholder}
+                    value={form.ticket_capacity}
+                    aria-invalid={errors.ticket_capacity || capacityError ? true : undefined}
+                    onChange={(e) => {
+                      onCapacityChange?.();
+                      set('ticket_capacity', e.target.value);
+                    }}
+                  />
+                </Field>
+                <p className="field__hint">{f.ticketCapacityHint}</p>
+                {event ? (
+                  <p className="field__hint" data-testid="event-tickets-sold">
+                    {f.soldOf(ticketsSold, event.ticket_capacity ?? null)}
+                  </p>
+                ) : null}
+                <FieldError message={errors.ticket_capacity ?? capacityError ?? undefined} />
               </div>
             </div>
           </fieldset>

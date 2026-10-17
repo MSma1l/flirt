@@ -162,6 +162,10 @@ export interface AdminEvent {
    * evenimentului. Opțional doar pentru compatibilitate cu backenduri mai vechi.
    */
   ticket_sales_end_at?: IsoDateTime | null;
+  /** Câte bilete se pot vinde în total. `null` = nelimitat. */
+  ticket_capacity?: number | null;
+  /** Bilete vândute (aprobate) — numărul cu care se compară capacitatea. */
+  tickets_sold?: number;
 }
 
 /** Payload de creare/editare — exact câmpurile scriibile ale modelului `Event`. */
@@ -187,6 +191,8 @@ export interface EventInput {
   ticket_currency: string | null;
   /** Închiderea vânzării online; cel mult start + 12h. Gol → `null` (= la start). */
   ticket_sales_end_at: IsoDateTime | null;
+  /** Capacitatea de bilete (întreg ≥ 1). Gol → `null` = nelimitat. */
+  ticket_capacity: number | null;
 }
 
 export const EVENT_KINDS = [
@@ -369,7 +375,18 @@ export interface TicketOrder {
   total_amount?: number | null;
   /** Stările în care adminul poate muta acum comanda; [] = finală. */
   allowed_statuses?: TicketOrderStatus[];
+  /** Starea BILETULUI (≠ `status`, starea plății); null cât timp nu există bilet. */
+  ticket_status?: TicketLifecycleStatus | null;
+  /** Momentul scanării la intrare (null = încă nescanat). */
+  admitted_at?: IsoDateTime | null;
 }
+
+/**
+ * Starea biletului emis (`services/ticket_lifecycle.py`): `valid` = nescanat,
+ * `admitted` = a intrat, `used` = a intrat și evenimentul s-a terminat,
+ * `expired` = nu a venit, `cancelled` = comanda respinsă/anulată.
+ */
+export type TicketLifecycleStatus = 'valid' | 'admitted' | 'used' | 'expired' | 'cancelled';
 
 /** Payload-ul `POST /admin/ticket-orders/{id}/status`. */
 export interface TicketOrderStatusChange {
@@ -440,6 +457,17 @@ export interface TicketRequest {
   admin_comment: string | null;
   reviewed_at: IsoDateTime | null;
   created_at: IsoDateTime;
+  /** Codul biletului — doar pe cererile aprobate. */
+  ticket_code?: string | null;
+  ticket_status?: TicketLifecycleStatus | null;
+  admitted_at?: IsoDateTime | null;
+}
+
+/** `GET /admin/ticket-orders/counts` și `/admin/ticket-requests/counts`. */
+export interface TicketStatusCounts {
+  /** Fiecare stare → numărul exact (0 când nu există). */
+  counts: Partial<Record<TicketOrderStatus, number>> & Record<string, number>;
+  total: number;
 }
 
 export interface TicketRequestFilters {
@@ -447,10 +475,12 @@ export interface TicketRequestFilters {
   event_id?: Uuid;
   created_from?: string;
   created_to?: string;
+  /** Mărimea paginii (backend: maxim 100, cele mai noi primele). */
+  limit?: number;
 }
 
 export interface TicketRequestReviewInput {
-  status: 'approved' | 'rejected' | 'additional_information_required' | 'under_review';
+  status: 'approved' | 'rejected' | 'additional_information_required' | 'under_review' | 'cancelled';
   admin_comment?: string;
 }
 

@@ -44,7 +44,28 @@ export function kindColorVar(kind: string): string {
 }
 
 /**
- * Data unui eveniment, scrisă în limba INTERFEȚEI (nu fix `ro-RO`).
+ * Fusul orar al evenimentelor. Toate evenimentele FLIRT au loc în Moldova, deci
+ * ora se scrie MEREU pe ora Chișinăului — nu pe a telefonului. Un om cu
+ * telefonul pe altă oră (în călătorie, setare greșită) ar vedea altfel „22:00"
+ * ca „21:00" și ar veni la ușă cu o oră mai devreme sau mai târziu.
+ */
+export const EVENT_TIME_ZONE = 'Europe/Chisinau';
+
+/**
+ * `toLocale*String` cu fusul evenimentelor; dacă motorul nu cunoaște fusul
+ * (WebView foarte vechi), cade pe ora telefonului în loc să arunce.
+ */
+export function formatInEventZone(date: Date, options: Intl.DateTimeFormatOptions): string {
+  try {
+    return date.toLocaleString(i18n.language, { ...options, timeZone: EVENT_TIME_ZONE });
+  } catch {
+    return date.toLocaleString(i18n.language, options);
+  }
+}
+
+/**
+ * Data unui eveniment, scrisă în limba INTERFEȚEI (nu fix `ro-RO`), pe ora
+ * Chișinăului (`EVENT_TIME_ZONE`).
  *
  * Regula vine de pe mobil: un utilizator care ține aplicația în rusă vedea luna
  * scrisă românește, și pe cardul de eveniment, și pe ștampilele din passport.
@@ -57,7 +78,7 @@ export function formatEventDate(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   try {
-    return date.toLocaleDateString(i18n.language, {
+    return formatInEventZone(date, {
       day: 'numeric',
       month: 'long',
       hour: '2-digit',
@@ -73,7 +94,7 @@ export function formatStampDate(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   try {
-    return date.toLocaleDateString(i18n.language, {
+    return formatInEventZone(date, {
       day: 'numeric',
       month: 'long',
       year: 'numeric',

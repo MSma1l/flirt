@@ -22,7 +22,9 @@
       "closedTitle": "Online sales are closed",
       "closedBody": "Tickets for this event can no longer be bought in the app.",
       "closedError": "Online sales for this event have just closed.",
-      "requestHint": "“Request ticket” — for several tickets or a named reservation."
+      "requestHint": "“Request ticket” — for several tickets or a named reservation.",
+      "soldOutTitle": "Online tickets are sold out",
+      "soldOutBody": "There are no more tickets available in the app for this event."
     }
   },
   "stories": {
@@ -139,14 +141,20 @@
         "used": "Used",
         "expired": "Expired",
         "cancelled": "Cancelled"
-      }
+      },
+      "fullscreen": "Enlarge QR code",
+      "fullscreenTitle": "Show this code at the entrance",
+      "close": "Close"
     },
     "moreInfo": {
       "title": "We need more information",
       "body": "Read the admin's message and send the payment proof again."
     },
     "review": {
-      "proofBody": "We received your payment proof. We check it manually and send your ticket right after confirmation."
+      "proofBody": "We received your payment proof. We check it manually and send your ticket right after confirmation.",
+      "replace": "Sent the wrong receipt? Upload another one",
+      "missingProofTitle": "Receipt missing",
+      "missingProofBody": "Upload the payment receipt so we can confirm your ticket."
     },
     "approvedPending": "Payment confirmed. Your ticket code is being generated — check back in a few minutes.",
     "rejected": {
@@ -160,7 +168,45 @@
       "body": "This order is no longer active. You can buy a new ticket from the event page."
     },
     "openInTickets": "Open in My tickets",
-    "eventStarted": "The event has started — payment can no longer be sent online."
+    "eventStarted": "The event has started — payment can no longer be sent online.",
+    "status": {
+      "awaiting": "Awaiting payment",
+      "moreInfo": "Info needed",
+      "review": "Under review",
+      "ready": "Ticket confirmed",
+      "generating": "Ticket being prepared",
+      "admitted": "Checked in",
+      "used": "Ticket used",
+      "expired": "Expired",
+      "ticketCancelled": "Ticket cancelled",
+      "rejected": "Payment rejected",
+      "cancelled": "Order cancelled",
+      "closed": "Online payment closed",
+      "unknown": "Processing"
+    },
+    "next": {
+      "awaiting": "Pay and upload the receipt",
+      "moreInfo": "Read the message and send the receipt again",
+      "review": "We are checking the payment, usually within a few hours",
+      "ready": "Show the QR code at the entrance",
+      "generating": "The QR code will appear in a few minutes",
+      "admitted": "Enjoy the party!",
+      "used": "The ticket was scanned at the entrance",
+      "expired": "The event has ended",
+      "ticketCancelled": "The ticket is no longer valid",
+      "rejected": "See the reason and what to do next",
+      "cancelled": "The order is no longer active",
+      "closed": "The event has started — tickets are sold at the door",
+      "unknown": "Open the order for details"
+    },
+    "loading": "Loading",
+    "closedOrder": {
+      "title": "Online payment closed",
+      "body": "The event has started, so the payment can no longer be sent from the app. If you already paid, show the receipt from your banking app at the entrance."
+    },
+    "proofSent": "Receipt sent. We will check it as soon as possible.",
+    "lastRejected": "Your last order for this event was rejected.",
+    "lastRejectedLink": "See the reason"
   },
   "social": {
     "unblockConfirm": "Unblock {{name}}? They’ll be able to see you and message you again.",
@@ -287,7 +333,10 @@
       "previewAlt": "Receipt preview",
       "remove": "Change",
       "progress": "Uploading: {{percent}}%",
-      "submitReceipt": "Send receipt"
+      "submitReceipt": "Send receipt",
+      "emptyFile": "The file is empty. Choose the receipt again.",
+      "unreadable": "We could not read the file. Send a screenshot (JPG, PNG) or the PDF from your banking app.",
+      "notAccepted": "This order no longer accepts receipts — its status has changed."
     },
     "form": {
       "pricePerTicket": "Price per ticket",
@@ -299,14 +348,18 @@
       "messageOptional": "Message / comment (optional)",
       "submitFailed": "We couldn't send the request. Check your details and try again.",
       "submitting": "Sending…",
-      "submit": "Send request"
+      "submit": "Send request",
+      "decrease": "Fewer tickets",
+      "increase": "More tickets"
     },
     "errors": {
       "fullName": "Enter your full name.",
       "phone": "Enter a valid phone number.",
       "email": "This email is not valid.",
-      "quantity": "Choose between {{min}} and {{max}} tickets."
-    }
+      "quantity": "Choose between {{min}} and {{max}} tickets.",
+      "soldOut": "Not enough tickets left. Try a smaller number."
+    },
+    "newRequest": "Request more tickets"
   },
   "validation": {
     "search": {

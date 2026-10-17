@@ -70,4 +70,23 @@ describe('client HTTP', () => {
       (error: unknown) => error instanceof ApiError && error.isForbidden,
     );
   });
+
+  it('păstrează codul stabil al erorii (`{detail, code}` sau `detail.code`)', async () => {
+    setAccessToken('acc');
+    mockFetch({
+      'POST /a': { status: 409, body: { detail: 'Sold out', code: 'tickets_sold_out' } },
+      'POST /b': { status: 403, body: { detail: { code: 'x_required', message: 'Mesaj' } } },
+      'POST /c': { status: 400, body: { detail: 'Fără cod' } },
+    });
+    await expect(apiFetch('/a', { method: 'POST' })).rejects.toMatchObject({
+      status: 409,
+      detail: 'Sold out',
+      code: 'tickets_sold_out',
+    });
+    await expect(apiFetch('/b', { method: 'POST' })).rejects.toMatchObject({
+      detail: 'Mesaj',
+      code: 'x_required',
+    });
+    await expect(apiFetch('/c', { method: 'POST' })).rejects.toMatchObject({ code: null });
+  });
 });

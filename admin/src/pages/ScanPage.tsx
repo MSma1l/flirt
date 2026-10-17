@@ -4,7 +4,8 @@
  *
  * Flux: alegi evenimentul → pornești camera → fiecare QR citit pleacă la
  * `POST /admin/tickets/scan`; rezultatul acoperă tot ecranul (verde = intră,
- * roșu = motivul refuzului), cu vibrație + bip, și dispare singur după ~3 s sau
+ * chihlimbariu = bilet real dar deja folosit / alt eveniment, roșu = bilet
+ * invalid), cu vibrație + bip, și dispare singur (verde ~3 s, refuz ~5 s) sau
  * la atingere. Backend-ul face admiterea ATOMIC — două telefoane care scanează
  * același bilet nu pot admite de două ori.
  *
@@ -27,16 +28,20 @@ import {
   fetchScanStats,
   scanTicket,
 } from '../api/admin';
+import { ApiError } from '../api/client';
 import type { AdminEvent, TicketScanResponse } from '../api/types';
-import { Button, Card, EmptyState, Field, LoadingState, Select, TextInput } from '../components/ui';
+import { Button, Card, EmptyState, ErrorState, Field, LoadingState, Select, TextInput } from '../components/ui';
 import { INTL_LOCALE, useLanguage, useMessages } from '../i18n/LanguageContext';
 import { scanMessages } from '../i18n/messages/scan';
 import { errorMessage } from '../lib/errors';
+import { TIME_ZONE, dayKey, formatTime } from '../lib/format';
 import { createQrDecoder, type QrDecoder } from '../lib/qrDecoder';
 import './ScanPage.css';
 
-/** Cât stă cardul de rezultat pe ecran înainte de revenirea la scanare. */
+/** Cât stă cardul VERDE pe ecran înainte de revenirea la scanare. */
 export const RESULT_DISPLAY_MS = 3000;
+/** Refuzurile (roșu/chihlimbariu) stau mai mult: staff-ul trebuie să citească motivul. */
+export const REFUSAL_DISPLAY_MS = 5000;
 /** Același cod nu e retrimis mai des de atât (QR-ul rămâne în fața camerei). */
 export const SAME_CODE_COOLDOWN_MS = 2000;
 /** Pauza dintre două încercări de decodare (cadre/s ≈ 1000 / valoare). */
@@ -44,6 +49,8 @@ const DECODE_INTERVAL_MS = 150;
 /** Durata presupusă a unui eveniment (aliniată cu backend-ul: starts_at + 12h). */
 const EVENT_DURATION_MS = 12 * 60 * 60 * 1000;
 const EVENT_STORAGE_KEY = 'flirt_admin_scan_event';
+/** Câte evenimente cerem: lista adminului e „cele mai noi primele", deci și viitoarele îndepărtate. */
+const EVENTS_LIMIT = 100;
 
 type CameraState =
   | 'idle'
@@ -57,6 +64,18 @@ type CameraState =
   | 'generic';
 
 type ShownResult = TicketScanResponse | { result: 'error'; ticket: null; message: string };
+
+/**
+ * Culoarea cardului: VERDE = intră; CHIHLIMBARIU = bilet real, dar nu acum/aici
+ * (deja intrat, alt eveniment) — staff-ul verifică omul; ROȘU = bilet invalid.
+ */
+export type ResultTone = 'ok' | 'caution' | 'fail';
+
+export function resultTone(result: ShownResult['result']): ResultTone {
+  if (result === 'admitted') return 'ok';
+  if (result === 'already_admitted' || result === 'wrong_event' || result === 'no_ticket') return 'caution';
+  return 'fail';
+}
 
 /* ------------------------------ Feedback ------------------------------ */
 
@@ -282,7 +301,7 @@ export function ScanPage(): JSX.Element {
 
   const eventsQuery = useQuery({
     queryKey: ['scan-events'],
-    queryFn: () => fetchEvents(),
+    queryFn: () => fetchEvents(undefined, EVENTS_LIMIT),
     staleTime: 60_000,
   });
   const events = useMemo(
@@ -305,11 +324,19 @@ export function ScanPage(): JSX.Element {
     refetchInterval: 15_000,
   });
 
-  const timeFormat = useMemo(
-    () => new Intl.DateTimeFormat(INTL_LOCALE[language], { hour: '2-digit', minute: '2-digit' }),
+  // Ora din Chișinău (ușa e în Moldova), indiferent de fusul telefonului.
+  const dateFormat = useMemo(
+    () =>
+      new Intl.DateTimeFormat(INTL_LOCALE[language], {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: TIME_ZONE,
+      }),
     [language],
   );
-  const formatTime = (iso: string | null): string => (iso ? timeFormat.format(new Date(iso)) : '—');
+  const formatWhen = (iso: string | null): string => (iso ? dateFormat.format(new Date(iso)) : '—');
 
   const refreshCounters = useCallback(
     (event: string) => {
@@ -332,7 +359,7 @@ export function ScanPage(): JSX.Element {
     onError: (error) => {
       vibrate(false);
       beep(false);
-      setShown({ result: 'error', ticket: null, message: errorMessage(error) });
+      setShown({ result: 'error', ticket: null, message: scanErrorMessage(error, m) });
     },
     onSettled: () => {
       busyRef.current = false;
@@ -353,7 +380,7 @@ export function ScanPage(): JSX.Element {
       vibrate(false);
       beep(false);
       setCashCode(null);
-      setShown({ result: 'error', ticket: null, message: errorMessage(error) });
+      setShown({ result: 'error', ticket: null, message: scanErrorMessage(error, m) });
     },
     onSettled: () => {
       cashBusyRef.current = false;
@@ -368,13 +395,15 @@ export function ScanPage(): JSX.Element {
     cashMutation.mutate(cashCode);
   }, [cashCode, cashMutation]);
 
+  /** Trimite codul la verificare; `false` = nu a plecat (altă verificare în zbor). */
   const submitCode = useCallback(
-    (raw: string) => {
+    (raw: string): boolean => {
       const code = raw.trim();
-      if (!code || !selected || busyRef.current) return;
+      if (!code || !selected || busyRef.current) return false;
       busyRef.current = true;
       lastCodeRef.current = { code, at: Date.now() };
       scanMutation.mutate({ code, event: selected.id });
+      return true;
     },
     [scanMutation, selected],
   );
@@ -406,7 +435,10 @@ export function ScanPage(): JSX.Element {
   useEffect(() => {
     // „Fără bilet" așteaptă decizia staff-ului (încasează cash sau anulează).
     if (!shown || shown.result === 'no_ticket') return undefined;
-    const timer = window.setTimeout(dismiss, RESULT_DISPLAY_MS);
+    const timer = window.setTimeout(
+      dismiss,
+      shown.result === 'admitted' ? RESULT_DISPLAY_MS : REFUSAL_DISPLAY_MS,
+    );
     return () => window.clearTimeout(timer);
   }, [shown, dismiss]);
 
@@ -420,8 +452,8 @@ export function ScanPage(): JSX.Element {
     e.preventDefault();
     unlockAudio();
     if (!manualCode.trim()) return;
-    submitCode(manualCode);
-    setManualCode('');
+    // Codul rămâne în câmp dacă nu a plecat (altă verificare încă în zbor).
+    if (submitCode(manualCode)) setManualCode('');
   };
 
   const onStartCamera = (): void => {
@@ -429,18 +461,12 @@ export function ScanPage(): JSX.Element {
     void camera.start();
   };
 
-  const today = new Date().toDateString();
+  const today = dayKey(Date.now());
   const eventLabel = (event: AdminEvent): string => {
-    const starts = new Date(event.starts_at);
     const when =
-      starts.toDateString() === today
-        ? `${m.today} ${timeFormat.format(starts)}`
-        : new Intl.DateTimeFormat(INTL_LOCALE[language], {
-            day: '2-digit',
-            month: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-          }).format(starts);
+      dayKey(event.starts_at) === today
+        ? `${m.today} ${formatTime(event.starts_at)}`
+        : formatWhen(event.starts_at);
     return `${when} · ${event.title}`;
   };
 
@@ -450,6 +476,16 @@ export function ScanPage(): JSX.Element {
       : m.camera[camera.state];
 
   if (eventsQuery.isLoading) return <LoadingState label={m.loadingEvents} />;
+  if (eventsQuery.isError) {
+    return (
+      <Card title={m.title}>
+        <ErrorState
+          message={errorMessage(eventsQuery.error)}
+          onRetry={() => void eventsQuery.refetch()}
+        />
+      </Card>
+    );
+  }
 
   return (
     <div className="scan">
@@ -563,8 +599,8 @@ export function ScanPage(): JSX.Element {
           <Card title={m.recentTitle}>
             {admissionsQuery.data && admissionsQuery.data.length > 0 ? (
               <ul className="scan__recent">
-                {admissionsQuery.data.map((row) => (
-                  <li key={`${row.admitted_at}-${row.first_name ?? ''}`} className="scan__recent-item">
+                {admissionsQuery.data.map((row, index) => (
+                  <li key={`${row.admitted_at}-${index}`} className="scan__recent-item">
                     {row.photo_url ? (
                       <img className="scan__recent-photo" src={row.photo_url} alt="" />
                     ) : (
@@ -598,12 +634,7 @@ export function ScanPage(): JSX.Element {
           onCancel={dismiss}
         />
       ) : shown ? (
-        <ResultOverlay
-          shown={shown}
-          formatTime={formatTime}
-          onDismiss={dismiss}
-          messages={m}
-        />
+        <ResultOverlay shown={shown} formatWhen={formatWhen} onDismiss={dismiss} messages={m} />
       ) : null}
     </div>
   );
@@ -613,7 +644,14 @@ export function ScanPage(): JSX.Element {
 
 type ScanText = (typeof scanMessages)['ro'];
 
-function reasonFor(shown: ShownResult, m: ScanText, formatTime: (iso: string | null) => string): string | null {
+/** Erorile HTTP ale scanării, pe limba staff-ului de la ușă. */
+function scanErrorMessage(error: unknown, m: ScanText): string {
+  // 404 = evenimentul ales a fost șters între timp (backend: „Event not found").
+  if (error instanceof ApiError && error.status === 404) return m.reason.eventMissing;
+  return errorMessage(error);
+}
+
+function reasonFor(shown: ShownResult, m: ScanText, formatWhen: (iso: string | null) => string): string | null {
   if (shown.result === 'error') return shown.message;
   const ticket = shown.ticket;
   switch (shown.result) {
@@ -624,7 +662,10 @@ function reasonFor(shown: ShownResult, m: ScanText, formatTime: (iso: string | n
         ? m.reason.alreadyAdmitted(formatTime(ticket.admitted_at), ticket.admitted_by_email)
         : m.reason.alreadyUsed;
     case 'wrong_event':
-      return m.reason.wrongEvent(ticket?.event_title ?? null);
+      return m.reason.wrongEvent(
+        ticket?.event_title ?? null,
+        ticket?.starts_at ? formatWhen(ticket.starts_at) : null,
+      );
     case 'not_paid':
       return m.reason.notPaid;
     case 'cancelled':
@@ -642,29 +683,29 @@ function reasonFor(shown: ShownResult, m: ScanText, formatTime: (iso: string | n
 
 function ResultOverlay({
   shown,
-  formatTime,
+  formatWhen,
   onDismiss,
   messages: m,
 }: {
   shown: ShownResult;
-  formatTime: (iso: string | null) => string;
+  formatWhen: (iso: string | null) => string;
   onDismiss: () => void;
   messages: ScanText;
 }): JSX.Element {
-  const ok = shown.result === 'admitted';
+  const tone = resultTone(shown.result);
   const ticket = shown.ticket;
-  const reason = reasonFor(shown, m, formatTime);
+  const reason = reasonFor(shown, m, formatWhen);
   const sourceLine = sourceLineFor(shown, m);
   return (
     <button
       type="button"
-      className={ok ? 'scan-result scan-result--ok' : 'scan-result scan-result--fail'}
+      className={`scan-result scan-result--${tone}`}
       onClick={onDismiss}
       role="alert"
       data-testid="scan-result"
     >
       <span className="scan-result__icon" aria-hidden="true">
-        {ok ? '✓' : '✕'}
+        {tone === 'ok' ? '✓' : tone === 'caution' ? '!' : '✕'}
       </span>
       <span className="scan-result__title">{m.result[shown.result]}</span>
       {ticket && (ticket.photo_url || ticket.first_name) ? (
@@ -686,6 +727,10 @@ function ResultOverlay({
       ) : null}
       {sourceLine ? <span className="scan-result__source">{sourceLine}</span> : null}
       {reason ? <span className="scan-result__reason">{reason}</span> : null}
+      {/* O eroare de rețea nu spune nimic despre bilet: acolo se reîncearcă, nu se refuză. */}
+      {tone !== 'ok' && shown.result !== 'error' ? (
+        <span className="scan-result__verdict">{m.doNotAdmit}</span>
+      ) : null}
       <span className="scan-result__hint">{m.tapToContinue}</span>
     </button>
   );

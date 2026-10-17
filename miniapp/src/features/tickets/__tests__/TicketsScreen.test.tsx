@@ -74,7 +74,7 @@ const EVENT: EventItem = {
   id: 'e1',
   title: 'Flirt Party #7',
   description: '',
-  startsAt: '2026-10-01T20:00:00Z',
+  startsAt: '2027-10-01T20:00:00Z',
   city: 'Chișinău',
   venue: 'Club Mono',
   kind: 'flirt_party',
@@ -85,7 +85,7 @@ const EVENT: EventItem = {
   promoDescription: null,
   ticketPrice: 200,
   ticketCurrency: 'lei',
-  ticketSalesEndAt: '2026-10-01T18:00:00Z',
+  ticketSalesEndAt: '2027-10-01T18:00:00Z',
   ticketSalesOpen: true,
 };
 
@@ -94,7 +94,7 @@ const ORDERS: TicketOrderListItem[] = [
     id: 'o1',
     eventId: 'e1',
     eventTitle: 'Flirt Party #7',
-    eventStartsAt: '2026-10-01T20:00:00Z',
+    eventStartsAt: '2027-10-01T20:00:00Z',
     status: 'awaiting_payment',
     price: 200,
     currency: 'lei',
@@ -106,7 +106,7 @@ const ORDERS: TicketOrderListItem[] = [
     id: 'o2',
     eventId: 'e2',
     eventTitle: 'Concert în parc',
-    eventStartsAt: '2026-11-05T19:00:00Z',
+    eventStartsAt: '2027-11-05T19:00:00Z',
     status: 'approved',
     price: 350,
     currency: 'lei',
@@ -141,7 +141,7 @@ const REQUEST: TicketRequest = {
   id: 'r1',
   event_id: 'e1',
   event_title: 'Flirt Party #7',
-  event_starts_at: '2026-10-01T20:00:00Z',
+  event_starts_at: '2027-10-01T20:00:00Z',
   event_venue: 'Club Mono',
   ticket_quantity: 2,
   ticket_price: 170,
@@ -160,7 +160,7 @@ const REQUEST_ROW: TicketOrderListItem = {
   id: 'r1',
   eventId: 'e1',
   eventTitle: 'Flirt Party #7',
-  eventStartsAt: '2026-10-01T20:00:00Z',
+  eventStartsAt: '2027-10-01T20:00:00Z',
   status: 'pending_payment',
   price: 170,
   currency: 'lei',
@@ -231,7 +231,7 @@ describe('biletul propriu Flirt Party', () => {
     vi.mocked(fetchTicket).mockResolvedValue({
       ...TICKET,
       status: 'admitted',
-      admittedAt: '2026-10-01T20:04:00Z',
+      admittedAt: '2027-10-01T20:04:00Z',
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(LIVE_TICKET_POLL_MS + 100);
@@ -246,7 +246,7 @@ describe('biletul propriu Flirt Party', () => {
       ...TICKET,
       used: true,
       status: 'admitted',
-      admittedAt: '2026-10-01T20:04:00Z',
+      admittedAt: '2027-10-01T20:04:00Z',
     });
     renderScreen();
 
@@ -313,10 +313,43 @@ describe('lista de comenzi', () => {
     ]);
     renderScreen();
 
-    expect(await screen.findByTestId('order-row-o1')).toHaveTextContent('Bilet: finalizează plata');
-    expect(screen.getByTestId('order-row-o2')).toHaveTextContent('Bilet aprobat');
+    // Fiecare card: starea (culoare + text) și pasul următor, scris.
+    expect(await screen.findByTestId('order-status-o1')).toHaveTextContent('Așteaptă plata');
+    expect(screen.getByTestId('order-next-o1')).toHaveTextContent('Plătește și încarcă chitanța');
+    expect(screen.getByTestId('order-row-o1')).toHaveTextContent('200 lei');
+    expect(screen.getByTestId('order-status-o2')).toHaveTextContent('Bilet confirmat');
+    expect(screen.getByTestId('order-next-o2')).toHaveTextContent('Arată codul QR la intrare');
     expect(screen.getByTestId('order-row-o2')).toHaveTextContent('Concert în parc');
-    expect(screen.getByTestId('order-row-r2')).toHaveTextContent('Dovadă trimisă / În verificare');
+    // Aceeași etichetă pentru „în verificare", indiferent de flux.
+    expect(screen.getByTestId('order-status-r2')).toHaveTextContent(/^În verificare$/);
+    expect(screen.getByTestId('order-next-r2')).toHaveTextContent('Verificăm plata');
+  });
+
+  it('starea biletului de la intrare se vede direct pe card', async () => {
+    vi.mocked(fetchMyTicketOrdersWithEvent).mockResolvedValue([
+      { ...ORDERS[1]!, id: 'a1', ticketStatus: 'admitted' },
+      { ...ORDERS[1]!, id: 'a2', ticketStatus: 'expired' },
+      { ...ORDERS[0]!, id: 'x1', status: 'rejected' },
+      { ...ORDERS[0]!, id: 'm1', status: 'additional_information_required' },
+    ]);
+    renderScreen();
+
+    expect(await screen.findByTestId('order-status-a1')).toHaveTextContent('Ai intrat');
+    expect(screen.getByTestId('order-status-a2')).toHaveTextContent('Expirat');
+    expect(screen.getByTestId('order-status-x1')).toHaveTextContent('Plată respinsă');
+    expect(screen.getByTestId('order-status-m1')).toHaveTextContent('Necesită informații');
+  });
+
+  it('comenzile la evenimente trecute coboară sub cele viitoare', async () => {
+    vi.mocked(fetchMyTicketOrdersWithEvent).mockResolvedValue([
+      { ...ORDERS[1]!, id: 'old', eventTitle: 'Petrecere trecută', eventStartsAt: '2020-01-01T20:00:00Z' },
+      ORDERS[0]!,
+    ]);
+    renderScreen();
+
+    await screen.findByTestId('order-row-o1');
+    const rows = screen.getAllByRole('button', { expanded: false }).filter((b) => b.dataset.testid?.startsWith('order-row-'));
+    expect(rows.map((r) => r.dataset.testid)).toEqual(['order-row-o1', 'order-row-old']);
   });
 
   it('`?order=` deschide direct comanda cerută (venind din pagina evenimentului)', async () => {
@@ -585,10 +618,159 @@ describe('cerere manuală cu dovadă de plată', () => {
     });
     fireEvent.click(screen.getByTestId('proof-submit'));
 
+    // O singură rută pentru chitanță (acceptă și cererile, și păstrează metoda).
     await waitFor(() =>
-      expect(uploadPaymentProof).toHaveBeenCalledWith('r1', file, expect.objectContaining({ method: null })),
+      expect(uploadOrderProof).toHaveBeenCalledWith('r1', file, expect.objectContaining({ method: null })),
     );
+    expect(uploadPaymentProof).not.toHaveBeenCalled();
     expect(await screen.findByTestId('order-in-review')).toHaveTextContent('Am primit dovada plății');
+  });
+});
+
+describe('situațiile care blocau omul', () => {
+  it('„mai multe informații" pe o comandă directă: mesajul adminului + formularul de chitanță', async () => {
+    // Serverul nu mai trimite datele de plată în această stare, dar chitanța
+    // nouă e exact ce i se cere omului.
+    vi.mocked(fetchTicketOrder).mockResolvedValue({
+      order: { ...AWAITING_DETAIL.order, status: 'additional_information_required', adminNote: 'Chitanța e neclară.' },
+      payment: null,
+    });
+    renderScreen();
+    fireEvent.click(await screen.findByTestId('order-row-o1'));
+
+    expect(await screen.findByTestId('order-more-info')).toHaveTextContent('Chitanța e neclară.');
+    expect(screen.getByTestId('proof-upload')).toBeInTheDocument();
+    expect(screen.queryByText('Instrucțiunile de plată nu sunt disponibile. Reîncearcă mai târziu.')).not.toBeInTheDocument();
+  });
+
+  it('după începutul evenimentului nu mai cere plata: explică ce rămâne de făcut', async () => {
+    vi.mocked(fetchMyTicketOrdersWithEvent).mockResolvedValue([
+      { ...ORDERS[0]!, eventStartsAt: '2020-01-01T20:00:00Z' },
+    ]);
+    vi.mocked(fetchEvent).mockResolvedValue({ ...EVENT, startsAt: '2020-01-01T20:00:00Z' });
+    renderScreen();
+
+    expect(await screen.findByTestId('order-status-o1')).toHaveTextContent('Plata online închisă');
+    fireEvent.click(screen.getByTestId('order-row-o1'));
+
+    expect(await screen.findByTestId('order-closed')).toHaveTextContent('arată chitanța din aplicația băncii la intrare');
+    expect(screen.queryByTestId('proof-upload')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('order-instructions')).not.toBeInTheDocument();
+  });
+
+  it('în verificare, chitanța greșită se poate înlocui', async () => {
+    vi.mocked(fetchTicketOrder).mockResolvedValue({
+      ...DECLARED_DETAIL,
+      order: { ...DECLARED_DETAIL.order, paymentProofUploaded: true },
+    });
+    vi.mocked(uploadOrderProof).mockResolvedValue(DECLARED_DETAIL.order);
+    renderScreen();
+    fireEvent.click(await screen.findByTestId('order-row-o1'));
+
+    const replace = await screen.findByTestId('order-replace-proof');
+    expect(replace).toHaveTextContent('Ai trimis o chitanță greșită?');
+    const file = new File(['img'], 'chitanta-2.png', { type: 'image/png' });
+    fireEvent.change(within(replace).getByTestId('proof-input'), { target: { files: [file] } });
+    fireEvent.click(within(replace).getByTestId('proof-submit'));
+
+    await waitFor(() => expect(uploadOrderProof).toHaveBeenCalledWith('o1', file, expect.anything()));
+    expect(await within(replace).findByTestId('proof-sent')).toHaveTextContent('Chitanța a fost trimisă');
+  });
+
+  it('„am plătit" fără chitanță (aplicația veche) cere chitanța, care e obligatorie', async () => {
+    vi.mocked(fetchTicketOrder).mockResolvedValue({
+      ...DECLARED_DETAIL,
+      order: { ...DECLARED_DETAIL.order, paymentProofUploaded: false },
+    });
+    renderScreen();
+    fireEvent.click(await screen.findByTestId('order-row-o1'));
+
+    const review = await screen.findByTestId('order-in-review');
+    expect(within(review).getByTestId('proof-upload')).toHaveTextContent('Lipsește chitanța');
+    expect(within(review).queryByTestId('order-replace-proof')).not.toBeInTheDocument();
+  });
+
+  it('o stare nouă adusă de detaliu reîmprospătează și lista', async () => {
+    vi.mocked(fetchTicketOrder).mockResolvedValue(APPROVED_DETAIL);
+    vi.mocked(fetchMyTicketOrdersWithEvent).mockResolvedValue([{ ...ORDERS[1]!, status: 'payment_declared', ticketCode: null }]);
+    renderScreen();
+    fireEvent.click(await screen.findByTestId('order-row-o2'));
+    const before = vi.mocked(fetchMyTicketOrdersWithEvent).mock.calls.length;
+
+    vi.mocked(fetchMyTicketOrdersWithEvent).mockResolvedValue([ORDERS[1]!]);
+    await screen.findByTestId('order-approved');
+    await waitFor(() => expect(vi.mocked(fetchMyTicketOrdersWithEvent).mock.calls.length).toBeGreaterThan(before));
+    expect(await screen.findByTestId('order-status-o2')).toHaveTextContent('Bilet confirmat');
+  });
+
+  it('chitanța prea mare pentru server (413) se explică precis', async () => {
+    vi.mocked(uploadOrderProof).mockRejectedValue(Object.assign(new Error('413'), { response: { status: 413, data: {} } }));
+    renderScreen();
+    fireEvent.click(await screen.findByTestId('order-row-o1'));
+    const file = new File(['img'], 'chitanta.png', { type: 'image/png' });
+    fireEvent.change(await screen.findByTestId('proof-input'), { target: { files: [file] } });
+    fireEvent.click(screen.getByTestId('proof-submit'));
+
+    expect(await screen.findByTestId('proof-error')).toHaveTextContent('Fișierul depășește limita de 8 MB.');
+  });
+
+  it('un fișier refuzat local nu pleacă la server și se explică', async () => {
+    renderScreen();
+    fireEvent.click(await screen.findByTestId('order-row-o1'));
+    const file = new File(['x'], 'nota.txt', { type: 'text/plain' });
+    fireEvent.change(await screen.findByTestId('proof-input'), { target: { files: [file] } });
+
+    expect(await screen.findByTestId('proof-file-error')).toHaveTextContent('JPG, PNG, WEBP');
+    expect(screen.getByTestId('proof-submit')).toBeDisabled();
+    expect(uploadOrderProof).not.toHaveBeenCalled();
+  });
+
+  it('dublul clic pe „Trimite chitanța" trimite o singură dată', async () => {
+    let resolve: (value: typeof DECLARED_DETAIL.order) => void = () => {};
+    vi.mocked(uploadOrderProof).mockImplementation(() => new Promise((r) => { resolve = r; }));
+    renderScreen();
+    fireEvent.click(await screen.findByTestId('order-row-o1'));
+    const file = new File(['img'], 'chitanta.png', { type: 'image/png' });
+    fireEvent.change(await screen.findByTestId('proof-input'), { target: { files: [file] } });
+
+    const submit = screen.getByTestId('proof-submit');
+    fireEvent.click(submit);
+    fireEvent.click(submit);
+    await waitFor(() => expect(uploadOrderProof).toHaveBeenCalledTimes(1));
+    await act(async () => resolve(DECLARED_DETAIL.order));
+  });
+
+  it('respinsă după închiderea vânzării: nu mai oferă o comandă nouă', async () => {
+    vi.mocked(fetchTicketOrder).mockResolvedValue(REJECTED_DETAIL);
+    vi.mocked(fetchEvent).mockResolvedValue({ ...EVENT, ticketSalesOpen: false, ticketSalesEndAt: '2020-01-01T00:00:00Z' });
+    renderScreen();
+    fireEvent.click(await screen.findByTestId('order-row-o1'));
+
+    expect(await screen.findByTestId('order-sales-closed')).toHaveTextContent('nu mai pot fi cumpărate din aplicație');
+    expect(screen.queryByTestId('order-retry-btn')).not.toBeInTheDocument();
+  });
+});
+
+describe('codul QR pe tot ecranul', () => {
+  it('biletul valid se poate mări pe fundal alb și se închide cu Escape', async () => {
+    vi.mocked(fetchTicket).mockResolvedValue({ ...TICKET, status: 'valid' });
+    renderScreen();
+
+    fireEvent.click(await screen.findByTestId('my-ticket-pass-zoom-open'));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('Arată acest cod la intrare');
+    expect(within(dialog).getByRole('img')).toHaveAccessibleName(/FLIRT9Q2X/);
+    expect(within(dialog).getByRole('button', { name: 'Închide' })).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('un bilet folosit nu mai oferă mărirea', async () => {
+    vi.mocked(fetchTicket).mockResolvedValue({ ...TICKET, status: 'used' });
+    renderScreen();
+    await screen.findByTestId('my-ticket-pass');
+    expect(screen.queryByTestId('my-ticket-pass-zoom-open')).not.toBeInTheDocument();
   });
 });
 
@@ -622,7 +804,7 @@ describe('comandă aprobată și comandă respinsă', () => {
   it('biletul unei comenzi, scanat la intrare, arată „INTRARE PERMISĂ"', async () => {
     vi.mocked(fetchTicketOrder).mockResolvedValue({
       ...APPROVED_DETAIL,
-      order: { ...APPROVED_DETAIL.order, ticketStatus: 'admitted', admittedAt: '2026-11-05T19:10:00Z' },
+      order: { ...APPROVED_DETAIL.order, ticketStatus: 'admitted', admittedAt: '2027-11-05T19:10:00Z' },
     });
     renderScreen();
 

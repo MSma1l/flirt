@@ -35,6 +35,7 @@ import type {
   TicketRequestFilters,
   TicketRequestReviewInput,
   TicketScanResponse,
+  TicketStatusCounts,
   TimeseriesPoint,
   TokenPair,
   Uuid,
@@ -160,8 +161,8 @@ export function deleteUser(id: Uuid, reason?: string): Promise<void> {
 
 /* ---------------------------- Evenimente ---------------------------- */
 
-export function fetchEvents(cursor?: string): Promise<Page<AdminEvent>> {
-  return apiPage<AdminEvent>('/admin/events', { query: { cursor } });
+export function fetchEvents(cursor?: string, limit?: number): Promise<Page<AdminEvent>> {
+  return apiPage<AdminEvent>('/admin/events', { query: { cursor, limit } });
 }
 
 export function createEvent(input: EventInput): Promise<AdminEvent> {
@@ -303,6 +304,50 @@ export function fetchTicketOrdersByStatus(
   });
 }
 
+/**
+ * O pagină din coada de comenzi (cursorul următoarei vine în `X-Next-Cursor`).
+ * Fără stări = toată lista; `q` = codul de plată exact; `eventId` = un eveniment.
+ */
+export function fetchTicketOrdersPage(params: {
+  statuses: readonly string[];
+  q?: string;
+  eventId?: Uuid;
+  cursor?: string;
+  limit?: number;
+}): Promise<Page<TicketOrder>> {
+  return apiPage<TicketOrder>('/admin/ticket-orders', {
+    query: {
+      status: params.statuses.length > 0 ? params.statuses.join(',') : undefined,
+      q: params.q?.trim() || undefined,
+      event_id: params.eventId || undefined,
+      cursor: params.cursor,
+      limit: params.limit,
+    },
+  });
+}
+
+/** Stările „de verificat" (plata declarată / chitanța trimisă / luată în verificare). */
+export const TICKET_ORDERS_TO_VERIFY: readonly string[] = [
+  'payment_declared',
+  'payment_proof_submitted',
+  'under_review',
+];
+
+/** Numărul EXACT de comenzi pe fiecare stare (pentru filtrul de eveniment / cod). */
+export function fetchTicketOrderCounts(
+  params: { eventId?: Uuid; q?: string } = {},
+): Promise<TicketStatusCounts> {
+  return apiFetch<TicketStatusCounts>('/admin/ticket-orders/counts', {
+    query: { event_id: params.eventId || undefined, q: params.q?.trim() || undefined },
+  });
+}
+
+/** Suma contoarelor pentru un grup de stări (o stare lipsă = 0). */
+export function sumCounts(counts: TicketStatusCounts | undefined, statuses: readonly string[]): number {
+  if (!counts) return 0;
+  return statuses.reduce((sum, status) => sum + (counts.counts[status] ?? 0), 0);
+}
+
 /** Detaliul unei comenzi (cu `allowed_statuses` pentru corecții). */
 export function fetchTicketOrder(id: Uuid): Promise<TicketOrder> {
   return apiFetch<TicketOrder>(`/admin/ticket-orders/${id}`);
@@ -365,14 +410,33 @@ export function deleteMiaQr(): Promise<PaymentSettings> {
 
 /* ----------------------- Cereri procurare bilete ----------------------- */
 
-export function fetchTicketRequests(filters: TicketRequestFilters = {}): Promise<TicketRequest[]> {
-  return apiFetch<TicketRequest[]>('/admin/ticket-requests', {
+/**
+ * O pagină din coada de cereri (cursor în `X-Next-Cursor`, ca la comenzi).
+ * `statuses` gol = toate; mai multe stări pleacă ca `?status=a,b`.
+ */
+export function fetchTicketRequestsPage(
+  filters: TicketRequestFilters & { statuses?: readonly string[]; cursor?: string } = {},
+): Promise<Page<TicketRequest>> {
+  const statuses =
+    filters.statuses ?? (filters.status && filters.status !== 'all' ? [filters.status] : []);
+  return apiPage<TicketRequest>('/admin/ticket-requests', {
     query: {
-      status: filters.status === 'all' ? undefined : filters.status,
-      event_id: filters.event_id,
+      status: statuses.length > 0 ? statuses.join(',') : undefined,
+      event_id: filters.event_id || undefined,
       created_from: filters.created_from,
       created_to: filters.created_to,
+      cursor: filters.cursor,
+      limit: filters.limit,
     },
+  });
+}
+
+/** Numărul EXACT de cereri pe fiecare stare (filtrul de eveniment / căutare). */
+export function fetchTicketRequestCounts(
+  params: { eventId?: Uuid; q?: string } = {},
+): Promise<TicketStatusCounts> {
+  return apiFetch<TicketStatusCounts>('/admin/ticket-requests/counts', {
+    query: { event_id: params.eventId || undefined, q: params.q?.trim() || undefined },
   });
 }
 

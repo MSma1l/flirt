@@ -287,10 +287,16 @@ async def _scan_order(
         .execution_options(synchronize_session=False)
     )
     if res.rowcount != 1:
-        # Altă scanare a câștigat cursa: citim ora ORIGINALĂ a intrării.
+        # Cursă pierdută: fie altă scanare a admis biletul (citim ora ORIGINALĂ),
+        # fie adminul l-a anulat/respins între citire și UPDATE — atunci NU e
+        # „deja admis", ci anulat.
         await db.rollback()
         await db.refresh(order)
         await db.refresh(event)
+        if order.admitted_at is None:
+            if order.status in (STATUS_REJECTED, STATUS_CANCELLED):
+                return await out("cancelled", event)
+            return await out("not_paid", event)
         return await out("already_admitted", event)
 
     audit(

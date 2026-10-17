@@ -3,12 +3,15 @@ import { describe, expect, it } from 'vitest';
 
 import {
   apiErrorCode,
+  formatTime,
+  hasEventStarted,
   isEventStartedError,
   isTicketSalesClosedError,
   orderStage,
   passStatusOf,
   shortTicketCode,
   stepStates,
+  summarizeOrder,
 } from '../orderStage';
 
 describe('orderStage', () => {
@@ -58,5 +61,53 @@ describe('codurile de refuz', () => {
       code: 'ticket_sales_closed',
     });
     expect(apiErrorCode(new Error('offline'))).toEqual({ status: undefined, code: undefined });
+  });
+});
+
+describe('summarizeOrder — starea spusă omului', () => {
+  it.each([
+    [{ status: 'awaiting_payment' }, 'awaiting', 'action'],
+    [{ status: 'pending_payment' }, 'awaiting', 'action'],
+    [{ status: 'additional_information_required' }, 'moreInfo', 'action'],
+    [{ status: 'payment_declared' }, 'review', 'review'],
+    [{ status: 'payment_proof_submitted' }, 'review', 'review'],
+    [{ status: 'under_review' }, 'review', 'review'],
+    [{ status: 'approved', ticketCode: null }, 'generating', 'ok'],
+    [{ status: 'approved', ticketCode: 'X', ticketStatus: 'valid' }, 'ready', 'ok'],
+    [{ status: 'approved', ticketCode: 'X', ticketStatus: null }, 'ready', 'ok'],
+    [{ status: 'approved', ticketCode: 'X', ticketStatus: 'admitted' }, 'admitted', 'ok'],
+    [{ status: 'approved', ticketCode: 'X', ticketStatus: 'used' }, 'used', 'muted'],
+    [{ status: 'approved', ticketCode: 'X', ticketStatus: 'expired' }, 'expired', 'muted'],
+    [{ status: 'approved', ticketCode: 'X', ticketStatus: 'cancelled' }, 'ticketCancelled', 'danger'],
+    [{ status: 'rejected' }, 'rejected', 'danger'],
+    [{ status: 'cancelled' }, 'cancelled', 'danger'],
+    [{ status: 'ceva_nou' }, 'unknown', 'review'],
+  ] as const)('%o → %s (%s)', (order, key, tone) => {
+    expect(summarizeOrder(order)).toEqual({ key, tone });
+  });
+
+  it('o comandă neplătită la un eveniment început nu mai are pași online', () => {
+    expect(summarizeOrder({ status: 'awaiting_payment' }, true)).toEqual({ key: 'closed', tone: 'muted' });
+    // Un bilet deja confirmat rămâne bun la intrare și după ora de început.
+    expect(summarizeOrder({ status: 'approved', ticketCode: 'X', ticketStatus: 'valid' }, true).key).toBe('ready');
+  });
+});
+
+describe('hasEventStarted', () => {
+  const NOW = Date.parse('2026-10-01T20:00:00Z');
+  it('compară cu ceasul dat; lipsa sau o dată nevalidă nu blochează nimic', () => {
+    expect(hasEventStarted('2026-10-01T19:59:59Z', NOW)).toBe(true);
+    expect(hasEventStarted('2026-10-01T20:00:01Z', NOW)).toBe(false);
+    expect(hasEventStarted('mâine', NOW)).toBe(false);
+    expect(hasEventStarted(null, NOW)).toBe(false);
+  });
+});
+
+describe('ora pe fusul Chișinăului', () => {
+  it('ora intrării se scrie pe ora evenimentului, nu pe a telefonului', () => {
+    // 20:04 UTC în octombrie = 23:04 la Chișinău (EEST, UTC+3).
+    expect(formatTime('2026-10-01T20:04:00Z')).toMatch(/23[:.]04/);
+    // Iarna (EET, UTC+2).
+    expect(formatTime('2026-12-01T20:04:00Z')).toMatch(/22[:.]04/);
   });
 });

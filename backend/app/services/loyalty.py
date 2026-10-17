@@ -87,6 +87,7 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -219,16 +220,26 @@ async def _get_or_create_settings(db: AsyncSession) -> LoyaltySettings:
     row = await db.get(LoyaltySettings, LOYALTY_SETTINGS_ID)
     if row is not None:
         return row
-    row = LoyaltySettings(
-        id=LOYALTY_SETTINGS_ID,
-        tiers=_parse_tiers_seed(settings.loyalty_tiers),
-        max_total_discount_percent=min(
-            100, max(0, settings.loyalty_max_total_discount_percent)
-        ),
+    # INSERT … ON CONFLICT DO NOTHING (ca la `PaymentSettings`): două cereri
+    # simultane care creează leneș singleton-ul nu mai cad cu IntegrityError (500)
+    # pe PK — a doua așteaptă rândul primei și apoi nu face nimic.
+    # FĂRĂ commit: un commit aici ar închide tranzacția apelantului la jumătate
+    # (ex. ar elibera lock-urile din `create_order`). Rândul e vizibil imediat în
+    # aceeași tranzacție; se persistă la commit-ul apelantului, iar dacă acesta
+    # nu face commit (citire pură) se recreează leneș data viitoare, identic.
+    await db.execute(
+        pg_insert(LoyaltySettings)
+        .values(
+            id=LOYALTY_SETTINGS_ID,
+            tiers=_parse_tiers_seed(settings.loyalty_tiers),
+            max_total_discount_percent=min(
+                100, max(0, settings.loyalty_max_total_discount_percent)
+            ),
+        )
+        .on_conflict_do_nothing(index_elements=["id"])
     )
-    db.add(row)
-    await db.commit()
-    await db.refresh(row)
+    row = await db.get(LoyaltySettings, LOYALTY_SETTINGS_ID, populate_existing=True)
+    assert row is not None
     return row
 
 

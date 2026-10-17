@@ -175,6 +175,24 @@
   background: #d62f2f;
 }
 
+/* Bilet real, dar nu acum/aici (deja intrat, alt eveniment): chihlimbariu —
+   staff-ul verifică omul; diferit de roșul „bilet invalid". */
+.scan-result--caution {
+  background: #b45309;
+}
+
+/* Verdictul pe refuzuri: o bandă albă, imposibil de ratat. */
+.scan-result__verdict {
+  padding: var(--space-1) var(--space-4);
+  border-radius: var(--radius-pill);
+  background: #fff;
+  color: #111;
+  font-size: clamp(16px, 4.5vw, 20px);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 /* Pașaport fără bilet online: atenționare, nu refuz (se poate încasa cash). */
 .scan-result--warn {
   background: #b45309;

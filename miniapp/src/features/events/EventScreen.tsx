@@ -34,11 +34,17 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router';
 
-import { TicketPriceBlock, useRefreshLoyalty, useTicketQuote } from '@/features/loyalty';
+import { formatAmount, TicketPriceBlock, useRefreshLoyalty, useTicketQuote } from '@/features/loyalty';
 import { OrderStepper } from '@/features/tickets/OrderStepper';
 import { ClockIcon, LockIcon, TicketIcon } from '@/features/tickets/TicketIcons';
-import { isTicketSalesClosedError, orderStage, STAGE_RANK } from '@/features/tickets/orderStage';
-import { useOrderStatusLabel } from '@/features/tickets/orderStatusLabel';
+import {
+  hasEventStarted,
+  isSoldOutError,
+  isTicketSalesClosedError,
+  orderStage,
+  STAGE_RANK,
+} from '@/features/tickets/orderStage';
+import { useOrderStatusText } from '@/features/tickets/orderStatusLabel';
 import { ticketOrderPath } from '@/features/tickets/ticketRoutes';
 import { ticketRequestPath } from '@/features/ticketRequests/ticketRequestRoutes';
 
@@ -73,7 +79,9 @@ export function EventScreen() {
   const [stampMessage, setStampMessage] = useState<string | null>(null);
   /** Serverul a refuzat comanda: vânzarea s-a închis între timp. */
   const [closedByServer, setClosedByServer] = useState(false);
-  const statusLabel = useOrderStatusLabel();
+  /** Serverul a refuzat comanda: s-au terminat biletele între timp. */
+  const [soldOutByServer, setSoldOutByServer] = useState(false);
+  const statusText = useOrderStatusText();
 
   const { data, isPending, isError, refetch, isFetching } = useQuery<EventItem>({
     queryKey: ['event', eventId],
@@ -104,7 +112,18 @@ export function EventScreen() {
   }, [myOrders, eventId]);
 
   const sales = useSalesState(data ?? {});
-  const salesClosed = sales.closed || closedByServer;
+  const salesClosed = sales.closed || closedByServer || soldOutByServer;
+  const soldOut = soldOutByServer || (sales.soldOut && !closedByServer);
+
+  /**
+   * Ultima comandă a omului pentru eveniment, dacă a fost respinsă sau
+   * anulată și nu are alta activă: îi arătăm unde vede motivul, ca „Cumpără"
+   * să nu pară că ignoră ce s-a întâmplat.
+   */
+  const lastFailed = useMemo<TicketOrder | null>(() => {
+    const forEvent = (myOrders ?? []).filter((o) => o.eventId === eventId);
+    return forEvent.find((o) => orderStage(o.status) === 'rejected') ?? null;
+  }, [myOrders, eventId]);
 
   // Ceasul local a trecut de ora anunțată: cerem verdictul serverului, ca
   // ecranul să nu rămână pe o stare ghicită.
@@ -125,6 +144,9 @@ export function EventScreen() {
     onError: (error) => {
       if (isTicketSalesClosedError(error)) {
         setClosedByServer(true);
+        void queryClient.invalidateQueries({ queryKey: ['event', eventId] });
+      } else if (isSoldOutError(error)) {
+        setSoldOutByServer(true);
         void queryClient.invalidateQueries({ queryKey: ['event', eventId] });
       }
     },
@@ -184,29 +206,36 @@ export function EventScreen() {
   let ticketSection: ReactNode = null;
   const activeStage = myOrder ? orderStage(myOrder.status) : null;
   if (myOrder && activeStage !== 'rejected' && activeStage !== 'cancelled' && activeStage) {
-    // Comandă activă → starea ei, cu cronologia, și drumul direct spre ea.
+    // Comandă activă → starea ei (etichetă + pasul următor), cu cronologia, și
+    // drumul direct spre ea.
     const cta =
       activeStage === 'approved'
         ? t('detail.ticketCta.approved')
         : activeStage === 'review'
           ? t('detail.ticketCta.declared')
           : t('detail.ticketCta.awaiting');
+    const status = statusText(myOrder, hasEventStarted(event.startsAt));
 
     ticketSection = (
-      <div className={`ev-ticket ev-ticket--${activeStage}`} data-testid="ticket-status">
+      <div className={`ev-ticket ev-ticket--${activeStage} ev-ticket--tone-${status.tone}`} data-testid="ticket-status">
         <div className="ev-ticket__head">
           <span className="ev-ticket__icon" aria-hidden="true">
             <TicketIcon width={22} height={22} />
           </span>
-          <p
-            className={
-              activeStage === 'approved'
-                ? 'ev-ticket__status ev-ticket__status--ok'
-                : 'ev-ticket__status ev-ticket__status--pending'
-            }
-          >
-            {statusLabel(myOrder.status)}
-          </p>
+          <div className="ev-ticket__text">
+            <p
+              className={
+                activeStage === 'approved'
+                  ? 'ev-ticket__status ev-ticket__status--ok'
+                  : 'ev-ticket__status ev-ticket__status--pending'
+              }
+            >
+              {status.label}
+            </p>
+            <p className="ev-ticket__next" data-testid="ticket-next-step">
+              {status.next}
+            </p>
+          </div>
         </div>
         <OrderStepper stage={activeStage} hasCode={Boolean(myOrder.ticketCode)} />
         <button
@@ -226,11 +255,15 @@ export function EventScreen() {
           <LockIcon width={22} height={22} />
         </span>
         <div className="ev-sales-closed__text">
-          <p className="ev-sales-closed__title">{t('screens:events.sales.closedTitle')}</p>
+          <p className="ev-sales-closed__title">
+            {soldOut ? t('screens:events.sales.soldOutTitle') : t('screens:events.sales.closedTitle')}
+          </p>
           <p className="ev-sales-closed__body">
-            {closedByServer
-              ? t('screens:events.sales.closedError')
-              : t('screens:events.sales.closedBody')}
+            {soldOut
+              ? t('screens:events.sales.soldOutBody')
+              : closedByServer
+                ? t('screens:events.sales.closedError')
+                : t('screens:events.sales.closedBody')}
           </p>
         </div>
       </div>
@@ -244,6 +277,18 @@ export function EventScreen() {
     // rămâne prețul de listă din `Event`.
     ticketSection = (
       <div className="ev-buy">
+        {lastFailed ? (
+          <p className="ev-buy__last" data-testid="ticket-last-rejected">
+            <span>{t('screens:tickets.lastRejected')}</span>{' '}
+            <button
+              type="button"
+              className="ev-buy__link"
+              onClick={() => void navigate(ticketOrderPath(lastFailed.id))}
+            >
+              {t('screens:tickets.lastRejectedLink')}
+            </button>
+          </p>
+        ) : null}
         {quote ? <TicketPriceBlock quote={quote} /> : null}
         {sales.endAt ? (
           <p className="ev-sales" data-testid="ticket-sales-end">
@@ -265,10 +310,12 @@ export function EventScreen() {
           className="button ev-detail__action ev-buy__primary"
           data-testid="buy-ticket-btn"
           disabled={buyMutation.isPending}
-          onClick={() => buyMutation.mutate()}
+          onClick={() => {
+            if (!buyMutation.isPending) buyMutation.mutate();
+          }}
         >
           {t('detail.buyTicket', {
-            price: quote ? quote.finalPrice : event.ticketPrice,
+            price: formatAmount(quote ? quote.finalPrice : event.ticketPrice),
             currency: quote ? quote.currency : (event.ticketCurrency ?? 'lei'),
           })}
         </button>
@@ -333,7 +380,7 @@ export function EventScreen() {
       ) : null}
 
       {ticketSection}
-      {buyMutation.isError && !closedByServer ? (
+      {buyMutation.isError && !closedByServer && !soldOutByServer ? (
         <p className="error-text ev-detail__error">{t('detail.createOrderError')}</p>
       ) : null}
 

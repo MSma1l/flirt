@@ -18,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 import { formatEventDate } from '@/features/events/eventFormat';
 
 import { formatTicketCode, QrCode } from './QrCode';
+import { QrFullscreen } from './QrFullscreen';
 import { CheckIcon, SunIcon } from './TicketIcons';
 import { formatTime, shortTicketCode } from './orderStage';
 import type { TicketPassStatus } from './ticketsApi';
@@ -153,6 +154,16 @@ export function TicketPass({
           <QrCode value={code} size={200} label={t('social:myTicket.code')} showCode={false} />
           <span className="tk-pass__shine" aria-hidden="true" />
         </div>
+
+        {/* Un bilet încă bun de folosit se poate mări pe tot ecranul, pe alb. */}
+        {!inactive && visual !== 'admitted' ? (
+          <QrFullscreen
+            value={code}
+            label={t('social:myTicket.code')}
+            caption={shortTicketCode(code)}
+            testId={`${testId}-zoom`}
+          />
+        ) : null}
 
         <div className="tk-pass__code">
           <span className="tk-eyebrow tk-eyebrow--light">{t('screens:tickets.pass.code')}</span>

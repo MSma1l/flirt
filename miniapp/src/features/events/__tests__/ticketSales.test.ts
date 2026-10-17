@@ -11,6 +11,7 @@ describe('computeSalesState', () => {
     expect(computeSalesState({}, NOW)).toEqual({
       endAt: null,
       closed: false,
+      soldOut: false,
       msLeft: null,
       showCountdown: false,
     });
@@ -29,6 +30,16 @@ describe('computeSalesState', () => {
   it('verdictul „închis" al serverului câștigă; ora trecută închide și local', () => {
     expect(computeSalesState({ ticketSalesEndAt: new Date(NOW + HOUR).toISOString(), ticketSalesOpen: false }, NOW).closed).toBe(true);
     expect(computeSalesState({ ticketSalesEndAt: new Date(NOW - 1).toISOString() }, NOW).closed).toBe(true);
+  });
+
+  it('„închis" de server înainte de ora de închidere înseamnă bilete epuizate', () => {
+    const soldOut = computeSalesState({ ticketSalesEndAt: new Date(NOW + HOUR).toISOString(), ticketSalesOpen: false }, NOW);
+    expect(soldOut).toMatchObject({ closed: true, soldOut: true });
+    // După ora de închidere e pur și simplu închis, nu epuizat.
+    const late = computeSalesState({ ticketSalesEndAt: new Date(NOW - HOUR).toISOString(), ticketSalesOpen: false }, NOW);
+    expect(late).toMatchObject({ closed: true, soldOut: false });
+    // Fără oră anunțată nu putem ști motivul → mesajul neutru.
+    expect(computeSalesState({ ticketSalesOpen: false }, NOW).soldOut).toBe(false);
   });
 
   it('o dată nevalidă e ignorată, nu închide vânzarea', () => {

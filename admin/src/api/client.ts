@@ -52,12 +52,15 @@ export const AUTH_EXPIRED_EVENT = 'auth:expired';
 export class ApiError extends Error {
   readonly status: number;
   readonly detail: string;
+  /** Codul stabil al erorii (`{"detail": ..., "code": "..."}`), dacă backend-ul îl trimite. */
+  readonly code: string | null;
 
-  constructor(status: number, detail: string) {
+  constructor(status: number, detail: string, code: string | null = null) {
     super(detail);
     this.name = 'ApiError';
     this.status = status;
     this.detail = detail;
+    this.code = code;
   }
 
   /** Contul e autentificat, dar nu are rolul `admin` (sau e banat). */
@@ -102,26 +105,39 @@ function buildUrl(path: string, query?: RequestOptions['query']): string {
   return url.toString();
 }
 
-/** Extrage un mesaj lizibil din corpul de eroare FastAPI (`{detail: ...}`). */
-async function extractDetail(response: Response): Promise<string> {
+/**
+ * Extrage un mesaj lizibil + codul stabil din corpul de eroare FastAPI
+ * (`{detail: ..., code?: ...}`; codul poate sta și în `detail.code`).
+ */
+async function extractError(response: Response): Promise<{ detail: string; code: string | null }> {
+  const fallback = `Eroare ${response.status}`;
   try {
     const data: unknown = await response.json();
     if (data && typeof data === 'object' && 'detail' in data) {
-      const detail = (data as { detail: unknown }).detail;
-      if (typeof detail === 'string') return detail;
+      const body = data as { detail: unknown; code?: unknown };
+      const detail = body.detail;
+      let code = typeof body.code === 'string' ? body.code : null;
+      if (typeof detail === 'string') return { detail, code };
       // FastAPI 422: listă de erori de validare.
       if (Array.isArray(detail)) {
         const first = detail[0];
         if (first && typeof first === 'object' && 'msg' in first) {
           const msg = (first as { msg: unknown }).msg;
-          if (typeof msg === 'string') return msg;
+          if (typeof msg === 'string') return { detail: msg, code };
         }
       }
+      // `detail: {code, message}` (unele rute pun codul în interior).
+      if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+        const inner = detail as { code?: unknown; message?: unknown };
+        if (code === null && typeof inner.code === 'string') code = inner.code;
+        if (typeof inner.message === 'string') return { detail: inner.message, code };
+      }
+      return { detail: fallback, code };
     }
   } catch {
     // corp gol sau non-JSON
   }
-  return `Eroare ${response.status}`;
+  return { detail: fallback, code: null };
 }
 
 /* ---------------------------- refresh single-flight -------------------------- */
@@ -202,7 +218,8 @@ async function request(path: string, options: RequestOptions = {}): Promise<Resp
   }
 
   if (!response.ok) {
-    throw new ApiError(response.status, await extractDetail(response));
+    const { detail, code } = await extractError(response);
+    throw new ApiError(response.status, detail, code);
   }
   return response;
 }

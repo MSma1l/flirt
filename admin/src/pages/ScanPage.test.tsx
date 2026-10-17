@@ -111,22 +111,24 @@ describe('ScanPage', () => {
     expect(screen.queryByTestId('scan-result')).not.toBeInTheDocument();
   });
 
-  it.each<[TicketScanResponse, string, string]>([
+  it.each<[TicketScanResponse, string, string, 'caution' | 'fail']>([
     [
       { result: 'already_admitted', ticket: ADMITTED.ticket },
       'DEJA INTRAT',
       'scanat de staff@flirt.app',
+      'caution',
     ],
     [
       { result: 'wrong_event', ticket: { ...ADMITTED.ticket!, event_title: 'Concert X', admitted_at: null } },
       'ALT EVENIMENT',
       'Concert X',
+      'caution',
     ],
-    [{ result: 'not_paid', ticket: ADMITTED.ticket }, 'NEPLĂTIT', 'Plata nu a fost confirmată'],
-    [{ result: 'cancelled', ticket: ADMITTED.ticket }, 'BILET ANULAT', 'respinsă sau anulată'],
-    [{ result: 'event_over', ticket: ADMITTED.ticket }, 'EVENIMENT ÎNCHEIAT', 's-a terminat'],
-    [{ result: 'not_found', ticket: null }, 'BILET NEGĂSIT', 'niciunui bilet'],
-  ])('refuz %#: card roșu cu motivul', async (response, title, reason) => {
+    [{ result: 'not_paid', ticket: ADMITTED.ticket }, 'NEPLĂTIT', 'Plata nu a fost confirmată', 'fail'],
+    [{ result: 'cancelled', ticket: ADMITTED.ticket }, 'BILET ANULAT', 'respinsă sau anulată', 'fail'],
+    [{ result: 'event_over', ticket: ADMITTED.ticket }, 'EVENIMENT ÎNCHEIAT', 's-a terminat', 'fail'],
+    [{ result: 'not_found', ticket: null }, 'BILET NEGĂSIT', 'niciunui bilet', 'fail'],
+  ])('refuz %#: card colorat cu motivul și „Nu permite intrarea"', async (response, title, reason, tone) => {
     mockFetch(routes(response));
     const person = userEvent.setup();
     renderWithProviders(<ScanPage />);
@@ -135,9 +137,56 @@ describe('ScanPage', () => {
     await person.click(screen.getByRole('button', { name: 'Verifică' }));
 
     const card = await screen.findByTestId('scan-result');
-    expect(card).toHaveClass('scan-result--fail');
+    // Chihlimbariu = bilet real, dar nu acum/aici; roșu = bilet invalid.
+    expect(card).toHaveClass(`scan-result--${tone}`);
     expect(card).toHaveTextContent(title);
     expect(card).toHaveTextContent(reason);
+    expect(card).toHaveTextContent('Nu permite intrarea');
+  });
+
+  it('alt eveniment: arată și data evenimentului de pe bilet', async () => {
+    mockFetch(
+      routes({
+        result: 'wrong_event',
+        ticket: { ...ADMITTED.ticket!, event_title: 'Concert X', starts_at: '2026-07-01T18:00:00Z' },
+      }),
+    );
+    const person = userEvent.setup();
+    renderWithProviders(<ScanPage />);
+    await person.type(await screen.findByLabelText(/tastează codul/), 'abcdef12');
+    await person.click(screen.getByRole('button', { name: 'Verifică' }));
+    // 18:00 UTC = 21:00 în Chișinău (vara).
+    expect(await screen.findByTestId('scan-result')).toHaveTextContent('01.07, 21:00');
+  });
+
+  it('evenimentul șters între timp (404) → mesaj clar, fără verdict despre bilet', async () => {
+    mockFetch({
+      ...routes(ADMITTED),
+      'POST /admin/tickets/scan': { status: 404, body: { detail: 'Event not found' } },
+    });
+    const person = userEvent.setup();
+    renderWithProviders(<ScanPage />);
+    await person.type(await screen.findByLabelText(/tastează codul/), 'abcdef12');
+    await person.click(screen.getByRole('button', { name: 'Verifică' }));
+
+    const card = await screen.findByTestId('scan-result');
+    expect(card).toHaveClass('scan-result--fail');
+    expect(card).toHaveTextContent('Evenimentul ales nu mai există');
+    expect(card).not.toHaveTextContent('Nu permite intrarea');
+  });
+
+  it('lista de evenimente nu se încarcă → eroare cu „Reîncearcă", nu „nu există evenimente"', async () => {
+    mockFetch({ 'GET /admin/events': { status: 500, body: { detail: 'Eroare server' } } });
+    renderWithProviders(<ScanPage />);
+    expect(await screen.findByText('Eroare server', {}, { timeout: 4000 })).toBeInTheDocument();
+    expect(screen.queryByText(/Nu există evenimente/)).not.toBeInTheDocument();
+  });
+
+  it('cere până la 100 de evenimente (cele de azi nu cad de pe prima pagină)', async () => {
+    const api = mockFetch(routes(ADMITTED));
+    renderWithProviders(<ScanPage />);
+    await screen.findByRole('option', { name: /Flirt Party Chișinău/ });
+    expect(api.callsTo('GET /admin/events')[0]?.url).toContain('limit=100');
   });
 
   it('pașaport cu bilet online → INTRARE PERMISĂ cu mențiunea Flirt Passport', async () => {

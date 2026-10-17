@@ -1,16 +1,19 @@
 /**
- * Comenzi bilete: verificarea manuală a plăților prin transfer bancar.
+ * Comenzi bilete: verificarea manuală a plăților (MIA sau transfer IBAN).
  *
- * Fluxul: userul comandă un bilet, plătește prin MIA (după telefon) sau prin
- * transfer în contul global (setate SUS, în cardul „Date de plată") folosind `reference` ca detaliu de plată, apoi marchează
- * „am plătit" (status `payment_declared`). Adminul caută transferul în extrasul
- * bancar DUPĂ `reference`, apoi APROBĂ (se generează biletul) sau RESPINGE.
+ * Fluxul: userul comandă un bilet, plătește folosind CODUL DE PLATĂ (`reference`)
+ * în comentariul transferului, încarcă chitanța → status „de verificat". Adminul
+ * caută plata în extrasul bancar după cod, deschide comanda (chitanța MARE lângă
+ * sumă/cod/client) și APROBĂ (se emite biletul), RESPINGE sau CERE INFORMAȚII.
  *
- * Comenzile `payment_declared` sunt cele care cer acțiune — backend-ul le trimite
- * primele, iar aici ies în evidență (badge de accent + acțiuni pe rând).
+ * Ce cere acțiune iese în evidență: filtrul „De verificat" are contor galben, iar
+ * rândurile lui au bara galbenă în stânga. Lista e paginată pe cursor („Încarcă
+ * mai multe") — backend-ul trimite cele de verificat primele.
+ *
+ * Datele de plată (MIA / IBAN) sunt configurate în cardul de SUB coadă.
  */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 
 import {
   approveTicketOrder,
@@ -18,12 +21,15 @@ import {
   deleteMiaQr,
   fetchPaymentSettings,
   fetchTicketOrder,
+  fetchTicketOrderCounts,
   fetchTicketOrderProof,
-  fetchTicketOrdersByStatus,
+  fetchTicketOrdersPage,
   rejectTicketOrder,
+  sumCounts,
   updatePaymentSettings,
   uploadMiaQr,
 } from '../api/admin';
+import { ApiError } from '../api/client';
 import type {
   PaymentSettings,
   PaymentSettingsInput,
@@ -31,6 +37,7 @@ import type {
   TicketOrderStatus,
 } from '../api/types';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { CopyButton } from '../components/CopyButton';
 import { Modal } from '../components/Modal';
 import {
   Badge,
@@ -43,49 +50,28 @@ import {
   Select,
   TextArea,
   TextInput,
-  type BadgeTone,
 } from '../components/ui';
-import { INTL_LOCALE, useLanguage, useMessages } from '../i18n/LanguageContext';
+import { useMessages } from '../i18n/LanguageContext';
 import { ticketsMessages } from '../i18n/messages/tickets';
 import { errorMessage } from '../lib/errors';
-import { formatDateTime } from '../lib/format';
+import { formatDateTime, formatMoney } from '../lib/format';
+import {
+  DetailRow,
+  ProofViewer,
+  STATUS_TONE,
+  StatusChips,
+  TO_VERIFY,
+  TicketStatusBadge,
+  needsAction,
+  refreshTicketQueries,
+  useEventOptions,
+  useTicketActionError,
+} from './ticketShared';
+import './tickets.css';
 
 /* ------------------------------ Ajutoare ---------------------------- */
 
-/** Suma + moneda, formatate. Cade elegant pe „12 EUR" dacă moneda e necunoscută. */
-function formatPrice(price: number, currency: string, locale: string): string {
-  try {
-    return new Intl.NumberFormat(locale, {
-      style: 'currency',
-      currency,
-    }).format(price);
-  } catch {
-    return `${price} ${currency}`;
-  }
-}
-
-// Eticheta statusului vine din dicționar (`ticketsMessages.orders.status`).
-// „De verificat" (chitanță încărcată) iese în evidență cu tonul de avertizare.
-const STATUS_TONE: Record<TicketOrderStatus, BadgeTone> = {
-  awaiting_payment: 'neutral',
-  pending_payment: 'neutral',
-  payment_declared: 'warning',
-  payment_proof_submitted: 'warning',
-  under_review: 'accent',
-  additional_information_required: 'accent',
-  approved: 'success',
-  rejected: 'danger',
-  cancelled: 'neutral',
-};
-
-/** Stările care cer acțiunea adminului (chitanță de verificat). */
-const TO_VERIFY: readonly TicketOrderStatus[] = [
-  'payment_declared',
-  'payment_proof_submitted',
-  'under_review',
-];
-
-type FilterKey = 'all' | 'toVerify' | 'awaiting' | 'needsInfo' | 'approved' | 'rejected' | 'cancelled';
+type FilterKey = 'all' | 'toVerify' | 'needsInfo' | 'awaiting' | 'approved' | 'rejected' | 'cancelled';
 
 /** Filtrul din UI → stările trimise backend-ului (`?status=a,b`). */
 const FILTER_STATUSES: Record<FilterKey, readonly TicketOrderStatus[]> = {
@@ -101,33 +87,59 @@ const FILTER_STATUSES: Record<FilterKey, readonly TicketOrderStatus[]> = {
 const FILTER_KEYS: readonly FilterKey[] = [
   'all',
   'toVerify',
-  'awaiting',
   'needsInfo',
+  'awaiting',
   'approved',
   'rejected',
   'cancelled',
 ];
 
+/** Câte comenzi aduce o pagină din coadă. */
+export const PAGE_SIZE = 50;
+
 /** Pauza după ultima tastă înainte de căutare (nu o cerere la fiecare cifră). */
 export const SEARCH_DEBOUNCE_MS = 350;
+
+/** Statusurile pentru care avem butoane dedicate în detaliu (restul: „Schimbă statusul"). */
+const PRIMARY_ACTIONS: readonly TicketOrderStatus[] = [
+  'approved',
+  'additional_information_required',
+  'rejected',
+];
 
 function statusLabel(labels: Record<string, string>, status: string): string {
   return labels[status] ?? status;
 }
 
+/** Suma de plată a comenzii (totalul pentru mai multe bilete), cu moneda. */
+export function orderAmount(order: TicketOrder): string {
+  const quantity = order.ticket_quantity ?? 1;
+  return formatMoney(order.total_amount ?? order.price * quantity, order.currency);
+}
+
+function StatusBadge({ status }: { status: TicketOrderStatus }): JSX.Element {
+  const m = useMessages(ticketsMessages).orders;
+  return <Badge tone={STATUS_TONE[status] ?? 'neutral'}>{statusLabel(m.status, status)}</Badge>;
+}
+
 /* -------------------------------- Pagina ---------------------------- */
 
 export function TicketOrdersPage(): JSX.Element {
-  const m = useMessages(ticketsMessages);
-  const locale = INTL_LOCALE[useLanguage().language];
+  const t = useMessages(ticketsMessages);
+  const m = t.orders;
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<FilterKey>('all');
+  const [eventId, setEventId] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [toApprove, setToApprove] = useState<TicketOrder | null>(null);
   const [toReject, setToReject] = useState<TicketOrder | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Garda sincronă contra dublu-click-ului (înainte ca butonul să apuce să se dezactiveze).
+  const inFlight = useRef(false);
+  const actionErrorText = useTicketActionError();
+  const events = useEventOptions();
 
   // Codul de plată din comentariul extrasului bancar → comanda (`?q=`).
   useEffect(() => {
@@ -136,207 +148,276 @@ export function TicketOrdersPage(): JSX.Element {
     return () => window.clearTimeout(timer);
   }, [searchInput]);
 
-  const query = useQuery({
-    queryKey: ['ticket-orders', filter, search],
-    queryFn: () => fetchTicketOrdersByStatus(FILTER_STATUSES[filter], search),
+  const list = useInfiniteQuery({
+    queryKey: ['ticket-orders', 'list', filter, eventId, search],
+    queryFn: ({ pageParam }) =>
+      fetchTicketOrdersPage({
+        statuses: FILTER_STATUSES[filter],
+        q: search,
+        eventId: eventId || undefined,
+        cursor: pageParam,
+        limit: PAGE_SIZE,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+    refetchInterval: 60_000,
   });
 
-  const invalidate = (): Promise<void> =>
-    queryClient.invalidateQueries({ queryKey: ['ticket-orders'] }).then(() => undefined);
+  // Contoarele EXACTE pe stare, pentru același eveniment / cod ca lista.
+  // Fără filtre, cheia e aceeași ca badge-ul din meniu → o singură cerere.
+  const counts = useQuery({
+    queryKey: ['ticket-orders', 'counts', eventId, search],
+    queryFn: () => fetchTicketOrderCounts({ eventId: eventId || undefined, q: search }),
+    refetchInterval: 60_000,
+  });
+  const countLabel = (key: FilterKey): string | null => {
+    if (!counts.data) return null;
+    return String(key === 'all' ? counts.data.total : sumCounts(counts.data, FILTER_STATUSES[key]));
+  };
+
+  // O comandă mutată între pagini la reîmprospătare nu apare de două ori.
+  const orders = useMemo(() => {
+    const seen = new Map<string, TicketOrder>();
+    for (const page of list.data?.pages ?? []) {
+      for (const order of page.items) if (!seen.has(order.id)) seen.set(order.id, order);
+    }
+    return Array.from(seen.values());
+  }, [list.data]);
+
+  const onDecided = async (updated: TicketOrder): Promise<void> => {
+    queryClient.setQueryData(['ticket-order', updated.id], updated);
+    await refreshTicketQueries(queryClient);
+  };
 
   const approve = useMutation({
     mutationFn: (id: string) => approveTicketOrder(id),
-    onSuccess: async () => {
+    onSuccess: async (updated) => {
       setToApprove(null);
       setActionError(null);
-      await invalidate();
+      await onDecided(updated);
     },
-    onError: (error: unknown) => setActionError(errorMessage(error)),
+    onError: (error: unknown) => setActionError(actionErrorText(error)),
+    onSettled: () => {
+      inFlight.current = false;
+    },
   });
 
   const reject = useMutation({
-    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
-      rejectTicketOrder(id, reason),
-    onSuccess: async () => {
+    mutationFn: ({ id, reason }: { id: string; reason?: string }) => rejectTicketOrder(id, reason),
+    onSuccess: async (updated) => {
       setToReject(null);
       setActionError(null);
-      await invalidate();
+      await onDecided(updated);
     },
     onError: (error: unknown) => setActionError(errorMessage(error)),
+    onSettled: () => {
+      inFlight.current = false;
+    },
   });
 
-  const orders = query.data ?? [];
+  const run = (action: () => void): void => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    action();
+  };
+
+  const chipOptions = FILTER_KEYS.map((key) => ({
+    key,
+    label: m.filter[key],
+    count: countLabel(key),
+    urgent: key === 'toVerify',
+  }));
 
   return (
     <>
-      <PaymentSettingsCard />
-
-      <Card title={m.orders.title}>
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            justifyContent: 'flex-end',
-            gap: 12,
-            marginBottom: 12,
-          }}
-        >
-          <Field label={m.orders.searchLabel} htmlFor="ticket-orders-search">
+      <Card title={m.title}>
+        <p className="muted ticket-intro">{m.intro}</p>
+        <div className="ticket-toolbar">
+          <StatusChips label={m.filterLabel} options={chipOptions} value={filter} onChange={setFilter} />
+          <Field label={t.common.event} htmlFor="ticket-orders-event">
+            <Select
+              id="ticket-orders-event"
+              value={eventId}
+              onChange={(e) => setEventId(e.target.value)}
+            >
+              <option value="">{t.common.allEvents}</option>
+              {events.options.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label={m.searchLabel} htmlFor="ticket-orders-search">
             <TextInput
               id="ticket-orders-search"
               type="search"
+              inputMode="numeric"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder={m.orders.searchPlaceholder}
+              placeholder={m.searchPlaceholder}
               autoComplete="off"
               spellCheck={false}
               maxLength={64}
             />
           </Field>
-          <Field label={m.orders.filterLabel} htmlFor="ticket-orders-filter">
-            <Select
-              id="ticket-orders-filter"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value as FilterKey)}
-            >
-              {FILTER_KEYS.map((key) => (
-                <option key={key} value={key}>
-                  {m.orders.filter[key]}
-                </option>
-              ))}
-            </Select>
-          </Field>
         </div>
-        {query.isPending ? (
-          <LoadingState label={m.orders.loading} />
-        ) : query.isError ? (
-          <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} />
+        {list.isPending ? (
+          <LoadingState label={m.loading} />
+        ) : list.isError ? (
+          <ErrorState message={errorMessage(list.error)} onRetry={() => void list.refetch()} />
         ) : orders.length === 0 ? (
           <EmptyState
-            title={search ? m.orders.searchEmpty(search) : m.orders.emptyTitle}
-            hint={search ? undefined : m.orders.emptyHint}
+            title={
+              search
+                ? m.searchEmpty(search)
+                : filter === 'all' && !eventId
+                  ? m.emptyTitle
+                  : m.emptyFiltered(
+                      filter === 'all'
+                        ? (events.options.find((o) => o.id === eventId)?.label ?? t.common.event)
+                        : m.filter[filter],
+                    )
+            }
+            hint={search ? undefined : filter === 'toVerify' ? m.emptyToVerify : m.emptyHint}
           />
         ) : (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>{m.orders.colUser}</th>
-                  <th>{m.common.event}</th>
-                  <th>{m.orders.colAmount}</th>
-                  <th>{m.orders.colReference}</th>
-                  <th>{m.orders.colProof}</th>
-                  <th>{m.orders.colNote}</th>
-                  <th>{m.common.status}</th>
-                  <th>{m.common.created}</th>
-                  <th aria-label={m.common.actions} />
-                </tr>
-              </thead>
-              <tbody>
-                {orders.map((order) => {
-                  const needsReview = TO_VERIFY.includes(order.status) && !order.is_request;
-                  return (
-                    <tr
-                      key={order.id}
-                      data-testid={`ticket-order-row-${order.id}`}
-                      onClick={() => setOpenId(order.id)}
-                      style={{
-                        cursor: 'pointer',
-                        fontWeight: TO_VERIFY.includes(order.status) ? 600 : undefined,
-                      }}
-                    >
-                      <td>
-                        <div>{order.user.email}</div>
-                        {order.user.payment_ref ? (
-                          <div className="muted mono">{order.user.payment_ref}</div>
-                        ) : null}
-                      </td>
-                      <td>
-                        <div>{order.event.title}</div>
-                        <div className="muted mono">{formatDateTime(order.event.starts_at)}</div>
-                      </td>
-                      <td className="mono">
-                        {formatPrice(order.total_amount ?? order.price, order.currency, locale)}
-                      </td>
-                      <td>
-                        <span className="badge badge--count mono">{order.reference}</span>
-                      </td>
-                      <td>
-                        {order.payment_proof_uploaded ? (
-                          <span role="img" aria-label={m.orders.proofAttached} title={m.orders.proofAttached}>
-                            📎
-                          </span>
-                        ) : (
-                          <span className="muted">—</span>
-                        )}
-                      </td>
-                      <td>{order.user_note ? order.user_note : <span className="muted">—</span>}</td>
-                      <td>
-                        <Badge tone={STATUS_TONE[order.status] ?? 'neutral'}>
-                          {statusLabel(m.orders.status, order.status)}
-                        </Badge>
-                      </td>
-                      <td className="muted mono">{formatDateTime(order.created_at)}</td>
-                      <td onClick={(e) => e.stopPropagation()}>
-                        <div className="table__actions">
-                          {needsReview ? (
-                            <>
-                              <Button
-                                small
-                                variant="primary"
-                                onClick={() => {
-                                  setActionError(null);
-                                  setToApprove(order);
-                                }}
-                              >
-                                {m.orders.approve}
-                              </Button>
-                              <Button
-                                small
-                                variant="danger"
-                                onClick={() => {
-                                  setActionError(null);
-                                  setToReject(order);
-                                }}
-                              >
-                                {m.orders.reject}
-                              </Button>
-                            </>
-                          ) : order.ticket_code ? (
-                            <span className="mono muted">{order.ticket_code}</span>
+          <>
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>{t.common.status}</th>
+                    <th>{m.colReference}</th>
+                    <th>{m.colAmount}</th>
+                    <th>{m.colUser}</th>
+                    <th>{t.common.event}</th>
+                    <th>{m.colProof}</th>
+                    <th>{t.common.created}</th>
+                    <th aria-label={t.common.actions} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {orders.map((order) => {
+                    const action = needsAction(order.status);
+                    // Butoanele rapide doar pe comenzile directe: o cerere are regulile ei
+                    // (ex. nu se aprobă fără dovadă) și se decide din detaliu.
+                    const quick = action && !order.is_request;
+                    return (
+                      <tr
+                        key={order.id}
+                        data-testid={`ticket-order-row-${order.id}`}
+                        className={['ticket-row', action ? 'ticket-row--action' : ''].filter(Boolean).join(' ')}
+                        onClick={() => setOpenId(order.id)}
+                      >
+                        <td>
+                          <div className="ticket-cell">
+                            <StatusBadge status={order.status} />
+                            <TicketStatusBadge status={order.ticket_status} admittedAt={order.admitted_at} />
+                          </div>
+                        </td>
+                        <td>
+                          <span className="mono ticket-ref">{order.reference}</span>
+                        </td>
+                        <td className="mono" style={{ whiteSpace: 'nowrap' }}>
+                          <div>{orderAmount(order)}</div>
+                          {(order.ticket_quantity ?? 1) > 1 ? (
+                            <div className="muted">{m.quantity(order.ticket_quantity ?? 1)}</div>
                           ) : null}
-                          <Button small variant="ghost" onClick={() => setOpenId(order.id)}>
-                            {m.orders.open}
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                        <td>
+                          <div>{order.user.email}</div>
+                          {order.user_note ? (
+                            <div className="muted ticket-note" title={order.user_note}>
+                              „{order.user_note}"
+                            </div>
+                          ) : null}
+                        </td>
+                        <td>
+                          <div>{order.event.title}</div>
+                          <div className="muted mono">{formatDateTime(order.event.starts_at)}</div>
+                        </td>
+                        <td>
+                          {order.payment_proof_uploaded ? (
+                            <Badge tone="accent">
+                              <span aria-label={m.proofAttached} title={m.proofAttached}>
+                                {order.payment_proof_kind === 'pdf' ? m.proofPdf : m.proofBadge}
+                              </span>
+                            </Badge>
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
+                        </td>
+                        <td className="muted mono">{formatDateTime(order.created_at)}</td>
+                        <td onClick={(e) => e.stopPropagation()}>
+                          <div className="table__actions">
+                            {quick ? (
+                              <>
+                                <Button
+                                  small
+                                  variant="primary"
+                                  onClick={() => {
+                                    setActionError(null);
+                                    setToApprove(order);
+                                  }}
+                                >
+                                  {m.approve}
+                                </Button>
+                                <Button
+                                  small
+                                  variant="danger"
+                                  onClick={() => {
+                                    setActionError(null);
+                                    setToReject(order);
+                                  }}
+                                >
+                                  {m.reject}
+                                </Button>
+                              </>
+                            ) : null}
+                            <Button small variant="ghost" onClick={() => setOpenId(order.id)}>
+                              {m.open}
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {list.hasNextPage ? (
+              <div className="ticket-more">
+                <Button onClick={() => void list.fetchNextPage()} disabled={list.isFetchingNextPage}>
+                  {list.isFetchingNextPage ? t.common.loadingMore : t.common.loadMore}
+                </Button>
+              </div>
+            ) : null}
+          </>
         )}
       </Card>
+
+      <PaymentSettingsCard />
 
       {openId ? (
         <TicketOrderDetail
           orderId={openId}
           fallback={orders.find((o) => o.id === openId) ?? null}
           onClose={() => setOpenId(null)}
-          onChanged={invalidate}
+          onDecided={onDecided}
         />
       ) : null}
 
       {toApprove ? (
         <ConfirmDialog
-          title={m.orders.approveTitle}
-          message={m.orders.approveMessage(
-            toApprove.reference,
-            formatPrice(toApprove.price, toApprove.currency, locale),
-            toApprove.user.email,
-          )}
-          confirmLabel={m.orders.approveConfirm}
+          title={m.approveTitle}
+          message={[
+            m.approveMessage(toApprove.reference, orderAmount(toApprove), toApprove.user.email),
+            toApprove.payment_proof_uploaded ? '' : m.approveNoProof,
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          confirmLabel={m.approveConfirm}
           danger={false}
           busy={approve.isPending}
           errorMessage={actionError}
@@ -344,7 +425,7 @@ export function TicketOrdersPage(): JSX.Element {
             setToApprove(null);
             setActionError(null);
           }}
-          onConfirm={() => approve.mutate(toApprove.id)}
+          onConfirm={() => run(() => approve.mutate(toApprove.id))}
         />
       ) : null}
 
@@ -357,7 +438,7 @@ export function TicketOrdersPage(): JSX.Element {
             setToReject(null);
             setActionError(null);
           }}
-          onSubmit={(reason) => reject.mutate({ id: toReject.id, reason })}
+          onSubmit={(reason) => run(() => reject.mutate({ id: toReject.id, reason }))}
         />
       ) : null}
     </>
@@ -366,103 +447,19 @@ export function TicketOrdersPage(): JSX.Element {
 
 /* --------------------------- Detaliul comenzii ---------------------- */
 
-function DetailRow({ label, value }: { label: string; value: ReactNode }): JSX.Element {
-  return (
-    <div>
-      <div className="muted">{label}</div>
-      <div>{value}</div>
-    </div>
-  );
-}
-
-/** Chitanța: imagine cu zoom sau link spre PDF — citită autentificat ca Blob. */
-function ProofViewer({ order }: { order: TicketOrder }): JSX.Element {
-  const m = useMessages(ticketsMessages).orders;
-  const [url, setUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(1);
-  const isPdf = order.payment_proof_kind === 'pdf';
-
-  useEffect(() => {
-    let objectUrl: string | null = null;
-    let cancelled = false;
-    setUrl(null);
-    setError(null);
-    void fetchTicketOrderProof(order.id)
-      .then((blob) => {
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setUrl(objectUrl);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(errorMessage(err));
-      });
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [order.id, order.payment_declared_at]);
-
-  return (
-    <section aria-label={m.proofTitle}>
-      <h3 className="card__title">{m.proofTitle}</h3>
-      {error ? (
-        <div className="alert" role="alert">
-          {error}
-        </div>
-      ) : null}
-      {!url && !error ? <LoadingState label={m.loadingProof} /> : null}
-      {url && isPdf ? (
-        <a className="btn" href={url} target="_blank" rel="noopener noreferrer" data-testid="proof-pdf-link">
-          {m.openPdf}
-        </a>
-      ) : null}
-      {url && !isPdf ? (
-        <>
-          <div className="table__actions" style={{ marginBottom: 8 }}>
-            <Button small variant="ghost" onClick={() => setZoom((z) => Math.max(1, z - 0.5))} disabled={zoom <= 1}>
-              {m.zoomOut}
-            </Button>
-            <Button small variant="ghost" onClick={() => setZoom((z) => Math.min(4, z + 0.5))} disabled={zoom >= 4}>
-              {m.zoomIn}
-            </Button>
-          </div>
-          <div style={{ overflow: 'auto', maxHeight: 520, borderRadius: 'var(--radius-input)' }}>
-            <img
-              src={url}
-              alt={m.proofAlt}
-              data-testid="proof-image"
-              onClick={() => setZoom((z) => (z >= 2 ? 1 : 2))}
-              style={{
-                display: 'block',
-                width: `${zoom * 100}%`,
-                maxWidth: zoom === 1 ? '100%' : 'none',
-                margin: '0 auto',
-                cursor: zoom >= 2 ? 'zoom-out' : 'zoom-in',
-              }}
-            />
-          </div>
-        </>
-      ) : null}
-    </section>
-  );
-}
-
 function TicketOrderDetail({
   orderId,
   fallback,
   onClose,
-  onChanged,
+  onDecided,
 }: {
   orderId: string;
   fallback: TicketOrder | null;
   onClose: () => void;
-  onChanged: () => Promise<void>;
+  onDecided: (updated: TicketOrder) => Promise<void>;
 }): JSX.Element {
-  const m = useMessages(ticketsMessages).orders;
-  const common = useMessages(ticketsMessages).common;
-  const locale = INTL_LOCALE[useLanguage().language];
-  const queryClient = useQueryClient();
+  const t = useMessages(ticketsMessages);
+  const m = t.orders;
   const [pending, setPending] = useState<TicketOrderStatus | null>(null);
   const [picked, setPicked] = useState<TicketOrderStatus | ''>('');
 
@@ -471,115 +468,157 @@ function TicketOrderDetail({
     queryFn: () => fetchTicketOrder(orderId),
   });
   const order = details.data ?? fallback;
-  const allowed = order?.allowed_statuses ?? [];
+  // Acțiunile pornesc doar din datele PROASPETE ale detaliului (lista poate fi veche).
+  const allowed = details.data?.allowed_statuses ?? [];
+  const others = allowed.filter((status) => !PRIMARY_ACTIONS.includes(status));
+  const gone = details.error instanceof ApiError && details.error.status === 404;
+  // O cerere (date de contact) nu se poate aproba fără dovada plății (409 pe backend).
+  const approveBlocked = Boolean(order?.is_request && !order.payment_proof_uploaded);
 
-  const done = async (): Promise<void> => {
+  const done = async (updated: TicketOrder): Promise<void> => {
     setPending(null);
     setPicked('');
-    await queryClient.invalidateQueries({ queryKey: ['ticket-order', orderId] });
-    await onChanged();
+    await onDecided(updated);
   };
 
   const title = order ? m.detailTitle(order.reference) : m.loadingDetails;
   const method = order?.payment_method ? m.method[order.payment_method] : m.method.unknown;
 
   return (
-    <Modal title={title} wide onClose={onClose}>
+    <Modal title={title} wide className="modal--ticket" onClose={onClose}>
       <div className="modal__body">
         {details.isPending && !order ? <LoadingState label={m.loadingDetails} /> : null}
-        {details.isError ? <ErrorState message={errorMessage(details.error)} /> : null}
-        {order ? (
-          <>
+        {details.isError ? (
+          <ErrorState
+            message={gone ? m.orderMissing : errorMessage(details.error)}
+            onRetry={gone ? undefined : () => void details.refetch()}
+          />
+        ) : null}
+        {order && !gone ? (
+          <div className="ticket-detail">
             <div>
-              <Badge tone={STATUS_TONE[order.status] ?? 'neutral'}>
-                {statusLabel(m.status, order.status)}
-              </Badge>
+              {order.payment_proof_uploaded ? (
+                <ProofViewer
+                  load={() => fetchTicketOrderProof(order.id)}
+                  kind={order.payment_proof_kind}
+                  version={`${order.id}:${order.payment_declared_at ?? ''}`}
+                />
+              ) : (
+                <div className="ticket-proof__empty muted">{m.noProof}</div>
+              )}
             </div>
-            <div className="form-grid">
-              <DetailRow
-                label={m.fieldUser}
-                value={`${order.user.email}${order.user.payment_ref ? ` · ${order.user.payment_ref}` : ''}`}
-              />
-              <DetailRow
-                label={m.fieldAmount}
-                value={formatPrice(order.total_amount ?? order.price, order.currency, locale)}
-              />
-              <DetailRow
-                label={m.fieldReference}
-                value={<span className="badge badge--count mono">{order.reference}</span>}
-              />
-              <DetailRow label={m.fieldMethod} value={method} />
-              <DetailRow
-                label={common.event}
-                value={`${order.event.title} · ${formatDateTime(order.event.starts_at)}`}
-              />
-              <DetailRow label={m.fieldCreated} value={formatDateTime(order.created_at)} />
-              <DetailRow
-                label={m.fieldPaid}
-                value={order.payment_declared_at ? formatDateTime(order.payment_declared_at) : '—'}
-              />
-              <DetailRow
-                label={m.fieldDecided}
-                value={order.decided_at ? formatDateTime(order.decided_at) : '—'}
-              />
-              <DetailRow label={m.fieldUserNote} value={order.user_note ?? '—'} />
-              <DetailRow label={m.fieldAdminNote} value={order.admin_note ?? '—'} />
-              {order.ticket_code ? (
-                <DetailRow label={m.fieldTicket} value={<span className="mono">{order.ticket_code}</span>} />
+
+            <div className="ticket-detail__side">
+              <div className="ticket-badges">
+                <StatusBadge status={order.status} />
+                <TicketStatusBadge status={order.ticket_status} admittedAt={order.admitted_at} />
+                {order.is_request ? <Badge tone="neutral">{m.kindRequest}</Badge> : null}
+              </div>
+
+              <div className="ticket-summary">
+                <div>
+                  <div className="ticket-summary__label">{m.fieldAmount}</div>
+                  <div className="ticket-summary__value mono" data-testid="order-amount">
+                    {orderAmount(order)}
+                  </div>
+                  {(order.ticket_quantity ?? 1) > 1 ? (
+                    <div className="muted">
+                      {m.perTicket(order.ticket_quantity ?? 1, formatMoney(order.price, order.currency))}
+                    </div>
+                  ) : null}
+                </div>
+                <div>
+                  <div className="ticket-summary__label">{m.fieldReference}</div>
+                  <div className="ticket-summary__value mono">{order.reference}</div>
+                  <CopyButton value={order.reference} />
+                </div>
+                <div>
+                  <div className="ticket-summary__label">{m.fieldMethod}</div>
+                  <div style={{ fontWeight: 700 }}>{method}</div>
+                </div>
+              </div>
+
+              {needsAction(order.status) ? (
+                <p className="ticket-hint">{m.verifyHint(order.reference, orderAmount(order))}</p>
               ) : null}
+
+              <dl className="ticket-facts">
+                <DetailRow label={m.fieldUser} value={order.user.email} />
+                <DetailRow
+                  label={t.common.event}
+                  value={`${order.event.title} · ${formatDateTime(order.event.starts_at)}`}
+                />
+                <DetailRow label={m.fieldCreated} value={formatDateTime(order.created_at)} />
+                <DetailRow
+                  label={m.fieldPaid}
+                  value={order.payment_declared_at ? formatDateTime(order.payment_declared_at) : '—'}
+                />
+                <DetailRow
+                  label={m.fieldDecided}
+                  value={order.decided_at ? formatDateTime(order.decided_at) : '—'}
+                />
+                {order.ticket_code ? (
+                  <DetailRow label={m.fieldTicket} value={<span className="mono">{order.ticket_code}</span>} />
+                ) : null}
+                <DetailRow label={m.fieldUserNote} value={order.user_note ?? '—'} />
+                <DetailRow label={m.fieldAdminNote} value={order.admin_note ?? '—'} />
+              </dl>
+
+              {details.isPending ? null : allowed.length === 0 ? (
+                <p className="muted" data-testid="order-final">
+                  {m.finalState}
+                </p>
+              ) : (
+                <>
+                  {approveBlocked && allowed.includes('approved') ? (
+                    <p className="ticket-hint">{m.requestNeedsProof}</p>
+                  ) : null}
+                  <div className="ticket-actions">
+                    {allowed.includes('approved') ? (
+                      <Button
+                        variant="primary"
+                        disabled={approveBlocked}
+                        onClick={() => setPending('approved')}
+                      >
+                        {m.approveAction}
+                      </Button>
+                    ) : null}
+                    {allowed.includes('additional_information_required') ? (
+                      <Button onClick={() => setPending('additional_information_required')}>
+                        {m.askInfo}
+                      </Button>
+                    ) : null}
+                    {allowed.includes('rejected') ? (
+                      <Button variant="danger" onClick={() => setPending('rejected')}>
+                        {m.reject}
+                      </Button>
+                    ) : null}
+                  </div>
+                  {others.length > 0 ? (
+                    <div className="ticket-more-actions">
+                      <Field label={m.changeStatus} htmlFor="ticket-order-status">
+                        <Select
+                          id="ticket-order-status"
+                          value={picked}
+                          onChange={(e) => setPicked(e.target.value as TicketOrderStatus | '')}
+                        >
+                          <option value="">{m.changeStatusPick}</option>
+                          {others.map((st) => (
+                            <option key={st} value={st}>
+                              {statusLabel(m.status, st)}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <Button disabled={picked === ''} onClick={() => picked && setPending(picked)}>
+                        {m.apply}
+                      </Button>
+                    </div>
+                  ) : null}
+                </>
+              )}
             </div>
-
-            {order.payment_proof_uploaded ? (
-              <ProofViewer order={order} />
-            ) : (
-              <p className="muted">{m.noProof}</p>
-            )}
-
-            {allowed.length === 0 ? (
-              <p className="muted" data-testid="order-final">
-                {details.isPending ? '' : m.finalState}
-              </p>
-            ) : (
-              <>
-                <div className="modal__actions">
-                  {allowed.includes('additional_information_required') ? (
-                    <Button onClick={() => setPending('additional_information_required')}>
-                      {m.askInfo}
-                    </Button>
-                  ) : null}
-                  {allowed.includes('rejected') ? (
-                    <Button variant="danger" onClick={() => setPending('rejected')}>
-                      {m.reject}
-                    </Button>
-                  ) : null}
-                  {allowed.includes('approved') ? (
-                    <Button variant="primary" onClick={() => setPending('approved')}>
-                      {m.approve}
-                    </Button>
-                  ) : null}
-                </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                  <Field label={m.changeStatus} htmlFor="ticket-order-status">
-                    <Select
-                      id="ticket-order-status"
-                      value={picked}
-                      onChange={(e) => setPicked(e.target.value as TicketOrderStatus | '')}
-                    >
-                      <option value="">{m.changeStatusPick}</option>
-                      {allowed.map((st) => (
-                        <option key={st} value={st}>
-                          {statusLabel(m.status, st)}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                  <Button disabled={picked === ''} onClick={() => picked && setPending(picked)}>
-                    {m.apply}
-                  </Button>
-                </div>
-              </>
-            )}
-          </>
+          </div>
         ) : null}
       </div>
       {pending && order ? (
@@ -603,53 +642,67 @@ function StatusChangeModal({
   order: TicketOrder;
   status: TicketOrderStatus;
   onCancel: () => void;
-  onDone: () => Promise<void>;
+  onDone: (updated: TicketOrder) => Promise<void>;
 }): JSX.Element {
-  const m = useMessages(ticketsMessages);
+  const t = useMessages(ticketsMessages);
+  const m = t.orders;
   const [note, setNote] = useState('');
+  const actionErrorText = useTicketActionError();
   const noteRequired = status === 'rejected' || status === 'additional_information_required';
   const mutation = useMutation({
     mutationFn: () => changeTicketOrderStatus(order.id, { status, note }),
-    onSuccess: () => void onDone(),
+    onSuccess: (updated) => void onDone(updated),
   });
-  const label = m.orders.confirmStatus(statusLabel(m.orders.status, status));
+  const label = m.confirmStatus(statusLabel(m.status, status));
+  const destructive = status === 'rejected' || status === 'cancelled';
+  const warning =
+    status === 'approved'
+      ? m.statusWarning.approved(order.reference, orderAmount(order), order.user.email)
+      : status === 'cancelled'
+        ? order.status === 'approved'
+          ? m.statusWarning.cancelTicket
+          : m.statusWarning.cancelled
+        : status === 'rejected'
+          ? m.statusWarning.rejected
+          : null;
+  const blocked = mutation.isPending || (noteRequired && note.trim() === '');
   const submit = (event: FormEvent): void => {
     event.preventDefault();
-    if (mutation.isPending || (noteRequired && note.trim() === '')) return;
+    if (blocked) return;
     mutation.mutate();
   };
   return (
-    <Modal title={label} onClose={onCancel}>
+    <Modal title={label} onClose={mutation.isPending ? () => undefined : onCancel}>
       <form className="modal__body" onSubmit={submit}>
-        <p style={{ margin: 0 }}>{m.orders.noteNotice}</p>
-        <Field
-          label={noteRequired ? m.orders.noteRequiredLabel : m.orders.noteLabel}
-          htmlFor="ticket-order-note"
-        >
+        {warning ? (
+          <p className={destructive ? 'alert' : 'ticket-hint'} style={{ margin: 0 }}>
+            {warning}
+          </p>
+        ) : null}
+        <p className="muted" style={{ margin: 0 }}>
+          {m.noteNotice}
+        </p>
+        <Field label={noteRequired ? m.noteRequiredLabel : m.noteLabel} htmlFor="ticket-order-note">
           <TextArea
             id="ticket-order-note"
             value={note}
             maxLength={500}
             required={noteRequired}
             onChange={(e) => setNote(e.target.value)}
-            placeholder={m.orders.notePlaceholder}
+            placeholder={m.notePlaceholder}
           />
         </Field>
         {mutation.isError ? (
           <div className="alert" role="alert">
-            {errorMessage(mutation.error)}
+            {actionErrorText(mutation.error)}
           </div>
         ) : null}
         <div className="modal__actions">
           <Button variant="ghost" onClick={onCancel} disabled={mutation.isPending}>
-            {m.common.cancel}
+            {t.common.cancel}
           </Button>
-          <Button
-            type="submit"
-            variant={status === 'rejected' || status === 'cancelled' ? 'danger' : 'primary'}
-            disabled={mutation.isPending || (noteRequired && note.trim() === '')}
-          >
-            {mutation.isPending ? m.common.saving : m.orders.apply}
+          <Button type="submit" variant={destructive ? 'danger' : 'primary'} disabled={blocked}>
+            {mutation.isPending ? t.common.saving : m.apply}
           </Button>
         </div>
       </form>
@@ -670,7 +723,7 @@ function RejectModal({
   onCancel: () => void;
   onSubmit: (reason?: string) => void;
 }): JSX.Element {
-  const m = useMessages(ticketsMessages);
+  const t = useMessages(ticketsMessages);
   const [reason, setReason] = useState('');
 
   const submit = (event: FormEvent): void => {
@@ -680,30 +733,34 @@ function RejectModal({
   };
 
   return (
-    <Modal title={m.orders.rejectTitle} onClose={onCancel}>
+    <Modal title={t.orders.rejectTitle} onClose={busy ? () => undefined : onCancel}>
       <form className="modal__body" onSubmit={submit}>
         <p style={{ margin: 0 }}>
-          {m.orders.rejectIntro(order.reference, order.user.email)}
+          {t.orders.rejectIntro(order.reference, orderAmount(order), order.user.email)}
         </p>
 
-        <Field label={m.orders.rejectReason} htmlFor="reject-reason">
+        <Field label={t.orders.rejectReason} htmlFor="reject-reason">
           <TextArea
             id="reject-reason"
             value={reason}
             maxLength={500}
             onChange={(event) => setReason(event.target.value)}
-            placeholder={m.orders.rejectPlaceholder}
+            placeholder={t.orders.rejectPlaceholder}
           />
         </Field>
 
-        {error ? <div className="alert">{error}</div> : null}
+        {error ? (
+          <div className="alert" role="alert">
+            {error}
+          </div>
+        ) : null}
 
         <div className="modal__actions">
           <Button variant="ghost" onClick={onCancel} disabled={busy}>
-            {m.common.cancel}
+            {t.common.cancel}
           </Button>
           <Button type="submit" variant="danger" disabled={busy}>
-            {busy ? m.orders.rejecting : m.orders.rejectTitle}
+            {busy ? t.orders.rejecting : t.orders.rejectTitle}
           </Button>
         </div>
       </form>
@@ -770,14 +827,16 @@ function SectionHeading({ title, hint }: { title: string; hint: string }): JSX.E
 const QR_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const QR_MAX_BYTES = 5 * 1024 * 1024;
 
-/** Codul QR MIA: previzualizarea celui curent + Încarcă/Înlocuiește și Șterge. */
+/** Codul QR MIA: previzualizarea celui curent + Încarcă/Înlocuiește și Șterge (cu confirmare). */
 function MiaQrField({ qrUrl }: { qrUrl: string | null }): JSX.Element {
   const m = useMessages(ticketsMessages);
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   const onSaved = (settings: PaymentSettings): void => {
     setError(null);
+    setConfirmRemove(false);
     queryClient.setQueryData(['payment-settings'], settings);
   };
   const upload = useMutation({
@@ -793,7 +852,7 @@ function MiaQrField({ qrUrl }: { qrUrl: string | null }): JSX.Element {
   const busy = upload.isPending || remove.isPending;
 
   const pick = (file: File | undefined): void => {
-    if (!file) return;
+    if (!file || busy) return;
     if (!QR_TYPES.includes(file.type)) {
       setError(m.bank.miaQrBadType);
       return;
@@ -847,16 +906,40 @@ function MiaQrField({ qrUrl }: { qrUrl: string | null }): JSX.Element {
             }}
           />
           {qrUrl ? (
-            <Button small variant="danger" disabled={busy} onClick={() => remove.mutate()}>
+            <Button
+              small
+              variant="danger"
+              disabled={busy}
+              onClick={() => {
+                setError(null);
+                setConfirmRemove(true);
+              }}
+            >
               {m.bank.miaQrRemove}
             </Button>
           ) : null}
         </div>
       </div>
-      {error ? (
+      {error && !confirmRemove ? (
         <div className="alert" role="alert">
           {error}
         </div>
+      ) : null}
+      {confirmRemove ? (
+        <ConfirmDialog
+          title={m.bank.miaQrRemoveTitle}
+          message={m.bank.miaQrRemoveMessage}
+          confirmLabel={m.bank.miaQrRemove}
+          busy={remove.isPending}
+          errorMessage={error}
+          onCancel={() => {
+            setConfirmRemove(false);
+            setError(null);
+          }}
+          onConfirm={() => {
+            if (!remove.isPending) remove.mutate();
+          }}
+        />
       ) : null}
     </div>
   );
@@ -888,8 +971,10 @@ function PaymentSettingsCard(): JSX.Element {
     onError: (mutationError: unknown) => setError(errorMessage(mutationError)),
   });
 
-  const set = <K extends keyof BankForm>(key: K, value: BankForm[K]): void =>
+  const set = <K extends keyof BankForm>(key: K, value: BankForm[K]): void => {
+    setSaved(false);
     setForm((current) => (current ? { ...current, [key]: value } : current));
+  };
 
   // Validare — oglinda backend-ului: cel puțin o metodă (telefon MIA valid SAU
   // beneficiar + IBAN); dacă e completat IBAN-ul, beneficiarul e obligatoriu.
@@ -925,17 +1010,16 @@ function PaymentSettingsCard(): JSX.Element {
 
   return (
     <Card title={m.bank.title}>
-      {query.isPending || form === null ? (
-        <LoadingState label={m.bank.loading} />
-      ) : query.isError ? (
+      {/* Eroarea întâi: fără date, formularul rămâne null și am arăta „se încarcă" la nesfârșit. */}
+      {query.isError && form === null ? (
         <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} />
+      ) : query.isPending || form === null ? (
+        <LoadingState label={m.bank.loading} />
       ) : (
         <form className="modal__body" onSubmit={submit}>
           <p className="muted" style={{ margin: 0 }}>
             {m.bank.intro}
           </p>
-
-          {saved ? <div className="alert alert--success">{m.bank.saved}</div> : null}
 
           {/* --- MIA – plăți instant (după numărul de telefon) --- */}
           <SectionHeading title={m.bank.miaTitle} hint={m.bank.miaHint} />
@@ -1025,7 +1109,16 @@ function PaymentSettingsCard(): JSX.Element {
             />
           </Field>
 
-          {error ? <div className="alert">{error}</div> : null}
+          {error ? (
+            <div className="alert" role="alert">
+              {error}
+            </div>
+          ) : null}
+          {saved ? (
+            <div className="alert alert--success" role="status">
+              {m.bank.saved}
+            </div>
+          ) : null}
 
           <div className="modal__actions">
             <Button type="submit" variant="primary" disabled={!valid || save.isPending}>

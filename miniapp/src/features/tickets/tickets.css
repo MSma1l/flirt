@@ -184,16 +184,22 @@
   scroll-margin-top: var(--space-lg);
 }
 
+/* Tonul cardului vine din `summarizeOrder` (culoare + text, niciodată doar
+   culoare): action = ai ceva de făcut, review = așteaptă verificarea, ok =
+   bilet bun, muted = s-a terminat firesc, danger = refuz / anulare. */
 .tk-order--review {
   --tone: var(--color-link);
 }
 
-.tk-order--approved {
+.tk-order--ok {
   --tone: var(--color-success);
 }
 
-.tk-order--rejected,
-.tk-order--cancelled {
+.tk-order--muted {
+  --tone: var(--color-text-secondary);
+}
+
+.tk-order--danger {
   --tone: var(--color-danger);
 }
 
@@ -272,6 +278,20 @@
   flex-wrap: wrap;
   gap: var(--space-sm);
   margin-top: var(--space-xs);
+}
+
+/* Pasul următor, în cuvinte: răspunsul la „și acum ce fac?". */
+.tk-order__next {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  opacity: 0.85;
+}
+
+.tk-order--muted .tk-order__next {
+  color: var(--color-text-secondary);
+  opacity: 1;
 }
 
 .tk-order__stub {
@@ -1333,4 +1353,158 @@
   font-weight: 800;
   letter-spacing: 0.12em;
   white-space: nowrap;
+}
+
+/* ——— Plata online închisă (evenimentul a început) ————————————————— */
+
+.tk-closed {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-hover);
+}
+
+.tk-closed__icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
+}
+
+.tk-closed__title {
+  margin: 0;
+  font-weight: 700;
+}
+
+.tk-closed__body {
+  margin: 2px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+/* ——— „Trimite altă chitanță" (pliat implicit) ————————————————————— */
+
+.tk-more {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-md);
+}
+
+.tk-more__summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--color-link);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.tk-more__summary::-webkit-details-marker {
+  display: none;
+}
+
+.tk-more__summary:focus-visible {
+  outline: 2px solid var(--color-link);
+  outline-offset: 2px;
+  border-radius: var(--radius-md);
+}
+
+.tk-more[open] .tk-more__summary {
+  margin-bottom: var(--space-sm);
+}
+
+/* ——— QR pe tot ecranul ————————————————————————————————————————— */
+
+.tk-qr-zoom {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  min-height: 44px;
+  padding: var(--space-sm) var(--space-lg);
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tk-qr-zoom:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+/* Fundal ALB, fix: un ecran alb aprinde telefonul și scanerul citește din prima. */
+.tk-qr-full {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-lg);
+  padding: calc(var(--safe-top, 0px) + var(--space-xl)) var(--space-lg) calc(var(--safe-bottom, 0px) + var(--space-xl));
+  background: #ffffff;
+  color: #111111;
+  animation: tk-unfold 200ms ease-out;
+}
+
+.tk-qr-full__title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.tk-qr-full__caption {
+  margin: 0;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 26px;
+  line-height: 32px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.tk-qr-full__close {
+  appearance: none;
+  min-height: 48px;
+  min-width: 160px;
+  padding: var(--space-sm) var(--space-xl);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: #111111;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tk-qr-full__close:focus-visible {
+  outline: 3px solid var(--color-link);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tk-qr-full {
+    animation: none;
+  }
 }

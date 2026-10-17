@@ -300,3 +300,36 @@ describe('isUpcoming', () => {
     expect(isUpcoming(event({ starts_at: '2026-05-01T00:00:00Z' }), now)).toBe(false);
   });
 });
+
+describe('ticket_capacity (capacitatea de bilete)', () => {
+  it('gol → null (nelimitat) în payload și fără eroare', () => {
+    expect(validate(form()).ticket_capacity).toBeUndefined();
+    expect(toPayload(form()).ticket_capacity).toBeNull();
+  });
+
+  it('acceptă un întreg ≥ 1 și îl trimite ca număr', () => {
+    expect(validate(form({ ticket_capacity: '150' }))).toEqual({});
+    expect(toPayload(form({ ticket_capacity: '150' })).ticket_capacity).toBe(150);
+  });
+
+  it('respinge 0, negativ, fracționar și text', () => {
+    for (const raw of ['0', '-3', '2.5', 'abc']) {
+      expect(validate(form({ ticket_capacity: raw })).ticket_capacity).toBe(
+        'Capacitatea trebuie să fie un număr întreg de cel puțin 1 (sau gol = nelimitat).',
+      );
+    }
+  });
+
+  it('respinge o capacitate sub biletele deja vândute (oglinda 409 capacity_below_sold)', () => {
+    expect(validate(form({ ticket_capacity: '5' }), 'ro', 8).ticket_capacity).toBe(
+      'Capacitatea nu poate fi mai mică decât biletele deja vândute (8).',
+    );
+    expect(validate(form({ ticket_capacity: '8' }), 'ro', 8).ticket_capacity).toBeUndefined();
+  });
+
+  it('dus-întors prin `toForm`', () => {
+    expect(toPayload(toForm(event({ ticket_capacity: 120 }))).ticket_capacity).toBe(120);
+    expect(toForm(event({ ticket_capacity: null })).ticket_capacity).toBe('');
+    expect(toForm(event()).ticket_capacity).toBe('');
+  });
+});

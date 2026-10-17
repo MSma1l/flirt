@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { formatEventDate } from '@/features/events/eventFormat';
+import { formatPrice } from '@/features/loyalty/priceFormat';
 
 import { getWebApp } from '@/telegram/bridge';
 
@@ -299,7 +300,7 @@ function openFullSize(url: string): void {
 /** Cardul MIA: QR-ul, telefonul mare, numele destinatarului, suma, comentariul, pașii. */
 function MiaDetails(props: PaymentDetailsProps & { copiedKey: string | null; onCopy: CopyFn }) {
   const { t } = useTranslation('screens');
-  const amountLabel = `${props.amount} ${props.currency}`;
+  const amountLabel = formatPrice(props.amount, props.currency);
   const comment = props.purpose || props.reference || null;
   const phoneLabel = props.miaPhone ? formatMdPhone(props.miaPhone) : null;
   const qrUrl = props.miaQrUrl ?? null;
@@ -391,7 +392,7 @@ function MiaDetails(props: PaymentDetailsProps & { copiedKey: string | null; onC
 function IbanDetails(props: PaymentDetailsProps & { testId: string; copiedKey: string | null; onCopy: CopyFn }) {
   const { t } = useTranslation('screens');
   const { copiedKey, onCopy: copy } = props;
-  const amountLabel = `${props.amount} ${props.currency}`;
+  const amountLabel = formatPrice(props.amount, props.currency);
   const comment = props.purpose || props.reference || null;
 
   const rows: { key: string; label: string; value: string; mono?: boolean; testId?: string }[] = [];

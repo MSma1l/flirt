@@ -8,11 +8,14 @@ export function Modal({
   title,
   onClose,
   wide = false,
+  className,
   children,
 }: {
   title: string;
   onClose: () => void;
   wide?: boolean;
+  /** Clasă suplimentară (ex. o lățime proprie paginii). */
+  className?: string;
   children: ReactNode;
 }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null);
@@ -20,7 +23,12 @@ export function Modal({
   useEffect(() => {
     ref.current?.focus();
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose();
+      if (event.key !== 'Escape') return;
+      // Dialoguri suprapuse (confirmare peste detaliu): Escape îl închide doar pe
+      // cel de deasupra, nu pe toate odată.
+      const open = document.querySelectorAll('.modal');
+      if (open.length > 0 && open[open.length - 1] !== ref.current) return;
+      onClose();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
@@ -35,7 +43,7 @@ export function Modal({
     >
       <div
         ref={ref}
-        className={['modal', wide ? 'modal--wide' : ''].filter(Boolean).join(' ')}
+        className={['modal', wide ? 'modal--wide' : '', className ?? ''].filter(Boolean).join(' ')}
         role="dialog"
         aria-modal="true"
         aria-label={title}

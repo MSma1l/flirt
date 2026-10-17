@@ -8,6 +8,11 @@
  *
  * Verdictul serverului câștigă când spune „închis"; ceasul local închide doar
  * când trece momentul anunțat (serverul confirmă oricum cu 409 la comandă).
+ *
+ * EPUIZAT vs ÎNCHIS: serverul pune `ticket_sales_open = false` și când s-a
+ * atins capacitatea (`Event.ticket_sales_open()`). Dacă spune „închis" deși ora
+ * de închidere e încă în viitor, singurul motiv posibil e sold-out-ul — iar
+ * omului îi spunem asta, nu „vânzarea s-a închis".
  */
 import { useEffect, useState } from 'react';
 
@@ -23,6 +28,8 @@ export interface SalesState {
   /** Momentul închiderii, dacă serverul l-a anunțat și e o dată validă. */
   endAt: Date | null;
   closed: boolean;
+  /** Închis pentru că s-au terminat biletele (nu pentru că a trecut ora). */
+  soldOut: boolean;
   /** Milisecunde rămase până la închidere (doar când e deschis și știm ora). */
   msLeft: number | null;
   /** Mai puțin de 24 h → numărătoare inversă. */
@@ -35,10 +42,12 @@ export function computeSalesState(fields: SalesFields, now: number): SalesState 
   const closedByServer = fields.ticketSalesOpen === false;
   const closedByClock = endAt !== null && now >= endAt.getTime();
   const closed = closedByServer || closedByClock;
+  const soldOut = closedByServer && !closedByClock && endAt !== null;
   const msLeft = !closed && endAt ? endAt.getTime() - now : null;
   return {
     endAt,
     closed,
+    soldOut,
     msLeft,
     showCountdown: msLeft !== null && msLeft < COUNTDOWN_WINDOW_MS,
   };

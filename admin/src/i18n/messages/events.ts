@@ -52,6 +52,8 @@ export const eventsMessages = defineMessages({
       past: 'Trecut',
       ticketsTitle: 'Comenzi nerespinse (din care aprobate)',
       salesEnd: (when: string) => `Vânzare online până la ${when}`,
+      soldOf: (sold: number, capacity: number | null) =>
+        `Vândute: ${sold} / ${capacity ?? 'nelimitat'}`,
       edit: 'Editează',
       invites: 'Invitații',
       delete: 'Șterge',
@@ -85,6 +87,11 @@ export const eventsMessages = defineMessages({
       currency: 'Monedă',
       salesEnd: 'Vânzarea online se închide la',
       salesEndHint: 'Gol = la începutul evenimentului',
+      ticketCapacity: 'Capacitate bilete',
+      ticketCapacityPlaceholder: 'gol = nelimitat',
+      ticketCapacityHint: 'Câte bilete se pot vinde în total (comenzi + cereri). Gol = nelimitat.',
+      soldOf: (sold: number, capacity: number | null) =>
+        `Vândute: ${sold} / ${capacity ?? 'nelimitat'}`,
       promoLegend: 'Promo / Reducere la intrare',
       promoHint:
         'Aplicația arată blocul de promo doar când sunt completate AMBELE: procentul ' +
@@ -133,6 +140,11 @@ export const eventsMessages = defineMessages({
       currencyRequired: 'Un preț fără monedă nu spune nimic.',
       salesEndTooLate:
         'Vânzarea online trebuie să se închidă cel târziu la 12 ore după începutul evenimentului.',
+      capacityInteger: 'Capacitatea trebuie să fie un număr întreg de cel puțin 1 (sau gol = nelimitat).',
+      capacityBelowSold: (sold: number) =>
+        `Capacitatea nu poate fi mai mică decât biletele deja vândute (${sold}).`,
+      capacityBelowSoldServer:
+        'Între timp s-au vândut mai multe bilete decât capacitatea aleasă. Mărește capacitatea (sau las-o goală = nelimitat).',
     },
     warnings: {
       noCoords:
@@ -193,6 +205,8 @@ export const eventsMessages = defineMessages({
       past: 'Прошло',
       ticketsTitle: 'Неотклонённые заказы (из них одобренные)',
       salesEnd: (when: string) => `Онлайн-продажа до ${when}`,
+      soldOf: (sold: number, capacity: number | null) =>
+        `Продано: ${sold} / ${capacity ?? 'без ограничений'}`,
       edit: 'Изменить',
       invites: 'Приглашения',
       delete: 'Удалить',
@@ -226,6 +240,11 @@ export const eventsMessages = defineMessages({
       currency: 'Валюта',
       salesEnd: 'Онлайн-продажа закрывается в',
       salesEndHint: 'Пусто = в момент начала события',
+      ticketCapacity: 'Вместимость билетов',
+      ticketCapacityPlaceholder: 'пусто = без ограничений',
+      ticketCapacityHint: 'Сколько билетов можно продать всего (заказы + заявки). Пусто = без ограничений.',
+      soldOf: (sold: number, capacity: number | null) =>
+        `Продано: ${sold} / ${capacity ?? 'без ограничений'}`,
       promoLegend: 'Промо / Скидка на входе',
       promoHint:
         'Приложение показывает промоблок, только когда заполнены ОБА поля: процент ' +
@@ -273,6 +292,11 @@ export const eventsMessages = defineMessages({
       currencyRequired: 'Цена без валюты ничего не значит.',
       salesEndTooLate:
         'Онлайн-продажа должна закрываться не позднее чем через 12 часов после начала события.',
+      capacityInteger: 'Вместимость — целое число не меньше 1 (или пусто = без ограничений).',
+      capacityBelowSold: (sold: number) =>
+        `Вместимость не может быть меньше уже проданных билетов (${sold}).`,
+      capacityBelowSoldServer:
+        'Тем временем продано больше билетов, чем выбранная вместимость. Увеличьте вместимость (или оставьте пустой = без ограничений).',
     },
     warnings: {
       noCoords:

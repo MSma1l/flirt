@@ -13,31 +13,40 @@
  *
  * Cât timp un bilet VALID e pe ecran, îl reinterogăm la ~5 s (doar cu ecranul
  * vizibil — React Query oprește intervalul în fundal), ca la scanarea de la
- * intrare să se facă verde singur.
+ * intrare să se facă verde singur. O comandă ÎN VERIFICARE se reinterogă rar
+ * (~30 s), ca aprobarea să apară fără ca omul să iasă și să revină; la
+ * întoarcerea în aplicație (din aplicația băncii) datele se reîmprospătează.
+ *
+ * Fiecare card răspunde dintr-o privire la „în ce stare e biletul meu și ce
+ * fac acum": eticheta colorată (culoare + text) și pasul următor, scris.
  *
  * Stările sunt oneste pe fiecare secțiune: biletul se poate încărca chiar dacă
  * lista de comenzi cade, și invers.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useSearchParams } from 'react-router';
 
 import { formatEventDate } from '@/features/events/eventFormat';
 import { EVENTS_PATH } from '@/features/events/eventRoutes';
+import { useSalesState } from '@/features/events/ticketSales';
+import { formatPrice } from '@/features/loyalty/priceFormat';
 import { ProofUpload } from '@/features/ticketRequests/ProofUpload';
 
 import { OrderStepper } from './OrderStepper';
 import { PaymentDetails } from './PaymentDetails';
-import { ChevronIcon, ClockIcon, TicketIcon } from './TicketIcons';
+import { ChevronIcon, ClockIcon, LockIcon, TicketIcon } from './TicketIcons';
 import { TicketPass } from './TicketPass';
 import {
+  hasEventStarted,
   isRequestOnlyStatus,
+  isSoldOutError,
   isTicketSalesClosedError,
   orderStage,
   type OrderStage,
 } from './orderStage';
-import { useOrderStatusLabel } from './orderStatusLabel';
+import { useOrderStatusText } from './orderStatusLabel';
 import { TICKET_ORDER_PARAM } from './ticketRoutes';
 import {
   createTicketOrder,
@@ -47,7 +56,6 @@ import {
   fetchTicket,
   fetchTicketOrder,
   uploadOrderProof,
-  uploadPaymentProof,
   type EventItem,
   type PaymentInstructions,
   type PaymentMethod,
@@ -61,6 +69,26 @@ import './tickets.css';
 
 /** Cât de des reîntrebăm serverul cât timp un bilet valid e pe ecran. */
 export const LIVE_TICKET_POLL_MS = 5000;
+
+/** Cât de des reîntrebăm serverul cât timp plata e în verificare. */
+export const REVIEW_POLL_MS = 30_000;
+
+/**
+ * O comandă rămâne „actuală" (sus în listă) până la 12 h după începutul
+ * evenimentului — cât ține o petrecere; biletul se arată la intrare chiar și
+ * după ora de început.
+ */
+const RELEVANT_AFTER_START_MS = 12 * 60 * 60 * 1000;
+
+/** Comenzile la evenimente viitoare (sau în desfășurare) întâi, restul după. */
+export function sortOrdersForDisplay<T extends { eventStartsAt: string }>(orders: readonly T[], now = Date.now()): T[] {
+  const isPast = (o: T) => {
+    const time = new Date(o.eventStartsAt).getTime();
+    return Number.isFinite(time) && now - time > RELEVANT_AFTER_START_MS;
+  };
+  // Sortare stabilă: în fiecare grup rămâne ordinea serverului (cea mai nouă prima).
+  return [...orders.filter((o) => !isPast(o)), ...orders.filter(isPast)];
+}
 
 /* ------------------------------------------------- „deschiderea" biletului */
 
@@ -105,6 +133,7 @@ function MyTicketSection() {
   const { data, isPending, isError, refetch, isFetching } = useQuery<Ticket>({
     queryKey: ['ticket'],
     queryFn: fetchTicket,
+    refetchOnWindowFocus: true,
     // Doar un bilet declarat VALID de server poate „deveni verde" la intrare.
     refetchInterval: (query) =>
       query.state.data?.status === 'valid' ? LIVE_TICKET_POLL_MS : false,
@@ -114,7 +143,7 @@ function MyTicketSection() {
   if (isPending) {
     body = (
       <div className="tk-state">
-        <div className="spinner" role="status" aria-label={t('social:myTicket.title')} />
+        <div className="spinner" role="status" aria-label={t('screens:tickets.loading')} />
       </div>
     );
   } else if (isError || !data) {
@@ -151,7 +180,7 @@ function MyTicketSection() {
 
 /* --------------------------------------------- detaliul unei comenzi de bilet */
 
-/** Butonul „Am făcut transferul" + confirmarea lui (cumpărarea directă). */
+/** Un bloc de etapă: titlu (cu icon opțional) + conținut, colorat după etapă. */
 function StageBlock({
   testId,
   tone,
@@ -176,6 +205,22 @@ function StageBlock({
   );
 }
 
+/** Evenimentul a început: nu mai cerem nimic online, spunem ce rămâne de făcut. */
+function ClosedOrderBlock() {
+  const { t } = useTranslation('screens');
+  return (
+    <div className="tk-closed" data-testid="order-closed" role="status">
+      <span className="tk-closed__icon" aria-hidden="true">
+        <LockIcon width={20} height={20} />
+      </span>
+      <div>
+        <p className="tk-closed__title">{t('tickets.closedOrder.title')}</p>
+        <p className="tk-closed__body">{t('tickets.closedOrder.body')}</p>
+      </div>
+    </div>
+  );
+}
+
 function OrderDetail({
   item,
   request,
@@ -193,13 +238,24 @@ function OrderDetail({
   const { data, isPending, isError, refetch, isFetching } = useQuery<TicketOrderDetail>({
     queryKey: ['ticket-order', item.id],
     queryFn: () => fetchTicketOrder(item.id),
+    refetchOnWindowFocus: true,
     refetchInterval: (query) => {
       const order = query.state.data?.order;
-      return order?.status === 'approved' && order.ticketStatus === 'valid'
-        ? LIVE_TICKET_POLL_MS
-        : false;
+      if (!order) return false;
+      if (order.status === 'approved' && order.ticketStatus === 'valid') return LIVE_TICKET_POLL_MS;
+      return orderStage(order.status) === 'review' ? REVIEW_POLL_MS : false;
     },
   });
+
+  // Detaliul a adus o stare nouă (aprobată, respinsă, scanată la intrare):
+  // și cardul din listă trebuie să o arate, nu pe cea veche.
+  const fresh = data?.order;
+  const listStale =
+    fresh !== undefined &&
+    (fresh.status !== item.status || (fresh.ticketStatus ?? null) !== (item.ticketStatus ?? null));
+  useEffect(() => {
+    if (listStale) void queryClient.invalidateQueries({ queryKey: ['ticket-orders'] });
+  }, [listStale, queryClient]);
 
   const eventId = data?.order.eventId ?? item.eventId;
   const { data: event } = useQuery<EventItem>({
@@ -207,8 +263,9 @@ function OrderDetail({
     queryFn: () => fetchEvent(eventId ?? ''),
     enabled: Boolean(eventId),
   });
+  const sales = useSalesState(event ?? {});
 
-  const [salesClosed, setSalesClosed] = useState(false);
+  const [salesClosed, setSalesClosed] = useState<'closed' | 'soldOut' | null>(null);
   const retry = useMutation({
     mutationFn: async () => {
       if (!eventId) throw new Error('missing event');
@@ -220,8 +277,9 @@ function OrderDetail({
       onSelect(result.order.id);
     },
     onError: (error) => {
-      if (isTicketSalesClosedError(error)) {
-        setSalesClosed(true);
+      const reason = isTicketSalesClosedError(error) ? 'closed' : isSoldOutError(error) ? 'soldOut' : null;
+      if (reason) {
+        setSalesClosed(reason);
         if (eventId) void queryClient.invalidateQueries({ queryKey: ['event', eventId] });
       }
     },
@@ -235,7 +293,7 @@ function OrderDetail({
     return (
       <div className="tk-detail" data-testid="order-detail">
         <div className="tk-state">
-          <div className="spinner" role="status" aria-label={t('social:ticket.pay.title')} />
+          <div className="spinner" role="status" aria-label={t('screens:tickets.loading')} />
         </div>
       </div>
     );
@@ -244,7 +302,7 @@ function OrderDetail({
   if (isError || !data || !order) {
     return (
       <div className="tk-detail" data-testid="order-detail">
-        <div className="tk-state">
+        <div className="tk-state" role="alert">
           <p className="error-text">{t('social:ticket.loadError')}</p>
           <button type="button" className="button" disabled={isFetching} onClick={() => void refetch()}>
             {t('social:ticket.retry')}
@@ -257,16 +315,24 @@ function OrderDetail({
   const stage = orderStage(order.status);
   const isRequest = Boolean(request) || isRequestOnlyStatus(order.status);
   const adminNote = order.adminNote ?? request?.admin_comment ?? null;
-  // Cererile cunoscute merg pe ruta lor istorică; orice altă comandă (inclusiv
-  // cumpărarea directă) trimite chitanța pe `/ticket-orders/{id}/payment-proof`.
-  const proofUploader = request ? uploadPaymentProof : uploadOrderProof;
+  const eventStarted = hasEventStarted(event?.startsAt ?? item.eventStartsAt);
+  // Toate chitanțele pleacă pe `/ticket-orders/{id}/payment-proof`: ruta
+  // acceptă și comenzile directe, și cererile manuale, și păstrează metoda
+  // aleasă (MIA / IBAN) — ruta istorică a cererilor o ignoră.
+  const proofUploader = uploadOrderProof;
 
   let content: ReactElement;
   switch (stage) {
     case 'ordered': {
-      // Datele bancare: din detaliu (cumpărare directă), din cache-ul creării
-      // (cerere manuală — serverul nu le mai retrimite în listă), sau, în lipsă,
-      // ce știe cererea însăși (sumă, destinație, telefon/cont).
+      if (eventStarted) {
+        // Serverul ar refuza orice chitanță (`409 event_started`): nu mai
+        // arătăm date de plată și formulare care nu duc nicăieri.
+        content = <ClosedOrderBlock />;
+        break;
+      }
+      // Datele bancare: din detaliu (serverul le dă cât timp se mai așteaptă
+      // plata), din cache-ul creării (cerere manuală), sau, în lipsă, ce știe
+      // cererea însăși (sumă, destinație, telefon/cont).
       const bank =
         data.payment ??
         queryClient.getQueryData<PaymentInstructions>(['ticket-request-payment', item.id]) ??
@@ -276,13 +342,14 @@ function OrderDetail({
       const purpose = bank?.commentTemplate ?? request?.payment?.payment_description ?? null;
       const deadline = event?.ticketSalesEndAt ?? event?.startsAt ?? item.eventStartsAt ?? null;
       const hasAnything = Boolean(bank || purpose || request);
+      const moreInfo = order.status === 'additional_information_required';
 
       content = (
         <>
-          {order.status === 'additional_information_required' ? (
-            <div className="tk-notice" data-testid="order-more-info">
+          {moreInfo ? (
+            <div className="tk-notice" data-testid="order-more-info" role="status">
               <strong>{t('screens:tickets.moreInfo.title')}</strong>
-              <span>{adminNote ?? t('screens:tickets.moreInfo.body')}</span>
+              <span className="tk-selectable">{adminNote ?? t('screens:tickets.moreInfo.body')}</span>
             </div>
           ) : null}
           {hasAnything ? (
@@ -307,17 +374,22 @@ function OrderDetail({
                 onMethodChange={setPayMethod}
                 finalStep="proof"
               />
-              {/* Chitanța e obligatorie pe orice comandă: ea trece plata în verificare. */}
-              <ProofUpload requestId={item.id} upload={proofUploader} method={payMethod} />
             </>
-          ) : (
+          ) : moreInfo ? null : (
             <p className="tk-note">{t('social:ticket.instructionsUnavailable')}</p>
           )}
+          {/* Chitanța e obligatorie pe orice comandă: ea trece plata în
+              verificare. Formularul rămâne și când datele de plată lipsesc
+              (ex. „mai multe informații" pe o comandă deja plătită). */}
+          <ProofUpload requestId={item.id} upload={proofUploader} method={payMethod} />
         </>
       );
       break;
     }
-    case 'review':
+    case 'review': {
+      // O comandă declarată „am plătit" fără chitanță (aplicația nativă) încă
+      // NU poate fi confirmată: chitanța e obligatorie, deci o cerem limpede.
+      const missingProof = !isRequest && order.paymentProofUploaded === false && order.status === 'payment_declared';
       content = (
         <StageBlock
           testId="order-in-review"
@@ -325,14 +397,35 @@ function OrderDetail({
           icon={<ClockIcon width={22} height={22} />}
           title={t('social:ticket.review.title')}
         >
-          <p className="tk-note">
-            {isRequest || order.paymentProofUploaded
-              ? t('screens:tickets.review.proofBody')
-              : t('social:ticket.review.body')}
-          </p>
+          {missingProof && !eventStarted ? (
+            <ProofUpload
+              requestId={item.id}
+              upload={proofUploader}
+              title={t('screens:tickets.review.missingProofTitle')}
+              intro={t('screens:tickets.review.missingProofBody')}
+            />
+          ) : (
+            <>
+              <p className="tk-note">
+                {isRequest || order.paymentProofUploaded
+                  ? t('screens:tickets.review.proofBody')
+                  : t('social:ticket.review.body')}
+              </p>
+              {/* Chitanța greșită se poate înlocui cât timp plata e în
+                  verificare (serverul păstrează ultima). Ascunsă implicit:
+                  pentru cei mai mulți nu mai e nimic de făcut. */}
+              {eventStarted ? null : (
+                <details className="tk-more" data-testid="order-replace-proof">
+                  <summary className="tk-more__summary">{t('screens:tickets.review.replace')}</summary>
+                  <ProofUpload requestId={item.id} upload={proofUploader} showSuccess />
+                </details>
+              )}
+            </>
+          )}
         </StageBlock>
       );
       break;
+    }
     case 'approved':
       content = (
         <StageBlock testId="order-approved" tone="approved" title={t('social:ticket.approved.title')}>
@@ -359,30 +452,48 @@ function OrderDetail({
         </StageBlock>
       );
       break;
-    case 'rejected':
+    case 'rejected': {
+      // Cererea manuală își poate retrimite chitanța; comanda directă se reia
+      // cu o comandă nouă — doar cât timp vânzarea online e deschisă.
+      const directClosed = salesClosed !== null || sales.closed;
       content = (
         <StageBlock testId="order-rejected" tone="rejected" title={t('social:ticket.rejected.title')}>
           <div className="tk-reason" data-testid="order-reject-reason">
             <span className="tk-eyebrow">{t('screens:tickets.rejected.reason')}</span>
             <span>{adminNote ?? t('screens:tickets.rejected.noReason')}</span>
           </div>
-          <p className="tk-note">
-            {isRequest ? t('screens:tickets.rejected.whatToDoProof') : t('screens:tickets.rejected.whatToDo')}
-          </p>
           {isRequest ? (
-            <ProofUpload requestId={item.id} upload={proofUploader} />
-          ) : salesClosed ? (
+            eventStarted ? (
+              <ClosedOrderBlock />
+            ) : (
+              <>
+                <p className="tk-note">{t('screens:tickets.rejected.whatToDoProof')}</p>
+                <ProofUpload requestId={item.id} upload={proofUploader} />
+              </>
+            )
+          ) : directClosed ? (
             <p className="tk-note" data-testid="order-sales-closed">
-              {t('screens:events.sales.closedError')}
+              {salesClosed === 'closed'
+                ? t('screens:events.sales.closedError')
+                : salesClosed === 'soldOut' || sales.soldOut
+                  ? t('screens:events.sales.soldOutBody')
+                  : t('screens:events.sales.closedBody')}
             </p>
           ) : (
             <>
-              {retry.isError ? <p className="error-text">{t('social:ticket.retryError')}</p> : null}
+              <p className="tk-note">{t('screens:tickets.rejected.whatToDo')}</p>
+              {retry.isError ? (
+                <p className="error-text" role="alert">
+                  {t('social:ticket.retryError')}
+                </p>
+              ) : null}
               <button
                 type="button"
                 className="button tk-cta"
                 disabled={retry.isPending || !eventId}
-                onClick={() => retry.mutate()}
+                onClick={() => {
+                  if (!retry.isPending) retry.mutate();
+                }}
                 data-testid="order-retry-btn"
               >
                 {t('social:ticket.rejected.retry')}
@@ -392,9 +503,16 @@ function OrderDetail({
         </StageBlock>
       );
       break;
+    }
     case 'cancelled':
       content = (
         <StageBlock testId="order-cancelled" tone="cancelled" title={t('screens:tickets.cancelled.title')}>
+          {adminNote ? (
+            <div className="tk-reason">
+              <span className="tk-eyebrow">{t('screens:tickets.rejected.reason')}</span>
+              <span>{adminNote}</span>
+            </div>
+          ) : null}
           <p className="tk-note">{t('screens:tickets.cancelled.body')}</p>
           <Link className="button button--ghost tk-link" to={EVENTS_PATH}>
             {t('screens:tickets.seeEvents')}
@@ -427,11 +545,13 @@ function OrderCard({
   onToggle: (id: string) => void;
   onSelect: (id: string) => void;
 }) {
-  const statusLabel = useOrderStatusLabel();
+  const statusText = useOrderStatusText();
   const stage = orderStage(order.status);
+  const { label, next, tone } = statusText(order, hasEventStarted(order.eventStartsAt));
   const amount = request?.total_amount ?? order.price;
-  const price = amount !== null && amount !== undefined && order.currency ? `${amount} ${order.currency}` : null;
+  const price = amount !== null && amount !== undefined ? formatPrice(amount, order.currency ?? request?.currency ?? 'lei') : null;
   const ref = useRef<HTMLLIElement>(null);
+  const detailId = useId();
 
   // Comanda deschisă din alt ecran (`?order=`) trebuie să se și VADĂ.
   useEffect(() => {
@@ -443,11 +563,12 @@ function OrderCard({
   }, [selected]);
 
   return (
-    <li ref={ref} className={`tk-order tk-order--${stage}${selected ? ' tk-order--open' : ''}`}>
+    <li ref={ref} className={`tk-order tk-order--${tone}${selected ? ' tk-order--open' : ''}`}>
       <button
         type="button"
         className="tk-order__card"
         aria-expanded={selected}
+        aria-controls={selected ? detailId : undefined}
         data-testid={`order-row-${order.id}`}
         onClick={() => onToggle(order.id)}
       >
@@ -455,8 +576,13 @@ function OrderCard({
           <span className="tk-order__title">{order.eventTitle}</span>
           <span className="tk-order__date">{formatEventDate(order.eventStartsAt)}</span>
           <span className="tk-order__status-row">
+            <span className={`tk-pill tk-pill--${tone}`} data-testid={`order-status-${order.id}`}>
+              {label}
+            </span>
             <OrderStepper stage={stage} hasCode={Boolean(order.ticketCode)} compact />
-            <span className={`tk-pill tk-pill--${stage}`}>{statusLabel(order.status)}</span>
+          </span>
+          <span className="tk-order__next" data-testid={`order-next-${order.id}`}>
+            {next}
           </span>
         </span>
         <span className="tk-order__stub">
@@ -470,7 +596,11 @@ function OrderCard({
           <ChevronIcon className="tk-order__chev" width={18} height={18} />
         </span>
       </button>
-      {selected ? <OrderDetail item={order} request={request} onSelect={onSelect} /> : null}
+      {selected ? (
+        <div id={detailId}>
+          <OrderDetail item={order} request={request} onSelect={onSelect} />
+        </div>
+      ) : null}
     </li>
   );
 }
@@ -485,6 +615,7 @@ function OrdersSection() {
   const { data, isPending, isError, refetch, isFetching } = useQuery<TicketOrderListItem[]>({
     queryKey: ['ticket-orders'],
     queryFn: fetchMyTicketOrdersWithEvent,
+    refetchOnWindowFocus: true,
   });
 
   // Cererile manuale aduc titularul, cantitatea, locul și mesajul adminului.
@@ -498,7 +629,7 @@ function OrdersSection() {
     [requests],
   );
 
-  const orders = data ?? [];
+  const orders = useMemo(() => sortOrdersForDisplay(data ?? []), [data]);
   // Comanda selectată poate dispărea din listă (ex. după o reîncercare).
   const selected = orders.some((o) => o.id === selectedId) ? selectedId : null;
 
@@ -511,7 +642,7 @@ function OrdersSection() {
     );
   } else if (isError) {
     body = (
-      <div className="tk-state" data-testid="orders-error">
+      <div className="tk-state" data-testid="orders-error" role="alert">
         <p className="error-text">{t('screens:tickets.ordersLoadError')}</p>
         <button type="button" className="button" disabled={isFetching} onClick={() => void refetch()}>
           {t('social:ticket.retry')}

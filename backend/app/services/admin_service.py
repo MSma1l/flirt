@@ -35,6 +35,7 @@ from sqlalchemy import and_, case, delete, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.errors import CodedHTTPException, ErrorCode
 from app.core.ratelimit import client_ip
 from app.models.account import AccountDeletionRequest, UserSettings
 from app.models.admin import (
@@ -1444,6 +1445,8 @@ def _to_event_out(
         ticket_price=event.ticket_price,
         ticket_currency=event.ticket_currency,
         ticket_sales_end_at=event.ticket_sales_end_at,
+        ticket_capacity=event.ticket_capacity,
+        tickets_sold=event.tickets_sold or 0,
         attendee_count=attendees,
         ticket_order_count=ticket_orders,
         ticket_approved_count=ticket_approved,
@@ -1545,6 +1548,7 @@ async def create_event(
         ticket_price=data.ticket_price,
         ticket_currency=data.ticket_currency,
         ticket_sales_end_at=data.ticket_sales_end_at,
+        ticket_capacity=data.ticket_capacity,
     )
     db.add(event)
     await db.flush()  # obținem event.id înainte de a scrie auditul
@@ -1575,17 +1579,32 @@ async def update_event(
     `exclude_unset=True` e esențial — altfel un PUT care schimbă doar ora ar
     trimite `description=None` implicit și ar ȘTERGE descrierea evenimentului.
     """
-    event = await db.get(Event, event_id)
+    changes = data.model_dump(exclude_unset=True)
+    stmt = select(Event).where(Event.id == event_id)
+    if "ticket_capacity" in changes:
+        # Lock + recitire: o aprobare simultană (care ține același lock pe
+        # eveniment) nu poate vinde între verificarea de mai jos și commit.
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
+    event = await db.scalar(stmt)
     if event is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Event not found"
         )
 
-    changes = data.model_dump(exclude_unset=True)
     if not changes:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Niciun câmp de actualizat.",
+        )
+    new_capacity = changes.get("ticket_capacity")
+    if new_capacity is not None and new_capacity < (event.tickets_sold or 0):
+        raise CodedHTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Capacitatea nu poate fi mai mică decât biletele deja vândute "
+                f"({event.tickets_sold})."
+            ),
+            code=ErrorCode.CAPACITY_BELOW_SOLD,
         )
     # Regula se verifică pe starea REZULTATĂ: un PUT care mută doar ora de start
     # poate invalida o închidere a vânzării setată anterior.

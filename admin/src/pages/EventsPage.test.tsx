@@ -518,6 +518,67 @@ describe('EventsPage — editare', () => {
   });
 });
 
+describe('EventsPage — capacitatea de bilete', () => {
+  it('arată „Vândute: X / Y" în listă și în editor, și trimite capacitatea', async () => {
+    seedAdminSession();
+    const limited = makeEvent({ ticket_capacity: 50, tickets_sold: 3 });
+    const unlimited = makeEvent({ id: 'e-2', title: 'Fără limită', ticket_capacity: null, tickets_sold: 7 });
+    const api = mockFetch({
+      'GET /admin/events': { body: [limited, unlimited] },
+      'PUT /admin/events/e-1': { body: limited },
+    });
+    const person = userEvent.setup();
+    renderWithProviders(<EventsPage />);
+    await screen.findByText('Seară de stand-up');
+
+    expect(screen.getByTestId('event-sold-e-1')).toHaveTextContent('Vândute: 3 / 50');
+    expect(screen.getByTestId('event-sold-e-2')).toHaveTextContent('Vândute: 7 / nelimitat');
+
+    await person.click(screen.getAllByRole('button', { name: 'Editează' })[0]!);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByLabelText('Capacitate bilete')).toHaveValue(50);
+    expect(within(dialog).getByTestId('event-tickets-sold')).toHaveTextContent('Vândute: 3 / 50');
+
+    // Sub cele vândute: blocat local, cu mesaj sub câmp.
+    await person.clear(within(dialog).getByLabelText('Capacitate bilete'));
+    await person.type(within(dialog).getByLabelText('Capacitate bilete'), '2');
+    expect(within(dialog).getByText('Capacitatea nu poate fi mai mică decât biletele deja vândute (3).')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Salvează' })).toBeDisabled();
+
+    // Gol = nelimitat → `null` în payload.
+    await person.clear(within(dialog).getByLabelText('Capacitate bilete'));
+    await person.click(within(dialog).getByRole('button', { name: 'Salvează' }));
+    await waitFor(() => expect(api.callsTo('PUT /admin/events/e-1')).toHaveLength(1));
+    expect(api.callsTo('PUT /admin/events/e-1')[0]?.body).toMatchObject({ ticket_capacity: null });
+  });
+
+  it('409 capacity_below_sold apare ca eroare sub câmpul de capacitate', async () => {
+    seedAdminSession();
+    const existing = makeEvent({ ticket_capacity: 50, tickets_sold: 3 });
+    mockFetch({
+      'GET /admin/events': { body: [existing] },
+      'PUT /admin/events/e-1': {
+        status: 409,
+        body: { detail: 'Capacity below sold', code: 'capacity_below_sold' },
+      },
+    });
+    const person = userEvent.setup();
+    renderWithProviders(<EventsPage />);
+    await screen.findByText('Seară de stand-up');
+    await person.click(screen.getByRole('button', { name: 'Editează' }));
+    const dialog = await screen.findByRole('dialog');
+    const input = within(dialog).getByLabelText('Capacitate bilete');
+    await person.clear(input);
+    await person.type(input, '4');
+    await person.click(within(dialog).getByRole('button', { name: 'Salvează' }));
+
+    expect(await within(dialog).findByText(/s-au vândut mai multe bilete decât capacitatea/)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Capacitate bilete')).toHaveAttribute('aria-invalid', 'true');
+    // Nu și ca eroare generică a formularului.
+    expect(within(dialog).queryByText('Capacity below sold')).toBeNull();
+  });
+});
+
 describe('EventsPage — ștergere', () => {
   it('nu șterge un eveniment fără confirmare', async () => {
     seedAdminSession();

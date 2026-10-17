@@ -7,19 +7,12 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
-import { fetchStats, fetchTicketOrders } from '../api/admin';
+import { TICKET_ORDERS_TO_VERIFY, fetchStats, fetchTicketOrderCounts, sumCounts } from '../api/admin';
 import { useAuth } from '../auth/AuthContext';
 import { LANGUAGES, useLanguage, useMessages } from '../i18n/LanguageContext';
 import { layoutMessages } from '../i18n/messages/layout';
 import { useTheme } from '../theme/ThemeContext';
 import { Badge, Button } from './ui';
-
-// Statusurile „de verificat", aceleași pe care backendul le pune primele în listă.
-const TO_VERIFY_STATUSES: ReadonlySet<string> = new Set([
-  'payment_declared',
-  'payment_proof_submitted',
-  'under_review',
-]);
 
 type NavKey = keyof (typeof layoutMessages)['ro']['nav'];
 type SectionKey = keyof (typeof layoutMessages)['ro']['sections'];
@@ -130,14 +123,15 @@ export function Layout(): JSX.Element {
   // Câte comenzi de bilete așteaptă verificarea: comenzile directe cu plata
   // declarată și cererile cu bonul trimis sau aflate în analiză.
   // Eșecul acestei cereri nu are voie să rupă navigarea.
+  // Contoarele EXACTE (toate evenimentele); aceeași cheie ca pagina de comenzi
+  // fără filtre → o singură cerere.
   const ticketOrdersQuery = useQuery({
-    queryKey: ['ticket-orders'],
-    queryFn: fetchTicketOrders,
+    queryKey: ['ticket-orders', 'counts', '', ''],
+    queryFn: () => fetchTicketOrderCounts(),
     refetchInterval: 60_000,
     retry: 1,
   });
-  const ticketsToReview =
-    ticketOrdersQuery.data?.filter((order) => TO_VERIFY_STATUSES.has(order.status)).length ?? 0;
+  const ticketsToReview = sumCounts(ticketOrdersQuery.data, TICKET_ORDERS_TO_VERIFY);
 
   const countFor = (to: string): number =>
     to === '/moderation' ? pending : to === '/ticket-orders' ? ticketsToReview : 0;

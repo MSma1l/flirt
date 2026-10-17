@@ -290,6 +290,53 @@
   color: var(--color-warning);
 }
 
+/* Tonul stării (culoare + text, niciodată doar culoare): în verificare e
+   albastru — omul nu mai are nimic de făcut —, nu galbenul „ai de plătit". */
+.ev-ticket--tone-review .ev-ticket__status {
+  color: var(--color-link);
+}
+
+.ev-ticket--tone-muted .ev-ticket__status {
+  color: var(--color-text-secondary);
+}
+
+.ev-ticket__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ev-ticket__next {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--color-text-secondary);
+}
+
+.ev-buy__last {
+  margin: 0 0 var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  line-height: 20px;
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 35%, transparent);
+}
+
+.ev-buy__link {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: var(--color-link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
 /* ——— Cumpărarea online și fereastra de vânzare ——— */
 
 .ev-buy {

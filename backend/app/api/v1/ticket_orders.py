@@ -76,7 +76,10 @@ async def read_proof_form(request: Request) -> tuple[bytes, str, str | None]:
     if upload is None or not hasattr(upload, "read"):
         raise HTTPException(status_code=422, detail="Lipsește câmpul 'file'.")
     method = form.get("method")
-    return await upload.read(), upload.content_type or "", method if isinstance(method, str) else None
+    # Citire PLAFONATĂ: cel mult limita + 1 byte — destul ca validatorul să
+    # răspundă 413, fără să încărcăm în memorie un fișier oricât de mare.
+    content = await upload.read(settings.max_upload_bytes + 1)
+    return content, upload.content_type or "", method if isinstance(method, str) else None
 
 
 async def store_proof(order_id: uuid.UUID, content: bytes, declared_content_type: str) -> str:
@@ -114,8 +117,11 @@ async def list_my_ticket_requests(db: DbDep, user: UserDep) -> list[TicketReques
 @router.post("/ticket-requests/{order_id}/payment-proof", response_model=TicketRequestOut, tags=["ticket-requests"])
 async def upload_ticket_payment_proof(order_id: uuid.UUID, request: Request, db: DbDep, user: UserDep) -> TicketRequestOut:
     # Authorize before accepting bytes/storage, avoiding orphan files caused by an
-    # attacker posting a large valid image against somebody else's request.
+    # attacker posting a large valid image against somebody else's request — or
+    # against an own request that no longer accepts proof (approved/cancelled,
+    # event started): those are refused BEFORE anything is stored.
     await ticket_order_service.get_my_request(db, user, order_id)
+    await ticket_order_service.ensure_can_upload_order_proof(db, user, order_id)
     content, declared, _method = await read_proof_form(request)
     proof_url = await store_proof(order_id, content, declared)
     return await ticket_order_service.submit_payment_proof(db, user, order_id, proof_url)
@@ -207,7 +213,8 @@ async def get_my_ticket_order(
 ) -> TicketOrderCreateOut:
     """O comandă a userului + instrucțiuni de plată cât timp e neplătită.
 
-    `payment` e prezent doar în `awaiting_payment`; în verificare/aprobat/respins e
+    `payment` e prezent în `awaiting_payment` și `additional_information_required`
+    (adminul a cerut o dovadă nouă); în verificare/aprobat/respins e
     `null` (userul nu mai are ce plăti). `ticket_code` apare doar când e aprobată.
     """
     return await ticket_order_service.get_mine(db, user, order_id)

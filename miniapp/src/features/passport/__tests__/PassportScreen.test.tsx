@@ -214,6 +214,28 @@ describe('permisul de intrare (QR)', () => {
     expect(within(pass).getByTestId('passport-payment-code')).toHaveTextContent('Codul tău de plată: 482719');
   });
 
+  it('QR-ul se mărește pe tot ecranul, iar codul de plată se copiază', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    try {
+      renderWithProviders(<PassportScreen />);
+      const pass = await screen.findByTestId('passport-pass');
+      await within(pass).findByTestId('passport-qr');
+      expect(pass).toHaveTextContent('Mărește luminozitatea ecranului la intrare');
+
+      fireEvent.click(within(pass).getByTestId('passport-payment-code-copy'));
+      await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('482719'));
+
+      fireEvent.click(within(pass).getByTestId('passport-qr-zoom-open'));
+      const dialog = await screen.findByRole('dialog');
+      expect(within(dialog).getByRole('img')).toBeInTheDocument();
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Închide' }));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    } finally {
+      Reflect.deleteProperty(navigator, 'clipboard');
+    }
+  });
+
   it('fără cod de plată, cardul rămâne fără rândul lui', async () => {
     vi.mocked(fetchPassportQr).mockResolvedValue({ qrPayload: 'FLIRTP-abc', paymentCode: null });
     renderWithProviders(<PassportScreen />);

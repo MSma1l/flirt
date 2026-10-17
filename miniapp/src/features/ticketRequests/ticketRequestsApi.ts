@@ -143,12 +143,53 @@ export async function uploadPaymentProof(
 /** Limita de upload, ca text afișabil („8 MB"), pentru mesaje și indicii. */
 export const PAYMENT_PROOF_MAX_LABEL = `${PAYMENT_PROOF_MAX_BYTES / (1024 * 1024)} MB`;
 
+/** Tipurile după extensie, pentru fișierele pe care WebView-ul nu le etichetează. */
+const TYPE_BY_EXTENSION: Record<string, (typeof PAYMENT_PROOF_TYPES)[number]> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  pdf: 'application/pdf',
+};
+
+/** Aliasuri nestandard întâlnite pe Android pentru aceleași formate. */
+const TYPE_ALIASES: Record<string, (typeof PAYMENT_PROOF_TYPES)[number]> = {
+  'image/jpg': 'image/jpeg',
+  'image/pjpeg': 'image/jpeg',
+  'application/x-pdf': 'application/pdf',
+};
+
+/**
+ * Tipul real al chitanței, chiar când telefonul nu-l spune.
+ *
+ * Unele WebView-uri Android (fișiere din Drive / „Descărcări") dau `type: ''`
+ * sau `image/jpg`. Validarea de pe client ar refuza o chitanță bună, iar
+ * serverul ar primi `application/octet-stream` și ar refuza-o oricum (422).
+ * Deducem tipul din alias sau din extensie și reîmpachetăm fișierul cu tipul
+ * corect — conținutul rămâne neatins, serverul îl verifică după magic bytes.
+ */
+export function normalizePaymentProof(file: File): File {
+  const known = (PAYMENT_PROOF_TYPES as readonly string[]).includes(file.type);
+  if (known) return file;
+  const fromAlias = TYPE_ALIASES[file.type];
+  const extension = /\.([a-z0-9]+)$/i.exec(file.name)?.[1]?.toLowerCase() ?? '';
+  const fromName = file.type === '' || file.type === 'application/octet-stream' ? TYPE_BY_EXTENSION[extension] : undefined;
+  const type = fromAlias ?? fromName;
+  if (!type) return file;
+  try {
+    return new File([file], file.name, { type, lastModified: file.lastModified });
+  } catch {
+    return file;
+  }
+}
+
 /** Mesajul e tradus în limba curentă (namespace-ul `screens`). */
 export function validatePaymentProof(file: File | undefined): string | null {
   if (!file) return i18n.t('screens:ticketRequests.proof.required');
   if (!PAYMENT_PROOF_TYPES.includes(file.type as (typeof PAYMENT_PROOF_TYPES)[number])) {
     return i18n.t('screens:ticketRequests.proof.badTypeWithPdf');
   }
+  if (file.size === 0) return i18n.t('screens:ticketRequests.proof.emptyFile');
   if (file.size > PAYMENT_PROOF_MAX_BYTES) {
     return i18n.t('screens:ticketRequests.proof.tooLarge', { limit: PAYMENT_PROOF_MAX_LABEL });
   }

@@ -22,7 +22,9 @@
       "closedTitle": "Vânzarea online este închisă",
       "closedBody": "Biletele pentru acest eveniment nu mai pot fi cumpărate din aplicație.",
       "closedError": "Vânzarea online tocmai s-a închis pentru acest eveniment.",
-      "requestHint": "„Solicită bilet” — pentru mai multe bilete sau o rezervare pe nume."
+      "requestHint": "„Solicită bilet” — pentru mai multe bilete sau o rezervare pe nume.",
+      "soldOutTitle": "Biletele online s-au epuizat",
+      "soldOutBody": "Nu mai sunt bilete disponibile în aplicație pentru acest eveniment."
     }
   },
   "stories": {
@@ -139,14 +141,20 @@
         "used": "Folosit",
         "expired": "Expirat",
         "cancelled": "Anulat"
-      }
+      },
+      "fullscreen": "Mărește codul QR",
+      "fullscreenTitle": "Arată acest cod la intrare",
+      "close": "Închide"
     },
     "moreInfo": {
       "title": "Avem nevoie de mai multe informații",
       "body": "Citește mesajul administratorului și trimite din nou dovada plății."
     },
     "review": {
-      "proofBody": "Am primit dovada plății. O verificăm manual și îți trimitem biletul imediat după confirmare."
+      "proofBody": "Am primit dovada plății. O verificăm manual și îți trimitem biletul imediat după confirmare.",
+      "replace": "Ai trimis o chitanță greșită? Trimite alta",
+      "missingProofTitle": "Lipsește chitanța",
+      "missingProofBody": "Încarcă chitanța plății, ca să-ți putem confirma biletul."
     },
     "approvedPending": "Plata e confirmată. Codul biletului se generează — revino în câteva minute.",
     "rejected": {
@@ -160,7 +168,45 @@
       "body": "Comanda nu mai este activă. Poți cumpăra un bilet nou din pagina evenimentului."
     },
     "openInTickets": "Deschide în Biletele mele",
-    "eventStarted": "Evenimentul a început — plata nu mai poate fi trimisă online."
+    "eventStarted": "Evenimentul a început — plata nu mai poate fi trimisă online.",
+    "status": {
+      "awaiting": "Așteaptă plata",
+      "moreInfo": "Necesită informații",
+      "review": "În verificare",
+      "ready": "Bilet confirmat",
+      "generating": "Bilet în pregătire",
+      "admitted": "Ai intrat",
+      "used": "Bilet folosit",
+      "expired": "Expirat",
+      "ticketCancelled": "Bilet anulat",
+      "rejected": "Plată respinsă",
+      "cancelled": "Comandă anulată",
+      "closed": "Plata online închisă",
+      "unknown": "În procesare"
+    },
+    "next": {
+      "awaiting": "Plătește și încarcă chitanța",
+      "moreInfo": "Citește mesajul și trimite din nou chitanța",
+      "review": "Verificăm plata, de obicei în câteva ore",
+      "ready": "Arată codul QR la intrare",
+      "generating": "Codul QR apare în câteva minute",
+      "admitted": "Distracție plăcută!",
+      "used": "Biletul a fost scanat la intrare",
+      "expired": "Evenimentul s-a încheiat",
+      "ticketCancelled": "Biletul nu mai este valabil",
+      "rejected": "Vezi motivul și ce poți face",
+      "cancelled": "Comanda nu mai este activă",
+      "closed": "Evenimentul a început — biletul se cumpără la intrare",
+      "unknown": "Deschide comanda pentru detalii"
+    },
+    "loading": "Se încarcă",
+    "closedOrder": {
+      "title": "Plata online s-a închis",
+      "body": "Evenimentul a început, așa că plata nu mai poate fi trimisă din aplicație. Dacă ai plătit deja, arată chitanța din aplicația băncii la intrare."
+    },
+    "proofSent": "Chitanța a fost trimisă. O verificăm cât mai repede.",
+    "lastRejected": "Ultima ta comandă pentru acest eveniment a fost respinsă.",
+    "lastRejectedLink": "Vezi motivul"
   },
   "social": {
     "unblockConfirm": "Îl deblochezi pe {{name}}? Va putea din nou să te vadă și să-ți scrie.",
@@ -291,7 +337,10 @@
       "previewAlt": "Previzualizarea chitanței",
       "remove": "Schimbă",
       "progress": "Încărcare: {{percent}}%",
-      "submitReceipt": "Trimite chitanța"
+      "submitReceipt": "Trimite chitanța",
+      "emptyFile": "Fișierul e gol. Alege din nou chitanța.",
+      "unreadable": "Fișierul nu a putut fi citit. Trimite o captură de ecran (JPG, PNG) sau PDF-ul din aplicația băncii.",
+      "notAccepted": "Comanda nu mai acceptă chitanțe — starea ei s-a schimbat între timp."
     },
     "form": {
       "pricePerTicket": "Preț pe bilet",
@@ -303,14 +352,18 @@
       "messageOptional": "Mesaj / comentariu (opțional)",
       "submitFailed": "Nu am putut trimite cererea. Verifică datele și încearcă din nou.",
       "submitting": "Se trimite…",
-      "submit": "Trimite cererea"
+      "submit": "Trimite cererea",
+      "decrease": "Mai puține bilete",
+      "increase": "Mai multe bilete"
     },
     "errors": {
       "fullName": "Introdu numele complet.",
       "phone": "Introdu un număr de telefon valid.",
       "email": "Emailul nu este valid.",
-      "quantity": "Alege între {{min}} și {{max}} de bilete."
-    }
+      "quantity": "Alege între {{min}} și {{max}} de bilete.",
+      "soldOut": "Nu mai sunt destule bilete disponibile. Încearcă un număr mai mic."
+    },
+    "newRequest": "Solicită alte bilete"
   },
   "validation": {
     "search": {

@@ -26,6 +26,7 @@ from fastapi import HTTPException, status
 
 from app.core.errors import CodedHTTPException, ErrorCode
 from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.admin import (
@@ -48,6 +49,7 @@ from app.models.ticket_order import (
     STATUS_ADDITIONAL_INFORMATION_REQUIRED,
     STATUS_CANCELLED,
     PaymentSettings,
+    TICKET_ORDER_STATUSES,
     TicketOrder,
 )
 from app.models.user import User
@@ -149,6 +151,74 @@ def _ensure_event_not_started(event: Event) -> None:
         )
 
 
+_SOLD_OUT_DETAIL = "Nu mai sunt suficiente bilete disponibile."
+_CAPACITY_EXHAUSTED_DETAIL = "Capacitatea evenimentului a fost epuizată."
+
+
+async def _lock_event(db: AsyncSession, event_id: uuid.UUID) -> Event:
+    """Rândul evenimentului BLOCAT (`FOR UPDATE`) și recitit din DB.
+
+    `populate_existing`: un `Event` deja în identity map ar avea un `tickets_sold`
+    vechi — fără recitire, două aprobări ar scrie amândouă „sold + 1" (lost update).
+    Ordinea lock-urilor e mereu comanda ÎNTÂI, apoi evenimentul (fără deadlock).
+    """
+    event = await db.scalar(
+        select(Event)
+        .where(Event.id == event_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if event is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Event not found"
+        )
+    return event
+
+
+def _reserve_capacity(event: Event, quantity: int) -> None:
+    """Ocupă `quantity` locuri la aprobare; 409 dacă s-ar depăși capacitatea.
+
+    Apelantul ține lock-ul pe eveniment (`_lock_event`), deci aprobările
+    simultane nu pot vinde peste capacitate.
+    """
+    sold = event.tickets_sold or 0
+    if event.ticket_capacity is not None and sold + quantity > event.ticket_capacity:
+        raise CodedHTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_CAPACITY_EXHAUSTED_DETAIL,
+            code=ErrorCode.TICKETS_SOLD_OUT,
+        )
+    event.tickets_sold = sold + quantity
+
+
+def _release_capacity(event: Event, quantity: int) -> None:
+    """Eliberează locurile unui bilet anulat. Plafonat la 0: comenzile aprobate
+    înainte ca aprobarea directă să ocupe locuri nu au fost numărate niciodată."""
+    event.tickets_sold = max(0, (event.tickets_sold or 0) - quantity)
+
+
+def _ensure_not_sold_out(event: Event, quantity: int = 1) -> None:
+    """Verificare „soft" la crearea unei comenzi/cereri NOI (fără lock): nu are
+    rost să ceară bilet cineva când locurile sunt deja vândute. Garanția reală
+    e la aprobare (`_reserve_capacity`, sub lock)."""
+    if (
+        event.ticket_capacity is not None
+        and (event.tickets_sold or 0) + quantity > event.ticket_capacity
+    ):
+        raise CodedHTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_SOLD_OUT_DETAIL,
+            code=ErrorCode.TICKETS_SOLD_OUT,
+        )
+
+
+async def _lock_user(db: AsyncSession, user: User) -> None:
+    """Serializează crearea de comenzi a ACELUIAȘI user (dublu-tap / două taburi):
+    fără lock, două cereri simultane trec amândouă de verificarea de idempotență
+    și creează două comenzi active pentru același eveniment."""
+    await db.execute(select(User.id).where(User.id == user.id).with_for_update())
+
+
 # --------------------------------------------------------------------------- #
 # Singleton PaymentSettings
 # --------------------------------------------------------------------------- #
@@ -157,16 +227,16 @@ async def _get_or_create_settings(db: AsyncSession) -> PaymentSettings:
     s = await db.get(PaymentSettings, PAYMENT_SETTINGS_ID)
     if s is not None:
         return s
-    s = PaymentSettings(
-        id=PAYMENT_SETTINGS_ID,
-        bank_beneficiary="",
-        bank_iban="",
-        bank_name=None,
-        instructions=None,
+    # ON CONFLICT DO NOTHING: două cereri simultane care creează leneș singleton-ul
+    # nu mai cad cu IntegrityError (500) pe PK — a doua îl citește pe al primei.
+    await db.execute(
+        pg_insert(PaymentSettings)
+        .values(id=PAYMENT_SETTINGS_ID, bank_beneficiary="", bank_iban="")
+        .on_conflict_do_nothing(index_elements=["id"])
     )
-    db.add(s)
     await db.commit()
-    await db.refresh(s)
+    s = await db.get(PaymentSettings, PAYMENT_SETTINGS_ID, populate_existing=True)
+    assert s is not None
     return s
 
 
@@ -321,6 +391,14 @@ def _request_payment_instructions(
     return payment
 
 
+# Stările în care o comandă DIRECTĂ mai așteaptă plata/dovada → userul vede datele
+# de plată. `additional_information_required`: adminul a cerut o dovadă nouă, deci
+# userul are nevoie din nou de IBAN/MIA/cod ca să plătească sau să reîncarce.
+_ORDER_AWAITING_PAYMENT_STATUSES = (
+    STATUS_AWAITING_PAYMENT,
+    STATUS_ADDITIONAL_INFORMATION_REQUIRED,
+)
+
 # Stările în care o cerere mai așteaptă plata/dovada → userul vede datele de plată.
 _REQUEST_AWAITING_PAYMENT_STATUSES = (
     STATUS_PENDING_PAYMENT,
@@ -379,8 +457,7 @@ async def create_request(
     if _as_utc(event.starts_at) < _now():
         # 400 + text păstrate (clienți existenți); `code` e adăugat pentru cei noi.
         raise CodedHTTPException(status_code=400, detail="Biletele nu sunt disponibile pentru acest eveniment.", code=ErrorCode.TICKET_SALES_CLOSED)
-    if event.ticket_capacity is not None and event.tickets_sold + data.ticket_quantity > event.ticket_capacity:
-        raise HTTPException(status_code=409, detail="Nu mai sunt suficiente bilete disponibile.")
+    await _lock_user(db, user)
     existing = (await db.execute(select(TicketOrder).where(
         TicketOrder.user_id == user.id, TicketOrder.event_id == event.id,
         TicketOrder.status.in_((STATUS_PENDING_PAYMENT, STATUS_PROOF_SUBMITTED, STATUS_UNDER_REVIEW, STATUS_ADDITIONAL_INFORMATION_REQUIRED)),
@@ -388,9 +465,10 @@ async def create_request(
     if existing:
         settings = await _get_or_create_settings(db)
         return TicketRequestCreateOut(request=_to_request_out(existing, event), payment=_request_payment_instructions(existing, event, settings))
-    # Cererea existentă (făcută la timp) se întoarce și după închidere; doar una
-    # NOUĂ e refuzată.
+    # Cererea existentă (făcută la timp) se întoarce și după închidere / sold-out;
+    # doar una NOUĂ e refuzată.
     _ensure_sales_open(event)
+    _ensure_not_sold_out(event, data.ticket_quantity)
     price = event.ticket_price
     total = round(price * data.ticket_quantity, 2)
     reference = await ensure_payment_code(db, user)
@@ -429,7 +507,9 @@ async def get_my_request(db: AsyncSession, user: User, order_id: uuid.UUID) -> T
 
 
 async def submit_payment_proof(db: AsyncSession, user: User, order_id: uuid.UUID, proof_url: str) -> TicketRequestOut:
-    order = await _get_own_order_or_404(db, user, order_id)
+    # Lock + recitire: o aprobare de admin făcută între timp (upload lent) nu e
+    # suprascrisă înapoi în `payment_proof_submitted`.
+    order = await _get_own_order_or_404(db, user, order_id, for_update=True)
     if order.full_name is None or order.status in (STATUS_APPROVED, STATUS_CANCELLED):
         raise HTTPException(status_code=409, detail="Cererea nu mai acceptă o dovadă nouă.")
     _ensure_event_not_started(await _get_event_or_404(db, order.event_id))
@@ -444,8 +524,32 @@ async def submit_payment_proof(db: AsyncSession, user: User, order_id: uuid.UUID
     return _to_request_out(order, await _get_event_or_404(db, order.event_id))
 
 
+# Textul notificării către client, per stare nouă, când adminul NU a lăsat un
+# comentariu. Fiecare stare are mesajul ei: o anulare nu are voie să ajungă la
+# client ca „în verificare".
+_REQUEST_REVIEW_FALLBACK = {
+    STATUS_APPROVED: "Plata a fost confirmată. Cererea ta pentru bilet a fost acceptată.",
+    STATUS_REJECTED: "Cererea ta a fost respinsă.",
+    STATUS_CANCELLED: "Cererea ta a fost anulată.",
+    STATUS_UNDER_REVIEW: "Cererea ta este în verificare.",
+    STATUS_ADDITIONAL_INFORMATION_REQUIRED: "Sunt necesare informații suplimentare pentru cererea ta.",
+}
+
+
+def _request_review_body(new_status: str, comment: str | None) -> str:
+    """Corpul notificării: aprobarea are mesaj fix; restul = comentariul adminului
+    sau, fără comentariu, mesajul stării noi."""
+    if new_status == STATUS_APPROVED:
+        return _REQUEST_REVIEW_FALLBACK[STATUS_APPROVED]
+    if comment and comment.strip():
+        return comment
+    return _REQUEST_REVIEW_FALLBACK.get(new_status, "Cererea ta a fost actualizată.")
+
+
 async def review_request(db: AsyncSession, actor: User, order_id: uuid.UUID, new_status: str, comment: str | None, ip: str | None = None) -> TicketRequestOut:
-    order = await _get_order_or_404(db, order_id)
+    # Lock pe comandă: doi admini care decid simultan se serializează, iar al
+    # doilea vede decizia primului (409), nu o suprascrie / nu numără de 2 ori.
+    order = await _get_order_or_404(db, order_id, for_update=True)
     if order.full_name is None:
         raise HTTPException(status_code=404, detail="Ticket request not found")
     previous = order.status
@@ -455,10 +559,8 @@ async def review_request(db: AsyncSession, actor: User, order_id: uuid.UUID, new
         if not order.payment_proof_url:
             raise HTTPException(status_code=409, detail="Nu se poate confirma plata fără dovadă.")
         # Lock the event row: concurrent approvals cannot oversell capacity.
-        event = (await db.execute(select(Event).where(Event.id == order.event_id).with_for_update())).scalars().one()
-        if event.ticket_capacity is not None and event.tickets_sold + order.ticket_quantity > event.ticket_capacity:
-            raise HTTPException(status_code=409, detail="Capacitatea evenimentului a fost epuizată.")
-        event.tickets_sold += order.ticket_quantity
+        event = await _lock_event(db, order.event_id)
+        _reserve_capacity(event, order.ticket_quantity or 1)
         order.ticket_code = order.ticket_code or uuid.uuid4().hex
     else:
         event = await _get_event_or_404(db, order.event_id)
@@ -467,19 +569,110 @@ async def review_request(db: AsyncSession, actor: User, order_id: uuid.UUID, new
           target_type="ticket_request", target_id=order.id,
           meta={"previous_status": previous, "new_status": new_status, "comment": comment or ""}, ip=ip)
     await db.commit(); await db.refresh(order)
-    bodies = {STATUS_APPROVED: "Plata a fost confirmată. Cererea ta pentru bilet a fost acceptată.", STATUS_REJECTED: comment or "Cererea a fost refuzată.", STATUS_ADDITIONAL_INFORMATION_REQUIRED: comment or "Sunt necesare informații suplimentare."}
-    await send_to_user(db, order.user_id, "Actualizare cerere bilet", bodies.get(new_status, comment or "Cererea ta este în verificare."))
+    await send_to_user(db, order.user_id, "Actualizare cerere bilet", _request_review_body(new_status, comment))
     return _to_request_out(order, event)
 
 
-async def list_requests(db: AsyncSession, *, status_filter: str | None = None, event_id: uuid.UUID | None = None, created_from: datetime | None = None, created_to: datetime | None = None) -> list[TicketRequestOut]:
-    stmt = select(TicketOrder, Event).join(Event, Event.id == TicketOrder.event_id).where(TicketOrder.full_name.is_not(None))
-    if status_filter: stmt = stmt.where(TicketOrder.status == status_filter)
-    if event_id: stmt = stmt.where(TicketOrder.event_id == event_id)
-    if created_from: stmt = stmt.where(TicketOrder.created_at >= created_from)
-    if created_to: stmt = stmt.where(TicketOrder.created_at <= created_to)
-    rows = (await db.execute(stmt.order_by(TicketOrder.created_at.desc()))).all()
-    return [_to_request_out(row.TicketOrder, row.Event) for row in rows]
+def _request_filters(
+    *,
+    event_id: uuid.UUID | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+) -> list:
+    """Filtrele comune listei de cereri și numărătorii ei (fără stare/cursor)."""
+    clauses: list = [TicketOrder.full_name.is_not(None)]
+    if event_id:
+        clauses.append(TicketOrder.event_id == event_id)
+    if created_from:
+        clauses.append(TicketOrder.created_at >= created_from)
+    if created_to:
+        clauses.append(TicketOrder.created_at <= created_to)
+    return clauses
+
+
+async def list_requests_page(
+    db: AsyncSession,
+    *,
+    statuses: list[str] | None = None,
+    event_id: uuid.UUID | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+    limit: int | None = None,
+    cursor: str | None = None,
+) -> tuple[list[TicketRequestOut], str | None]:
+    """Coada de cereri, cele mai recente primele, paginată pe cursor.
+
+    Convenția listelor de admin (ca `list_orders`): cheia de sortare TOTALĂ
+    `(created_at, id)`; cursorul poartă doar id-ul rândului-ancoră, iar ora lui se
+    citește DB-side (scalar subquery). Implicit = plafonul de admin pe pagină
+    (comportamentul de dinainte de paginare).
+    """
+    limit = clamp_limit(limit, ADMIN_MAX_LIMIT, ADMIN_MAX_LIMIT)
+    stmt = (
+        select(TicketOrder, Event)
+        .join(Event, Event.id == TicketOrder.event_id)
+        .where(*_request_filters(event_id=event_id, created_from=created_from, created_to=created_to))
+    )
+    if statuses:
+        stmt = stmt.where(TicketOrder.status.in_(statuses))
+    if cursor:
+        anchor_id = decode_cursor(cursor)
+        anchor_at = (
+            select(TicketOrder.created_at)
+            .where(TicketOrder.id == anchor_id)
+            .scalar_subquery()
+        )
+        stmt = stmt.where(
+            or_(
+                TicketOrder.created_at < anchor_at,
+                and_(TicketOrder.created_at == anchor_at, TicketOrder.id < anchor_id),
+            )
+        )
+    rows = (
+        await db.execute(
+            stmt.order_by(TicketOrder.created_at.desc(), TicketOrder.id.desc()).limit(limit + 1)
+        )
+    ).all()
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    items = [_to_request_out(row.TicketOrder, row.Event) for row in rows]
+    next_cursor = encode_cursor(rows[-1].TicketOrder.id) if has_more and rows else None
+    return items, next_cursor
+
+
+async def list_requests(db: AsyncSession, *, status_filter: str | None = None, event_id: uuid.UUID | None = None, created_from: datetime | None = None, created_to: datetime | None = None, limit: int | None = None) -> list[TicketRequestOut]:
+    """Prima pagină a cozii de cereri (semnătura istorică; vezi `list_requests_page`)."""
+    items, _ = await list_requests_page(
+        db,
+        statuses=[status_filter] if status_filter else None,
+        event_id=event_id, created_from=created_from, created_to=created_to,
+        limit=limit,
+    )
+    return items
+
+
+async def _status_counts(db: AsyncSession, clauses: list) -> dict:
+    """`{"counts": {stare: n} pentru FIECARE stare cunoscută, "total": n}` —
+    un singur `GROUP BY status` peste filtrele date."""
+    rows = (
+        await db.execute(
+            select(TicketOrder.status, func.count())
+            .where(*clauses)
+            .group_by(TicketOrder.status)
+        )
+    ).all()
+    counts = {s: 0 for s in TICKET_ORDER_STATUSES}
+    for st, n in rows:
+        # O stare necunoscută (date vechi) intră în total, dar și în chei: nu o ascundem.
+        counts[st] = counts.get(st, 0) + int(n)
+    return {"counts": counts, "total": sum(counts.values())}
+
+
+async def count_requests(
+    db: AsyncSession, *, event_id: uuid.UUID | None = None
+) -> dict:
+    """Numărătoarea cererilor pe stare (tab-urile cozii), cu filtrele listei."""
+    return await _status_counts(db, _request_filters(event_id=event_id))
 
 
 # --------------------------------------------------------------------------- #
@@ -534,9 +727,21 @@ async def create_order(
             code=ErrorCode.TICKET_SALES_CLOSED,
         )
 
+    # Prețul SNAPSHOT-uit e cel FINAL, după reducerea la care userul are dreptul:
+    # treapta lui de fidelitate, promo-ul evenimentului sau o invitație folosită —
+    # cea mai mare dintre ele, plafonată, niciodată sub zero. Regula completă și
+    # motivarea ei stau în `services/loyalty.py`; aici e singurul punct în care
+    # intră în fluxul de comandă, ca prețul cotat userului (`GET
+    # /loyalty/events/{id}/ticket-quote`) și cel înscris pe comandă să iasă din
+    # ACEEAȘI funcție. Clientul nu trimite nici preț, nici procent.
+    # Calculat ÎNAINTE de lock (prudență): nu face commit — setările de fidelitate
+    # create leneș se persistă odată cu comanda — dar ține lock-ul cât mai scurt.
+    breakdown = await loyalty.price_breakdown(db, user, event)
+
     # Idempotență: reutilizăm o comandă activă (neterminată) a aceluiași user pt
-    # același eveniment. Cea mai recentă câștigă (deși, în practică, tot fixul
-    # garantează că e cel mult una).
+    # același eveniment. Lock-ul pe user serializează cererile simultane (dublu-tap),
+    # deci există cel mult una. Cererile manuale (`full_name` setat) au fluxul lor.
+    await _lock_user(db, user)
     existing = (
         await db.execute(
             select(TicketOrder)
@@ -544,6 +749,7 @@ async def create_order(
                 TicketOrder.user_id == user.id,
                 TicketOrder.event_id == event.id,
                 TicketOrder.status.in_(_DECIDABLE_STATUSES),
+                TicketOrder.full_name.is_(None),
             )
             .order_by(TicketOrder.created_at.desc(), TicketOrder.id.desc())
         )
@@ -552,7 +758,7 @@ async def create_order(
         # Instrucțiunile de plată doar cât timp mai e ceva de plătit (awaiting) —
         # aceeași semantică precum `get_mine`; o comandă deja declarată nu le mai are.
         payment: PaymentInstructions | None = None
-        if existing.status == STATUS_AWAITING_PAYMENT:
+        if existing.status in _ORDER_AWAITING_PAYMENT_STATUSES:
             settings = await _get_or_create_settings(db)
             payment = _payment_instructions(existing, event, settings)
         return TicketOrderCreateOut(
@@ -562,17 +768,10 @@ async def create_order(
     # Doar o comandă NOUĂ e refuzată după închiderea vânzării; cea existentă
     # (făcută la timp) s-a întors mai sus, ca userul să-și poată termina plata.
     _ensure_sales_open(event)
+    _ensure_not_sold_out(event)
 
     reference = await ensure_payment_code(db, user)
     currency = event.ticket_currency or DEFAULT_CURRENCY
-    # Prețul SNAPSHOT-uit e cel FINAL, după reducerea la care userul are dreptul:
-    # treapta lui de fidelitate, promo-ul evenimentului sau o invitație folosită —
-    # cea mai mare dintre ele, plafonată, niciodată sub zero. Regula completă și
-    # motivarea ei stau în `services/loyalty.py`; aici e singurul punct în care
-    # intră în fluxul de comandă, ca prețul cotat userului (`GET
-    # /loyalty/events/{id}/ticket-quote`) și cel înscris pe comandă să iasă din
-    # ACEEAȘI funcție. Clientul nu trimite nici preț, nici procent.
-    breakdown = await loyalty.price_breakdown(db, user, event)
     order = TicketOrder(
         user_id=user.id,
         event_id=event.id,
@@ -592,10 +791,31 @@ async def create_order(
     )
 
 
+async def _load_order(
+    db: AsyncSession, order_id: uuid.UUID, *, for_update: bool = False
+) -> TicketOrder | None:
+    """Comanda după id. `for_update=True` = `SELECT … FOR UPDATE` + recitire din DB.
+
+    Orice TRANZIȚIE de stare citește comanda așa: fără lock, două tranzacții
+    concurente (doi admini, admin + upload-ul userului, anulare + scanare) văd
+    aceeași stare veche și ultima care face commit o suprascrie pe cealaltă.
+    `populate_existing` contează: `db.get` întoarce obiectul din identity map
+    fără să mai întrebe DB-ul (ex. după upload-ul lent al chitanței).
+    """
+    if not for_update:
+        return await db.get(TicketOrder, order_id)
+    return await db.scalar(
+        select(TicketOrder)
+        .where(TicketOrder.id == order_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+
+
 async def _get_own_order_or_404(
-    db: AsyncSession, user: User, order_id: uuid.UUID
+    db: AsyncSession, user: User, order_id: uuid.UUID, *, for_update: bool = False
 ) -> TicketOrder:
-    order = await db.get(TicketOrder, order_id)
+    order = await _load_order(db, order_id, for_update=for_update)
     # 404 (nu 403) și când comanda e a altcuiva: nu confirmăm existența unei
     # comenzi străine unui user care nu are ce căuta la ea.
     if order is None or order.user_id != user.id:
@@ -613,7 +833,7 @@ async def declare(
     Doar proprietarul. Dacă comanda nu e în `awaiting_payment` (deja declarată,
     aprobată sau respinsă) → 409: nu re-declarăm o plată deja procesată.
     """
-    order = await _get_own_order_or_404(db, user, order_id)
+    order = await _get_own_order_or_404(db, user, order_id, for_update=True)
     if order.status != STATUS_AWAITING_PAYMENT:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -630,11 +850,15 @@ async def declare(
 
 
 async def ensure_can_upload_order_proof(
-    db: AsyncSession, user: User, order_id: uuid.UUID
+    db: AsyncSession, user: User, order_id: uuid.UUID, *, for_update: bool = False
 ) -> TicketOrder:
     """Autorizarea ÎNAINTE de a primi bytes: proprietar (404 altfel), stare care
-    mai acceptă o dovadă (409) și eveniment neînceput (409 `event_started`)."""
-    order = await _get_own_order_or_404(db, user, order_id)
+    mai acceptă o dovadă (409) și eveniment neînceput (409 `event_started`).
+
+    Ruta o apelează FĂRĂ lock înainte de upload (nu ținem rândul blocat cât se
+    citesc megabytes); `submit_order_proof` o reapelează CU lock, pe starea
+    proaspătă din DB."""
+    order = await _get_own_order_or_404(db, user, order_id, for_update=for_update)
     if order.full_name is not None:
         # Cerere manuală: regulile ei (vezi `submit_payment_proof`).
         if order.status in (STATUS_APPROVED, STATUS_CANCELLED):
@@ -662,7 +886,7 @@ async def submit_order_proof(
     dovadă nouă o înlocuiește pe cea veche. Pe o cerere manuală se aplică fluxul
     ei (`payment_proof_submitted`). Adminii primesc o notificare best-effort.
     """
-    order = await ensure_can_upload_order_proof(db, user, order_id)
+    order = await ensure_can_upload_order_proof(db, user, order_id, for_update=True)
     if order.full_name is not None:
         await submit_payment_proof(db, user, order_id, proof_url)
         if method in _PAYMENT_METHODS:
@@ -703,14 +927,14 @@ async def get_mine(
 ) -> TicketOrderCreateOut:
     """O comandă a userului + instrucțiunile de plată cât timp e neplătită.
 
-    `payment` e prezent doar în `awaiting_payment` (userul are încă de făcut
-    transferul) — sau, pentru o cerere manuală, în `pending_payment` /
+    `payment` e prezent doar în `awaiting_payment` / `additional_information_required`
+    (userul are încă de făcut transferul sau de retrimis dovada) — sau, pentru o cerere manuală, în `pending_payment` /
     `additional_information_required`; altfel e `None` — nu mai are ce plăti.
     """
     order = await _get_own_order_or_404(db, user, order_id)
     event = await _get_event_or_404(db, order.event_id)
     payment: PaymentInstructions | None = None
-    if order.status == STATUS_AWAITING_PAYMENT:
+    if order.full_name is None and order.status in _ORDER_AWAITING_PAYMENT_STATUSES:
         settings = await _get_or_create_settings(db)
         payment = _payment_instructions(order, event, settings)
     elif order.full_name is not None and order.status in _REQUEST_AWAITING_PAYMENT_STATUSES:
@@ -769,6 +993,26 @@ def _to_admin_out(order: TicketOrder, user: User, event: Event) -> AdminTicketOr
     )
 
 
+def _order_filters(
+    *, q: str | None = None, event_id: uuid.UUID | None = None
+) -> list:
+    """Filtrele comune cozii de comenzi și numărătorii ei (fără stare/cursor)."""
+    clauses: list = []
+    if q and q.strip():
+        # Căutare după referința EXACTĂ (codul de plată din extrasul bancar).
+        clauses.append(TicketOrder.reference == q.strip())
+    if event_id:
+        clauses.append(TicketOrder.event_id == event_id)
+    return clauses
+
+
+async def count_orders(
+    db: AsyncSession, *, q: str | None = None, event_id: uuid.UUID | None = None
+) -> dict:
+    """Numărătoarea comenzilor pe stare (tab-urile cozii), cu filtrele listei."""
+    return await _status_counts(db, _order_filters(q=q, event_id=event_id))
+
+
 async def list_orders(
     db: AsyncSession,
     *,
@@ -776,6 +1020,7 @@ async def list_orders(
     cursor: str | None = None,
     statuses: list[str] | None = None,
     q: str | None = None,
+    event_id: uuid.UUID | None = None,
 ) -> tuple[list[AdminTicketOrderOut], str | None]:
     """Coada de comenzi — DECLARATE primele, apoi cele mai recente.
 
@@ -794,9 +1039,9 @@ async def list_orders(
     if statuses:
         # Filtru aditiv (`?status=a,b`); cursorul rămâne valid în interiorul filtrului.
         stmt = stmt.where(TicketOrder.status.in_(statuses))
-    if q and q.strip():
-        # Căutare după referința EXACTĂ (codul de plată din extrasul bancar).
-        stmt = stmt.where(TicketOrder.reference == q.strip())
+    filters = _order_filters(q=q, event_id=event_id)
+    if filters:
+        stmt = stmt.where(*filters)
 
     if cursor:
         anchor_id = decode_cursor(cursor)
@@ -846,8 +1091,10 @@ async def list_orders(
     return items, next_cursor
 
 
-async def _get_order_or_404(db: AsyncSession, order_id: uuid.UUID) -> TicketOrder:
-    order = await db.get(TicketOrder, order_id)
+async def _get_order_or_404(
+    db: AsyncSession, order_id: uuid.UUID, *, for_update: bool = False
+) -> TicketOrder:
+    order = await _load_order(db, order_id, for_update=for_update)
     if order is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Ticket order not found"
@@ -867,9 +1114,18 @@ def _ensure_decidable(order: TicketOrder) -> None:
 async def approve(
     db: AsyncSession, actor: User, order_id: uuid.UUID, ip: str | None = None
 ) -> AdminTicketOrderOut:
-    """Aprobă o comandă → generează un `ticket_code` UNIC + audit `ticket_order.approve`."""
-    order = await _get_order_or_404(db, order_id)
+    """Aprobă o comandă → generează un `ticket_code` UNIC + audit `ticket_order.approve`.
+
+    Ocupă locurile din capacitatea evenimentului (409 dacă e epuizată). O CERERE
+    manuală trece prin `review_request` (dovadă obligatorie + regulile ei).
+    """
+    order = await _get_order_or_404(db, order_id, for_update=True)
+    if order.full_name is not None:
+        await review_request(db, actor, order_id, STATUS_APPROVED, None, ip)
+        return await get_admin_order(db, order_id)
     _ensure_decidable(order)
+    event = await _lock_event(db, order.event_id)
+    _reserve_capacity(event, order.ticket_quantity or 1)
 
     order.status = STATUS_APPROVED
     order.ticket_code = uuid.uuid4().hex
@@ -901,7 +1157,10 @@ async def reject(
     ip: str | None = None,
 ) -> AdminTicketOrderOut:
     """Respinge o comandă → `admin_note=reason` + audit `ticket_order.reject`."""
-    order = await _get_order_or_404(db, order_id)
+    order = await _get_order_or_404(db, order_id, for_update=True)
+    if order.full_name is not None:
+        await review_request(db, actor, order_id, STATUS_REJECTED, reason, ip)
+        return await get_admin_order(db, order_id)
     _ensure_decidable(order)
 
     order.status = STATUS_REJECTED
@@ -1000,7 +1259,7 @@ async def change_status(
     `rejected`/`additional_information_required` pun `note` ca mesaj pentru user.
     Fiecare schimbare intră în jurnalul de audit (admin, stare veche/nouă, notă).
     """
-    order = await _get_order_or_404(db, order_id)
+    order = await _get_order_or_404(db, order_id, for_update=True)
     if order.full_name is not None:
         if new_status not in _REQUEST_REVIEW_STATUSES:
             raise HTTPException(
@@ -1023,12 +1282,20 @@ async def change_status(
         )
 
     if new_status == STATUS_APPROVED:
+        _reserve_capacity(
+            await _lock_event(db, order.event_id), order.ticket_quantity or 1
+        )
         order.ticket_code = order.ticket_code or uuid.uuid4().hex
         action = ACTION_TICKET_ORDER_APPROVE
     elif new_status == STATUS_REJECTED:
         action = ACTION_TICKET_ORDER_REJECT
     else:
         action = ACTION_TICKET_ORDER_STATUS
+    if previous == STATUS_APPROVED:
+        # Bilet emis → anulat: locul se eliberează.
+        _release_capacity(
+            await _lock_event(db, order.event_id), order.ticket_quantity or 1
+        )
     if new_status == STATUS_PAYMENT_DECLARED and order.payment_declared_at is None:
         order.payment_declared_at = _now()
     if note is not None:

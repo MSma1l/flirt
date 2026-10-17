@@ -201,6 +201,10 @@ describe('TicketOrdersPage — codul QR MIA', () => {
     expect(screen.getByRole('button', { name: 'Salvează datele de plată' })).toBeEnabled();
 
     await person.click(screen.getByRole('button', { name: 'Șterge QR-ul' }));
+    // Ștergerea cere confirmare: nimic nu pleacă înainte.
+    const confirm = await screen.findByRole('dialog', { name: 'Ștergi codul QR MIA?' });
+    expect(api.callsTo('DELETE /admin/payment-settings/mia-qr')).toHaveLength(0);
+    await person.click(within(confirm).getByRole('button', { name: 'Șterge QR-ul' }));
     await waitFor(() => {
       expect(api.callsTo('DELETE /admin/payment-settings/mia-qr')).toHaveLength(1);
     });
@@ -328,7 +332,12 @@ describe('TicketOrdersPage — detaliul comenzii', () => {
     const person = userEvent.setup();
     renderWithProviders(<TicketOrdersPage />);
     await screen.findByTestId('ticket-order-row-ord-2');
-    await person.selectOptions(screen.getByLabelText('Filtru status'), 'toVerify');
+    const filters = screen.getByRole('group', { name: 'Filtru status' });
+    await person.click(within(filters).getByRole('button', { name: /^De verificat/ }));
+    expect(within(filters).getByRole('button', { name: /^De verificat/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
     await waitFor(() => {
       const urls = api.callsTo('GET /admin/ticket-orders').map((c) => c.url);
       expect(urls.some((u) => u.includes('status=payment_declared%2Cpayment_proof_submitted%2Cunder_review'))).toBe(true);
@@ -382,3 +391,240 @@ describe('TicketOrdersPage — detaliul comenzii', () => {
   });
 });
 
+
+describe('TicketOrdersPage — coada: contoare, paginare, decizii', () => {
+  beforeEach(() => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:proof'),
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+  });
+
+  const COUNTS = {
+    counts: {
+      awaiting_payment: 0, pending_payment: 0, payment_declared: 120, payment_proof_submitted: 2,
+      under_review: 1, additional_information_required: 4, approved: 300, rejected: 5, cancelled: 0,
+    },
+    total: 432,
+  };
+
+  it('arată numărul EXACT de comenzi pe fiecare filtru (endpoint-ul de contoare)', async () => {
+    seedAdminSession();
+    mockFetch({
+      'GET /admin/payment-settings': { body: SETTINGS },
+      'GET /admin/ticket-orders': { body: [ORDER] },
+      'GET /admin/ticket-orders/counts': { body: COUNTS },
+    });
+    renderWithProviders(<TicketOrdersPage />);
+
+    // 120 + 2 + 1 — exact, nu „100+".
+    expect(await screen.findByTestId('chip-count-toVerify')).toHaveTextContent(/^123$/);
+    expect(screen.getByTestId('chip-count-needsInfo')).toHaveTextContent(/^4$/);
+    expect(screen.getByTestId('chip-count-awaiting')).toHaveTextContent(/^0$/);
+    expect(screen.getByTestId('chip-count-all')).toHaveTextContent(/^432$/);
+  });
+
+  it('filtrul de eveniment pleacă la server pentru listă și contoare (cu codul căutat)', async () => {
+    seedAdminSession();
+    const api = mockFetch({
+      'GET /admin/payment-settings': { body: SETTINGS },
+      'GET /admin/events': {
+        body: [{ id: 'ev-1', title: 'Party FLIRT', starts_at: '2026-08-01T20:00:00Z' }],
+      },
+      'GET /admin/ticket-orders': { body: [ORDER] },
+      'GET /admin/ticket-orders/counts': { body: COUNTS },
+    });
+    const person = userEvent.setup();
+    renderWithProviders(<TicketOrdersPage />);
+    await screen.findByText('FLT-7788');
+
+    const select = screen.getByLabelText('Eveniment');
+    // Data în ora Chișinăului (20:00Z vara → 23:00).
+    await waitFor(() =>
+      expect(within(select).getByRole('option', { name: /Party FLIRT · .*23:00/ })).toBeInTheDocument(),
+    );
+    await person.selectOptions(select, 'ev-1');
+    await waitFor(() => {
+      const last = api.callsTo('GET /admin/ticket-orders').at(-1)!;
+      expect(new URL(last.url).searchParams.get('event_id')).toBe('ev-1');
+    });
+    await waitFor(() => {
+      const last = api.callsTo('GET /admin/ticket-orders/counts').at(-1)!;
+      expect(new URL(last.url).searchParams.get('event_id')).toBe('ev-1');
+    });
+  });
+
+  it('aprobarea pe un eveniment epuizat arată un mesaj clar (409 tickets_sold_out)', async () => {
+    seedAdminSession();
+    mockFetch({
+      'GET /admin/payment-settings': { body: SETTINGS },
+      'GET /admin/ticket-orders': { body: [ORDER] },
+      'POST /admin/ticket-orders/ord-1/approve': {
+        status: 409,
+        body: { detail: 'Tickets sold out', code: 'tickets_sold_out' },
+      },
+    });
+    const person = userEvent.setup();
+    renderWithProviders(<TicketOrdersPage />);
+    await screen.findByText('Party FLIRT');
+    await person.click(screen.getByRole('button', { name: 'Aprobă' }));
+    const dialog = await screen.findByRole('dialog');
+    await person.click(within(dialog).getByRole('button', { name: 'Aprobă și generează biletul' }));
+    expect(await within(dialog).findByText(/Biletele s-au epuizat/)).toBeInTheDocument();
+  });
+
+  it('încarcă pagina următoare cu cursorul din X-Next-Cursor', async () => {
+    seedAdminSession();
+    const api = mockFetch({
+      'GET /admin/payment-settings': { body: SETTINGS },
+      'GET /admin/ticket-orders': (call) => {
+        const url = new URL(call.url);
+        if (url.searchParams.get('limit') !== '50') return { body: [] };
+        if (url.searchParams.get('cursor') === 'next-1') {
+          return { body: [{ ...ORDER, id: 'ord-old', reference: '111222' }] };
+        }
+        return { body: [ORDER], headers: { 'X-Next-Cursor': 'next-1' } };
+      },
+    });
+    const person = userEvent.setup();
+    renderWithProviders(<TicketOrdersPage />);
+
+    await screen.findByText('FLT-7788');
+    expect(screen.queryByText('111222')).not.toBeInTheDocument();
+    await person.click(screen.getByRole('button', { name: 'Încarcă mai multe' }));
+
+    expect(await screen.findByText('111222')).toBeInTheDocument();
+    // Prima pagină rămâne afișată, a doua se adaugă dedesubt.
+    expect(screen.getByText('FLT-7788')).toBeInTheDocument();
+    expect(
+      api.callsTo('GET /admin/ticket-orders').some((c) => c.url.includes('cursor=next-1')),
+    ).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Încarcă mai multe' })).not.toBeInTheDocument();
+  });
+
+  it('confirmarea arată TOTALUL (mai multe bilete, MDL) și un dublu-click aprobă o singură dată', async () => {
+    seedAdminSession();
+    const group = { ...ORDER, currency: 'lei', price: 250, ticket_quantity: 2, total_amount: 500 };
+    let approved = false;
+    const api = mockFetch({
+      'GET /admin/payment-settings': { body: SETTINGS },
+      'GET /admin/ticket-orders': () => ({
+        body: [approved ? { ...group, status: 'approved', ticket_status: 'valid' } : group],
+      }),
+      'POST /admin/ticket-orders/ord-1/approve': () => {
+        approved = true;
+        return { body: { ...group, status: 'approved', ticket_code: 'abc', ticket_status: 'valid' } };
+      },
+    });
+    const person = userEvent.setup();
+    renderWithProviders(<TicketOrdersPage />);
+
+    const row = await screen.findByTestId('ticket-order-row-ord-1');
+    expect(row).toHaveTextContent(/500\sMDL/);
+    expect(row).toHaveClass('ticket-row--action');
+
+    await person.click(within(row).getByRole('button', { name: 'Aprobă' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Aprobă comanda' });
+    expect(dialog).toHaveTextContent(/500\sMDL/);
+    // Fără chitanță: avertisment explicit înainte de aprobare.
+    expect(dialog).toHaveTextContent('clientul nu a încărcat chitanță');
+
+    await person.dblClick(within(dialog).getByRole('button', { name: 'Aprobă și generează biletul' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(api.callsTo('POST /admin/ticket-orders/ord-1/approve')).toHaveLength(1);
+
+    // Lista se reîncarcă: rândul nu mai cere acțiune și arată biletul emis.
+    expect(await screen.findByText('Bilet valid')).toBeInTheDocument();
+    expect(screen.getByTestId('ticket-order-row-ord-1')).not.toHaveClass('ticket-row--action');
+  });
+
+  it('o cerere fără dovadă nu poate fi aprobată din detaliu', async () => {
+    seedAdminSession();
+    const request: TicketOrder = {
+      ...ORDER,
+      id: 'req-1',
+      status: 'pending_payment',
+      is_request: true,
+      payment_proof_uploaded: false,
+      allowed_statuses: ['approved', 'rejected', 'under_review', 'cancelled'],
+    };
+    mockFetch({
+      'GET /admin/payment-settings': { body: SETTINGS },
+      'GET /admin/ticket-orders': { body: [request] },
+      'GET /admin/ticket-orders/req-1': { body: request },
+    });
+    const person = userEvent.setup();
+    renderWithProviders(<TicketOrdersPage />);
+
+    await person.click(await screen.findByTestId('ticket-order-row-req-1'));
+    const dialog = await screen.findByRole('dialog');
+    const approve = await within(dialog).findByRole('button', { name: 'Aprobă plata și emite biletul' });
+    expect(approve).toBeDisabled();
+    expect(dialog).toHaveTextContent('doar după ce clientul încarcă dovada');
+  });
+
+  it('anularea unui bilet emis cere confirmare cu avertisment', async () => {
+    seedAdminSession();
+    const issued: TicketOrder = {
+      ...ORDER,
+      id: 'ord-9',
+      status: 'approved',
+      ticket_code: 'abcdef',
+      ticket_status: 'valid',
+      allowed_statuses: ['cancelled'],
+    };
+    let current: TicketOrder = issued;
+    const api = mockFetch({
+      'GET /admin/payment-settings': { body: SETTINGS },
+      'GET /admin/ticket-orders': () => ({ body: [current] }),
+      'GET /admin/ticket-orders/ord-9': () => ({ body: current }),
+      'POST /admin/ticket-orders/ord-9/status': () => {
+        current = { ...issued, status: 'cancelled', ticket_status: 'cancelled', allowed_statuses: [] };
+        return { body: current };
+      },
+    });
+    const person = userEvent.setup();
+    renderWithProviders(<TicketOrdersPage />);
+
+    await person.click(await screen.findByTestId('ticket-order-row-ord-9'));
+    const dialog = await screen.findByRole('dialog');
+    await person.selectOptions(await within(dialog).findByLabelText('Schimbă statusul'), 'cancelled');
+    await person.click(within(dialog).getByRole('button', { name: 'Aplică' }));
+
+    const dialogs = await screen.findAllByRole('dialog');
+    const action = dialogs[dialogs.length - 1]!;
+    expect(action).toHaveTextContent('NU va mai fi valabil la intrare');
+    expect(api.callsTo('POST /admin/ticket-orders/ord-9/status')).toHaveLength(0);
+    await person.click(within(action).getByRole('button', { name: 'Aplică' }));
+    await waitFor(() => expect(api.callsTo('POST /admin/ticket-orders/ord-9/status')).toHaveLength(1));
+    // Detaliul se actualizează imediat din răspuns: comanda e acum finală.
+    expect(await within(dialog).findByTestId('order-final')).toBeInTheDocument();
+  });
+
+  it('o comandă ștearsă între timp → mesaj clar, nu „ruta nu există"', async () => {
+    seedAdminSession();
+    mockFetch({
+      'GET /admin/payment-settings': { body: SETTINGS },
+      'GET /admin/ticket-orders': { body: [ORDER] },
+      'GET /admin/ticket-orders/ord-1': { status: 404, body: { detail: 'Ticket order not found' } },
+    });
+    const person = userEvent.setup();
+    renderWithProviders(<TicketOrdersPage />);
+
+    await person.click(await screen.findByTestId('ticket-order-row-ord-1'));
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText(/Comanda nu mai există/)).toBeInTheDocument();
+  });
+
+  it('datele de plată: o eroare de încărcare arată „Reîncearcă", nu un spinner infinit', async () => {
+    seedAdminSession();
+    mockFetch({
+      'GET /admin/payment-settings': { status: 500, body: { detail: 'Eroare DB' } },
+      'GET /admin/ticket-orders': { body: [] },
+    });
+    renderWithProviders(<TicketOrdersPage />);
+    expect(await screen.findByText('Eroare DB', {}, { timeout: 4000 })).toBeInTheDocument();
+    expect(screen.queryByText('Se încarcă datele de plată…')).not.toBeInTheDocument();
+  });
+});

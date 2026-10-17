@@ -251,6 +251,9 @@ class AdminEventIn(BaseModel):
     # Ora la care se închide vânzarea online. NULL = la începutul evenimentului.
     # Cel mult `starts_at + 12h` (validat în serviciu, 422 altfel).
     ticket_sales_end_at: datetime | None = None
+    # Câte bilete online se pot vinde. NULL = nelimitat; altfel ≥ 1. Nu poate
+    # coborî sub biletele deja vândute (409 `capacity_below_sold`, în serviciu).
+    ticket_capacity: int | None = Field(default=None, ge=1)
 
 
 class AdminEventUpdate(BaseModel):
@@ -282,6 +285,9 @@ class AdminEventUpdate(BaseModel):
     # Ora la care se închide vânzarea online. NULL = la începutul evenimentului.
     # Cel mult `starts_at + 12h` (validat în serviciu, 422 altfel).
     ticket_sales_end_at: datetime | None = None
+    # Câte bilete online se pot vinde. NULL = nelimitat; altfel ≥ 1. Nu poate
+    # coborî sub biletele deja vândute (409 `capacity_below_sold`, în serviciu).
+    ticket_capacity: int | None = Field(default=None, ge=1)
 
 
 class AdminEventOut(BaseModel):
@@ -305,6 +311,10 @@ class AdminEventOut(BaseModel):
     ticket_currency: str | None = None
     # Valoarea BRUTĂ setată de admin (NULL = se închide la `starts_at`).
     ticket_sales_end_at: datetime | None = None
+    # Capacitatea online (NULL = nelimitat) și câte bilete au fost deja vândute
+    # (ocupate la aprobare, eliberate la anularea unui bilet emis).
+    ticket_capacity: int | None = None
+    tickets_sold: int = 0
     attendee_count: int = 0
     # Comenzi de bilet ONLINE legate de acest eveniment. Sunt aici pentru un
     # singur motiv concret: confirmarea de ștergere din panou trebuie să spună

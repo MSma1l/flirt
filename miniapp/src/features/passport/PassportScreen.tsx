@@ -37,7 +37,10 @@ import {
   LoyaltySection,
 } from '@/features/loyalty';
 
+import { useCopy } from '@/features/tickets/PaymentDetails';
 import { QrCode } from '@/features/tickets/QrCode';
+import { QrFullscreen } from '@/features/tickets/QrFullscreen';
+import { CheckIcon, CopyIcon, SunIcon } from '@/features/tickets/TicketIcons';
 
 import {
   fetchMySubscription,
@@ -82,6 +85,7 @@ function DiscountCard({ subscription }: { subscription: Subscription }) {
  */
 function EntryPassCard() {
   const { t } = useTranslation('screens');
+  const { copiedKey, copy } = useCopy();
   const { data, isLoading, isError, isFetching, refetch } = useQuery<PassportQr>({
     queryKey: ['passport-qr'],
     queryFn: fetchPassportQr,
@@ -102,16 +106,35 @@ function EntryPassCard() {
   } else {
     body = (
       <>
-        <QrCode value={data.qrPayload} size={200} label={t('passport.qr.alt')} testId="passport-qr" showCode={false} />
+        <span className="pp-pass__tile">
+          <QrCode value={data.qrPayload} size={200} label={t('passport.qr.alt')} testId="passport-qr" showCode={false} />
+        </span>
         <p className="pp-pass__show">{t('passport.qr.show')}</p>
+        <QrFullscreen value={data.qrPayload} label={t('passport.qr.alt')} testId="passport-qr-zoom" />
+        <p className="pp-pass__hint">
+          <SunIcon width={16} height={16} />
+          {t('tickets.pass.brightness')}
+        </p>
         <ul className="pp-pass__notes">
           <li>{t('passport.qr.online')}</li>
           <li>{t('passport.qr.cash')}</li>
         </ul>
         {data.paymentCode ? (
-          <p className="caption pp-pass__code" data-testid="passport-payment-code">
-            {t('passport.qr.paymentCode', { code: data.paymentCode })}
-          </p>
+          <div className="pp-pass__code-row">
+            <p className="caption pp-pass__code" data-testid="passport-payment-code">
+              {t('passport.qr.paymentCode', { code: data.paymentCode })}
+            </p>
+            <button
+              type="button"
+              className="pp-pass__copy"
+              data-testid="passport-payment-code-copy"
+              aria-label={t('tickets.pay.copyField', { field: t('tickets.pay.code.label') })}
+              onClick={() => copy('passport-code', data.paymentCode ?? '')}
+            >
+              {copiedKey === 'passport-code' ? <CheckIcon width={14} height={14} /> : <CopyIcon width={14} height={14} />}
+              <span aria-live="polite">{copiedKey === 'passport-code' ? t('tickets.copied') : t('tickets.copy')}</span>
+            </button>
+          </div>
         ) : null}
       </>
     );

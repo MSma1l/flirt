@@ -1,0 +1,257 @@
+/* Paginile de bilete (Comenzi + Cereri): filtre cu contoare, rânduri care cer
+   acțiune, detaliul cu chitanța mare lângă date. Doar token-urile FLIRT. */
+
+.ticket-intro {
+  margin: 0 0 var(--space-4);
+}
+
+.ticket-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+/* --- Filtre pe stare, cu număr --- */
+.ticket-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ticket-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.ticket-chip:hover {
+  background: var(--color-card-hover);
+  color: var(--color-text);
+}
+
+.ticket-chip--active {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: #ffffff;
+}
+
+.ticket-chip--active:hover {
+  background: var(--color-accent-hover);
+  color: #ffffff;
+}
+
+.ticket-chip__count {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--color-card-hover);
+  color: var(--color-text);
+  font-size: 12px;
+  text-align: center;
+}
+
+.ticket-chip--urgent .ticket-chip__count {
+  background: var(--color-warning);
+  color: #1a1a1a;
+}
+
+.ticket-chip--active .ticket-chip__count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+/* --- Rânduri --- */
+.ticket-row {
+  cursor: pointer;
+}
+
+/* „De verificat": bară galbenă în stânga + text îngroșat — se vede din prima privire. */
+.ticket-row--action td:first-child {
+  box-shadow: inset 4px 0 0 var(--color-warning);
+}
+
+.ticket-row--action {
+  font-weight: 600;
+}
+
+.ticket-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.ticket-ref {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.ticket-note {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  font-style: italic;
+}
+
+.ticket-more {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-4);
+}
+
+/* --- Detaliu: chitanța mare în stânga, datele + acțiunile în dreapta --- */
+.modal--ticket {
+  max-width: 1080px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+
+.ticket-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .ticket-detail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.ticket-detail__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.ticket-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-card-hover);
+}
+
+.ticket-summary__label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.ticket-summary__value {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.ticket-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.ticket-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.ticket-facts__row dt {
+  font-size: 13px;
+}
+
+.ticket-facts__row dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.ticket-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ticket-actions .btn--primary {
+  flex: 1 1 100%;
+  min-height: 48px;
+  font-size: 16px;
+}
+
+.ticket-hint {
+  margin: 0;
+  padding: var(--space-3);
+  border-left: 3px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: rgba(245, 197, 66, 0.1);
+}
+
+.ticket-proof {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ticket-proof__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.ticket-proof__frame {
+  overflow: auto;
+  max-height: min(72vh, 760px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-input);
+  background: var(--color-bg);
+}
+
+.ticket-proof__frame img {
+  display: block;
+  margin: 0 auto;
+}
+
+.ticket-proof__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  padding: var(--space-4);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-input);
+  text-align: center;
+}
+
+.ticket-more-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}

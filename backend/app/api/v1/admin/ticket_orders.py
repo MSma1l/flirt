@@ -27,6 +27,7 @@ from app.schemas.ticket_order import (
     PaymentSettingsIn,
     PaymentSettingsOut,
     RejectIn,
+    TicketStatusCountsOut,
 )
 from app.services import ticket_order_service
 from app.services.admin_service import request_ip
@@ -38,6 +39,15 @@ router = APIRouter(tags=["admin"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 
 
+def parse_status_filter(status: str | None) -> list[str] | None:
+    """`?status=a,b` → listă de stări; 422 pe o stare necunoscută. O singură
+    valoare (`?status=a`) rămâne validă."""
+    statuses = [s.strip() for s in status.split(",") if s.strip()] if status else None
+    if statuses and any(s not in TICKET_ORDER_STATUSES for s in statuses):
+        raise HTTPException(status_code=422, detail="Stare necunoscută în filtru.")
+    return statuses or None
+
+
 @router.get("/ticket-orders", response_model=list[AdminTicketOrderOut])
 async def list_ticket_orders(
     db: DbDep,
@@ -47,23 +57,37 @@ async def list_ticket_orders(
     cursor: Annotated[str | None, Query(max_length=MAX_CURSOR_LENGTH)] = None,
     status: Annotated[str | None, Query(max_length=300)] = None,
     q: Annotated[str | None, Query(max_length=64)] = None,
+    event_id: uuid.UUID | None = None,
 ) -> list[AdminTicketOrderOut]:
     """Comenzile de bilet — cele DE VERIFICAT primele, apoi cele mai recente.
 
     Paginare pe cursor (convenția listelor de admin): cursorul paginii următoare
     vine în header-ul `X-Next-Cursor`. Filtru aditiv `?status=a,b` (422 pe o
     stare necunoscută). `?q=` = referința EXACTĂ (codul de plată din extrasul
-    bancar).
+    bancar). `?event_id=` = doar comenzile unui eveniment.
     """
-    statuses = [s.strip() for s in status.split(",") if s.strip()] if status else None
-    if statuses and any(s not in TICKET_ORDER_STATUSES for s in statuses):
-        raise HTTPException(status_code=422, detail="Stare necunoscută în filtru.")
+    statuses = parse_status_filter(status)
     items, next_cursor = await ticket_order_service.list_orders(
-        db, limit=limit, cursor=cursor, statuses=statuses, q=q
+        db, limit=limit, cursor=cursor, statuses=statuses, q=q, event_id=event_id
     )
     if next_cursor:
         response.headers["X-Next-Cursor"] = next_cursor
     return items
+
+
+# ÎNAINTE de `/ticket-orders/{order_id}`: altfel „counts" ar fi capturat ca id.
+@router.get("/ticket-orders/counts", response_model=TicketStatusCountsOut)
+async def count_ticket_orders(
+    db: DbDep,
+    admin: CurrentAdmin,
+    q: Annotated[str | None, Query(max_length=64)] = None,
+    event_id: uuid.UUID | None = None,
+) -> TicketStatusCountsOut:
+    """Câte comenzi are fiecare stare (tab-urile cozii), cu filtrele listei
+    (`event_id`, `q`; fără stare/cursor). Un singur `GROUP BY`."""
+    return TicketStatusCountsOut(
+        **await ticket_order_service.count_orders(db, q=q, event_id=event_id)
+    )
 
 
 # --- Date bancare globale (ÎNAINTE de rutele parametrizate) --------------------

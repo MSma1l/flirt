@@ -17,6 +17,8 @@
  *   * ticket_price ≥ 0;
  *   * ticket_sales_end_at: opțional, cel mult `starts_at + 12h`
  *     (`TICKET_SALES_END_MAX_AFTER_START` din `backend/app/models/event.py`);
+ *   * ticket_capacity: opțional, ÎNTREG ≥ 1 (gol = nelimitat); sub `tickets_sold`
+ *     backendul răspunde 409 `capacity_below_sold`;
  *   * cover_url: max 500 — backendul NU verifică forma (e `str`, nu `HttpUrl`),
  *     deci verificarea că e o adresă http(s) e responsabilitatea panoului.
  */
@@ -59,6 +61,7 @@ export interface FormState {
   ticket_price: string;
   ticket_currency: string;
   ticket_sales_end_at: string; // `datetime-local`; gol = la începutul evenimentului
+  ticket_capacity: string; // gol = nelimitat
 }
 
 export const EMPTY_FORM: FormState = {
@@ -77,6 +80,7 @@ export const EMPTY_FORM: FormState = {
   ticket_price: '',
   ticket_currency: DEFAULT_CURRENCY,
   ticket_sales_end_at: '',
+  ticket_capacity: '',
 };
 
 export function toForm(event: AdminEvent): FormState {
@@ -99,6 +103,10 @@ export function toForm(event: AdminEvent): FormState {
     ticket_sales_end_at: event.ticket_sales_end_at
       ? toDateTimeLocalValue(event.ticket_sales_end_at)
       : '',
+    ticket_capacity:
+      event.ticket_capacity === null || event.ticket_capacity === undefined
+        ? ''
+        : String(event.ticket_capacity),
   };
 }
 
@@ -158,7 +166,11 @@ export type FormErrors = Partial<Record<keyof FormState, string>>;
  * Erorile BLOCANTE: exact ce ar întoarce backendul cu 422, prins înainte de
  * cerere. Cheia e numele câmpului, ca UI-ul să pună mesajul sub input.
  */
-export function validate(form: FormState, language: Language = 'ro'): FormErrors {
+export function validate(
+  form: FormState,
+  language: Language = 'ro',
+  ticketsSold = 0,
+): FormErrors {
   const errors: FormErrors = {};
   const m = eventsMessages[language].validation;
   const names = eventsMessages[language].fieldNames;
@@ -272,6 +284,16 @@ export function validate(form: FormState, language: Language = 'ro'): FormErrors
     }
   }
 
+  // --- capacitatea de bilete (opțional; întreg ≥ 1, nu sub cele vândute) ---
+  const capacity = parseNumber(form.ticket_capacity);
+  if (capacity !== null) {
+    if (!Number.isFinite(capacity) || !Number.isInteger(capacity) || capacity < 1) {
+      errors.ticket_capacity = m.capacityInteger;
+    } else if (capacity < ticketsSold) {
+      errors.ticket_capacity = m.capacityBelowSold(ticketsSold);
+    }
+  }
+
   return errors;
 }
 
@@ -351,6 +373,8 @@ export function toPayload(form: FormState): EventInput {
       form.ticket_sales_end_at.trim() === ''
         ? null
         : fromDateTimeLocalValue(form.ticket_sales_end_at) || null,
+    // Gol → `null` = nelimitat.
+    ticket_capacity: num(form.ticket_capacity),
   };
 }
 

@@ -336,3 +336,11 @@ class PaymentSettingsOut(BaseModel):
     # Derivat: True ⇔ `mia_phone` SAU `mia_qr_url` e setat.
     mia_enabled: bool = False
     payment_methods: list[str] = Field(default_factory=list)
+
+
+class TicketStatusCountsOut(BaseModel):
+    """Numărătoarea pe stare a cozii de admin (`/counts`): cheie pentru FIECARE
+    stare cunoscută (0 dacă nu există), plus totalul — aceleași filtre ca lista."""
+
+    counts: dict[str, int]
+    total: int

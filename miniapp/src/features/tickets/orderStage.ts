@@ -10,7 +10,7 @@
  * Ecranele nu se uită la stări, ci la etape — patru pași pe care omul îi
  * înțelege: Comandat → Plătit → Aprobat → Bilet.
  */
-import i18n from '@/i18n';
+import { formatInEventZone } from '@/features/events/eventFormat';
 
 import type { Ticket, TicketPassStatus } from './ticketsApi';
 
@@ -93,15 +93,119 @@ export function shortTicketCode(code: string): string {
   return tail.length > 4 ? `${tail.slice(0, 4)} ${tail.slice(4)}` : tail;
 }
 
-/** Ora (fără dată) în limba interfeței; un șir nevalid se întoarce gol. */
+/**
+ * Ora (fără dată) în limba interfeței, pe ora Chișinăului — ca ora intrării să
+ * se potrivească cu ora evenimentului de pe același bilet. Un șir nevalid se
+ * întoarce gol.
+ */
 export function formatTime(iso: string | null | undefined): string {
   if (!iso) return '';
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
   try {
-    return date.toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' });
+    return formatInEventZone(date, { hour: '2-digit', minute: '2-digit' });
   } catch {
     return '';
+  }
+}
+
+/**
+ * Evenimentul a început (după ceasul local)? De atunci serverul refuză orice
+ * pas de plată pe o comandă (`409 event_started`), deci ecranul nu mai cere
+ * nimic — spune doar că biletul se cumpără la intrare. Un șir nevalid sau lipsă
+ * → `false`: mai bine lăsăm serverul să decidă decât să blocăm pe ghicite.
+ */
+export function hasEventStarted(startsAt: string | null | undefined, now: number = Date.now()): boolean {
+  if (!startsAt) return false;
+  const time = new Date(startsAt).getTime();
+  return Number.isFinite(time) && now >= time;
+}
+
+/**
+ * Tonul vizual al unei comenzi (culoare + text, niciodată doar culoare):
+ *   action — omul are ceva de făcut (plată, chitanță);
+ *   review — așteaptă verificarea noastră;
+ *   ok     — biletul e bun de folosit (sau tocmai a fost folosit la intrare);
+ *   muted  — s-a terminat firesc (folosit, expirat, plata online închisă);
+ *   danger — refuz sau anulare.
+ */
+export type OrderTone = 'action' | 'review' | 'ok' | 'muted' | 'danger';
+
+/**
+ * Starea unei comenzi spusă omului: o etichetă scurtă și pasul următor, ambele
+ * chei din `screens:tickets.status.*` / `screens:tickets.next.*`.
+ */
+export type OrderStatusKey =
+  | 'awaiting'
+  | 'moreInfo'
+  | 'review'
+  | 'ready'
+  | 'generating'
+  | 'admitted'
+  | 'used'
+  | 'expired'
+  | 'ticketCancelled'
+  | 'rejected'
+  | 'cancelled'
+  | 'closed'
+  | 'unknown';
+
+export interface OrderSummary {
+  key: OrderStatusKey;
+  tone: OrderTone;
+}
+
+const KNOWN_ORDER_STATUSES = new Set([
+  'awaiting_payment',
+  'payment_declared',
+  'approved',
+  'rejected',
+  'pending_payment',
+  'payment_proof_submitted',
+  'under_review',
+  'additional_information_required',
+  'cancelled',
+]);
+
+/**
+ * „În ce stare e comanda mea și ce fac acum?" — dintr-o singură privire.
+ *
+ * Pentru o comandă aprobată contează starea BILETULUI (valid / admis / folosit
+ * / expirat / anulat), nu doar a plății. O comandă încă neplătită la un
+ * eveniment deja început nu mai are pași online (`closed`).
+ */
+export function summarizeOrder(
+  order: { status: string; ticketStatus?: TicketPassStatus | null; ticketCode?: string | null },
+  eventStarted = false,
+): OrderSummary {
+  if (!KNOWN_ORDER_STATUSES.has(order.status)) return { key: 'unknown', tone: 'review' };
+  const stage = orderStage(order.status);
+  switch (stage) {
+    case 'ordered':
+      if (eventStarted) return { key: 'closed', tone: 'muted' };
+      return order.status === 'additional_information_required'
+        ? { key: 'moreInfo', tone: 'action' }
+        : { key: 'awaiting', tone: 'action' };
+    case 'review':
+      return { key: 'review', tone: 'review' };
+    case 'approved':
+      if (!order.ticketCode) return { key: 'generating', tone: 'ok' };
+      switch (order.ticketStatus) {
+        case 'admitted':
+          return { key: 'admitted', tone: 'ok' };
+        case 'used':
+          return { key: 'used', tone: 'muted' };
+        case 'expired':
+          return { key: 'expired', tone: 'muted' };
+        case 'cancelled':
+          return { key: 'ticketCancelled', tone: 'danger' };
+        default:
+          return { key: 'ready', tone: 'ok' };
+      }
+    case 'rejected':
+      return { key: 'rejected', tone: 'danger' };
+    case 'cancelled':
+      return { key: 'cancelled', tone: 'danger' };
   }
 }
 
@@ -135,4 +239,17 @@ export function isTicketSalesClosedError(error: unknown): boolean {
 
 export function isEventStartedError(error: unknown): boolean {
   return apiErrorCode(error).code === EVENT_STARTED;
+}
+
+/**
+ * Refuzul „nu mai sunt bilete" la crearea unei comenzi / cereri: 409 FĂRĂ cod
+ * (singurul 409 necodat al rutelor de creare — închiderea vânzării vine cu
+ * `ticket_sales_closed`). Când serverul îi va da un cod stabil, se citește
+ * și acela.
+ */
+export const TICKETS_SOLD_OUT = 'tickets_sold_out';
+
+export function isSoldOutError(error: unknown): boolean {
+  const { status, code } = apiErrorCode(error);
+  return code === TICKETS_SOLD_OUT || (status === 409 && code === undefined);
 }

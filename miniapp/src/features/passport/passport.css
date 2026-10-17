@@ -245,6 +245,58 @@
   margin: 0;
 }
 
+/* Placa albă a QR-ului: contrast maxim pe orice temă (cerința scanerului). */
+.pp-pass__tile {
+  display: inline-flex;
+  padding: 10px;
+  border-radius: 18px;
+  background: #ffffff;
+}
+
+/* Butonul „Mărește codul QR" e gândit pentru biletul închis la culoare; pe
+   cardul passportului urmează tema. */
+.pp-pass .tk-qr-zoom {
+  color: var(--color-link);
+  border-color: var(--color-border);
+  background: var(--color-surface-hover);
+}
+
+.pp-pass__hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--color-text-secondary);
+}
+
+.pp-pass__code-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.pp-pass__copy {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .pp-pass__error {
   display: flex;
   flex-direction: column;

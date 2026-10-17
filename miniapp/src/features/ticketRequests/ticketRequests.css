@@ -31,3 +31,20 @@
 .tr-progress { display:flex; align-items:center; gap:var(--space-sm); }
 .tr-progress__bar { flex:1; height:8px; accent-color:var(--color-accent); }
 .tr-progress__label { font-size:13px; font-variant-numeric:tabular-nums; color:var(--color-text-secondary); }
+
+/* Eticheta stării, pe tonul din `summarizeOrder` (culoare + text). */
+.tr-status--action { background:color-mix(in srgb, var(--color-warning) 18%, transparent); color:var(--color-warning); }
+.tr-status--review { background:color-mix(in srgb, var(--color-link) 18%, transparent); color:var(--color-link); }
+.tr-status--ok { background:var(--color-success); color:var(--color-on-accent); }
+.tr-status--muted { background:var(--color-tag-bg); color:var(--color-text-secondary); }
+.tr-status--danger { background:var(--color-danger); color:var(--color-on-accent); }
+.tr-next { margin:0; font-size:14px; line-height:20px; font-weight:600; }
+
+/* Cantitatea: −/+ mari, ușor de atins cu degetul; câmpul rămâne editabil. */
+.tr-qty { display:flex; align-items:stretch; gap:var(--space-sm); }
+.tr-qty__btn { appearance:none; flex:0 0 48px; min-height:48px; border-radius:14px; border:1px solid var(--color-border); background:var(--color-surface); color:var(--color-text-primary); font:inherit; font-size:22px; font-weight:700; cursor:pointer; }
+.tr-qty__btn:disabled { opacity:0.4; cursor:default; }
+.tr-qty__btn:focus-visible { outline:2px solid var(--color-link); outline-offset:2px; }
+.tr-qty__input { flex:1; min-width:0; text-align:center; font-weight:700; }
+
+.tr-proof__sent { margin:0; color:var(--color-success); font-size:14px; line-height:20px; font-weight:700; }

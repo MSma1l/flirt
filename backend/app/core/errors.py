@@ -43,6 +43,11 @@ class ErrorCode:
     # Evenimentul a început: nici comenzile deja create nu mai primesc dovadă de
     # plată / declarație — banii se rezolvă la intrare, nu online.
     EVENT_STARTED = "event_started"
+    # Capacitatea evenimentului e epuizată: nu mai sunt locuri pentru o comandă /
+    # cerere nouă sau pentru aprobarea uneia existente.
+    TICKETS_SOLD_OUT = "tickets_sold_out"
+    # Adminul a încercat să coboare capacitatea sub numărul de bilete deja vândute.
+    CAPACITY_BELOW_SOLD = "capacity_below_sold"
 
 
 class CodedHTTPException(HTTPException):
