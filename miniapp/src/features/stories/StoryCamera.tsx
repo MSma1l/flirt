@@ -39,7 +39,15 @@ export function StoryCamera({ onCapture, onPickGallery, onClose }: Props) {
           return;
         }
         streamRef.current = stream;
-        if (videoRef.current) videoRef.current.srcObject = stream;
+        // `<video>` e MEREU montat (doar ascuns până e gata): dacă ar apărea
+        // abia la `ready`, aici ref-ul ar fi `null`, fluxul n-ar ajunge la el și
+        // camera ar rămâne neagră. iOS cere și `play()` explicit, nu doar
+        // `autoPlay`, ca imaginea să pornească în WebView.
+        const video = videoRef.current;
+        if (video) {
+          video.srcObject = stream;
+          void video.play?.()?.catch(() => undefined);
+        }
         setState('ready');
       })
       .catch(() => setState('unavailable'));
@@ -68,11 +76,19 @@ export function StoryCamera({ onCapture, onPickGallery, onClose }: Props) {
 
   return (
     <section className="st-camera" aria-label={t('stories:compose.title')}>
-      {state === 'ready' ? <video ref={videoRef} className="st-camera__video" autoPlay playsInline muted /> : null}
+      <video
+        ref={videoRef}
+        className="st-camera__video"
+        data-testid="story-camera-video"
+        hidden={state !== 'ready'}
+        autoPlay
+        playsInline
+        muted
+      />
       <header className="st-camera__top">
         <button type="button" className="st-camera__icon" onClick={onClose} aria-label={t('common:actions.close')}>✕</button>
       </header>
-      {state !== 'ready' ? <p className="st-camera__notice">{t('stories:messages.cameraUnavailable')}</p> : null}
+      {state === 'unavailable' ? <p className="st-camera__notice">{t('stories:messages.cameraUnavailable')}</p> : null}
       <div className="st-camera__controls">
         <button type="button" className="st-camera__side" onClick={onPickGallery} aria-label={t('stories:camera.gallery')}>🖼️</button>
         <button type="button" className="st-camera__shutter" onClick={capture} disabled={state !== 'ready'} aria-label={t('stories:camera.capture')}><span /></button>
