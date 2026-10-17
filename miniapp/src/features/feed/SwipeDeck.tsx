@@ -22,7 +22,7 @@
  * oprește propagarea (`StoriesBar.tsx`), iar cardul ignoră orice gest pornit
  * într-o zonă străină (`onPointerDown`, mai jos).
  */
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
@@ -57,6 +57,61 @@ interface Offset {
 
 const ORIGIN: Offset = { x: 0, y: 0 };
 
+/** Cheia cache-ului cu lista de ankete (invalidată și din Setări, Profil, blocări). */
+const FEED_QUERY_KEY = ['feed'] as const;
+
+/**
+ * Câte carduri pot rămâne nevăzute înainte să cerem lotul următor. Cu o rezervă
+ * mică, cardul următor e deja acolo când userul ajunge la capăt.
+ */
+const PREFETCH_REMAINING = 2;
+
+/**
+ * Lotul următor de ankete: cardurile din `page` care NU sunt deja în listă.
+ *
+ * `GET /feed/` întoarce un singur lot (`feed_limit`, implicit 10) și exclude pe
+ * server tot ce userul a swipe-uit deja. Deci aceeași cerere, repetată după ce
+ * lotul curent s-a consumat, aduce exact următorii candidați — fără cursor (al
+ * cărui scor se mișcă odată cu activitatea candidaților). Cardurile încă
+ * nevăzute din lotul curent revin și ele în răspuns; le scoatem aici.
+ */
+export function freshCards(known: readonly FeedCard[], page: readonly FeedCard[]): FeedCard[] {
+  const seen = new Set(known.map((card) => card.userId));
+  const out: FeedCard[] = [];
+  for (const card of page) {
+    if (seen.has(card.userId)) continue;
+    seen.add(card.userId);
+    out.push(card);
+  }
+  return out;
+}
+
+/**
+ * Unde stă userul într-o listă NOUĂ de ankete.
+ *
+ * Ne ținem de CARDUL pe care stătea (`anchor`), nu de poziție. Dacă nu stătea
+ * pe niciun card — lista anterioară era CONSUMATĂ — mergem la primul card pe
+ * care nu l-a trecut deja. Înainte, poziția rămânea `index` (= capătul listei
+ * vechi), iar o listă proaspătă de la server (invalidare din Setări, blocare)
+ * îl lăsa pe ecranul „Nu mai sunt ankete" deși avea carduri noi.
+ */
+export function placeInNewList(
+  previous: readonly FeedCard[] | undefined,
+  index: number,
+  next: readonly FeedCard[],
+): number {
+  const anchor = previous?.[index]?.userId ?? null;
+  if (anchor !== null) {
+    return Math.max(
+      0,
+      next.findIndex((card) => card.userId === anchor),
+    );
+  }
+  const passed = new Set((previous ?? []).slice(0, index).map((card) => card.userId));
+  const first = next.findIndex((card) => !passed.has(card.userId));
+  return first === -1 ? next.length : first;
+}
+
 /**
  * Indiciul de gesturi apare O SINGURĂ DATĂ, ca un strat discret peste primul
  * card. Pentru tehnologiile de asistare textul rămâne mereu legat de card
@@ -89,8 +144,9 @@ function cueOpacity(distance: number, threshold: number): number {
 export function SwipeDeck() {
   const { t } = useTranslation('miniapp');
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data, isLoading, isError, refetch } = useQuery<FeedCard[]>({
-    queryKey: ['feed'],
+    queryKey: FEED_QUERY_KEY,
     queryFn: fetchFeed,
   });
 
@@ -181,21 +237,60 @@ export function SwipeDeck() {
     const previous = placedForRef.current;
     placedForRef.current = data;
 
-    const anchor = restartRef.current ? null : (previous?.[index]?.userId ?? null);
-    const next = restartRef.current
-      ? 0
-      : anchor === null
-        ? Math.min(index, data.length)
-        : Math.max(
-            0,
-            data.findIndex((card) => card.userId === anchor),
-          );
+    const next = restartRef.current ? 0 : placeInNewList(previous, index, data);
     restartRef.current = false;
 
     if (next === index) return;
     setIndex(next);
     setOffset(ORIGIN);
   }, [data, index]);
+
+  /**
+   * LOTUL URMĂTOR. Serverul dă ankete în loturi (10); fără asta, după al zecelea
+   * swipe userul vedea „Nu mai sunt ankete acum" deși serverul mai avea zeci de
+   * candidați — exact defectul din producție („nu se arată anketa"). Cerem lotul
+   * următor când rămân `PREFETCH_REMAINING` carduri și îl LIPIM la coada listei
+   * (aceeași cheie de cache), deci poziția userului nu se mișcă.
+   *
+   * Starea „gata" e legată de lista pentru care s-a constatat: o listă nouă
+   * (reîncărcare, invalidare din Setări) are voie să ceară din nou.
+   */
+  const [more, setMore] = useState<{
+    status: 'idle' | 'loading' | 'error' | 'done';
+    /** Lista pentru care e valabilă starea; alta = `idle`. */
+    list?: FeedCard[];
+  }>({ status: 'idle' });
+  const moreStatus = more.list === data ? more.status : 'idle';
+  const loadingMoreRef = useRef(false);
+  const loadMore = useCallback(async () => {
+    const base = queryClient.getQueryData<FeedCard[]>(FEED_QUERY_KEY);
+    if (!base || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setMore({ status: 'loading', list: base });
+    try {
+      const page = await fetchFeed();
+      const known = queryClient.getQueryData<FeedCard[]>(FEED_QUERY_KEY) ?? base;
+      const fresh = freshCards(known, page);
+      if (fresh.length === 0) {
+        setMore({ status: 'done', list: known });
+      } else {
+        queryClient.setQueryData<FeedCard[]>(FEED_QUERY_KEY, [...known, ...fresh]);
+        setMore({ status: 'idle' });
+      }
+    } catch {
+      setMore({ status: 'error', list: base });
+    } finally {
+      loadingMoreRef.current = false;
+    }
+  }, [queryClient]);
+
+  const remaining = cards.length - index;
+  useEffect(() => {
+    // Un feed gol de la prima cerere e chiar „nu e nimeni": nu insistăm.
+    if (!data || data.length === 0 || isError) return;
+    if (remaining > PREFETCH_REMAINING || moreStatus !== 'idle') return;
+    void loadMore();
+  }, [data, isError, remaining, moreStatus, loadMore]);
 
   const resetCard = useCallback(() => {
     setSettling(true);
@@ -442,6 +537,42 @@ export function SwipeDeck() {
       </div>
     </div>
   ) : null;
+
+  if (!current && (moreStatus === 'loading' || (moreStatus === 'idle' && cards.length > 0))) {
+    // Lotul următor e pe drum: NU e „nu mai sunt ankete" — încă nu știm.
+    return (
+      <div className="feed-status">
+        <StoriesStrip />
+        <StatusScreen
+          loading
+          testId="status-feed-loading-more"
+          title={t('feed.loading')}
+          body={t('feed.loadingBody')}
+        >
+          {matchModal}
+        </StatusScreen>
+      </div>
+    );
+  }
+
+  if (!current && moreStatus === 'error') {
+    return (
+      <div className="feed-status">
+        <StatusScreen
+          testId="status-feed-error"
+          title={t('errors.network.title')}
+          body={t('feed.error')}
+          actions={[
+            {
+              label: t('actions.retry', { ns: 'common' }),
+              onClick: () => void loadMore(),
+              testId: 'deck-retry',
+            },
+          ]}
+        />
+      </div>
+    );
+  }
 
   if (!current) {
     // Feed gol NU e o eroare, și ecranul trebuie să spună asta răspicat. E chiar
