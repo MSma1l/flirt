@@ -290,6 +290,16 @@ class AdminEventUpdate(BaseModel):
     ticket_capacity: int | None = Field(default=None, ge=1)
 
 
+class AdminEventCoverOut(BaseModel):
+    """Răspunsul la `POST /admin/events/cover`: URL absolut al copertei.
+
+    `url` se pune direct în `cover_url` (încape în `EVENT_COVER_URL_MAX_LENGTH`).
+    """
+
+    url: str
+    media_type: Literal["image"]
+
+
 class AdminEventOut(BaseModel):
     """Un eveniment în panoul de admin (inclusiv cele TRECUTE, spre deosebire de
     `GET /events`, care arată doar viitorul)."""

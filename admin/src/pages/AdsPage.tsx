@@ -16,9 +16,17 @@ import {
   fetchAds,
   updateAd,
   updateAdSettings,
+  uploadAdMedia,
 } from '../api/admin';
 import type { Ad, AdInput, AdSettings, AdTargetGender } from '../api/types';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import {
+  IMAGE_RULES,
+  MediaUploadField,
+  VIDEO_RULES,
+  type MediaKind,
+  type MediaUploadTexts,
+} from '../components/MediaUploadField';
 import { Modal } from '../components/Modal';
 import {
   Badge,
@@ -327,6 +335,12 @@ function AdFormModal({
 }): JSX.Element {
   const m = useMessages(adsMessages).form;
   const [form, setForm] = useState<FormState>(ad ? toForm(ad) : EMPTY_FORM);
+  // Cât timp un fișier urcă, URL-ul final nu există încă: salvarea așteaptă.
+  const [uploading, setUploading] = useState<Record<MediaKind, boolean>>({
+    video: false,
+    image: false,
+  });
+  const isUploading = uploading.video || uploading.image;
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]): void =>
     setForm((current) => ({ ...current, [key]: value }));
@@ -368,7 +382,7 @@ function AdFormModal({
 
   const submit = (submitEvent: FormEvent): void => {
     submitEvent.preventDefault();
-    if (!valid || busy) return;
+    if (!valid || busy || isUploading) return;
     onSubmit(toPayload(form));
   };
 
@@ -385,23 +399,19 @@ function AdFormModal({
           />
         </Field>
 
-        <Field label={m.videoUrl} htmlFor="ad-video">
-          <TextInput
-            id="ad-video"
-            type="url"
-            value={form.video_url}
-            onChange={(e) => set('video_url', e.target.value)}
-          />
-        </Field>
+        <AdMediaField
+          kind="video"
+          value={form.video_url}
+          onChange={(url) => set('video_url', url)}
+          onUploadingChange={(active) => setUploading((u) => ({ ...u, video: active }))}
+        />
 
-        <Field label={m.imageUrl} htmlFor="ad-image">
-          <TextInput
-            id="ad-image"
-            type="url"
-            value={form.image_url}
-            onChange={(e) => set('image_url', e.target.value)}
-          />
-        </Field>
+        <AdMediaField
+          kind="image"
+          value={form.image_url}
+          onChange={(url) => set('image_url', url)}
+          onUploadingChange={(active) => setUploading((u) => ({ ...u, image: active }))}
+        />
 
         <div className="form-grid">
           <Field label={m.duration} htmlFor="ad-duration">
@@ -498,19 +508,69 @@ function AdFormModal({
           </span>
         </label>
 
-        {rangeError ? <div className="alert">{rangeError}</div> : null}
+        {rangeError && !isUploading ? <div className="alert">{rangeError}</div> : null}
+        {isUploading ? <p className="field__hint">{m.uploadInProgress}</p> : null}
         {error ? <div className="alert">{error}</div> : null}
 
         <div className="modal__actions">
           <Button variant="ghost" onClick={onCancel} disabled={busy}>
             {m.cancel}
           </Button>
-          <Button type="submit" variant="primary" disabled={!valid || busy}>
+          <Button type="submit" variant="primary" disabled={!valid || busy || isUploading}>
             {busy ? m.saving : ad ? m.save : m.create}
           </Button>
         </div>
       </form>
     </Modal>
+  );
+}
+
+/* ------------------------- Media: încărcare fișier -------------------------- */
+
+/** Câmpul media al reclamei: `MediaUploadField` cu ruta, regulile și textele reclamelor. */
+function AdMediaField({
+  kind,
+  value,
+  onChange,
+  onUploadingChange,
+}: {
+  kind: MediaKind;
+  value: string;
+  onChange: (url: string) => void;
+  onUploadingChange: (uploading: boolean) => void;
+}): JSX.Element {
+  const form = useMessages(adsMessages).form;
+  const m = form.media;
+  const isVideo = kind === 'video';
+
+  const texts: MediaUploadTexts = {
+    label: isVideo ? m.videoLabel : m.imageLabel,
+    hint: isVideo ? m.videoHint : m.imageHint,
+    upload: isVideo ? m.uploadVideo : m.uploadImage,
+    replace: isVideo ? m.replaceVideo : m.replaceImage,
+    uploading: isVideo ? m.uploadingVideo : m.uploadingImage,
+    remove: m.remove,
+    removeLabel: isVideo ? m.removeVideo : m.removeImage,
+    preview: isVideo ? m.videoPreview : m.imagePreview,
+    badType: isVideo ? m.videoBadType : m.imageBadType,
+    tooLarge: isVideo ? m.videoTooLarge : m.imageTooLarge,
+    unreadable: m.unreadable,
+    pasteUrl: m.pasteUrl,
+    urlLabel: isVideo ? form.videoUrl : form.imageUrl,
+  };
+
+  return (
+    <MediaUploadField
+      kind={kind}
+      idPrefix={`ad-${kind}`}
+      value={value}
+      onChange={onChange}
+      onUploadingChange={onUploadingChange}
+      upload={uploadAdMedia}
+      rules={isVideo ? VIDEO_RULES : IMAGE_RULES}
+      texts={texts}
+      previewTestId={`ad-${kind}-preview`}
+    />
   );
 }
 

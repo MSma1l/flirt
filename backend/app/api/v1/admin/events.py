@@ -18,8 +18,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentAdmin
 from app.db.session import get_db
-from app.schemas.admin import AdminEventIn, AdminEventOut, AdminEventUpdate
+from app.models.admin import ACTION_EVENT_COVER_UPLOAD
+from app.schemas.admin import (
+    AdminEventCoverOut,
+    AdminEventIn,
+    AdminEventOut,
+    AdminEventUpdate,
+)
 from app.services import admin_service
+from app.services.admin_media import EVENT_COVER_PREFIX, handle_admin_upload
 from app.services.pagination import ADMIN_MAX_LIMIT, MAX_CURSOR_LENGTH
 
 router = APIRouter(tags=["admin"])
@@ -61,6 +68,36 @@ async def create_event(
     return await admin_service.create_event(
         db, admin, data, ip=admin_service.request_ip(request)
     )
+
+
+# ÎNAINTEA rutelor parametrizate `/events/{event_id}`, ca „cover" să nu fie
+# capturat ca id (azi există doar PUT/DELETE pe id, dar ordinea ne apără și de
+# un viitor `POST /events/{event_id}`).
+@router.post(
+    "/events/cover",
+    response_model=AdminEventCoverOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_event_cover(
+    request: Request, db: DbDep, admin: CurrentAdmin
+) -> AdminEventCoverOut:
+    """Încarcă coperta unui eveniment (multipart, câmp `file`) → `{url, media_type}`.
+
+    DOAR imagini jpeg/png/webp (magic bytes, re-encodate fără EXIF,
+    ≤ `max_upload_bytes`); un video → 415. 413 `file_too_large`,
+    415 `unsupported_media_type`, 422 gol/corupt. NU modifică evenimentul:
+    panoul pune apoi `url` în `cover_url`. Auditat: `event.cover.upload`.
+    """
+    uploaded = await handle_admin_upload(
+        request,
+        db,
+        admin,
+        prefix=EVENT_COVER_PREFIX,
+        allow_video=False,
+        action=ACTION_EVENT_COVER_UPLOAD,
+        target_type="event_cover",
+    )
+    return AdminEventCoverOut(url=uploaded.url, media_type="image")
 
 
 @router.put("/events/{event_id}", response_model=AdminEventOut)

@@ -78,9 +78,22 @@ export const eventsMessages = defineMessages({
       coordsMissing: 'Fără coordonate valide evenimentul NU apare pe harta din aplicație.',
       coverLegend: 'Imagine de copertă',
       coverHint:
-        'Backendul stochează doar ADRESA imaginii (nu se încarcă fișiere din panou): ' +
-        'pune un link public https către o fotografie.',
+        'Încarcă afișul de pe telefon sau calculator (JPG, PNG sau WEBP, maximum 8 MB) ' +
+        'ori lipește un link public https.',
       coverUrl: 'URL copertă',
+      cover: {
+        upload: 'Încarcă imagine de pe dispozitiv',
+        replace: 'Înlocuiește imaginea',
+        uploading: 'Se încarcă imaginea…',
+        remove: 'Șterge',
+        removeLabel: 'Șterge coperta',
+        preview: 'Previzualizarea copertei',
+        badType: 'Acceptăm doar imagini JPG, PNG sau WEBP.',
+        tooLarge: 'Imaginea e prea mare — maximum 8 MB.',
+        unreadable: 'Fișierul e gol sau nu poate fi citit. Încearcă alt fișier.',
+        pasteUrl: 'sau lipește un URL',
+        uploadInProgress: 'Așteaptă să se termine încărcarea copertei.',
+      },
       ticketLegend: 'Bilet online',
       ticketPrice: 'Preț bilet',
       ticketPricePlaceholder: 'gol = bilet online indisponibil',
@@ -231,9 +244,22 @@ export const eventsMessages = defineMessages({
       coordsMissing: 'Без верных координат событие НЕ появится на карте в приложении.',
       coverLegend: 'Обложка',
       coverHint:
-        'Бэкенд хранит только АДРЕС изображения (файлы из панели не загружаются): ' +
-        'укажите публичную https-ссылку на фотографию.',
+        'Загрузите афишу с телефона или компьютера (JPG, PNG или WEBP, не более 8 МБ) ' +
+        'или вставьте публичную https-ссылку.',
       coverUrl: 'URL обложки',
+      cover: {
+        upload: 'Загрузить изображение с устройства',
+        replace: 'Заменить изображение',
+        uploading: 'Загрузка изображения…',
+        remove: 'Удалить',
+        removeLabel: 'Удалить обложку',
+        preview: 'Предпросмотр обложки',
+        badType: 'Принимаем только изображения JPG, PNG или WEBP.',
+        tooLarge: 'Изображение слишком большое — не более 8 МБ.',
+        unreadable: 'Файл пустой или не читается. Попробуйте другой файл.',
+        pasteUrl: 'или вставьте URL',
+        uploadInProgress: 'Дождитесь окончания загрузки обложки.',
+      },
       ticketLegend: 'Онлайн-билет',
       ticketPrice: 'Цена билета',
       ticketPricePlaceholder: 'пусто = онлайн-билет недоступен',

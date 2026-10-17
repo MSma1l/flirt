@@ -8,6 +8,7 @@ import { ApiError, apiBlob, apiFetch, apiPage, apiVoid } from './client';
 import type {
   Ad,
   AdInput,
+  AdMedia,
   AdSettings,
   Admission,
   AdminEvent,
@@ -18,6 +19,7 @@ import type {
   AdminUser,
   AdminUserDetail,
   BanUserBody,
+  EventCoverMedia,
   EventInput,
   GrantSubscriptionBody,
   InviteInput,
@@ -177,6 +179,17 @@ export function deleteEvent(id: Uuid): Promise<void> {
   return apiVoid(`/admin/events/${id}`, { method: 'DELETE' });
 }
 
+/**
+ * Încarcă coperta unui eveniment de pe dispozitiv (JPG/PNG/WEBP); întoarce URL-ul
+ * public pe care formularul îl pune în `cover_url`.
+ * Erori: 413 `file_too_large`, 415 `unsupported_media_type`, 422 fișier gol/ilizibil.
+ */
+export function uploadEventCover(file: File, signal?: AbortSignal): Promise<EventCoverMedia> {
+  const formData = new FormData();
+  formData.append('file', file, file.name);
+  return apiFetch<EventCoverMedia>('/admin/events/cover', { method: 'POST', formData, signal });
+}
+
 /* ---------------------------- Abonamente ---------------------------- */
 
 export function fetchSubscriptions(params: {
@@ -211,6 +224,17 @@ export function updateAd(id: number, input: AdInput): Promise<Ad> {
 
 export function deleteAd(id: number): Promise<void> {
   return apiVoid(`/admin/ads/${id}`, { method: 'DELETE' });
+}
+
+/**
+ * Încarcă imaginea/videoul unei reclame de pe dispozitiv; întoarce URL-ul public
+ * pe care formularul îl pune în `image_url` / `video_url`.
+ * Erori: 413 `file_too_large`, 415 `unsupported_media_type`, 422 fișier gol/ilizibil.
+ */
+export function uploadAdMedia(file: File, signal?: AbortSignal): Promise<AdMedia> {
+  const formData = new FormData();
+  formData.append('file', file, file.name);
+  return apiFetch<AdMedia>('/admin/ads/media', { method: 'POST', formData, signal });
 }
 
 export function fetchAdSettings(): Promise<AdSettings> {

@@ -16,8 +16,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentAdmin
 from app.db.session import get_db
-from app.schemas.ad import AdIn, AdOut, AdSettingsIn, AdSettingsOut, AdUpdate
+from app.models.admin import ACTION_AD_MEDIA_UPLOAD
+from app.schemas.ad import (
+    AdIn,
+    AdMediaOut,
+    AdOut,
+    AdSettingsIn,
+    AdSettingsOut,
+    AdUpdate,
+)
 from app.services import ad_service
+from app.services.admin_media import AD_MEDIA_PREFIX, handle_admin_upload
 from app.services.admin_service import request_ip
 
 router = APIRouter(tags=["admin"])
@@ -37,6 +46,33 @@ async def create_ad(
 ) -> AdOut:
     """Creează o reclamă nouă (auditat: `ad.create`)."""
     return await ad_service.create_ad(db, data, actor=admin, ip=request_ip(request))
+
+
+# --- Creative: upload poză / video (ÎNAINTE de rutele /ads/{ad_id}) ----------
+@router.post(
+    "/ads/media", response_model=AdMediaOut, status_code=status.HTTP_201_CREATED
+)
+async def upload_ad_media(
+    request: Request, db: DbDep, admin: CurrentAdmin
+) -> AdMediaOut:
+    """Încarcă un creativ (multipart, câmp `file`) → `{url, media_type}`.
+
+    Tipul se deduce din conținutul real: jpeg/png/webp (re-encodate fără EXIF,
+    ≤ `max_upload_bytes`) sau mp4/mov/webm (≤ `story_video_max_bytes`).
+    413 `file_too_large`, 415 `unsupported_media_type`, 422 gol/corupt.
+    NU creează reclama: panoul pune apoi `url` în `image_url` / `video_url`.
+    Auditat: `ad.media.upload`.
+    """
+    uploaded = await handle_admin_upload(
+        request,
+        db,
+        admin,
+        prefix=AD_MEDIA_PREFIX,
+        allow_video=True,
+        action=ACTION_AD_MEDIA_UPLOAD,
+        target_type="ad_media",
+    )
+    return AdMediaOut(url=uploaded.url, media_type=uploaded.media_type)
 
 
 # --- Setări globale (ÎNAINTE de rutele parametrizate /ads/{ad_id}) -------------

@@ -27,11 +27,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
-import { createEvent, deleteEvent, fetchEvents, updateEvent } from '../api/admin';
+import { createEvent, deleteEvent, fetchEvents, updateEvent, uploadEventCover } from '../api/admin';
 import { ApiError } from '../api/client';
 import { EVENT_KINDS, type AdminEvent, type EventInput } from '../api/types';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { EventPreview, kindLabel } from '../components/EventPreview';
+import { IMAGE_RULES, MediaUploadField } from '../components/MediaUploadField';
 import { Modal } from '../components/Modal';
 import {
   Badge,
@@ -409,6 +410,15 @@ function EventTable({
   );
 }
 
+/** Coperta e un afiș: portret, întreagă (fără decupare), nu o bandă joasă. */
+const COVER_PREVIEW_STYLE = {
+  width: '100%',
+  maxWidth: 240,
+  maxHeight: 'none',
+  aspectRatio: '3 / 4',
+  objectFit: 'contain',
+} as const;
+
 /** Mesajul de eroare al unui câmp, sub input (sau nimic). */
 function FieldError({ message }: { message?: string }): JSX.Element | null {
   if (!message) return null;
@@ -440,6 +450,8 @@ function EventFormModal({
   const f = useMessages(eventsMessages).form;
   const { language } = useLanguage();
   const [form, setForm] = useState<FormState>(event ? toForm(event) : EMPTY_FORM);
+  // Cât timp coperta urcă, URL-ul final nu există încă: salvarea așteaptă.
+  const [uploading, setUploading] = useState(false);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]): void =>
     setForm((current) => ({ ...current, [key]: value }));
@@ -455,7 +467,7 @@ function EventFormModal({
 
   const submit = (submitEvent: FormEvent): void => {
     submitEvent.preventDefault();
-    if (!valid || busy) return;
+    if (!valid || busy || uploading) return;
     onSubmit(toPayload(form));
   };
 
@@ -599,18 +611,34 @@ function EventFormModal({
 
           <fieldset className="form-section">
             <legend>{f.coverLegend}</legend>
-            <p className="field__hint">{f.coverHint}</p>
-            <Field label={f.coverUrl} htmlFor="event-cover">
-              <TextInput
-                id="event-cover"
-                type="url"
-                value={form.cover_url}
-                maxLength={EVENT_LIMITS.coverUrl}
-                placeholder="https://…/poster.jpg"
-                aria-invalid={errors.cover_url ? true : undefined}
-                onChange={(e) => set('cover_url', e.target.value)}
-              />
-            </Field>
+            <MediaUploadField
+              kind="image"
+              idPrefix="event-cover"
+              value={form.cover_url}
+              onChange={(url) => set('cover_url', url)}
+              onUploadingChange={setUploading}
+              upload={uploadEventCover}
+              rules={IMAGE_RULES}
+              texts={{
+                hint: f.coverHint,
+                upload: f.cover.upload,
+                replace: f.cover.replace,
+                uploading: f.cover.uploading,
+                remove: f.cover.remove,
+                removeLabel: f.cover.removeLabel,
+                preview: f.cover.preview,
+                badType: f.cover.badType,
+                tooLarge: f.cover.tooLarge,
+                unreadable: f.cover.unreadable,
+                pasteUrl: f.cover.pasteUrl,
+                urlLabel: f.coverUrl,
+              }}
+              previewTestId="event-cover-preview"
+              previewStyle={COVER_PREVIEW_STYLE}
+              urlMaxLength={EVENT_LIMITS.coverUrl}
+              urlPlaceholder="https://…/poster.jpg"
+              urlInvalid={Boolean(errors.cover_url)}
+            />
             <FieldError message={errors.cover_url} />
           </fieldset>
 
@@ -746,13 +774,14 @@ function EventFormModal({
             </div>
           ) : null}
 
+          {uploading ? <p className="field__hint">{f.cover.uploadInProgress}</p> : null}
           {error ? <div className="alert">{error}</div> : null}
 
           <div className="modal__actions">
             <Button variant="ghost" onClick={onCancel} disabled={busy}>
               {f.cancel}
             </Button>
-            <Button type="submit" variant="primary" disabled={!valid || busy}>
+            <Button type="submit" variant="primary" disabled={!valid || busy || uploading}>
               {busy ? f.saving : event ? f.save : f.create}
             </Button>
           </div>

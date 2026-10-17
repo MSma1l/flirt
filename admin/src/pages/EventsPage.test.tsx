@@ -652,3 +652,150 @@ describe('EventsPage — ștergere', () => {
     });
   });
 });
+
+describe('EventsPage — coperta încărcată de pe dispozitiv', () => {
+  const COVER_URL = 'https://api.example.com/media/events/poster.jpg';
+
+  /** Apelurile `fetch` reale către ruta de upload (corpul e FormData, nu JSON). */
+  function coverUploads(api: ReturnType<typeof mockFetch>): FormData[] {
+    return api.fetch.mock.calls
+      .filter(([input]) => String(input).includes('/admin/events/cover'))
+      .map(([, init]) => (init as RequestInit).body as FormData);
+  }
+
+  async function openForm(routes: Parameters<typeof mockFetch>[0] = {}) {
+    seedAdminSession();
+    const api = mockFetch({
+      'GET /admin/events': { body: [] },
+      'POST /admin/events': { body: EVENT },
+      ...routes,
+    });
+    // `applyAccept: false`: lăsăm fișierul „greșit" să ajungă la validarea noastră.
+    const person = userEvent.setup({ applyAccept: false });
+    renderWithProviders(<EventsPage />);
+    await screen.findByText('Niciun eveniment');
+    const dialog = await openNewEventForm(person);
+    await fillRequired(person, dialog, { title: 'Cu afiș', city: 'Chișinău' });
+    return { api, person, dialog };
+  }
+
+  it('încarcă afișul: FormData spre /admin/events/cover, completează URL-ul, previzualizează și îl trimite la salvare', async () => {
+    const { api, person, dialog } = await openForm({
+      'POST /admin/events/cover': { body: { url: COVER_URL, media_type: 'image' } },
+    });
+    const input = within(dialog).getByLabelText('Încarcă imagine de pe dispozitiv');
+    expect(input).toHaveAttribute('accept', 'image/jpeg,image/png,image/webp');
+
+    await person.upload(input, new File(['jpg-bytes'], 'afis.jpg', { type: 'image/jpeg' }));
+
+    expect(await within(dialog).findByTestId('event-cover-preview')).toHaveAttribute('src', COVER_URL);
+    const uploads = coverUploads(api);
+    expect(uploads).toHaveLength(1);
+    expect((uploads[0]!.get('file') as File).name).toBe('afis.jpg');
+    expect(within(dialog).getByLabelText('URL copertă')).toHaveValue(COVER_URL);
+
+    await person.click(within(dialog).getByRole('button', { name: 'Creează evenimentul' }));
+    await waitFor(() => {
+      expect(api.callsTo('POST /admin/events')).toHaveLength(1);
+    });
+    expect(api.callsTo('POST /admin/events')[0]?.body).toMatchObject({ cover_url: COVER_URL });
+  });
+
+  it('„Șterge" golește coperta', async () => {
+    const { person, dialog } = await openForm({
+      'POST /admin/events/cover': { body: { url: COVER_URL, media_type: 'image' } },
+    });
+    await person.upload(
+      within(dialog).getByLabelText('Încarcă imagine de pe dispozitiv'),
+      new File(['png'], 'afis.png', { type: 'image/png' }),
+    );
+    await within(dialog).findByTestId('event-cover-preview');
+
+    await person.click(within(dialog).getByRole('button', { name: 'Șterge coperta' }));
+    expect(within(dialog).queryByTestId('event-cover-preview')).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText('URL copertă')).toHaveValue('');
+  });
+
+  it('415 de la server → mesajul de tip, coperta rămâne goală', async () => {
+    const { api, person, dialog } = await openForm({
+      'POST /admin/events/cover': {
+        status: 415,
+        body: { detail: 'Unsupported media type', code: 'unsupported_media_type' },
+      },
+    });
+    await person.upload(
+      within(dialog).getByLabelText('Încarcă imagine de pe dispozitiv'),
+      new File(['jpg'], 'afis.jpg', { type: 'image/jpeg' }),
+    );
+
+    expect(await within(dialog).findByText('Acceptăm doar imagini JPG, PNG sau WEBP.')).toBeInTheDocument();
+    expect(coverUploads(api)).toHaveLength(1);
+    expect(within(dialog).queryByTestId('event-cover-preview')).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText('URL copertă')).toHaveValue('');
+  });
+
+  it('tipul greșit și fișierul prea mare sunt refuzate local, fără cerere', async () => {
+    const { api, person, dialog } = await openForm();
+
+    await person.upload(
+      within(dialog).getByLabelText('Încarcă imagine de pe dispozitiv'),
+      new File(['gif'], 'anim.gif', { type: 'image/gif' }),
+    );
+    expect(within(dialog).getByText('Acceptăm doar imagini JPG, PNG sau WEBP.')).toBeInTheDocument();
+
+    const huge = new File(['x'], 'mare.jpg', { type: 'image/jpeg' });
+    Object.defineProperty(huge, 'size', { value: 9 * 1024 * 1024 });
+    await person.upload(within(dialog).getByLabelText('Încarcă imagine de pe dispozitiv'), huge);
+    expect(within(dialog).getByText('Imaginea e prea mare — maximum 8 MB.')).toBeInTheDocument();
+
+    expect(coverUploads(api)).toHaveLength(0);
+  });
+
+  it('URL-ul lipit manual funcționează în continuare', async () => {
+    const { api, person, dialog } = await openForm();
+    await person.click(within(dialog).getByText('sau lipește un URL'));
+    await person.type(within(dialog).getByLabelText('URL copertă'), 'https://cdn.exemplu.md/manual.jpg');
+
+    expect(within(dialog).getByTestId('event-cover-preview')).toHaveAttribute(
+      'src',
+      'https://cdn.exemplu.md/manual.jpg',
+    );
+    await person.click(within(dialog).getByRole('button', { name: 'Creează evenimentul' }));
+    await waitFor(() => {
+      expect(api.callsTo('POST /admin/events')).toHaveLength(1);
+    });
+    expect(api.callsTo('POST /admin/events')[0]?.body).toMatchObject({
+      cover_url: 'https://cdn.exemplu.md/manual.jpg',
+    });
+    expect(coverUploads(api)).toHaveLength(0);
+  });
+
+  it('salvarea e blocată cât timp coperta urcă', async () => {
+    const { api, person, dialog } = await openForm();
+    const save = within(dialog).getByRole('button', { name: 'Creează evenimentul' });
+    expect(save).toBeEnabled();
+
+    let finish: (response: Response) => void = () => undefined;
+    api.fetch.mockImplementationOnce(
+      () => new Promise<Response>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await person.upload(
+      within(dialog).getByLabelText('Încarcă imagine de pe dispozitiv'),
+      new File(['webp'], 'afis.webp', { type: 'image/webp' }),
+    );
+
+    expect(await within(dialog).findByText('Se încarcă imaginea…')).toBeInTheDocument();
+    expect(save).toBeDisabled();
+
+    finish(
+      new Response(JSON.stringify({ url: COVER_URL, media_type: 'image' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    expect(await within(dialog).findByTestId('event-cover-preview')).toHaveAttribute('src', COVER_URL);
+    expect(save).toBeEnabled();
+  });
+});

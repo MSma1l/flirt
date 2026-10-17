@@ -53,6 +53,14 @@ class ErrorCode:
     # se finalizează normal. Temporar — clientul afișează „vânzare suspendată".
     ONLINE_SALES_DISABLED = "online_sales_disabled"
 
+    # Upload de fișiere (ex. creativele de reclamă din panoul de admin).
+    # Fișierul depășește limita pentru tipul lui (poză / video).
+    FILE_TOO_LARGE = "file_too_large"
+    # Conținutul real (magic bytes) nu e un tip permis, indiferent de extensie.
+    UNSUPPORTED_MEDIA_TYPE = "unsupported_media_type"
+    # Fișier gol sau corupt (imaginea nu poate fi citită).
+    INVALID_MEDIA = "invalid_media"
+
 
 class CodedHTTPException(HTTPException):
     """`HTTPException` cu un cod stabil, citibil de mașină.

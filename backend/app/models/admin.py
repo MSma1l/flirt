@@ -36,12 +36,16 @@ ACTION_REPORT_RESOLVE = "report.resolve"
 ACTION_EVENT_CREATE = "event.create"
 ACTION_EVENT_UPDATE = "event.update"
 ACTION_EVENT_DELETE = "event.delete"
+# Copertă (poză) încărcată de admin pentru un eveniment.
+ACTION_EVENT_COVER_UPLOAD = "event.cover.upload"
 ACTION_SUBSCRIPTION_GRANT = "subscription.grant"
 ACTION_SUBSCRIPTION_REVOKE = "subscription.revoke"
 ACTION_AD_CREATE = "ad.create"
 ACTION_AD_UPDATE = "ad.update"
 ACTION_AD_DELETE = "ad.delete"
 ACTION_AD_SETTINGS_UPDATE = "ad.settings.update"
+# Creativ (poză / video) încărcat de admin pentru o reclamă.
+ACTION_AD_MEDIA_UPLOAD = "ad.media.upload"
 ACTION_TICKET_ORDER_APPROVE = "ticket_order.approve"
 ACTION_TICKET_ORDER_REJECT = "ticket_order.reject"
 # Schimbare manuală de stare a unei comenzi de bilet (corecții de admin).

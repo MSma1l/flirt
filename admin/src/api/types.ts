@@ -168,6 +168,12 @@ export interface AdminEvent {
   tickets_sold?: number;
 }
 
+/** Răspunsul `POST /admin/events/cover`: URL-ul public al copertei încărcate. */
+export interface EventCoverMedia {
+  url: string;
+  media_type: 'image';
+}
+
 /** Payload de creare/editare — exact câmpurile scriibile ale modelului `Event`. */
 export interface EventInput {
   title: string;
@@ -308,6 +314,12 @@ export interface AdSettings {
   swipes_before_ad: number;
   max_video_seconds: number;
   enabled: boolean;
+}
+
+/** Fișierul media al unei reclame, încărcat de pe dispozitiv (`POST /admin/ads/media`). */
+export interface AdMedia {
+  url: string;
+  media_type: 'image' | 'video';
 }
 
 /* ---------------- Comenzi bilete ---------------- */

@@ -123,6 +123,17 @@ class AdOut(BaseModel):
     updated_at: datetime
 
 
+class AdMediaOut(BaseModel):
+    """Răspunsul la `POST /admin/ads/media`: URL absolut + tipul creativului.
+
+    `url` se pune direct în `video_url` / `image_url` (încape în
+    `AD_URL_MAX_LENGTH` și trece de `optional_safe_str`).
+    """
+
+    url: str
+    media_type: Literal["image", "video"]
+
+
 # --- Admin: setări globale ----------------------------------------------------
 class AdSettingsIn(BaseModel):
     """Payload la actualizarea setărilor globale (`PUT /admin/ads/settings`)."""
