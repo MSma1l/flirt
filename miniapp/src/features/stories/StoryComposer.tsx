@@ -4,15 +4,15 @@
  * EXTRAS din `StoriesScreen`, fără schimbări de comportament: acum se deschide
  * din DOUĂ locuri (ecranul separat și cercul „+" din capul feedului de ankete).
  *
- * CE NU E PORTAT de pe mobil, deliberat:
+ * Diferențe față de aplicația mobilă:
  *  - încărcarea de VIDEO. `backend/app/api/v1/stories.py::_reject_video` ridică
  *    422 pentru orice `video/*` declarat ȘI pentru orice conținut ISO-BMFF
  *    (marcajul `ftyp`), indiferent de extensie — nu există moderare automată de
  *    video (Apple Guideline 1.2). Un buton de „încarcă video" ar fi deci un
  *    buton care garantat eșuează;
- *  - camera LIVE (`StoryCameraScreen`): `getUserMedia` în WebView-ul Telegram
- *    cere permisiuni pe care clientul nu le poate acorda din Mini App. Rămâne
- *    `<input type="file">`, care pe telefon deschide oricum camera din sistem.
+ *  - camera LIVE este încercată prin `getUserMedia`; dacă Telegram/WebView nu
+ *    oferă permisiunea, fluxul păstrează alegerea din galerie și atributul
+ *    `capture`, care poate deschide camera nativă a telefonului.
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 
 import { formatMb, prepareStoryImageInBrowser, STORY_IMAGE_LIMITS } from './imageResize';
 import { createStory, uploadStoryMedia } from './storiesApi';
+import { StoryCamera } from './StoryCamera';
 import { MY_STORIES_QUERY_KEY, STORIES_QUERY_KEY } from './useStories';
 
 /** Plafon aliniat cu `CAPTION_MAX_LENGTH` din `backend/app/schemas/story.py`. */
@@ -79,6 +80,7 @@ export function StoryComposer({ onClose }: Props) {
   const [pickedFile, setPickedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [caption, setCaption] = useState('');
+  const [cameraOpen, setCameraOpen] = useState(true);
   const [uploadError, setUploadError] = useState<ShownError | null>(null);
   const [progress, setProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -179,6 +181,14 @@ export function StoryComposer({ onClose }: Props) {
     setUploadError(null);
     publishMutation.reset();
     setPickedFile(file);
+    if (file) setCameraOpen(false);
+  };
+
+  const onCameraCapture = (file: File) => {
+    setUploadError(null);
+    publishMutation.reset();
+    setPickedFile(file);
+    setCameraOpen(false);
   };
 
   const openFilePicker = () => {
@@ -208,13 +218,33 @@ export function StoryComposer({ onClose }: Props) {
         accept={ACCEPTED_IMAGE_TYPES}
         className="st-file-input"
         data-testid="story-file-input"
+        capture="user"
         onChange={onPickFile}
         disabled={publishing}
       />
 
+      {cameraOpen && !pickedFile ? (
+        <StoryCamera
+          onClose={onClose}
+          onCapture={onCameraCapture}
+          onPickGallery={openFilePicker}
+        />
+      ) : null}
+
       {previewUrl ? (
         <div className="st-compose__preview">
           <img className="st-compose__image" src={previewUrl} alt={caption || ''} />
+          <label className="st-compose__caption-overlay">
+            <span className="sr-only">{t('stories:compose.captionLabel')}</span>
+            <textarea
+              className="st-compose__caption-input"
+              value={caption}
+              maxLength={CAPTION_MAX_LENGTH}
+              placeholder={t('stories:compose.captionPlaceholder')}
+              disabled={publishing}
+              onChange={(event) => setCaption(event.target.value)}
+            />
+          </label>
         </div>
       ) : (
         <div className="st-compose__placeholder">
@@ -233,20 +263,7 @@ export function StoryComposer({ onClose }: Props) {
         </div>
       ) : null}
 
-      <label className="st-field">
-        <span className="caption">{t('stories:compose.captionLabel')}</span>
-        <textarea
-          className="st-caption-input"
-          value={caption}
-          maxLength={CAPTION_MAX_LENGTH}
-          placeholder={t('stories:compose.captionPlaceholder')}
-          disabled={publishing}
-          onChange={(event) => setCaption(event.target.value)}
-        />
-        <span className="caption st-counter">
-          {caption.length}/{CAPTION_MAX_LENGTH}
-        </span>
-      </label>
+      {pickedFile ? <span className="caption st-counter">{caption.length}/{CAPTION_MAX_LENGTH}</span> : null}
 
       {uploadError ? (
         <div className="st-error" data-testid="story-upload-error">
@@ -259,7 +276,12 @@ export function StoryComposer({ onClose }: Props) {
         <button
           type="button"
           className="button button--ghost"
-          onClick={openFilePicker}
+          onClick={() => {
+            setUploadError(null);
+            publishMutation.reset();
+            setPickedFile(null);
+            setCameraOpen(true);
+          }}
           disabled={publishing}
         >
           {t('stories:compose.retake')}

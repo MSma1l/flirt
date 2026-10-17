@@ -178,9 +178,8 @@ export function StoryViewer({ group, onClose }: Props) {
             alt={current.caption ?? group.name}
           />
         )}
+        {current.caption ? <p className="st-media__caption">{current.caption}</p> : null}
       </div>
-
-      {current.caption ? <p className="body-text">{current.caption}</p> : null}
 
       <div className="st-nav">
         <button
