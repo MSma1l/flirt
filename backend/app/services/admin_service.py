@@ -766,7 +766,14 @@ async def list_users(
     """
     limit = clamp_limit(limit, ADMIN_PAGE_LIMIT, ADMIN_MAX_LIMIT)
 
-    stmt = select(User, Profile).outerjoin(Profile, Profile.user_id == User.id)
+    # Un cont purjat GDPR rămâne doar ca rând anonim pentru integritatea
+    # rapoartelor/auditului. Nu este un utilizator administrabil și nu are voie
+    # să apară în listă sau căutare în panoul de admin.
+    stmt = (
+        select(User, Profile)
+        .outerjoin(Profile, Profile.user_id == User.id)
+        .where(User.deleted_at.is_(None))
+    )
 
     if q:
         term = _like_term(q.strip())

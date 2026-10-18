@@ -492,6 +492,12 @@ async def test_delete_user_purges_personal_data(client, db_session):
     )
     assert resp.status_code == 401, resp.text
 
+    # Rândul anonim e păstrat numai pentru integritate/audit; nu e un cont ce
+    # trebuie afișat ori căutat în Admin Panel.
+    resp = await client.get(f"{ADMIN}/users", headers=headers)
+    assert resp.status_code == 200, resp.text
+    assert str(target_id) not in {item["id"] for item in resp.json()}
+
 
 # --------------------------------------------------------------------------- #
 # 3. Moderare
