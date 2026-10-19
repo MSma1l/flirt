@@ -335,7 +335,7 @@ async def test_anthropic_request_shape(monkeypatch):
 
     schema = kwargs["output_config"]["format"]["schema"]
     assert kwargs["output_config"]["format"]["type"] == "json_schema"
-    assert schema["required"] == ["allowed", "category"]
+    assert schema["required"] == ["allowed", "category", "confidence", "sexual_content"]
     assert schema["additionalProperties"] is False
 
 
@@ -718,3 +718,112 @@ def test_fallback_kill_switch_off_skips_local(monkeypatch):
     )
     assert verdict.allowed is True
     assert verdict.needs_review is True
+
+
+# --- Relaxarea moderării (feedback testeri) ----------------------------------
+# Caz real: o poză de story cu studenți dintr-o sală de curs, din spate, a fost
+# respinsă ca „minor". Regula „minor" se aplică DOAR împreună cu conținut sexual,
+# iar orice verdict negativ cere încredere mare; cazurile limită trec, cu review.
+
+
+def test_openrouter_minor_fara_continut_sexual_trece_cu_review(monkeypatch):
+    """„Pare tânăr" într-o sală de curs, fără nuditate → TRECE (marcată pt om)."""
+    mod = _openrouter_returning(
+        monkeypatch,
+        '{"allowed": false, "category": "minor", "confidence": 0.9, '
+        '"sexual_content": false}',
+    )
+    verdict = asyncio.run(mod.check(b"x", "image/png"))
+    assert verdict.allowed is True
+    assert verdict.needs_review is True
+    assert verdict.raw_label == "minor_without_sexual_content"
+
+
+def test_openrouter_minor_fara_campul_sexual_content_trece_cu_review(monkeypatch):
+    """Model care nu spune nimic despre conținut sexual → „minor" singur nu respinge."""
+    mod = _openrouter_returning(monkeypatch, '{"allowed": false, "category": "minor"}')
+    verdict = asyncio.run(mod.check(b"x", "image/png"))
+    assert verdict.allowed is True
+    assert verdict.needs_review is True
+
+
+def test_openrouter_minor_cu_continut_sexual_e_respins(monkeypatch):
+    """Protecția rămâne: minor + conținut sexual, la încredere mare → RESPINS."""
+    mod = _openrouter_returning(
+        monkeypatch,
+        '{"allowed": false, "category": "minor", "confidence": 0.95, '
+        '"sexual_content": true}',
+    )
+    verdict = asyncio.run(mod.check(b"x", "image/png"))
+    assert verdict.allowed is False
+    assert verdict.reason == "minor"
+
+
+@pytest.mark.parametrize("confidence", ["0.5", "0.79", "40"])
+def test_openrouter_verdict_negativ_nesigur_trece_cu_review(monkeypatch, confidence):
+    """Încredere sub prag (și pe scara 0–100) → poza TRECE, marcată pentru review."""
+    mod = _openrouter_returning(
+        monkeypatch,
+        '{"allowed": false, "category": "nudity", "confidence": %s, '
+        '"sexual_content": true}' % confidence,
+    )
+    verdict = asyncio.run(mod.check(b"x", "image/png"))
+    assert verdict.allowed is True
+    assert verdict.needs_review is True
+    assert verdict.raw_label.startswith("nudity_low_confidence_")
+
+
+@pytest.mark.parametrize("confidence", ["0.8", "0.97", "95", '"92%"'])
+def test_openrouter_nuditate_sigura_e_respinsa(monkeypatch, confidence):
+    """Nuditate explicită, încredere mare (0–1, 0–100 sau „92%") → RESPINSĂ."""
+    mod = _openrouter_returning(
+        monkeypatch,
+        '{"allowed": false, "category": "nudity", "confidence": %s, '
+        '"sexual_content": true}' % confidence,
+    )
+    verdict = asyncio.run(mod.check(b"x", "image/png"))
+    assert verdict.allowed is False
+    assert verdict.reason == "nudity"
+    assert verdict.needs_review is False
+
+
+@pytest.mark.asyncio
+async def test_anthropic_minor_fara_continut_sexual_trece(monkeypatch):
+    """Aceleași reguli și pe providerul Anthropic (helper comun)."""
+    _fake_anthropic_client(
+        monkeypatch,
+        response=_FakeResponse(
+            '{"allowed": false, "category": "minor", "confidence": 0.85, '
+            '"sexual_content": false}'
+        ),
+    )
+    verdict = await AnthropicPhotoModerator().check(_PNG_1X1, "image/jpeg")
+    assert verdict.allowed is True
+    assert verdict.needs_review is True
+
+
+def test_prompt_permite_explicit_scene_obisnuite():
+    """Promptul spune explicit modelului că sala de curs / oamenii din spate sunt OK
+    și că „minor" cere AMBELE condiții."""
+    prompt = photo_moderation._PROMPT.lower()
+    assert "lecture hall" in prompt
+    assert "seen from behind" in prompt
+    assert "both conditions must be true" in prompt
+    assert "sexual_content" in prompt
+
+
+@pytest.mark.asyncio
+async def test_rekognition_ignores_kissing_and_non_explicit(monkeypatch):
+    """Familia „Non-Explicit Nudity … and Kissing" nu mai respinge: doar „Explicit"."""
+    _fake_rekognition(
+        monkeypatch,
+        labels=[
+            {"Name": "Non-Explicit Nudity of Intimate Parts and Kissing",
+             "ParentName": "", "Confidence": 96.0},
+            {"Name": "Kissing on the Lips",
+             "ParentName": "Non-Explicit Nudity of Intimate Parts and Kissing",
+             "Confidence": 96.0},
+        ],
+    )
+    verdict = await RekognitionPhotoModerator().check(_PNG_1X1, "image/jpeg")
+    assert verdict.allowed is True

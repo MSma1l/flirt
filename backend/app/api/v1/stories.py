@@ -149,9 +149,11 @@ async def _moderate_story_photo(content: bytes, content_type: str, user: User) -
     """Moderare NSFW ÎNAINTE de salvarea în storage (Apple Guideline 1.2).
 
     Același tipar ca la pozele de profil (`profiles._moderate_photo`): doar un verdict
-    EXPLICIT negativ respinge poza (422, mesaj în română). Dacă providerul cade,
-    `check` întoarce FAIL-OPEN (allowed=True, needs_review=True): logăm pentru review
-    uman și lăsăm story-ul să treacă — o pană externă nu blochează uploadul.
+    EXPLICIT negativ, sigur, respinge poza (422, mesaj în română). Dacă providerul
+    cade SAU verdictul e un caz limită (încredere mică, „minor" fără conținut
+    sexual), `check` întoarce allowed=True + needs_review=True: logăm pentru review
+    uman și lăsăm story-ul să treacă — nici o pană externă, nici un model prea
+    prudent nu blochează un story obișnuit.
     """
     verdict = await get_photo_moderator().check(content, content_type)
 
@@ -160,7 +162,7 @@ async def _moderate_story_photo(content: bytes, content_type: str, user: User) -
         # nu există un user „sistem") → LOG, ca la poze de profil.
         logger.warning(
             "photo_moderation: NEDECIS pentru story-ul user_id=%s (motiv=%s) — poza "
-            "a fost acceptată FAIL-OPEN și necesită REVIEW UMAN.",
+            "a fost acceptată fără verdict ferm și necesită REVIEW UMAN.",
             user.id,
             verdict.raw_label,
         )

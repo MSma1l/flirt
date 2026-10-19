@@ -558,3 +558,33 @@ async def test_reply_body_is_validated(client):
         headers=b_headers,
     )
     assert xss.status_code == 422, xss.text
+
+
+@pytest.mark.asyncio
+async def test_story_scena_obisnuita_marcata_minor_nu_e_respinsa(client, monkeypatch):
+    """Regresie (feedback testeri): modelul a etichetat ca „minor" o poză cu studenți
+    într-o sală de curs, fără nimic sexual. Story-ul trebuie să treacă (200)."""
+    from app.services import ai as ai_module
+    from app.services import photo_moderation
+
+    async def fake_vision(*args, **kwargs):
+        return ai_module.AIResult(
+            text='{"allowed": false, "category": "minor", "confidence": 0.9, '
+            '"sexual_content": false}',
+            error=None,
+        )
+
+    monkeypatch.setattr(photo_moderation.settings, "photo_moderation_provider", "openrouter")
+    monkeypatch.setattr(photo_moderation.settings, "ai_vision_model", "x")
+    monkeypatch.setattr(photo_moderation.ai, "complete_vision", fake_vision)
+    storage = _SpyStorage()
+    _patch_story_storage(monkeypatch, storage)
+
+    headers, _ = await _make_user(client, "lecture@example.com", "L")
+    resp = await client.post(
+        f"{API}/stories/media",
+        files={"file": ("x.png", _PNG_1X1, "image/png")},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert len(storage.saved) == 1
