@@ -45,7 +45,7 @@ async def test_documentul_e_public_in_toate_limbile(client, doc, lang):
     assert data["document"] == doc
     assert data["lang"] == lang
     assert data["version"] == LEGAL_DOCUMENTS[doc].version
-    assert data["effective_date"] == "2026-08-23"
+    assert data["effective_date"] == LEGAL_DOCUMENTS[doc].effective_date.isoformat()
     assert data["title"] and data["content"].startswith("# ")
     # Niciun placeholder nerandat nu ajunge la client.
     assert "{{" not in data["content"]
@@ -72,6 +72,69 @@ async def test_politica_acopera_legea_195_si_cnpdcp(client):
     assert "datepersonale.md" in lower
     assert "18" in content
     assert f"{settings.account_deletion_grace_days}" in content
+
+
+async def test_versiunea_2_a_politicii_si_acordului_cere_reacceptare():
+    """Politica și Acordul v2.0 (19.10.2026) — schimbare de fond, deci versiune nouă.
+
+    Termenii rămân 1.0, din 23.08.2026 (data aplicării Legii nr. 195/2024).
+    """
+    assert LEGAL_DOCUMENTS["privacy"].version == "2.0"
+    assert LEGAL_DOCUMENTS["consent"].version == "2.0"
+    assert LEGAL_DOCUMENTS["privacy"].effective_date.isoformat() == "2026-10-19"
+    assert LEGAL_DOCUMENTS["consent"].effective_date.isoformat() == "2026-10-19"
+    assert LEGAL_DOCUMENTS["terms"].effective_date.isoformat() == "2026-08-23"
+
+
+@pytest.mark.parametrize("lang", ["ro", "ru", "en"])
+async def test_politica_v2_contine_elementele_cerute_de_lege(client, lang):
+    """Informațiile de la art. 12–14 (Legea 195/2024), în toate limbile."""
+    data = (await client.get(f"{API}/legal/documents/privacy?lang={lang}")).json()
+    content = data["content"]
+    lower = content.lower()
+    assert "195/2024" in content
+    assert "367-369" in content  # Monitorul Oficial nr. 367-369 din 23.08.2024
+    assert "23" in content and "2026" in content
+    # CNPDCP: site, e-mail, adresă — plângerea (art. 74).
+    assert "datepersonale.md" in lower
+    assert "centru@datepersonale.md" in lower
+    assert "48" in content and "MD-2004" in content
+    # Breșe: 72 de ore (art. 33). Răspuns la cereri: o lună (+2).
+    assert "72" in content
+    # Termene din config (nu promitem altceva decât face codul).
+    for value in (
+        str(settings.account_deletion_grace_days),
+        str(settings.log_retention_days),
+        str(settings.rejected_payment_proof_retention_days),
+    ):
+        assert value in content
+    # Tabele markdown (scop / temei / termen).
+    assert "|---|" in content
+    # Profilare + furnizorii reali.
+    assert "openrouter" in lower
+    assert "telegram" in lower
+    assert data["version"] == "2.0"
+
+
+@pytest.mark.parametrize("lang", ["ro", "ru", "en"])
+async def test_acordul_v2_are_consimtaminte_separate(client, lang):
+    data = (await client.get(f"{API}/legal/documents/consent?lang={lang}")).json()
+    content = data["content"]
+    assert data["version"] == "2.0"
+    assert "195/2024" in content
+    assert "{{" not in content
+    # Cinci consimțăminte separate: general, date sensibile, AI, notificări, facial.
+    headings = [line for line in content.splitlines() if line.startswith("## ")]
+    numbered = [h for h in headings if h[3:4].isdigit()]
+    assert len(numbered) >= 5
+    assert "datepersonale.md" in content
+
+
+async def test_data_intrarii_in_vigoare_e_randata_pe_limba(client):
+    ro = (await client.get(f"{API}/legal/documents/privacy?lang=ro")).json()
+    en = (await client.get(f"{API}/legal/documents/privacy?lang=en")).json()
+    assert "19.10.2026" in ro["content"]
+    assert "19 October 2026" in en["content"]
 
 
 async def test_placeholderele_lipsa_sunt_marcate_vizibil(client, monkeypatch):

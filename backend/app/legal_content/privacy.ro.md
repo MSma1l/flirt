@@ -1,273 +1,296 @@
-# Politica de confidențialitate FLIRT
+# Politica de confidențialitate și de prelucrare a datelor cu caracter personal FLIRT
 
 Versiunea {{version}} · în vigoare din {{effective_date}}
 
 ## Pe scurt
 
-- Prelucrăm datele dumneavoastră pentru a vă oferi serviciul FLIRT: cont, profil, recomandări de profiluri, mesaje, evenimente Flirt Party și bilete.
-- Aplicația este destinată exclusiv persoanelor de **18 ani sau mai mult**.
-- **Nu vindem** datele dumneavoastră și nu le partajăm cu rețele de publicitate.
-- Verificarea prin selfie și funcțiile de asistență AI sunt **opționale** și funcționează doar dacă le activați.
-- Vă puteți **descărca datele** și vă puteți **șterge contul** direct din aplicație (Setări).
+- Prelucrăm datele dumneavoastră doar ca să funcționeze FLIRT: contul, profilul, recomandările de profiluri, conversațiile, evenimentele Flirt Party, biletele și programul de fidelitate Flirt Passport.
+- FLIRT este destinat exclusiv persoanelor de **18 ani sau mai mult**.
+- **Nu vindem** datele dumneavoastră. Nu le transmitem rețelelor de publicitate și nici brokerilor de date. Nu folosim instrumente de analiză sau trackere publicitare.
+- Serverele și fișierele media se află într-un centru de date din **Chișinău, Republica Moldova**.
+- Funcțiile AI sunt **dezactivate implicit**. Pornesc doar dacă le activați dumneavoastră.
+- Din aplicație vă puteți **descărca datele**, puteți **opri notificările** și vă puteți **șterge contul**.
 - Aveți dreptul să depuneți o plângere la Centrul Național pentru Protecția Datelor cu Caracter Personal ([www.datepersonale.md](https://www.datepersonale.md)).
 
-Această politică este întocmită în conformitate cu Legea nr. 195/2024 privind protecția datelor cu caracter personal a Republicii Moldova, aliniată la Regulamentul (UE) 2016/679 (GDPR). Pentru utilizatorii aflați în Uniunea Europeană sau în Spațiul Economic European, se aplică și GDPR în mod direct. Trimiterile la articole „GDPR” de mai jos indică temeiurile echivalente din Legea nr. 195/2024.
+## 1. Cadrul legal
 
-## 1. Cine este operatorul datelor
+Politica respectă **Legea nr. 195/2024 privind protecția datelor cu caracter personal**. Legea a fost adoptată la 25 iulie 2024, a fost publicată în Monitorul Oficial al Republicii Moldova nr. 367-369 din 23 august 2024 (art. 574) și se aplică de la **23 august 2026**. Ea înlocuiește Legea nr. 133/2011 și transpune Regulamentul (UE) 2016/679 (GDPR).
+
+Când scriem „art.” fără alte precizări, ne referim la articolele Legii nr. 195/2024. Dacă vă aflați în Uniunea Europeană sau în Spațiul Economic European, se aplică direct și GDPR. Articolele GDPR au aceeași numerotație.
+
+Politica vă oferă informațiile prevăzute la art. 12–14: cine prelucrează datele, ce date, în ce scop, în baza cărui temei, cui le transmitem, cât timp le păstrăm și ce drepturi aveți.
+
+## 2. Operatorul și datele de contact
 
 Operatorul datelor cu caracter personal prelucrate prin FLIRT este:
 
-- **Denumire:** {{operator_name}}
-- **IDNO:** {{operator_idno}}
-- **Adresă:** {{operator_address}}
-- **E-mail de contact:** [{{contact_email}}](mailto:{{contact_email}})
-- **Responsabil cu protecția datelor / persoană de contact pentru date personale:** {{dpo_contact}}
+| | |
+|---|---|
+| **Denumire** | {{operator_name}} |
+| **IDNO** | {{operator_idno}} |
+| **Adresă** | {{operator_address}} |
+| **E-mail pentru protecția datelor** | [{{contact_email}}](mailto:{{contact_email}}) |
+| **Responsabil cu protecția datelor (art. 37–39) / persoană de contact** | {{dpo_contact}} |
 
-Pentru orice întrebare privind datele dumneavoastră sau pentru exercitarea drepturilor, ne puteți scrie la adresa de mai sus.
+Ne puteți scrie la această adresă pentru orice întrebare despre datele dumneavoastră sau pentru a vă exercita drepturile.
 
-## 2. La ce se aplică această politică
+## 3. La ce se aplică
 
 Politica se aplică prelucrării datelor prin:
 
 - aplicația FLIRT ca Telegram Mini App (miniapp.flrt.md) și botul Telegram @flrt_party_bot;
-- aplicația mobilă FLIRT (iOS și Android);
-- serverele și interfața de programare (API) care deservesc aceste aplicații;
-- evenimentele Flirt Party organizate de operator, inclusiv vânzarea biletelor și accesul la intrare.
+- aplicația mobilă FLIRT (iOS și Android), acolo unde este disponibilă;
+- serverele și interfața de programare (API, api.flrt.md) care deservesc aceste aplicații;
+- evenimentele Flirt Party organizate de operator: vânzarea biletelor, accesul la intrare și programul Flirt Passport.
 
-Politica nu se aplică serviciilor terților (de exemplu Telegram, magazinele de aplicații sau banca dumneavoastră), care au propriile politici de confidențialitate.
+Politica nu acoperă serviciile terților, de exemplu Telegram, magazinele de aplicații sau banca dumneavoastră. Acestea au propriile politici de confidențialitate.
 
-## 3. Ce date prelucrăm
+### Termeni folosiți
 
-### 3.1. Date de cont și autentificare
+| Termen | Ce înseamnă |
+|---|---|
+| **Date cu caracter personal** | orice informație despre o persoană fizică identificată sau identificabilă |
+| **Prelucrare** | orice operațiune cu date: colectare, stocare, afișare, transmitere, ștergere etc. |
+| **Operator** | cel care stabilește scopurile și mijloacele prelucrării (noi) |
+| **Persoană împuternicită** | un furnizor care prelucrează date în numele și din instrucțiunile operatorului |
+| **Categorii speciale de date** | date sensibile, de exemplu cele care dezvăluie orientarea sexuală sau datele biometrice (art. 9) |
+| **Profilare (crearea de profiluri)** | evaluarea automată a unor aspecte personale, de exemplu compatibilitatea cu alte persoane |
 
-- identificatorul intern al contului, data creării și momentul ultimei activități;
-- adresa de e-mail și parola (stocată exclusiv sub formă de hash criptografic Argon2 — nu cunoaștem parola), dacă folosiți autentificarea cu e-mail;
-- la autentificarea prin Telegram: identificatorul de utilizator Telegram (stocat ca identitate a contului); la autentificare Telegram ne transmite și prenumele, numele de utilizator, limba și adresa fotografiei de profil Telegram, folosite doar pentru identificare și precompletare; pentru aceste conturi se generează o adresă de e-mail tehnică, care nu vă aparține și nu este folosită pentru comunicare;
-- numărul de telefon, dacă folosiți autentificarea prin cod SMS (funcție momentan dezactivată);
-- identificatorul de la Google sau Apple, dacă folosiți autentificarea prin aceste servicii (funcții momentan dezactivate);
-- starea contului: rol, eventuala suspendare și motivul ei, cererea de ștergere și data acesteia.
+## 4. Ce date prelucrăm și de unde le avem
 
-### 3.2. Date de profil
+| Categorie | Ce date | Sursa |
+|---|---|---|
+| **Cont Telegram** | identificatorul de utilizator Telegram și limba interfeței Telegram (ro/ru/en). Pentru aceste conturi se generează și o adresă de e-mail tehnică, care nu vă aparține și nu e folosită pentru comunicare. | Telegram, la deschiderea Mini App-ului |
+| **Date Telegram afișate doar pe dispozitiv** | prenumele, numele, numele de utilizator și fotografia de profil Telegram. Mini App-ul le folosește pe telefonul dumneavoastră: completează automat numele în profil și în comanda de bilet și afișează fotografia pe ecranul de bun venit. **Serverul nu le stochează**. Fotografia Telegram **nu devine** fotografie de profil FLIRT. | Telegram |
+| **Alte metode de autentificare** (doar aplicația mobilă, când sunt activate) | e-mailul și parola (parola e stocată numai ca hash Argon2), numărul de telefon pentru codul SMS, identificatorul Google sau Apple | dumneavoastră / Google / Apple |
+| **Starea contului** | rolul, data creării, ultima activitate, eventuala suspendare și motivul ei, cererea de ștergere | sistemul |
+| **Profil** | numele afișat, data nașterii (altora le arătăm doar vârsta), genul, înălțimea, naționalitatea, limbile vorbite, descrierea (max. 500 de caractere), interesele, statutul de întâlniri (ce căutați), insigna „verificat” | dumneavoastră |
+| **Fotografii și povești** | 2–9 fotografii de profil; poveștile (stories), cu fotografie sau video și descriere | dumneavoastră |
+| **Localizare** | orașul (obligatoriu), strada (opțional) și coordonatele obținute din ele prin geocodare. **Nu folosim localizarea GPS a dispozitivului** în Mini App. | dumneavoastră / serviciul de geocodare |
+| **Preferințe** | genurile care vă interesează, intervalul de vârstă, raza de căutare, ascunderea profilului, setările de notificare, activarea funcțiilor AI | dumneavoastră |
+| **Testul de umor** | aprecierile dumneavoastră la glume („amuzant” / „nu”) și profilul de umor calculat din ele (7 tipuri de umor) | dumneavoastră / calcul automat |
+| **Activitate socială** | aprecierile și respingerile, super-aprecierile (cu mesajul atașat, dacă există), potrivirile (match-urile), favoritele, blocările | dumneavoastră |
+| **Conversații** | mesajele text, fotografiile, video-urile și mesajele vocale trimise; reacțiile; starea de citire; metadatele fișierelor (dimensiune, durată, rezoluție) | dumneavoastră și interlocutorii |
+| **Raportări** | raportările trimise de dumneavoastră sau despre dumneavoastră: categorie, notă, referință la conversație, stare | utilizatori / moderatori |
+| **Evenimente și fidelitate** | participarea la evenimente („merg”), biletul (cod afișat ca QR), scanarea la intrare, ștampilele Flirt Passport, nivelul de fidelitate și reducerile, codurile de invitație folosite | dumneavoastră / personalul de la intrare |
+| **Comenzi de bilete** | numele complet, telefonul, e-mailul, mesajul dumneavoastră, numărul de bilete, suma, metoda de plată (plată instant MIA sau transfer bancar), referința și descrierea plății, **dovada plății** (imagine sau PDF, care poate conține date bancare), starea comenzii, notele administratorului, momentele deciziei și ale intrării | dumneavoastră / administratori |
+| **Abonamente** (aplicația mobilă, când sunt activate) | planul, identificatorii tranzacției, data expirării, chitanța de la App Store / Google Play sau de la procesatorul de plăți | magazinul de aplicații / procesatorul de plăți |
+| **Notificări** | permisiunea acordată botului de a vă scrie în Telegram, cele patru comutatoare de notificare; în aplicația mobilă, tokenul de notificări push și platforma | dumneavoastră / Telegram |
+| **Date tehnice** | adresa IP (în jurnalele de acces doar trunchiată), tipul browserului/aplicației, identificatorul cererii, jurnalele de erori, contoarele temporare de limitare a abuzurilor | dispozitivul dumneavoastră |
+| **Evidențe** | consimțămintele acordate (document, versiune, dată și oră, IP, agent utilizator); jurnalul acțiunilor administrative ale echipei | sistemul |
 
-- numele afișat, data nașterii (celorlalți utilizatori le afișăm doar vârsta), genul, înălțimea;
-- orașul, opțional strada, naționalitatea, limbile vorbite;
-- coordonatele geografice aproximative, obținute din oraș/stradă prin geocodare sau din dispozitiv, folosite pentru calculul distanței; celorlalți utilizatori le afișăm doar distanța aproximativă, niciodată coordonatele sau strada;
-- descrierea (până la 500 de caractere), interesele, statutul de întâlniri (ce căutați);
-- răspunsurile la testul de umor și profilul de umor rezultat;
-- fotografiile de profil (între 2 și 9) și insigna „verificat”.
+**Nu primim și nu stocăm datele cardului dumneavoastră bancar.** Plata biletelor se face din aplicația băncii dumneavoastră (MIA sau transfer). Abonamentele din aplicația mobilă se plătesc prin magazinul de aplicații.
 
-### 3.3. Setări și preferințe
+**Nu vă cerem** date despre sănătate, religie, convingeri politice, origine etnică sau antecedente penale.
 
-- preferințele de căutare: genurile care vă interesează, intervalul de vârstă, raza de căutare, regiunea;
-- preferințele de notificare, tema, opțiunea de ascundere a profilului;
-- opțiunea de activare a funcțiilor AI (dezactivată implicit).
+## 5. Scopurile, temeiurile legale și termenele
 
-### 3.4. Verificarea facială (opțională)
+Prelucrăm datele numai dacă avem un temei prevăzut la art. 6 (pentru categoriile speciale, și art. 9):
 
-Dacă alegeți să vă verificați profilul, faceți un selfie care este comparat automat cu fotografiile dumneavoastră de profil. **Selfie-ul nu este stocat**: este procesat doar pe durata comparării. Păstrăm numai rezultatul (profil verificat sau nu). Această prelucrare are loc doar cu consimțământul dumneavoastră explicit, separat (vezi secțiunea 5).
+| Scop | Date folosite | Temei legal | Cât păstrăm |
+|---|---|---|---|
+| Crearea și administrarea contului, autentificarea | cont, stare cont, date tehnice | executarea contractului (Termenii de utilizare), art. 6 | cât există contul (vezi secțiunea 12) |
+| Afișarea profilului, recomandări, aprecieri, potriviri | profil, fotografii, localizare, preferințe, test de umor, activitate socială | executarea contractului, art. 6 | cât există contul |
+| Recomandări după gen și genurile care vă interesează (pot dezvălui orientarea sexuală) | gen, genurile care vă interesează, statut de întâlniri | **consimțământ explicit**, art. 6 și art. 9 (vezi secțiunea 6) | cât există contul sau până vă retrageți consimțământul |
+| Conversații și povești | conversații, povești | executarea contractului, art. 6 | până la ștergerea mesajului / poveștii sau a contului |
+| Evenimente, bilete, intrare, Flirt Passport | evenimente, comenzi, fidelitate | executarea contractului, art. 6 | vezi secțiunea 12 |
+| Evidența contabilă a vânzării biletelor | comenzi (anonimizate după ștergerea contului), dovezi de plată | obligație legală (Legea contabilității și raportării financiare nr. 287/2017), art. 6 | dovezile: {{proof_retention_years}} ani; evidența anonimizată: conform legii |
+| Notificări Telegram despre mesaje, aprecieri, potriviri și povești | identificator Telegram, prenumele expeditorului, previzualizarea mesajului | consimțământ (permisiunea dată botului în Telegram) și executarea contractului, art. 6; le puteți opri oricând | nu le stocăm după trimitere |
+| Funcții AI (sugestii de mesaje, explicația „chimiei”) | vezi secțiunea 7 | **consimțământ** (activare în Setări), art. 6 | nu stocăm cererile; memorie temporară de 5 minute |
+| Verificarea facială (momentan indisponibilă) | selfie, prima fotografie de profil | **consimțământ explicit**, art. 9 | selfie-ul nu se stochează; se păstrează doar rezultatul |
+| Siguranța comunității: moderarea fotografiilor, mascarea datelor de contact, raportări, blocări, suspendări | fotografii, mesaje, raportări, stare cont | interes legitim, art. 6 | raportările se păstrează și după ștergerea contului |
+| Securitatea serviciului: jurnale, limitarea abuzurilor, prevenirea fraudei | date tehnice | interes legitim, art. 6 | jurnalele: max. {{log_retention_days}} de zile |
+| Anunțuri proprii între profiluri (de exemplu, promovarea evenimentelor) | genul și vârsta, pentru alegerea anunțului potrivit | interes legitim, art. 6 | nu se creează un istoric pe utilizator |
+| Copii de siguranță (backup) | toate datele din baza de date și fișierele media | interes legitim, art. 6 | {{backup_days}} zile |
+| Evidența consimțămintelor și a cererilor privind drepturile | evidențe | obligație legală (obligația de a demonstra consimțământul), art. 6 | pe durata contului; după ștergere, fără IP și agent utilizator |
+| Răspunsul la cererile legale ale autorităților | datele cerute de lege | obligație legală, art. 6 | cât cere legea |
+| Apărarea unor drepturi în justiție | raportări, evidențe | interes legitim, art. 6 | până la expirarea termenelor de prescripție |
 
-### 3.5. Activitate socială și conținut
+**Interesul nostru legitim** este funcționarea sigură și corectă a serviciului, protecția utilizatorilor față de abuzuri și fraudă și promovarea propriilor evenimente. Ne puteți cere oricând evaluarea făcută pentru acest temei. Vă puteți opune acestor prelucrări (secțiunea 13).
 
-- aprecierile, respingerile, super-aprecierile (inclusiv eventualul mesaj trimis odată cu ele), potrivirile (match-urile), favoritele și blocările;
-- mesajele din conversații, reacțiile, starea de citire și fișierele atașate (fotografii, video, mesaje vocale), împreună cu dimensiunea, durata și rezoluția lor;
-- poveștile (stories): fotografii sau video cu descriere;
-- raportările pe care le trimiteți sau care vă privesc (categorie, notă, referință la conversație).
+**Fără datele obligatorii** (vârstă, gen, oraș, fotografii) nu putem crea profilul și nu vă putem recomanda persoane. Datele opționale (strada, înălțimea, descrierea, interesele etc.) le completați doar dacă vreți.
 
-### 3.6. Evenimente, bilete și plăți
+## 6. Categorii speciale de date (date sensibile)
 
-- participarea la evenimente („merg”), ștampilele Flirt Passport, nivelul de fidelitate, reducerile și invitațiile folosite;
-- biletul (cod QR) și momentul scanării lui la intrare;
-- comenzile de bilete achitate prin transfer bancar sau plată instant MIA: numele complet, telefonul, e-mailul, mesajul dumneavoastră, numărul de bilete, suma, referința plății, imaginea dovezii de plată (care poate conține date bancare), starea comenzii, notele administratorului și momentele deciziei;
-- abonamentele și achizițiile din aplicația mobilă (plan, identificatori de tranzacție, data expirării), primite de la App Store sau Google Play.
+**Orientarea sexuală.** Genul dumneavoastră, genurile care vă interesează și statutul de întâlniri pot dezvălui indirect orientarea sexuală sau aspecte ale vieții intime. Acestea sunt categorii speciale de date (art. 9). Le prelucrăm **numai pe baza consimțământului dumneavoastră explicit**, exprimat prin Acordul privind prelucrarea datelor cu caracter personal la intrarea în aplicație, și **numai** ca să vă recomandăm profiluri potrivite. Altor utilizatori nu le afișăm genurile care vă interesează. Nu folosim aceste date pentru publicitate.
 
-Nu primim și nu stocăm datele cardului dumneavoastră bancar. Plățile se fac prin banca dumneavoastră sau prin magazinul de aplicații.
+Puteți modifica oricând aceste preferințe în profil. Vă puteți retrage consimțământul prin ștergerea contului, pentru că fără aceste date nu vă putem recomanda persoane.
 
-### 3.7. Dispozitive și notificări
+**Date biometrice.** Verificarea facială compară automat un selfie cu fotografia de profil, ca să confirme că profilul vă aparține. Aceasta este o prelucrare de date biometrice. Are loc numai cu un consimțământ explicit, separat și opțional. **Selfie-ul nu se stochează**. Păstrăm doar rezultatul (profil verificat sau nu). **În prezent funcția este indisponibilă.** Vă vom cere consimțământul în momentul în care o veți folosi.
 
-- tokenul de notificări push și tipul platformei (când notificările push sunt activate);
-- mesajele de notificare trimise prin botul Telegram @flrt_party_bot.
+**Ce publicați dumneavoastră.** Vă rugăm să nu includeți date sensibile despre dumneavoastră sau despre alții în descriere, povești sau mesaje (de exemplu despre sănătate sau religie). Dacă o faceți, acestea devin vizibile persoanelor cărora le sunt adresate.
 
-### 3.8. Date tehnice
+## 7. Funcții opționale
 
-- adresa IP, agentul utilizator (tipul browserului/aplicației), identificatorul cererii, jurnalele de acces și de aplicație;
-- contoare temporare pentru limitarea abuzurilor (rate limiting).
+| Funcție | Implicit | Ce date folosește | Cum o controlați |
+|---|---|---|---|
+| **Sugestii de mesaje AI** | **oprită** | ultimele cel mult 8 mesaje din conversație, fiecare trunchiat la 400 de caractere și marcat doar „eu” / „interlocutor”. **Fără nume, identificatori, date sau fotografii**. Datele de contact sunt mascate înainte de trimitere. | Setări → funcții AI |
+| **Explicația „chimiei” (AI)** | **oprită** | scorul de compatibilitate, interesele, limbile și statutele comune, distanța aproximativă în cuvinte (de exemplu „la aproximativ 12 km”). Fără nume și fotografii. | Setări → funcții AI |
+| **Notificări prin botul Telegram** | botul vă scrie numai după ce îi permiteți acest lucru în Telegram | prenumele persoanei care v-a scris sau v-a apreciat și o previzualizare de cel mult 80 de caractere a mesajului (cu datele de contact mascate), transmise prin serverele Telegram | Setări → notificări: patru comutatoare (mesaje, aprecieri, potriviri, povești) |
+| **Notificări push** (aplicația mobilă) | doar cu permisiunea telefonului | tokenul dispozitivului | setările telefonului / aplicației |
+| **Verificarea facială** | indisponibilă | selfie, prima fotografie de profil | consimțământ separat, retras oricând din „Confidențialitate și date” |
 
-### 3.9. Funcții AI (opționale)
+Funcțiile AI folosesc un serviciu extern (OpenRouter, care transmite cererea unui model AI al Anthropic, SUA). Cererile nu sunt jurnalizate de noi: păstrăm doar tipul funcției, reușita și durata. Răspunsurile sunt ținute temporar în memorie 5 minute. Dacă dezactivați funcțiile AI, nu mai trimitem nimic furnizorului.
 
-Dacă activați funcțiile AI în Setări: sugestiile de mesaje folosesc ultimele câteva mesaje din conversație, trunchiate, fără nume și fără identificatori; „scorul de chimie” folosește date de profil ale ambilor utilizatori (interese, statut, limbi și altele similare).
+## 8. Profilare și decizii automatizate
 
-### 3.10. Evidențe
+Folosim următoarele prelucrări automate (art. 22):
 
-- evidența consimțămintelor: documentul acceptat, versiunea, data și ora, adresa IP și agentul utilizator;
-- jurnalul acțiunilor administrative efectuate de echipa noastră.
+**Ordinea recomandărilor (profilare).** Pentru fiecare profil potrivit calculăm un scor de compatibilitate din:
 
-## 4. Scopurile și temeiurile legale
+- interesele comune (cea mai mare pondere);
+- asemănarea profilurilor de umor;
+- statutele de întâlniri comune;
+- distanță (cu cât mai aproape, cu atât mai mult);
+- limbile comune;
+- activitatea recentă în aplicație și insigna „verificat”.
 
-### 4.1. Executarea contractului (art. 6 alin. (1) lit. (b) GDPR)
+Vă arătăm întâi profilurile care corespund preferințelor dumneavoastră (gen, vârstă, rază), în ordinea scorului. Nu arătăm conturile inactive de peste 30 de zile. Când nu mai există astfel de profiluri, putem lărgi treptat căutarea: întâi fără limitele de vârstă și rază, apoi cu profiluri respinse de dumneavoastră acum cel puțin 24 de ore („a doua șansă”), apoi cu alte profiluri. Scorul nu este afișat altor utilizatori și nu este vândut nimănui.
 
-- crearea și administrarea contului, autentificarea;
-- afișarea profilului dumneavoastră și a altor profiluri, recomandările, aprecierile, potrivirile și conversațiile;
-- poveștile, favoritele, blocările;
-- evenimentele Flirt Party, comenzile de bilete, emiterea și verificarea biletelor, programul de fidelitate;
-- abonamentele și funcțiile premium;
-- asistența pentru utilizatori.
+**Moderarea automată a fotografiilor.** Fotografiile de profil și poveștile pot fi verificate automat (de un model AI sau, la nevoie, de o verificare locală) pentru nuditate sau conținut nepermis. Ele pot fi respinse înainte de publicare. Cazurile incerte sunt lăsate pentru verificare umană.
 
-### 4.2. Consimțământ (art. 6 alin. (1) lit. (a) și art. 9 alin. (2) lit. (a) GDPR)
+**Mascarea datelor de contact.** Numerele de telefon, adresele de e-mail, linkurile și conturile de rețele sociale din mesaje sunt înlocuite automat cu „****”, ca protecție împotriva escrocheriilor. Textul original nu este păstrat.
 
-- prelucrarea datelor din care poate rezulta orientarea sexuală (vezi secțiunea 5);
-- verificarea facială prin selfie;
-- funcțiile AI (sugestii de mesaje, scor de chimie);
-- notificările push și accesul la locația dispozitivului, acolo unde sunt cerute prin permisiunile telefonului.
+**Ascunderea automată.** Un cont raportat de mai mulți utilizatori diferiți (în prezent, 3) poate fi ascuns automat până la verificarea de către un moderator.
 
-Vă puteți retrage consimțământul oricând, fără a afecta legalitatea prelucrării efectuate înainte de retragere.
+Aceste prelucrări nu produc efecte juridice asupra dumneavoastră. Suspendarea definitivă a unui cont este decisă întotdeauna de un moderator uman. Aveți dreptul să cereți intervenție umană, să vă exprimați punctul de vedere și să contestați o decizie automată, scriindu-ne la [{{contact_email}}](mailto:{{contact_email}}). Vă puteți opune profilării folosite pentru ordonarea recomandărilor. În acest caz recomandările pot deveni mai puțin relevante.
 
-### 4.3. Interes legitim (art. 6 alin. (1) lit. (f) GDPR)
+## 9. Vârsta minimă
 
-- siguranța comunității: moderarea conținutului, filtrarea automată a fotografiilor, mascarea datelor de contact în mesaje, tratarea raportărilor, suspendarea conturilor abuzive, prevenirea fraudei și a spam-ului;
-- securitatea serviciului: jurnale tehnice, limitarea abuzurilor, protecția împotriva atacurilor;
-- ordonarea recomandărilor pentru a vă arăta profiluri relevante;
-- păstrarea rapoartelor de moderare după ștergerea contului, pentru a preveni revenirea abuzatorilor și pentru constatarea, exercitarea sau apărarea unor drepturi în justiție;
-- copiile de siguranță (backup) pentru restabilirea serviciului în caz de incident.
+FLIRT este destinat exclusiv persoanelor de cel puțin **18 ani**. Confirmați vârsta la intrarea în aplicație, iar data nașterii este verificată la crearea profilului. Nu colectăm cu bună știință date despre minori. Dacă aflăm că un cont aparține unei persoane sub 18 ani, îl suspendăm și ștergem datele. Ne puteți semnala astfel de cazuri la [{{contact_email}}](mailto:{{contact_email}}).
 
-Interesul nostru legitim este funcționarea sigură și corectă a serviciului și protecția utilizatorilor. Vă puteți opune acestor prelucrări (secțiunea 11).
+## 10. Cui transmitem datele
 
-### 4.4. Obligație legală (art. 6 alin. (1) lit. (c) GDPR)
+**Altor utilizatori.** Alți utilizatori văd profilul dumneavoastră public: numele, vârsta, fotografiile, orașul, distanța aproximativă (în kilometri întregi), interesele, descrierea, insigna „verificat” și poveștile. Mesajele sunt vizibile doar participanților la conversație. Nu afișăm e-mailul, telefonul, data nașterii, strada, coordonatele și genurile care vă interesează.
 
-- respectarea vârstei minime de 18 ani;
-- păstrarea documentelor privind plățile și vânzarea biletelor conform legislației contabile și fiscale;
-- răspunsul la solicitările legale ale autorităților competente;
-- evidența consimțămintelor și a cererilor privind drepturile dumneavoastră.
+**Personalului de la intrarea la evenimente.** La scanarea biletului, personalul vede prenumele, vârsta și prima fotografie de profil a titularului, ca să confirme identitatea.
 
-## 5. Categorii speciale de date
+**Persoane împuternicite** (prelucrează date în numele nostru, conform art. 28):
 
-**Orientarea sexuală.** Genul dumneavoastră, genurile care vă interesează și statutul de întâlniri pot dezvălui indirect orientarea sexuală, care este o categorie specială de date. Prelucrăm aceste date doar pe baza consimțământului dumneavoastră explicit (art. 9 alin. (2) lit. (a) GDPR), exprimat la intrarea în aplicație, și numai pentru a vă recomanda profiluri potrivite.
-
-**Date biometrice.** Verificarea facială compară trăsăturile feței din selfie cu fotografiile de profil. Aceasta este o prelucrare de date biometrice în scopul identificării, realizată numai cu consimțământul dumneavoastră explicit și separat. Selfie-ul nu este stocat. Refuzul nu are nicio consecință, cu excepția faptului că profilul nu va primi insigna „verificat”.
-
-**Alte date sensibile.** Nu vă cerem date despre sănătate, religie, convingeri politice, origine etnică sau antecedente penale. Vă rugăm să nu includeți astfel de informații în descriere, povești sau mesaje. Dacă o faceți, ele devin vizibile persoanelor cărora le sunt adresate.
-
-## 6. Decizii automatizate și profilare
-
-Folosim următoarele prelucrări automate:
-
-- **Ordinea recomandărilor:** un algoritm calculează un scor de compatibilitate pe baza intereselor, statutului de întâlniri, testului de umor, distanței, limbilor și activității în aplicație, iar profilurile sunt afișate în ordinea acestui scor, în limita preferințelor dumneavoastră.
-- **Ascunderea automată:** un cont raportat de mai mulți utilizatori diferiți poate fi ascuns automat până la verificarea de către un moderator.
-- **Moderarea automată a fotografiilor:** fotografiile încărcate sunt verificate automat pentru nuditate sau conținut nepermis și pot fi respinse.
-- **Mascarea datelor de contact:** numerele de telefon și alte date de contact din mesaje sunt mascate automat, ca protecție împotriva escrocheriilor.
-
-Aceste prelucrări nu produc efecte juridice asupra dumneavoastră. Suspendarea definitivă a unui cont este decisă de un moderator uman. Puteți solicita oricând intervenție umană, vă puteți exprima punctul de vedere și puteți contesta o decizie automată, scriindu-ne la [{{contact_email}}](mailto:{{contact_email}}). Vă puteți opune profilării folosite pentru ordonarea recomandărilor; în acest caz recomandările pot deveni mai puțin relevante.
-
-## 7. Vârsta minimă
-
-FLIRT este destinat exclusiv persoanelor cu vârsta de cel puțin 18 ani. Data nașterii este verificată la crearea profilului. Nu colectăm cu bună știință date despre minori. Dacă aflăm că un cont aparține unei persoane sub 18 ani, îl suspendăm și ștergem datele. Ne puteți semnala astfel de cazuri la [{{contact_email}}](mailto:{{contact_email}}).
-
-## 8. Cui transmitem datele
-
-**Altor utilizatori.** Profilul dumneavoastră public este vizibil altor utilizatori: numele, vârsta, fotografiile, orașul, distanța aproximativă, interesele, descrierea, insigna „verificat” și poveștile. Mesajele sunt vizibile doar participanților la conversație. Nu afișăm e-mailul, telefonul, data nașterii, strada sau coordonatele.
-
-**Persoane împuternicite (furnizori care prelucrează date în numele nostru):**
-
-- furnizorul de găzduire (server virtual într-un centru de date), unde rulează serverele și unde sunt stocate fișierele media;
-- Telegram (Telegram FZ-LLC / Telegram Messenger Inc.) — autentificarea, rularea Mini App-ului și notificările prin bot;
-- OpenRouter, Inc. și furnizorul modelului AI (Anthropic) — funcțiile AI și moderarea automată a fotografiilor, **când sunt activate**;
-- OpenStreetMap Foundation (serviciul Nominatim) — transformarea orașului/străzii în coordonate; se transmite doar textul adresei, fără identificatorul dumneavoastră;
-- Amazon Web Services — verificarea facială (Rekognition) și stocarea fișierelor (S3), **când sunt activate**;
-- Apple și Google — achizițiile din aplicația mobilă și notificările push, **când sunt activate**;
-- Expo și Firebase Cloud Messaging — livrarea notificărilor push, **când sunt activate**;
-- Twilio — trimiterea codurilor SMS, **când autentificarea prin telefon este activată**.
+| Destinatar | Rol | Ce primește | Unde | Când |
+|---|---|---|---|---|
+| Furnizorul de găzduire (centru de date din Chișinău) | serverele, baza de date, fișierele media, copiile de siguranță | toate datele stocate (criptate în tranzit) | Republica Moldova | permanent |
+| Telegram (Telegram FZ-LLC și afiliații) | autentificarea, rularea Mini App-ului, notificările prin bot | identificatorul Telegram, textul notificărilor | infrastructură globală | permanent |
+| OpenRouter, Inc. și Anthropic PBC | funcțiile AI; moderarea automată a fotografiilor | fragmentele de conversație și datele din secțiunea 7; fotografia încărcată, fără identificatorul dumneavoastră | SUA | doar când funcțiile sunt activate |
+| OpenStreetMap Foundation (Nominatim) | transformarea orașului / străzii în coordonate | doar textul „stradă, oraș”, fără identificatorul dumneavoastră | UE / Regatul Unit | la salvarea profilului |
+| Amazon Web Services | verificarea facială (Rekognition); stocare opțională (S3) | selfie, fotografia de profil | UE / SUA | doar când sunt activate (în prezent nu) |
+| Apple, Google, Expo, Firebase Cloud Messaging, Twilio, procesatorul de plăți | autentificare, abonamente, notificări push, coduri SMS (aplicația mobilă) | datele strict necesare serviciului respectiv | UE / SUA | doar în aplicația mobilă, când sunt activate |
 
 Furnizorii prelucrează datele numai pe baza instrucțiunilor noastre și sunt obligați contractual să le protejeze.
 
-**Alți destinatari.** Băncile și instituțiile de plată prin care efectuați plata (acestea acționează ca operatori independenți). Autoritățile publice, instanțele și organele de drept, atunci când legea ne obligă sau pentru protecția vieții și siguranței unei persoane. Consultanții noștri juridici și contabili, sub obligație de confidențialitate.
+**Resurse încărcate direct de Mini App.** Ca orice pagină web, Mini App-ul încarcă câteva resurse de pe servere terțe. Acestea primesc adresa IP a dispozitivului și tipul browserului:
 
-**Nu vindem datele** și nu le transmitem rețelelor de publicitate sau brokerilor de date.
+- scriptul Telegram Web App (telegram.org);
+- fonturile Google Fonts (Google);
+- hărțile OpenStreetMap de pe pagina evenimentelor.
 
-## 9. Transferuri internaționale
+Nu le transmitem alte date despre dumneavoastră.
 
-Unii furnizori prelucrează date în afara Republicii Moldova:
+**Operatori independenți.** Banca sau instituția de plată prin care plătiți biletul. Autoritățile publice, instanțele și organele de drept, atunci când legea ne obligă sau pentru protecția vieții și siguranței unei persoane. Consultanții noștri juridici și contabili, care au obligația de confidențialitate.
 
-- Telegram operează o infrastructură globală, inclusiv în afara Uniunii Europene;
-- OpenRouter și Anthropic prelucrează date în Statele Unite ale Americii, când funcțiile AI sau moderarea automată a fotografiilor sunt activate;
-- Amazon Web Services, Apple, Google, Expo, Firebase și Twilio pot prelucra date în UE sau în SUA, când serviciile lor sunt activate.
+**Nu vindem datele** și nu le transmitem rețelelor de publicitate sau brokerilor de date. Anunțurile din aplicație sunt ale noastre și sunt alese pe server. Nu le transmitem nimic despre dumneavoastră celor care plasează anunțurile.
 
-Transferurile se fac numai cu garanțiile prevăzute de Legea nr. 195/2024 și de art. 44–49 GDPR: către state sau organizații care asigură un nivel adecvat de protecție (inclusiv, după caz, cadrul UE–SUA de confidențialitate a datelor), pe baza clauzelor contractuale standard sau, în lipsa acestora, în situațiile derogatorii permise de lege. Aplicăm și minimizarea datelor: către furnizorul AI se transmit doar ultimele câteva mesaje, trunchiate, fără nume și identificatori, iar pentru moderare se transmite doar fotografia încărcată. Puteți solicita informații despre garanțiile aplicate la [{{contact_email}}](mailto:{{contact_email}}).
+## 11. Transferuri în afara Republicii Moldova
 
-## 10. Cât timp păstrăm datele
+Datele sunt stocate în Republica Moldova. Unii furnizori din secțiunea 10 le prelucrează însă în alte state: Telegram (infrastructură globală), OpenRouter și Anthropic (SUA), iar Amazon Web Services, Apple, Google, Expo, Firebase și Twilio (UE sau SUA), atunci când serviciile lor sunt folosite.
 
-- **Contul și profilul:** cât timp contul este activ.
-- **După cererea de ștergere:** profilul este ascuns imediat și toate sesiunile sunt închise. După o perioadă de grație de **{{grace_days}} zile**, în care puteți anula cererea, se șterg sau se anonimizează automat și definitiv: profilul, fotografiile, poveștile, conversațiile și mesajele, aprecierile, potrivirile, favoritele, blocările, setările, sesiunile, dispozitivele de notificare, biletul, participările la evenimente, ștampilele Flirt Passport și abonamentul, inclusiv fișierele aferente (fotografii, povești, atașamente din conversații). Comenzile de bilete nu se șterg, ci se anonimizează (vezi mai jos).
-- **Copiile de siguranță (backup):** bazele de date și fișierele media sunt copiate periodic, iar copiile se păstrează **{{backup_days}} zile**; datele șterse dispar din copii în cel mult {{backup_days}} zile.
-- **Rapoartele de moderare:** se păstrează și după ștergerea contului, legate de contul anonimizat, pentru prevenirea abuzurilor și apărarea unor drepturi în justiție.
-- **Poveștile:** sunt vizibile altora 24 de ore, apoi rămân arhivate în contul dumneavoastră până la ștergerea contului; le puteți șterge oricând.
-- **Mesajele:** până la ștergerea contului dumneavoastră sau al interlocutorului.
-- **Selfie-ul de verificare:** nu este stocat; se păstrează doar rezultatul verificării.
-- **Comenzile de bilete:** la ștergerea contului, comenzile se anonimizează: se șterg numele, telefonul, e-mailul, mesajele, notele și descrierea plății. Suma, moneda, numărul de bilete, referința de plată, evenimentul, datele și starea comenzii se păstrează ca evidență contabilă, conform Legii nr. 287/2017 a contabilității și raportării financiare; ele nu vă mai identifică.
-- **Dovezile de plată (imaginile chitanțelor):** se păstrează **{{proof_retention_years}} ani** de la data comenzii, ca documente justificative contabile, apoi se șterg automat. Dovezile comenzilor respinse sau anulate nu sunt documente contabile: se șterg la **{{rejected_proof_days}} de zile** de la decizie sau imediat la ștergerea contului.
-- **Evidența consimțămintelor:** pe durata contului, iar după ștergere se păstrează ca probă, fără adresa IP și agentul utilizator.
-- **Jurnalele tehnice:** jurnalele de acces înregistrează adresa IP doar trunchiat (de exemplu 1.2.3.0) și nu conțin parametrii cererilor. Jurnalele sunt rotite automat după mărime și șterse după cel mult **{{log_retention_days}} de zile**; jurnalele de erori (de exemplu tentativele de atac blocate) pot conține adresa IP completă și respectă aceeași limită.
-- **Contoarele de limitare a abuzurilor:** de la câteva minute la câteva ore.
-- **Cererile către furnizorul AI:** procesate de furnizor doar pentru generarea răspunsului; noi nu le stocăm, cu excepția unei memorări temporare de scurtă durată.
+Transferăm date numai în condițiile art. 44–50:
 
-## 11. Drepturile dumneavoastră
+- către state sau organizații recunoscute ca asigurând un nivel adecvat de protecție;
+- pe baza unor garanții adecvate, de exemplu clauze contractuale standard;
+- în lipsa acestora, în situațiile derogatorii permise de lege, de exemplu când transferul este necesar pentru serviciul pe care l-ați cerut sau când v-ați dat consimțământul explicit.
 
-Conform Legii nr. 195/2024 și art. 15–22 GDPR, aveți dreptul:
+Transmitem cât mai puține date. Furnizorul AI primește doar fragmente scurte, fără nume și identificatori. Pentru moderare se trimite doar fotografia, iar pentru geocodare doar textul adresei. Ne puteți cere informații despre garanțiile aplicate și o copie a acestora la [{{contact_email}}](mailto:{{contact_email}}).
 
-- **de acces** — să aflați ce date prelucrăm și să primiți o copie a lor;
-- **la rectificare** — să corectați datele inexacte (majoritatea direct din profil și setări);
-- **la ștergere** („dreptul de a fi uitat”);
-- **la restricționarea** prelucrării;
-- **la portabilitate** — să primiți datele furnizate de dumneavoastră într-un format structurat, citibil automat (JSON);
-- **la opoziție** — față de prelucrările bazate pe interes legitim, inclusiv profilarea;
-- **de a vă retrage consimțământul** oricând;
-- **de a nu face obiectul unei decizii bazate exclusiv pe prelucrare automată** care produce efecte juridice sau vă afectează similar în mod semnificativ;
-- **de a depune o plângere** la autoritatea de supraveghere (secțiunea 12).
+## 12. Cât timp păstrăm datele
 
-### Cum vă exercitați drepturile
+| Date | Termen |
+|---|---|
+| Contul și profilul | cât există contul. Conturile inactive de peste 30 de zile nu mai apar în recomandări. |
+| **Cererea de ștergere a contului** | profilul este ascuns imediat și toate sesiunile se închid. Urmează o perioadă de grație de **{{grace_days}} de zile**, în care puteți anula cererea. După ea, datele se șterg sau se anonimizează automat și definitiv (vezi mai jos). |
+| Fotografii, povești, mesaje, aprecieri, potriviri, favorite, blocări, setări, sesiuni, dispozitive, bilet, participări, ștampile Flirt Passport, abonament | până le ștergeți dumneavoastră sau până la ștergerea contului. Mesajele se șterg și la ștergerea contului interlocutorului. |
+| Poveștile | sunt vizibile altora 24 de ore, apoi rămân arhivate în contul dumneavoastră până le ștergeți sau până la ștergerea contului |
+| Comenzile de bilete | la ștergerea contului se anonimizează: se șterg numele, telefonul, e-mailul, mesajele, notele și descrierea plății. Suma, moneda, numărul de bilete, referința de plată, evenimentul, datele și starea comenzii rămân ca evidență contabilă, conform Legii nr. 287/2017, și nu vă mai identifică. |
+| Dovezile de plată (imaginile chitanțelor) | **{{proof_retention_years}} ani** de la data comenzii, ca documente justificative contabile, apoi se șterg automat. Dovezile comenzilor respinse sau anulate se șterg la **{{rejected_proof_days}} de zile** de la decizie sau imediat la ștergerea contului. |
+| Înregistrările de intrare la evenimente și codurile de invitație folosite | ca evidență a evenimentelor și a reducerilor acordate. Nu mai sunt legate de un profil după ștergerea contului. |
+| Înregistrarea tehnică minimă a contului șters | identificatorul intern, identificatorul Telegram, limba și data ștergerii. Le păstrăm ca dovadă a ștergerii și ca să împiedicăm revenirea conturilor suspendate pentru abuz (interes legitim). |
+| Raportările de moderare | se păstrează și după ștergerea contului, legate de contul anonimizat, pentru prevenirea abuzurilor și apărarea unor drepturi în justiție |
+| Evidența consimțămintelor | pe durata contului. După ștergere se păstrează ca probă, fără adresa IP și agentul utilizator. |
+| Copiile de siguranță (backup) | **{{backup_days}} zile**. Datele șterse dispar din copii după cel mult {{backup_days}} zile. |
+| Jurnalele tehnice | jurnalele de acces conțin adresa IP doar trunchiată (de exemplu 1.2.3.0) și nu conțin parametrii cererilor. Toate jurnalele se șterg după cel mult **{{log_retention_days}} de zile**. Jurnalele de erori, de exemplu cu tentativele de atac blocate, pot conține adresa IP completă. |
+| Contoarele de limitare a abuzurilor | de la câteva minute la câteva ore |
+| Cererile către furnizorul AI | nu le stocăm. Răspunsul e ținut temporar 5 minute. |
+| Selfie-ul de verificare | nu se stochează |
 
-- **Descărcarea datelor:** în aplicație, Setări → „Descarcă datele mele” (fișier JSON);
-- **Ștergerea contului:** în aplicație, Setări → „Ștergerea contului”;
-- **Retragerea consimțământului pentru verificarea facială:** în aplicație, Setări;
-- **Funcțiile AI:** se activează și se dezactivează din Setări;
-- **Orice altă cerere:** prin e-mail la [{{contact_email}}](mailto:{{contact_email}}).
+## 13. Drepturile dumneavoastră
 
-Răspundem în cel mult 30 de zile de la primirea cererii. Pentru cereri complexe sau numeroase, termenul poate fi prelungit cu încă cel mult două luni, cu informarea dumneavoastră în primele 30 de zile. Pentru a vă proteja datele, putem cere informații suplimentare pentru confirmarea identității (de exemplu, trimiterea cererii din contul Telegram legat de profil). Exercitarea drepturilor este gratuită; pentru cereri vădit nefondate sau excesive putem percepe o taxă rezonabilă sau putem refuza, motivat.
+Conform art. 13–22 aveți următoarele drepturi:
 
-## 12. Plângere la autoritatea de supraveghere
+| Drept | Ce înseamnă | Cum îl exercitați |
+|---|---|---|
+| **De informare** (art. 13–14) | să știți ce date prelucrăm, de ce și cum | această politică |
+| **De acces** (art. 15) | să aflați dacă vă prelucrăm datele și să primiți o copie a lor | „Confidențialitate și date” → descărcarea datelor sau e-mail |
+| **La rectificare** (art. 16) | să corectați datele inexacte sau incomplete | direct din profil și setări sau e-mail |
+| **La ștergere** („dreptul de a fi uitat”, art. 17) | să cereți ștergerea datelor | Setări → „Ștergerea contului” sau e-mail |
+| **La restricționarea prelucrării** (art. 18–19) | să cereți să stocăm datele fără să le mai folosim, de exemplu cât timp verificăm o contestație | e-mail |
+| **La portabilitate** (art. 20) | să primiți datele furnizate de dumneavoastră într-un format structurat, citibil automat (JSON) | „Confidențialitate și date” → descărcarea datelor |
+| **La opoziție** (art. 21) | să vă opuneți prelucrărilor bazate pe interes legitim, inclusiv profilării | e-mail |
+| **Privind deciziile automatizate** (art. 22) | să nu faceți obiectul unei decizii bazate exclusiv pe prelucrare automată care vă afectează semnificativ; să cereți intervenție umană și să contestați decizia | e-mail |
+| **De a vă retrage consimțământul** | oricând, fără a afecta legalitatea prelucrării de până atunci | Setări (AI, notificări), „Confidențialitate și date” (verificare facială), ștergerea contului |
+| **De a depune plângere** (art. 74) | la CNPDCP și în instanța de judecată | secțiunea 14 |
 
-Dacă considerați că drepturile dumneavoastră au fost încălcate, vă rugăm să ne contactați mai întâi — vom încerca să rezolvăm situația. Aveți însă dreptul să depuneți oricând o plângere la:
+**Ce conține exportul de date:** contul (fără parolă), profilul, setările, aprecierile trimise, potrivirile, conversațiile și **mesajele trimise de dumneavoastră**, favoritele, blocările, raportările trimise, poveștile, participările la evenimente, ștampilele, reducerile, biletul, comenzile, abonamentele, sesiunile (doar date calendaristice), consimțămintele și cererea de ștergere. Exportul nu conține mesajele altor persoane, pentru a le proteja datele.
 
-**Centrul Național pentru Protecția Datelor cu Caracter Personal (CNPDCP)**, str. Serghei Lazo 48, MD-2004, Chișinău, Republica Moldova, [www.datepersonale.md](https://www.datepersonale.md).
+**Termen de răspuns.** Răspundem fără întârzieri nejustificate, în cel mult **o lună** de la primirea cererii. Pentru cereri complexe sau numeroase, termenul se poate prelungi cu cel mult **încă două luni**. Dacă se întâmplă asta, vă anunțăm în prima lună și vă explicăm motivul.
 
-Dacă locuiți în UE/SEE, vă puteți adresa și autorității de protecție a datelor din statul dumneavoastră. Aveți, de asemenea, dreptul de a vă adresa instanței de judecată.
+Ca să vă protejăm datele, vă putem cere informații suplimentare pentru confirmarea identității, de exemplu să trimiteți cererea din contul Telegram legat de profil. Exercitarea drepturilor este gratuită. Pentru cereri vădit nefondate sau excesive putem percepe o taxă rezonabilă sau putem refuza cererea motivat.
 
-## 13. Securitatea datelor
+## 14. Plângere la autoritatea de supraveghere
+
+Dacă considerați că drepturile dumneavoastră au fost încălcate, vă rugăm să ne scrieți mai întâi, ca să încercăm să rezolvăm situația. Aveți însă dreptul să depuneți oricând o plângere la autoritatea de supraveghere:
+
+**Centrul Național pentru Protecția Datelor cu Caracter Personal (CNPDCP)**
+
+- adresă: str. Serghei Lazo 48, MD-2004, Chișinău, Republica Moldova;
+- telefon: (022) 820 801;
+- e-mail: [centru@datepersonale.md](mailto:centru@datepersonale.md);
+- site: [www.datepersonale.md](https://www.datepersonale.md).
+
+Aveți, de asemenea, dreptul să vă adresați instanței de judecată, inclusiv pentru despăgubiri. Dacă locuiți în UE/SEE, vă puteți adresa și autorității de protecție a datelor din statul dumneavoastră.
+
+## 15. Securitatea datelor
+
+Aplicăm măsuri tehnice și organizatorice adecvate riscului (art. 32):
 
 - tot traficul dintre aplicație și servere este criptat (HTTPS/TLS);
-- parolele sunt stocate exclusiv ca hash-uri Argon2;
-- autentificarea prin Telegram este verificată criptografic (semnătura datelor de lansare), cu protecție împotriva reutilizării;
-- sesiuni cu jetoane de acces de scurtă durată și revocarea tuturor sesiunilor la cererea de ștergere;
-- limitarea numărului de cereri împotriva atacurilor și abuzurilor;
-- validarea fișierelor încărcate (tip, dimensiune, conținut);
-- acces la datele de producție limitat la persoane autorizate, cu jurnalizarea acțiunilor administrative;
-- copii de siguranță periodice, cu termen limitat de păstrare.
+- autentificarea prin Telegram este verificată criptografic (semnătura datelor de lansare). Fiecare lansare poate fi folosită o singură dată, ca protecție împotriva reutilizării;
+- sesiunile folosesc jetoane de acces semnate (JWT) valabile 15 minute și jetoane de reîmprospătare rotite, stocate pe server doar ca hash. Reutilizarea unui jeton vechi închide sesiunea. La cererea de ștergere se închid toate sesiunile;
+- parolele (aplicația mobilă) sunt stocate exclusiv ca hash Argon2;
+- numărul de cereri este limitat, ca protecție împotriva atacurilor și abuzurilor;
+- fișierele încărcate sunt validate (tip, dimensiune, conținut). Fotografiile din conversații sunt curățate de metadate (inclusiv localizarea GPS din EXIF), iar Mini App-ul redimensionează fotografiile de profil pe dispozitiv înainte de încărcare;
+- accesul la datele de producție este limitat la persoane autorizate, iar acțiunile administrative sunt jurnalizate. Panoul de administrare nu permite citirea conversațiilor;
+- facem copii de siguranță zilnice, cu termen limitat de păstrare.
 
-Niciun sistem nu este complet sigur. În cazul unei încălcări a securității datelor care prezintă un risc pentru dumneavoastră, vom notifica CNPDCP și, după caz, pe dumneavoastră, în termenele prevăzute de lege.
+## 16. Incidente de securitate
 
-## 14. Cookie-uri și stocare locală
+Niciun sistem nu este complet sigur. Dacă se produce o încălcare a securității datelor (de exemplu acces neautorizat, pierdere sau divulgare), o documentăm și luăm imediat măsuri de limitare. Dacă incidentul prezintă un risc pentru drepturile și libertățile persoanelor, **notificăm CNPDCP în cel mult 72 de ore** de la momentul în care am aflat de el (art. 33). Dacă riscul este ridicat, **vă informăm și pe dumneavoastră** fără întârzieri nejustificate (art. 34): ce s-a întâmplat, ce date sunt afectate, ce măsuri am luat și ce puteți face pentru a vă proteja.
 
-Mini App-ul FLIRT nu folosește cookie-uri de urmărire, nu conține instrumente de analiză și nici trackere publicitare. Folosim stocarea locală a browserului (localStorage / sessionStorage) strict pentru funcționarea aplicației: jetoanele de sesiune, limba aleasă și preferințele de interfață. Aceste date rămân pe dispozitivul dumneavoastră și se șterg la deconectare sau la ștergerea datelor aplicației Telegram.
+## 17. Cookie-uri și stocare locală
 
-Telegram, în care rulează Mini App-ul, prelucrează date conform propriei politici: [telegram.org/privacy](https://telegram.org/privacy).
+Mini App-ul FLIRT **nu folosește cookie-uri de urmărire**, instrumente de analiză sau trackere publicitare. Folosim stocarea browserului strict pentru funcționarea aplicației:
 
-## 15. Minori
+| Stocare | Ce conține | Cât timp |
+|---|---|---|
+| sessionStorage | jetoanele de sesiune, legate de contul Telegram | până la închiderea Mini App-ului |
+| localStorage | preferințe de interfață: biletele deja afișate, emoji-urile recente, poveștile văzute, indicațiile de gesturi văzute, starea solicitării permisiunii de notificare | până la ștergerea datelor aplicației Telegram |
 
-Serviciul nu se adresează persoanelor sub 18 ani. Vezi secțiunea 7.
+Aceste date rămân pe dispozitivul dumneavoastră și nu le folosim pentru urmărire. Telegram, în care rulează Mini App-ul, prelucrează date conform propriei politici: [telegram.org/privacy](https://telegram.org/privacy).
 
-## 16. Modificarea politicii
+## 18. Modificarea politicii
 
-Putem actualiza această politică atunci când se schimbă serviciul, modul de prelucrare sau legislația. Fiecare versiune are un număr și o dată de intrare în vigoare. Dacă modificările sunt semnificative, vă vom anunța în aplicație și vă vom cere să le confirmați înainte de a continua utilizarea; acolo unde prelucrarea se bazează pe consimțământ, vom solicita un nou consimțământ.
+Actualizăm politica atunci când se schimbă serviciul, modul de prelucrare sau legislația. Fiecare versiune are un număr și o dată de intrare în vigoare. La modificări de fond vă anunțăm în aplicație și vă cerem să confirmați noua versiune înainte de a continua. Acolo unde prelucrarea se bazează pe consimțământ, vă cerem un nou consimțământ. Versiunile anterioare vi le putem trimite la cerere.
 
-## 17. Contact
+## 19. Contact
 
 Pentru orice întrebare despre această politică sau despre datele dumneavoastră:
 

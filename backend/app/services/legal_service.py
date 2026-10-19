@@ -59,13 +59,17 @@ class LegalDocument:
     effective_date: date
 
 
-# Data intrării în vigoare a Legii nr. 195/2024 = data de la care se aplică textele.
-_EFFECTIVE = date(2026, 8, 23)
+# Data intrării în vigoare a Legii nr. 195/2024 (MO nr. 367-369/2024, art. 574).
+_LAW_195_EFFECTIVE = date(2026, 8, 23)
+# Versiunea 2.0 a Politicii și a Acordului (rescrise pe baza datelor prelucrate
+# real de cod: tabele scop/temei/termen, consimțământ explicit separat pentru date
+# sensibile, AI și notificări). Schimbare de FOND → re-acceptare.
+_POLICY_V2_EFFECTIVE = date(2026, 10, 19)
 
 LEGAL_DOCUMENTS: dict[str, LegalDocument] = {
-    "privacy": LegalDocument("privacy", "1.0", _EFFECTIVE),
-    "terms": LegalDocument("terms", "1.0", _EFFECTIVE),
-    "consent": LegalDocument("consent", "1.0", _EFFECTIVE),
+    "privacy": LegalDocument("privacy", "2.0", _POLICY_V2_EFFECTIVE),
+    "terms": LegalDocument("terms", "1.0", _LAW_195_EFFECTIVE),
+    "consent": LegalDocument("consent", "2.0", _POLICY_V2_EFFECTIVE),
 }
 
 # Consimțământ → documentul a cărui versiune o acceptă userul.
