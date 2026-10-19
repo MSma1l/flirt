@@ -174,10 +174,16 @@ export async function fetchLoyaltyStatus(): Promise<LoyaltyStatus> {
  * lăsate să iasă ca eroare: ecranul cade atunci pe prețul de listă, care e deja
  * pe el.
  */
-export async function fetchTicketQuote(eventId: string): Promise<TicketQuote> {
-  const { data } = await api.get<TicketQuoteResponse>(
-    `/loyalty/events/${eventId}/ticket-quote`,
-  );
+export async function fetchTicketQuote(
+  eventId: string,
+  tierId?: string | null,
+): Promise<TicketQuote> {
+  // `ticket_tier_id` = tipul de bilet ales; fără el serverul cotează prețul unic
+  // (sau prețul minim, „de la"). Reducerile se aplică peste prețul tipului.
+  const url = `/loyalty/events/${eventId}/ticket-quote`;
+  const { data } = tierId
+    ? await api.get<TicketQuoteResponse>(url, { params: { ticket_tier_id: tierId } })
+    : await api.get<TicketQuoteResponse>(url);
   return {
     eventId: data.event_id,
     basePrice: data.base_price,

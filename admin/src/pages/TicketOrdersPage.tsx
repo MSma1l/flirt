@@ -329,6 +329,11 @@ export function TicketOrdersPage(): JSX.Element {
                           {(order.ticket_quantity ?? 1) > 1 ? (
                             <div className="muted">{m.quantity(order.ticket_quantity ?? 1)}</div>
                           ) : null}
+                          {order.ticket_tier_name ? (
+                            <div data-testid="order-tier">
+                              <Badge tone="neutral">{order.ticket_tier_name}</Badge>
+                            </div>
+                          ) : null}
                         </td>
                         <td>
                           <div>{order.user.email}</div>
@@ -532,6 +537,14 @@ function TicketOrderDetail({
                     </div>
                   ) : null}
                 </div>
+                {order.ticket_tier_name ? (
+                  <div>
+                    <div className="ticket-summary__label">{m.fieldTier}</div>
+                    <div className="ticket-summary__value" data-testid="order-detail-tier">
+                      {order.ticket_tier_name}
+                    </div>
+                  </div>
+                ) : null}
                 <div>
                   <div className="ticket-summary__label">{m.fieldReference}</div>
                   <div className="ticket-summary__value mono">{order.reference}</div>

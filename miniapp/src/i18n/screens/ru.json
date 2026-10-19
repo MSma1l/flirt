@@ -371,6 +371,10 @@
     },
     "newRequest": "Запросить ещё билеты"
   },
+  "ticketTiers": {
+    "title": "Выберите тип билета",
+    "soldOut": "Распродано"
+  },
   "validation": {
     "search": {
       "interestedRequired": "Выберите хотя бы один пол.",

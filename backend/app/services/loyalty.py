@@ -113,6 +113,7 @@ from app.schemas.loyalty import (
     TiersIn,
     TiersOut,
 )
+from app.services import ticket_tiers
 from app.services.admin_service import audit
 from app.services.online_sales import (
     ensure_online_sales_enabled,
@@ -441,7 +442,7 @@ async def _best_invite_percent(
 
 
 async def price_breakdown(
-    db: AsyncSession, user: User, event: Event
+    db: AsyncSession, user: User, event: Event, base_price: float | None = None
 ) -> PriceBreakdown:
     """Defalcarea prețului unui bilet pentru un user și un eveniment.
 
@@ -449,13 +450,16 @@ async def price_breakdown(
     fluxul de comandă (`ticket_order_service.create_order`), ca prețul afișat în
     cotație și prețul înscris pe comandă să nu poată diverge — două formule
     înseamnă, mai devreme sau mai târziu, două prețuri.
+
+    `base_price` = prețul TIPULUI de bilet ales (Early bird / VIP …); lipsă =
+    `event.ticket_price` (preț unic). Reducerile se aplică identic peste el.
     """
     row = await _get_or_create_settings(db)
     tiers = _normalize_tiers(list(row.tiers or []))
     stamps = await count_stamps(db, user)
     current, _ = resolve_tier(tiers, stamps)
     return combine_discounts(
-        event.ticket_price or 0.0,
+        base_price if base_price is not None else (event.ticket_price or 0.0),
         loyalty_percent=current["discount_percent"] if current else 0,
         promo_percent=event.promo_discount_percent,
         invite_percent=await _best_invite_percent(db, user, event.id),
@@ -473,7 +477,10 @@ async def _get_event_or_404(db: AsyncSession, event_id: uuid.UUID) -> Event:
 
 
 async def ticket_quote(
-    db: AsyncSession, user: User, event_id: uuid.UUID
+    db: AsyncSession,
+    user: User,
+    event_id: uuid.UUID,
+    ticket_tier_id: uuid.UUID | None = None,
 ) -> TicketQuoteOut:
     """`GET /loyalty/events/{id}/ticket-quote` — cât plătesc EU pe biletul ăsta.
 
@@ -490,12 +497,17 @@ async def ticket_quote(
     # (409 `online_sales_disabled`, ca la `create_order`).
     ensure_online_sales_enabled(await is_online_sales_enabled(db))
 
+    # Tipul de bilet: cel cerut sau, fără alegere, prețul minim („de la").
+    await ticket_tiers.ensure_loaded(db, event)
+    ticket_tier = ticket_tiers.resolve_for_purchase(
+        event, ticket_tier_id, required=False
+    )
     row = await _get_or_create_settings(db)
     tiers = _normalize_tiers(list(row.tiers or []))
     stamps = await count_stamps(db, user)
     current, _ = resolve_tier(tiers, stamps)
     breakdown = combine_discounts(
-        event.ticket_price,
+        ticket_tiers.unit_price(event, ticket_tier),
         loyalty_percent=current["discount_percent"] if current else 0,
         promo_percent=event.promo_discount_percent,
         invite_percent=await _best_invite_percent(db, user, event.id),
@@ -503,6 +515,7 @@ async def ticket_quote(
     )
     return TicketQuoteOut(
         event_id=event.id,
+        ticket_tier_id=ticket_tier.id if ticket_tier else None,
         base_price=breakdown.base_price,
         currency=event.ticket_currency or "lei",
         loyalty_percent=breakdown.loyalty_percent,

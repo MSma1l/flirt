@@ -50,7 +50,7 @@ export {
 
 export { mapPayment, type PaymentInstructions, type PaymentMethod } from './paymentModel';
 
-export { createTicketOrder, declareTicketPayment } from '@mobile/features/tickets/ticketsApi';
+export { declareTicketPayment } from '@mobile/features/tickets/ticketsApi';
 
 // Cererile manuale (cu dovadă de plată) și evenimentul trec tot pe aici, ca
 // ecranul de bilete să aibă un singur modul de mockat.
@@ -59,7 +59,7 @@ export {
   uploadPaymentProof,
   type TicketRequest,
 } from '@/features/ticketRequests/ticketRequestsApi';
-export { fetchEvent, type EventItem } from '@/features/events/eventsApi';
+export { createTicketOrder, fetchEvent, type EventItem } from '@/features/events/eventsApi';
 
 export interface TicketOrderDetail {
   order: TicketOrder;

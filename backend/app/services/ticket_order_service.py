@@ -37,7 +37,7 @@ from app.models.admin import (
     ACTION_TICKET_ORDER_REJECT,
     ACTION_TICKET_ORDER_STATUS,
 )
-from app.models.event import Event
+from app.models.event import Event, EventTicketTier
 from app.models.ticket_order import (
     DEFAULT_CURRENCY,
     PAYMENT_SETTINGS_ID,
@@ -60,6 +60,7 @@ from app.schemas.ticket_order import (
     PaymentInstructions,
     PaymentSettingsIn,
     PaymentSettingsOut,
+    TicketOrderCreateIn,
     TicketOrderCreateOut,
     TicketOrderEventOut,
     TicketOrderOut,
@@ -69,7 +70,7 @@ from app.schemas.ticket_order import (
     TicketRequestOut,
     payment_methods_for,
 )
-from app.services import loyalty
+from app.services import loyalty, ticket_tiers
 from app.services.online_sales import (
     ensure_online_sales_enabled,
     is_online_sales_enabled,
@@ -201,6 +202,31 @@ def _release_capacity(event: Event, quantity: int) -> None:
     """Eliberează locurile unui bilet anulat. Plafonat la 0: comenzile aprobate
     înainte ca aprobarea directă să ocupe locuri nu au fost numărate niciodată."""
     event.tickets_sold = max(0, (event.tickets_sold or 0) - quantity)
+
+
+async def _reserve_for_order(db: AsyncSession, order: TicketOrder) -> Event:
+    """Ocupă locurile comenzii la aprobare: capacitatea TOTALĂ a evenimentului și
+    plafonul TIPULUI de bilet (dacă are). Lock-uri: eveniment, apoi tip."""
+    quantity = order.ticket_quantity or 1
+    event = await _lock_event(db, order.event_id)
+    tier = await ticket_tiers.lock_tier(db, order.ticket_tier_id)
+    # Ambele verificări ÎNAINTE de orice scriere: un refuz pe tip nu lasă în
+    # urmă un `tickets_sold` incrementat pe eveniment.
+    if tier is not None:
+        ticket_tiers.check_reserve(tier, quantity)
+    _reserve_capacity(event, quantity)
+    if tier is not None:
+        ticket_tiers.reserve(tier, quantity)
+    return event
+
+
+async def _release_for_order(db: AsyncSession, order: TicketOrder) -> None:
+    """Pereche cu `_reserve_for_order`: biletul emis a fost anulat."""
+    quantity = order.ticket_quantity or 1
+    _release_capacity(await _lock_event(db, order.event_id), quantity)
+    tier = await ticket_tiers.lock_tier(db, order.ticket_tier_id)
+    if tier is not None:
+        ticket_tiers.release(tier, quantity)
 
 
 def _ensure_not_sold_out(event: Event, quantity: int = 1) -> None:
@@ -451,6 +477,8 @@ def _to_order_out(order: TicketOrder, event: Event) -> TicketOrderOut:
         currency=order.currency,
         reference=order.reference,
         status=order.status,
+        ticket_tier_id=order.ticket_tier_id,
+        ticket_tier_name=order.ticket_tier_name,
         user_note=order.user_note,
         admin_note=order.admin_note,
         ticket_code=order.ticket_code if order.status == STATUS_APPROVED else None,
@@ -471,6 +499,7 @@ def _to_request_out(order: TicketOrder, event: Event) -> TicketRequestOut:
         event_starts_at=event.starts_at, event_venue=event.venue,
         full_name=order.full_name, phone=order.phone, email=order.email,
         ticket_quantity=order.ticket_quantity, ticket_price=order.price,
+        ticket_tier_id=order.ticket_tier_id, ticket_tier_name=order.ticket_tier_name,
         total_amount=order.total_amount, currency=order.currency,
         payment_description=order.payment_description,
         payment_proof_uploaded=bool(order.payment_proof_url), status=order.status,
@@ -479,6 +508,25 @@ def _to_request_out(order: TicketOrder, event: Event) -> TicketRequestOut:
         ticket_code=order.ticket_code if order.status == STATUS_APPROVED else None,
         ticket_status=order_ticket_status(order, event), admitted_at=order.admitted_at,
     )
+
+
+def _can_switch_tier(
+    order: TicketOrder, tier: EventTicketTier | None, unpaid_status: str
+) -> bool:
+    """O comandă/cerere încă NEPLĂTITĂ (fără dovadă) poate trece pe alt tip de
+    bilet când userul alege altul — altfel ar rămâne blocat pe prima alegere."""
+    return (
+        tier is not None
+        and order.ticket_tier_id != tier.id
+        and order.status == unpaid_status
+        and not order.payment_proof_url
+    )
+
+
+def _apply_tier(order: TicketOrder, tier: EventTicketTier | None, price: float) -> None:
+    order.ticket_tier_id = tier.id if tier else None
+    order.ticket_tier_name = tier.name if tier else None
+    order.price = price
 
 
 async def create_request(
@@ -491,6 +539,9 @@ async def create_request(
     if _as_utc(event.starts_at) < _now():
         # 400 + text păstrate (clienți existenți); `code` e adăugat pentru cei noi.
         raise CodedHTTPException(status_code=400, detail="Biletele nu sunt disponibile pentru acest eveniment.", code=ErrorCode.TICKET_SALES_CLOSED)
+    # Tipul de bilet: validat acum, dar obligatoriu abia pentru o cerere NOUĂ
+    # (una existentă se întoarce și unui client care nu trimite tipul).
+    tier = ticket_tiers.resolve_for_purchase(event, data.ticket_tier_id, required=False)
     # Comutatorul global citit ÎNAINTE de lock (o coloană, fără lock pe setări);
     # se aplică doar unei cereri NOI, mai jos — cea existentă se întoarce oricum.
     online_sales = await is_online_sales_enabled(db)
@@ -500,19 +551,31 @@ async def create_request(
         TicketOrder.status.in_((STATUS_PENDING_PAYMENT, STATUS_PROOF_SUBMITTED, STATUS_UNDER_REVIEW, STATUS_ADDITIONAL_INFORMATION_REQUIRED)),
     ).order_by(TicketOrder.created_at.desc()))).scalars().first()
     if existing:
+        # Doar la o alegere EXPLICITĂ (nu la tipul unic ales implicit de server).
+        if data.ticket_tier_id is not None and _can_switch_tier(existing, tier, STATUS_PENDING_PAYMENT):
+            # Userul s-a răzgândit asupra tipului înainte să plătească.
+            _ensure_sales_open(event)
+            ticket_tiers.ensure_tier_available(tier, existing.ticket_quantity or 1)
+            _apply_tier(existing, tier, tier.price)
+            existing.total_amount = round(tier.price * (existing.ticket_quantity or 1), 2)
+            await db.commit(); await db.refresh(existing)
         settings = await _get_or_create_settings(db)
         return TicketRequestCreateOut(request=_to_request_out(existing, event), payment=_request_payment_instructions(existing, event, settings))
+    if tier is None and event.ticket_tiers:
+        raise ticket_tiers.tier_required()
     # Cererea existentă (făcută la timp) se întoarce și după închidere / sold-out;
     # doar una NOUĂ e refuzată.
     _ensure_sales_open(event)
     _ensure_not_sold_out(event, data.ticket_quantity)
+    ticket_tiers.ensure_tier_available(tier, data.ticket_quantity)
     ensure_online_sales_enabled(online_sales)
-    price = event.ticket_price
+    price = ticket_tiers.unit_price(event, tier)
     total = round(price * data.ticket_quantity, 2)
     reference = await ensure_payment_code(db, user)
     # Comentariul transferului = DOAR codul de plată (vezi `_comment_template`).
     description = reference
     order = TicketOrder(user_id=user.id, event_id=event.id, price=price,
+        ticket_tier_id=tier.id if tier else None, ticket_tier_name=tier.name if tier else None,
         total_amount=total, ticket_quantity=data.ticket_quantity, currency=event.ticket_currency or DEFAULT_CURRENCY,
         reference=reference, status=STATUS_PENDING_PAYMENT, full_name=data.full_name,
         phone=data.phone, email=data.email or user.email, client_message=data.client_message,
@@ -597,8 +660,7 @@ async def review_request(db: AsyncSession, actor: User, order_id: uuid.UUID, new
         if not order.payment_proof_url:
             raise HTTPException(status_code=409, detail="Nu se poate confirma plata fără dovadă.")
         # Lock the event row: concurrent approvals cannot oversell capacity.
-        event = await _lock_event(db, order.event_id)
-        _reserve_capacity(event, order.ticket_quantity or 1)
+        event = await _reserve_for_order(db, order)
         order.ticket_code = order.ticket_code or uuid.uuid4().hex
     else:
         event = await _get_event_or_404(db, order.event_id)
@@ -722,6 +784,7 @@ async def _get_event_or_404(db: AsyncSession, event_id: uuid.UUID) -> Event:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Event not found"
         )
+    await ticket_tiers.ensure_loaded(db, event)
     return event
 
 
@@ -738,7 +801,10 @@ def _as_utc(value: datetime) -> datetime:
 
 
 async def create_order(
-    db: AsyncSession, user: User, event_id: uuid.UUID
+    db: AsyncSession,
+    user: User,
+    event_id: uuid.UUID,
+    data: TicketOrderCreateIn | None = None,
 ) -> TicketOrderCreateOut:
     """Creează o comandă `awaiting_payment` + întoarce instrucțiunile de plată.
 
@@ -774,7 +840,13 @@ async def create_order(
     # ACEEAȘI funcție. Clientul nu trimite nici preț, nici procent.
     # Calculat ÎNAINTE de lock (prudență): nu face commit — setările de fidelitate
     # create leneș se persistă odată cu comanda — dar ține lock-ul cât mai scurt.
-    breakdown = await loyalty.price_breakdown(db, user, event)
+    # Baza = prețul TIPULUI ales (obligatoriu abia pentru o comandă NOUĂ, vezi mai jos).
+    tier = ticket_tiers.resolve_for_purchase(
+        event, data.ticket_tier_id if data else None, required=False
+    )
+    breakdown = await loyalty.price_breakdown(
+        db, user, event, base_price=ticket_tiers.unit_price(event, tier)
+    )
     # Comutatorul global, tot înainte de lock (vezi `create_request`).
     online_sales = await is_online_sales_enabled(db)
 
@@ -795,6 +867,16 @@ async def create_order(
         )
     ).scalars().first()
     if existing is not None:
+        # Doar la o alegere EXPLICITĂ (nu la tipul unic ales implicit de server).
+        if data is not None and data.ticket_tier_id is not None and _can_switch_tier(
+            existing, tier, STATUS_AWAITING_PAYMENT
+        ):
+            # Userul s-a răzgândit asupra tipului înainte să plătească.
+            _ensure_sales_open(event)
+            ticket_tiers.ensure_tier_available(tier)
+            _apply_tier(existing, tier, breakdown.final_price)
+            await db.commit()
+            await db.refresh(existing)
         # Instrucțiunile de plată doar cât timp mai e ceva de plătit (awaiting) —
         # aceeași semantică precum `get_mine`; o comandă deja declarată nu le mai are.
         payment: PaymentInstructions | None = None
@@ -807,8 +889,11 @@ async def create_order(
 
     # Doar o comandă NOUĂ e refuzată după închiderea vânzării; cea existentă
     # (făcută la timp) s-a întors mai sus, ca userul să-și poată termina plata.
+    if tier is None and event.ticket_tiers:
+        raise ticket_tiers.tier_required()
     _ensure_sales_open(event)
     _ensure_not_sold_out(event)
+    ticket_tiers.ensure_tier_available(tier)
     # Vânzarea oprită global de admin: nicio comandă NOUĂ (închiderea / sold-out
     # au prioritate — sunt definitive, suspendarea e temporară).
     ensure_online_sales_enabled(online_sales)
@@ -819,6 +904,8 @@ async def create_order(
         user_id=user.id,
         event_id=event.id,
         price=breakdown.final_price,
+        ticket_tier_id=tier.id if tier else None,
+        ticket_tier_name=tier.name if tier else None,
         currency=currency,
         reference=reference,
         status=STATUS_AWAITING_PAYMENT,
@@ -1016,6 +1103,8 @@ def _to_admin_out(order: TicketOrder, user: User, event: Event) -> AdminTicketOr
         ),
         price=order.price,
         currency=order.currency,
+        ticket_tier_id=order.ticket_tier_id,
+        ticket_tier_name=order.ticket_tier_name,
         reference=order.reference,
         status=order.status,
         user_note=order.user_note,
@@ -1167,8 +1256,7 @@ async def approve(
         await review_request(db, actor, order_id, STATUS_APPROVED, None, ip)
         return await get_admin_order(db, order_id)
     _ensure_decidable(order)
-    event = await _lock_event(db, order.event_id)
-    _reserve_capacity(event, order.ticket_quantity or 1)
+    await _reserve_for_order(db, order)
 
     order.status = STATUS_APPROVED
     order.ticket_code = uuid.uuid4().hex
@@ -1325,9 +1413,7 @@ async def change_status(
         )
 
     if new_status == STATUS_APPROVED:
-        _reserve_capacity(
-            await _lock_event(db, order.event_id), order.ticket_quantity or 1
-        )
+        await _reserve_for_order(db, order)
         order.ticket_code = order.ticket_code or uuid.uuid4().hex
         action = ACTION_TICKET_ORDER_APPROVE
     elif new_status == STATUS_REJECTED:
@@ -1336,9 +1422,7 @@ async def change_status(
         action = ACTION_TICKET_ORDER_STATUS
     if previous == STATUS_APPROVED:
         # Bilet emis → anulat: locul se eliberează.
-        _release_capacity(
-            await _lock_event(db, order.event_id), order.ticket_quantity or 1
-        )
+        await _release_for_order(db, order)
     if new_status == STATUS_PAYMENT_DECLARED and order.payment_declared_at is None:
         order.payment_declared_at = _now()
     if note is not None:

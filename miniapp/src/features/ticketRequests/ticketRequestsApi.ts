@@ -54,6 +54,9 @@ export interface TicketRequest {
   event_venue?: string | null;
   ticket_quantity: number;
   ticket_price: number;
+  /** Tipul de bilet ales (snapshot-ul numelui); null = preț unic. */
+  ticket_tier_id?: string | null;
+  ticket_tier_name?: string | null;
   total_amount: number;
   currency?: string | null;
   full_name: string;
@@ -81,6 +84,8 @@ export interface CreateTicketRequestInput {
   email?: string;
   ticketQuantity: number;
   clientMessage?: string;
+  /** Tipul de bilet ales (doar la evenimentele cu mai multe tipuri). */
+  ticketTierId?: string | null;
 }
 
 function fromApi(value: Record<string, unknown>): TicketRequest {
@@ -115,6 +120,7 @@ export async function createTicketRequest(eventId: string, input: CreateTicketRe
     email: input.email?.trim() || null,
     ticket_quantity: input.ticketQuantity,
     client_message: input.clientMessage?.trim() || null,
+    ...(input.ticketTierId ? { ticket_tier_id: input.ticketTierId } : {}),
   });
   // Contractul de creare învelește cererea, ca instrucțiunile să nu devină parte
   // din lista istorică; ecranul are însă nevoie de ambele imediat după trimitere.

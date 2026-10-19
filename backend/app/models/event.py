@@ -20,7 +20,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -76,6 +76,29 @@ class Event(Base):
     ticket_sales_end_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Tipurile de bilet (Early bird / Standard / VIP …), max `MAX_TICKET_TIERS`,
+    # în ordinea de afișare. SURSA prețului când lista nu e goală; `ticket_price`
+    # rămâne atunci prețul MINIM („de la X lei"), sincronizat de admin la fiecare
+    # salvare — clienții vechi și cotația de fidelitate îl citesc în continuare.
+    # Listă goală + `ticket_price` setat = eveniment vechi, un singur preț
+    # implicit (fallback). `selectin`: se încarcă odată cu evenimentul (un query
+    # în plus pe pagină, fără lazy-load în contextul async).
+    ticket_tiers: Mapped[list["EventTicketTier"]] = relationship(
+        back_populates="event",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+        # Ștergerea evenimentului lasă DB-ul să șteargă tipurile (ON DELETE
+        # CASCADE), fără să încarce colecția.
+        passive_deletes=True,
+        order_by="EventTicketTier.position",
+    )
+
+    def full_capacity_reached(self, quantity: int = 1) -> bool:
+        """True dacă `quantity` locuri în plus ar depăși capacitatea TOTALĂ."""
+        return (
+            self.ticket_capacity is not None
+            and (self.tickets_sold or 0) + quantity > self.ticket_capacity
+        )
 
     @property
     def effective_ticket_sales_end(self) -> datetime:
@@ -90,12 +113,58 @@ class Event(Base):
         now = now or datetime.now(timezone.utc)
         if now >= self.effective_ticket_sales_end:
             return False
-        if (
-            self.ticket_capacity is not None
-            and (self.tickets_sold or 0) >= self.ticket_capacity
-        ):
+        if self.full_capacity_reached():
+            return False
+        # Cu tipuri de bilet: vânzarea e deschisă cât mai există MĂCAR un tip
+        # neepuizat (un VIP epuizat nu închide Standardul).
+        if self.ticket_tiers and all(t.is_sold_out() for t in self.ticket_tiers):
             return False
         return True
+
+
+# Câte tipuri de bilet poate avea un eveniment (cererea proprietarului: 4).
+MAX_TICKET_TIERS = 4
+# Numele tipului creat automat din prețul unic (migrare / clienți vechi).
+DEFAULT_TICKET_TIER_NAME = "Standard"
+TICKET_TIER_NAME_MAX_LENGTH = 60
+TICKET_TIER_DESCRIPTION_MAX_LENGTH = 200
+
+
+class EventTicketTier(Base):
+    """Un tip de bilet al unui eveniment: nume, preț, capacitate proprie opțională.
+
+    `sold` se incrementează la APROBAREA unei comenzi (ca `Event.tickets_sold`)
+    și se eliberează la anularea unui bilet emis — mereu sub lock-ul pe eveniment,
+    deci aprobările simultane nu pot vinde peste capacitatea tipului.
+    """
+
+    __tablename__ = "event_ticket_tiers"
+
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("events.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    name: Mapped[str] = mapped_column(
+        String(TICKET_TIER_NAME_MAX_LENGTH), nullable=False
+    )
+    description: Mapped[str | None] = mapped_column(
+        String(TICKET_TIER_DESCRIPTION_MAX_LENGTH), nullable=True
+    )
+    price: Mapped[float] = mapped_column(Float, nullable=False)
+    # NULL = fără plafon propriu (rămâne doar capacitatea totală a evenimentului).
+    capacity: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sold: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    # Ordinea de afișare (0 = primul).
+    position: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+
+    event: Mapped[Event] = relationship(back_populates="ticket_tiers")
+
+    def is_sold_out(self, quantity: int = 1) -> bool:
+        """True dacă `quantity` bilete în plus ar depăși capacitatea TIPULUI."""
+        return self.capacity is not None and (self.sold or 0) + quantity > self.capacity
 
 
 # Cât de târziu după START poate fi pusă închiderea vânzării (ex. un concert la

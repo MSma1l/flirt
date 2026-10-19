@@ -363,6 +363,10 @@
     },
     "newRequest": "Request more tickets"
   },
+  "ticketTiers": {
+    "title": "Choose your ticket",
+    "soldOut": "Sold out"
+  },
   "validation": {
     "search": {
       "interestedRequired": "Choose at least one gender.",

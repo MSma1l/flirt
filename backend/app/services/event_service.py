@@ -15,8 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.event import Event, EventAttendance, FlirtPassportStamp
 from app.models.user import User
-from app.schemas.event import EventOut, EventPage, PassportQrOut, PassportStampOut
-from app.services import billing, user_codes
+from app.schemas.event import (
+    EventOut,
+    EventPage,
+    PassportQrOut,
+    PassportStampOut,
+    TicketTierOut,
+)
+from app.services import billing, ticket_tiers, user_codes
 from app.services.online_sales import is_online_sales_enabled
 from app.services.pagination import (
     EVENTS_MAX_LIMIT,
@@ -140,6 +146,7 @@ async def list_events(
         return EventPage(items=[], next_cursor=None)
 
     event_ids = [e.id for e in events]
+    await ticket_tiers.ensure_loaded(db, *events)
     counts = await _attendee_counts(db, event_ids)
     going = await _going_event_ids(db, user, event_ids)
     # Comutatorul global citit O DATĂ pentru toată pagina (fără N+1).
@@ -162,6 +169,7 @@ async def get_event(db: AsyncSession, user: User, event_id: uuid.UUID) -> EventO
             status_code=status.HTTP_404_NOT_FOUND, detail="Event not found"
         )
 
+    await ticket_tiers.ensure_loaded(db, event)
     counts = await _attendee_counts(db, [event.id])
     going = await _going_event_ids(db, user, [event.id])
     online_sales = await is_online_sales_enabled(db)
@@ -323,6 +331,16 @@ def _to_event_out(
         promo_description=event.promo_description,
         ticket_price=event.ticket_price,
         ticket_currency=event.ticket_currency,
+        ticket_tiers=[
+            TicketTierOut(
+                id=t.id,
+                name=t.name,
+                description=t.description,
+                price=t.price,
+                sold_out=ticket_tiers.is_tier_sold_out(event, t),
+            )
+            for t in event.ticket_tiers
+        ],
         ticket_sales_end_at=event.effective_ticket_sales_end,
         ticket_sales_open=would_sell and online_sales_enabled,
         ticket_sales_paused=would_sell and not online_sales_enabled,

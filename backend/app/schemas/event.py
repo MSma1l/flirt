@@ -7,6 +7,18 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+class TicketTierOut(BaseModel):
+    """Un tip de bilet așa cum îl vede userul (fără contoare interne)."""
+
+    id: uuid.UUID
+    name: str
+    description: str | None = None
+    price: float
+    # True = nu se mai pot cere bilete de acest tip (capacitatea tipului sau
+    # capacitatea totală a evenimentului e atinsă).
+    sold_out: bool = False
+
+
 class EventOut(BaseModel):
     """Un eveniment afișat, cu numărul de participanți și statusul userului."""
 
@@ -27,6 +39,9 @@ class EventOut(BaseModel):
     # Preț al biletului ONLINE (transfer bancar). NULL = biletul online indisponibil.
     ticket_price: float | None = None
     ticket_currency: str | None = None
+    # Aditiv: tipurile de bilet (max 4), în ordinea de afișare. Listă goală =
+    # preț unic (`ticket_price`). Cu tipuri, `ticket_price` = prețul MINIM.
+    ticket_tiers: list[TicketTierOut] = Field(default_factory=list)
     # Ora EFECTIVĂ de închidere a vânzării online: valoarea setată de admin sau,
     # dacă lipsește, `starts_at`. Mereu prezentă (clientul nu trebuie să știe
     # regula de fallback).

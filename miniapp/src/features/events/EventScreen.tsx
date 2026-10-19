@@ -59,6 +59,8 @@ import {
   type TicketOrder,
 } from './eventsApi';
 import { formatCountdown, salesNotice, salesRefusal, useSalesState, type SalesBlock } from './ticketSales';
+import { TicketTierPicker } from './TicketTierPicker';
+import { needsTierChoice, resolveTier } from './ticketTiers';
 
 import './events.css';
 
@@ -77,6 +79,8 @@ export function EventScreen() {
   const [stampMessage, setStampMessage] = useState<string | null>(null);
   /** Serverul a refuzat comanda: vânzarea s-a închis / epuizat / oprit între timp. */
   const [refusal, setRefusal] = useState<SalesBlock | null>(null);
+  /** Tipul de bilet ales de om (doar când evenimentul are mai multe). */
+  const [tierChoice, setTierChoice] = useState<string | null>(null);
   const statusText = useOrderStatusText();
 
   const { data, isPending, isError, refetch, isFetching } = useQuery<EventItem>({
@@ -92,7 +96,10 @@ export function EventScreen() {
 
   // Cotația se cere DOAR pentru evenimentele care vând bilete online; pentru
   // restul ruta ar răspunde 400, iar un 400 previzibil nu e informație.
-  const { data: quote } = useTicketQuote(eventId, data?.ticketPrice != null);
+  // Cu mai multe tipuri de bilet, cotația și comanda sunt pentru tipul ales.
+  const selectedTier = resolveTier(data?.ticketTiers, tierChoice);
+  const chosenTierId = needsTierChoice(data?.ticketTiers) ? (selectedTier?.id ?? null) : null;
+  const { data: quote } = useTicketQuote(eventId, data?.ticketPrice != null, chosenTierId);
   const refreshLoyalty = useRefreshLoyalty();
 
   /**
@@ -130,7 +137,7 @@ export function EventScreen() {
   }, [sales.closed, eventId, queryClient]);
 
   const buyMutation = useMutation({
-    mutationFn: () => createTicketOrder(eventId),
+    mutationFn: () => (chosenTierId ? createTicketOrder(eventId, chosenTierId) : createTicketOrder(eventId)),
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ['ticket-orders'] });
       // Instrucțiunile de plată (IBAN, destinația plății, termen) sunt treaba
@@ -283,6 +290,14 @@ export function EventScreen() {
             </button>
           </p>
         ) : null}
+        {chosenTierId ? (
+          <TicketTierPicker
+            tiers={event.ticketTiers ?? []}
+            selectedId={chosenTierId}
+            currency={event.ticketCurrency ?? 'lei'}
+            onSelect={setTierChoice}
+          />
+        ) : null}
         {quote ? <TicketPriceBlock quote={quote} /> : null}
         {sales.endAt ? (
           <p className="ev-sales" data-testid="ticket-sales-end">
@@ -309,7 +324,7 @@ export function EventScreen() {
           }}
         >
           {t('detail.buyTicket', {
-            price: formatAmount(quote ? quote.finalPrice : event.ticketPrice),
+            price: formatAmount(quote ? quote.finalPrice : (selectedTier?.price ?? event.ticketPrice)),
             currency: quote ? quote.currency : (event.ticketCurrency ?? 'lei'),
           })}
         </button>
@@ -317,7 +332,7 @@ export function EventScreen() {
           type="button"
           className="button button--ghost ev-detail__action"
           data-testid="request-ticket-btn"
-          onClick={() => void navigate(ticketRequestPath(eventId))}
+          onClick={() => void navigate(ticketRequestPath(eventId, chosenTierId))}
         >
           {t('screens:events.requestTicket')}
         </button>

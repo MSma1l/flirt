@@ -93,6 +93,9 @@ class TicketOrderOut(BaseModel):
     currency: str
     reference: str
     status: str
+    # Aditiv: tipul de bilet ales (None = eveniment cu preț unic).
+    ticket_tier_id: uuid.UUID | None = None
+    ticket_tier_name: str | None = None
     user_note: str | None = None
     admin_note: str | None = None
     ticket_code: str | None = None
@@ -150,6 +153,17 @@ class TicketOrderCreateOut(BaseModel):
 
 
 # --- Public: intrări ----------------------------------------------------------
+class TicketOrderCreateIn(BaseModel):
+    """Payload OPȚIONAL la `POST /events/{id}/ticket-orders`.
+
+    `ticket_tier_id` = tipul de bilet ales; poate lipsi când evenimentul are un
+    singur preț (clienții vechi nu trimit corp deloc). Prețul NU vine niciodată
+    de la client — se citește din tipul găsit pe server.
+    """
+
+    ticket_tier_id: uuid.UUID | None = None
+
+
 class DeclareIn(BaseModel):
     """Payload la `POST /ticket-orders/{id}/declare` — declararea plății."""
 
@@ -163,6 +177,8 @@ class TicketRequestCreateIn(BaseModel):
     email: EmailStr | None = None
     ticket_quantity: int = Field(ge=1, le=20)
     client_message: optional_safe_str(NOTE_MAX_LENGTH) | None = None
+    # Tipul de bilet ales (vezi `TicketOrderCreateIn`).
+    ticket_tier_id: uuid.UUID | None = None
 
 
 class TicketRequestOut(BaseModel):
@@ -176,6 +192,8 @@ class TicketRequestOut(BaseModel):
     email: str | None = None
     ticket_quantity: int
     ticket_price: float
+    ticket_tier_id: uuid.UUID | None = None
+    ticket_tier_name: str | None = None
     total_amount: float
     currency: str
     payment_description: str | None = None
@@ -229,6 +247,9 @@ class AdminTicketOrderOut(BaseModel):
     event: TicketOrderEventOut
     price: float
     currency: str
+    # Tipul de bilet cumpărat (snapshot-ul numelui; None = preț unic).
+    ticket_tier_id: uuid.UUID | None = None
+    ticket_tier_name: str | None = None
     reference: str
     status: str
     user_note: str | None = None

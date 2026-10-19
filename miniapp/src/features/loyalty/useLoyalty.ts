@@ -20,8 +20,8 @@ import {
 export const LOYALTY_STATUS_KEY = ['loyalty'] as const;
 
 /** Cotația de preț a unui eveniment. */
-export function ticketQuoteKey(eventId: string): readonly unknown[] {
-  return ['ticket-quote', eventId];
+export function ticketQuoteKey(eventId: string, tierId?: string | null): readonly unknown[] {
+  return tierId ? ['ticket-quote', eventId, tierId] : ['ticket-quote', eventId];
 }
 
 export function useLoyaltyStatus(): UseQueryResult<LoyaltyStatus> {
@@ -41,10 +41,12 @@ export function useLoyaltyStatus(): UseQueryResult<LoyaltyStatus> {
 export function useTicketQuote(
   eventId: string,
   hasTicket: boolean,
+  tierId?: string | null,
 ): UseQueryResult<TicketQuote> {
   return useQuery<TicketQuote>({
-    queryKey: ticketQuoteKey(eventId),
-    queryFn: () => fetchTicketQuote(eventId),
+    queryKey: ticketQuoteKey(eventId, tierId),
+    // Fără tip, apelul rămâne exact cel de dinainte (un singur argument).
+    queryFn: () => (tierId ? fetchTicketQuote(eventId, tierId) : fetchTicketQuote(eventId)),
     enabled: eventId !== '' && hasTicket,
     // Prețul e o promisiune de bani: nu-l reîncercăm la nesfârșit, dar nici nu-l
     // lăsăm învechit după ce omul se întoarce pe ecran.

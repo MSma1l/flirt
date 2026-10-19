@@ -367,6 +367,10 @@
     },
     "newRequest": "Solicită alte bilete"
   },
+  "ticketTiers": {
+    "title": "Alege tipul de bilet",
+    "soldOut": "Epuizat"
+  },
   "validation": {
     "search": {
       "interestedRequired": "Alege cel puțin un gen.",
