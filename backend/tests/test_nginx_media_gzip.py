@@ -11,6 +11,7 @@ CE VERIFICĂM
 3. `docker-compose.yml` montează volumul de media în nginx, read-only, exact la
    rădăcina folosită de config.
 4. gzip e activ la nivel de `http`, cu JSON în listă.
+5. `/health` are limită (era complet nelimitat).
 
 Folosim parserul și randarea din `test_nginx_ratelimit_zones.py` (aceeași
 randare ca producția, prin `nginx/entrypoint.sh`).
@@ -160,3 +161,15 @@ def test_gzip_activ_la_nivel_http(rendered):
     for mime in ("application/json", "application/javascript", "text/css"):
         assert mime in types.group(1).split()
 
+
+# --------------------------------------------------------------------------- #
+# 5. /health limitat
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("uri", ["/health", "/health/ready"])
+def test_health_are_limita(rendered, uri):
+    body = _match_location(_locations(_api_server(rendered)), uri)[2]
+
+    assert _zone_of(body) == "flirt_general"
+    assert re.search(r"limit_req zone=flirt_general burst=10\b", body)
