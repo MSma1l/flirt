@@ -68,7 +68,8 @@ describe('poarta profile_completed', () => {
     renderRouted(<AppRoutes />);
 
     expect(await screen.findByRole('navigation')).toBeInTheDocument();
-    expect(get).not.toHaveBeenCalled();
+    // Shell-ul face alte GET-uri (ex. badge-ul de activitate); doar `/auth/me` nu se repetă.
+    expect(get.mock.calls.some(([url]) => url === '/auth/me')).toBe(false);
   });
 
   it('cu /auth/me picat arată o eroare cu reîncercare, nu un ecran gol', async () => {
