@@ -267,7 +267,10 @@ function OrderDetail({
   const retry = useMutation({
     mutationFn: async () => {
       if (!eventId) throw new Error('missing event');
-      return createTicketOrder(eventId);
+      // Același tip de bilet ca la comanda veche, cât timp mai există și nu e epuizat.
+      const tierId = data?.order.ticketTierId ?? null;
+      const tier = tierId ? event?.ticketTiers?.find((x) => x.id === tierId && !x.soldOut) : undefined;
+      return tier ? createTicketOrder(eventId, tier.id) : createTicketOrder(eventId);
     },
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ['ticket-orders'] });
@@ -571,7 +574,10 @@ function OrderCard({
       >
         <span className="tk-order__main">
           <span className="tk-order__title">{order.eventTitle}</span>
-          <span className="tk-order__date">{formatEventDate(order.eventStartsAt)}</span>
+          <span className="tk-order__date">
+            {formatEventDate(order.eventStartsAt)}
+            {order.ticketTierName ? ` · ${order.ticketTierName}` : ''}
+          </span>
           <span className="tk-order__status-row">
             <span className={`tk-pill tk-pill--${tone}`} data-testid={`order-status-${order.id}`}>
               {label}

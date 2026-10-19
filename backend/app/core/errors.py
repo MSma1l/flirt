@@ -52,6 +52,13 @@ class ErrorCode:
     # Comenzile/cererile NOI sunt refuzate la toate evenimentele; cele existente
     # se finalizează normal. Temporar — clientul afișează „vânzare suspendată".
     ONLINE_SALES_DISABLED = "online_sales_disabled"
+    # Tipuri de bilet (până la 4 prețuri per eveniment):
+    #   * evenimentul are mai multe tipuri și clientul nu a ales unul;
+    #   * tipul trimis nu există (sau nu e al acestui eveniment);
+    #   * adminul a încercat să șteargă un tip care are comenzi active.
+    TICKET_TIER_REQUIRED = "ticket_tier_required"
+    TICKET_TIER_INVALID = "ticket_tier_invalid"
+    TICKET_TIER_IN_USE = "ticket_tier_in_use"
 
     # Upload de fișiere (ex. creativele de reclamă din panoul de admin).
     # Fișierul depășește limita pentru tipul lui (poză / video).

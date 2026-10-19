@@ -127,6 +127,31 @@ export interface BanUserBody {
 
 /* ---------------- Evenimente ---------------- */
 
+/** Câte tipuri de bilet poate avea un eveniment (`MAX_TICKET_TIERS` din backend). */
+export const MAX_TICKET_TIERS = 4;
+
+/** Un tip de bilet (Early bird / Standard / VIP …) așa cum îl întoarce backendul. */
+export interface AdminTicketTier {
+  id: Uuid;
+  name: string;
+  description: string | null;
+  price: number;
+  /** Plafonul propriu al tipului. `null` = doar capacitatea totală. */
+  capacity: number | null;
+  /** Bilete aprobate din acest tip (read-only). */
+  sold: number;
+  position: number;
+}
+
+/** Un tip de bilet trimis la salvare. Fără `id` = tip nou. */
+export interface TicketTierInput {
+  id: Uuid | null;
+  name: string;
+  price: number;
+  capacity: number | null;
+  description: string | null;
+}
+
 export interface AdminEvent {
   id: Uuid;
   title: string;
@@ -175,6 +200,11 @@ export interface AdminEvent {
   ticket_capacity?: number | null;
   /** Bilete vândute (aprobate) — numărul cu care se compară capacitatea. */
   tickets_sold?: number;
+  /**
+   * Tipurile de bilet (max 4), în ordinea de afișare. Când există, `ticket_price`
+   * e prețul MINIM („de la"). Opțional: un backend vechi nu le trimite.
+   */
+  ticket_tiers?: AdminTicketTier[];
 }
 
 /** Răspunsul `POST /admin/events/cover`: URL-ul public al copertei încărcate. */
@@ -207,8 +237,13 @@ export interface EventInput {
   promo_code: string | null;
   /** Descrierea promoției (max 500). Gol → `null`. */
   promo_description: string | null;
-  /** Prețul biletului online. Gol → `null` (bilet online indisponibil). */
-  ticket_price: number | null;
+  /**
+   * Prețul unic (contract vechi). Panoul trimite `ticket_tiers`, care au
+   * prioritate; backendul derivă de aici prețul minim.
+   */
+  ticket_price?: number | null;
+  /** Tipurile de bilet (max 4). `[]` = fără vânzare online. */
+  ticket_tiers: TicketTierInput[];
   /** Moneda biletului (max 8). Gol → `null` (backend implicit „lei"). */
   ticket_currency: string | null;
   /** Închiderea vânzării online; cel mult start + 12h. Gol → `null` (= la start). */
@@ -401,6 +436,9 @@ export interface TicketOrder {
   is_request?: boolean;
   ticket_quantity?: number;
   total_amount?: number | null;
+  /** Tipul de bilet cumpărat (snapshot-ul numelui). `null` = preț unic. */
+  ticket_tier_id?: Uuid | null;
+  ticket_tier_name?: string | null;
   /** Stările în care adminul poate muta acum comanda; [] = finală. */
   allowed_statuses?: TicketOrderStatus[];
   /** Starea BILETULUI (≠ `status`, starea plății); null cât timp nu există bilet. */
@@ -484,6 +522,9 @@ export interface TicketRequest {
   email: string | null;
   ticket_quantity: number;
   ticket_price: number;
+  /** Tipul de bilet ales (snapshot-ul numelui). `null` = preț unic. */
+  ticket_tier_id?: Uuid | null;
+  ticket_tier_name?: string | null;
   total_amount: number;
   currency: string;
   payment_description: string;

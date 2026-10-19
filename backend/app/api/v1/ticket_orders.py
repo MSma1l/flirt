@@ -23,6 +23,7 @@ from app.schemas.ticket_order import (
     DeclareIn,
     TicketOrderCreateOut,
     TicketOrderOut,
+    TicketOrderCreateIn,
     TicketRequestCreateIn,
     TicketRequestCreateOut,
     TicketRequestOut,
@@ -145,13 +146,18 @@ async def get_my_ticket_payment_proof(order_id: uuid.UUID, db: DbDep, user: User
     tags=["ticket-orders"],
 )
 async def create_ticket_order(
-    event_id: uuid.UUID, db: DbDep, user: UserDep
+    event_id: uuid.UUID,
+    db: DbDep,
+    user: UserDep,
+    data: TicketOrderCreateIn | None = None,
 ) -> TicketOrderCreateOut:
     """Cere un bilet la un eveniment cu preț → comandă + instrucțiuni de plată.
 
     400 dacă evenimentul nu are `ticket_price` setat (biletul online indisponibil).
+    Corpul e OPȚIONAL: `{"ticket_tier_id": ...}` alege tipul de bilet; fără el
+    (clienți vechi) merge doar la evenimentele cu un singur preț/tip.
     """
-    return await ticket_order_service.create_order(db, user, event_id)
+    return await ticket_order_service.create_order(db, user, event_id, data)
 
 
 @router.post(

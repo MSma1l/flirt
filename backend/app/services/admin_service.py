@@ -74,6 +74,7 @@ from app.models.user import ROLE_ADMIN, User
 from app.schemas.admin import (
     AdminEventIn,
     AdminEventOut,
+    AdminTicketTierOut,
     AdminEventUpdate,
     AdminReportOut,
     AdminStats,
@@ -95,7 +96,7 @@ from app.schemas.admin import (
     TimeseriesPoint,
     UserStats,
 )
-from app.services import account_service, billing
+from app.services import account_service, billing, ticket_tiers
 from app.services.pagination import (
     ADMIN_MAX_LIMIT,
     ADMIN_PAGE_LIMIT,
@@ -1457,6 +1458,18 @@ def _to_event_out(
         ticket_sales_end_at=event.ticket_sales_end_at,
         ticket_capacity=event.ticket_capacity,
         tickets_sold=event.tickets_sold or 0,
+        ticket_tiers=[
+            AdminTicketTierOut(
+                id=t.id,
+                name=t.name,
+                description=t.description,
+                price=t.price,
+                capacity=t.capacity,
+                sold=t.sold or 0,
+                position=t.position,
+            )
+            for t in event.ticket_tiers
+        ],
         attendee_count=attendees,
         displayed_attendee_count=event.displayed_attendee_count,
         participants_count=event.displayed_participants(attendees),
@@ -1519,6 +1532,7 @@ async def list_events(
         return [], None
 
     ids = [e.id for e in events]
+    await ticket_tiers.ensure_loaded(db, *events)
     counts = await _attendee_counts(db, ids)
     orders = await _ticket_order_counts(db, ids)
     items = [
@@ -1580,6 +1594,14 @@ async def create_event(
         ticket_sales_end_at=data.ticket_sales_end_at,
         ticket_capacity=data.ticket_capacity,
     )
+    # Tipurile de bilet: lista trimisă sau, de la un client vechi, prețul unic
+    # transformat într-un tip implicit. `ticket_price` devine prețul minim.
+    tier_items = (
+        data.ticket_tiers
+        if data.ticket_tiers is not None
+        else ticket_tiers.legacy_price_items(event, data.ticket_price)
+    )
+    await ticket_tiers.sync_tiers(db, event, tier_items or [])
     db.add(event)
     await db.flush()  # obținem event.id înainte de a scrie auditul
 
@@ -1594,6 +1616,7 @@ async def create_event(
     )
     await db.commit()
     await db.refresh(event)
+    await ticket_tiers.ensure_loaded(db, event)
     return _to_event_out(event, 0)
 
 
@@ -1610,8 +1633,12 @@ async def update_event(
     trimite `description=None` implicit și ar ȘTERGE descrierea evenimentului.
     """
     changes = data.model_dump(exclude_unset=True)
+    # Tipurile se aplică separat (diff pe id), nu prin `setattr`.
+    tiers_in = data.ticket_tiers if "ticket_tiers" in changes else None
+    changes.pop("ticket_tiers", None)
+    touches_tiers = tiers_in is not None or "ticket_price" in changes
     stmt = select(Event).where(Event.id == event_id)
-    if "ticket_capacity" in changes:
+    if "ticket_capacity" in changes or touches_tiers:
         # Lock + recitire: o aprobare simultană (care ține același lock pe
         # eveniment) nu poate vinde între verificarea de mai jos și commit.
         stmt = stmt.with_for_update().execution_options(populate_existing=True)
@@ -1620,8 +1647,9 @@ async def update_event(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Event not found"
         )
+    await ticket_tiers.ensure_loaded(db, event)
 
-    if not changes:
+    if not changes and tiers_in is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Niciun câmp de actualizat.",
@@ -1647,8 +1675,31 @@ async def update_event(
     changes.update(
         _cover_framing({k: v for k, v in changes.items() if k in _COVER_FRAMING_DEFAULTS})
     )
+    tier_items = None
+    if tiers_in is not None:
+        tier_items = tiers_in
+    elif "ticket_price" in changes:
+        # Client vechi (doar prețul unic): se aplică tipului unic al evenimentului.
+        tier_items = ticket_tiers.legacy_price_items(event, changes["ticket_price"])
+        if tier_items is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "Evenimentul are mai multe tipuri de bilet — modificați "
+                    "prețurile din lista tipurilor."
+                ),
+            )
+    # `ticket_price` e derivat din tipuri (prețul minim) — îl scrie `sync_tiers`.
+    changes.pop("ticket_price", None)
     for field, value in changes.items():
         setattr(event, field, value)
+    if tier_items is not None:
+        await ticket_tiers.sync_tiers(db, event, tier_items)
+        changes["ticket_tiers"] = [
+            {"name": t.name, "price": t.price, "capacity": t.capacity}
+            for t in event.ticket_tiers
+        ]
+        changes["ticket_price"] = event.ticket_price
 
     audit(
         db,
@@ -1662,6 +1713,7 @@ async def update_event(
     )
     await db.commit()
     await db.refresh(event)
+    await ticket_tiers.ensure_loaded(db, event)
 
     counts = await _attendee_counts(db, [event.id])
     orders = await _ticket_order_counts(db, [event.id])

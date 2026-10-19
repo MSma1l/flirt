@@ -22,9 +22,14 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.core.validators import optional_safe_str, safe_str
+from app.models.event import (
+    MAX_TICKET_TIERS,
+    TICKET_TIER_DESCRIPTION_MAX_LENGTH,
+    TICKET_TIER_NAME_MAX_LENGTH,
+)
 
 # Plafoane de lungime aliniate cu coloanele din modele (convenția proiectului:
 # vezi `schemas/moderation.py`, `schemas/billing.py`). Aliniate cu:
@@ -224,6 +229,48 @@ class ResolveIn(BaseModel):
 
 
 # --- Evenimente ---------------------------------------------------------------
+# Plafonul prețului unui bilet: protejează de o greșeală de tastare (zerouri în
+# plus) care ar ajunge în instrucțiunile de plată ale userilor.
+TICKET_PRICE_MAX = 1_000_000
+
+
+class AdminTicketTierIn(BaseModel):
+    """Un tip de bilet trimis de panou. Fără `id` = tip nou; cu `id` = tip existent
+    (își păstrează contorul de bilete vândute și comenzile legate de el)."""
+
+    id: uuid.UUID | None = None
+    name: safe_str(TICKET_TIER_NAME_MAX_LENGTH)
+    price: float = Field(ge=0, le=TICKET_PRICE_MAX)
+    # NULL = fără plafon propriu; nu poate coborî sub biletele deja vândute.
+    capacity: int | None = Field(default=None, ge=1)
+    description: optional_safe_str(TICKET_TIER_DESCRIPTION_MAX_LENGTH) | None = None
+
+
+def _check_tiers(tiers: list[AdminTicketTierIn] | None) -> list[AdminTicketTierIn] | None:
+    """Nume unice (fără diferență de majuscule) și id-uri neduplicate."""
+    if tiers is None:
+        return None
+    names = [t.name.casefold() for t in tiers]
+    if len(set(names)) != len(names):
+        raise ValueError("Numele tipurilor de bilet trebuie să fie diferite.")
+    ids = [t.id for t in tiers if t.id is not None]
+    if len(set(ids)) != len(ids):
+        raise ValueError("Același tip de bilet apare de două ori.")
+    return tiers
+
+
+class AdminTicketTierOut(BaseModel):
+    """Un tip de bilet în panou, cu contorul de bilete vândute."""
+
+    id: uuid.UUID
+    name: str
+    description: str | None = None
+    price: float
+    capacity: int | None = None
+    sold: int = 0
+    position: int = 0
+
+
 class AdminEventIn(BaseModel):
     """Payload la CREAREA unui eveniment (`POST /admin/events`).
 
@@ -267,7 +314,7 @@ class AdminEventIn(BaseModel):
     ) = None
     # Preț al biletului ONLINE (transfer bancar). NULL = biletul online indisponibil.
     # `ticket_currency` are sens doar când `ticket_price` e setat (implicit „lei").
-    ticket_price: float | None = Field(default=None, ge=0)
+    ticket_price: float | None = Field(default=None, ge=0, le=TICKET_PRICE_MAX)
     ticket_currency: (
         optional_safe_str(EVENT_TICKET_CURRENCY_MAX_LENGTH) | None
     ) = None
@@ -276,7 +323,16 @@ class AdminEventIn(BaseModel):
     ticket_sales_end_at: datetime | None = None
     # Câte bilete online se pot vinde. NULL = nelimitat; altfel ≥ 1. Nu poate
     # coborî sub biletele deja vândute (409 `capacity_below_sold`, în serviciu).
+    # Cu tipuri de bilet = capacitatea TOTALĂ (peste plafoanele tipurilor).
     ticket_capacity: int | None = Field(default=None, ge=1)
+    # Tipurile de bilet (max 4), în ordinea de afișare. Când e trimis, e SURSA
+    # prețului: `ticket_price` devine prețul minim; `[]` = fără vânzare online.
+    # Netrimis (clienți vechi) = `ticket_price` se aplică ca preț unic.
+    ticket_tiers: list[AdminTicketTierIn] | None = Field(
+        default=None, max_length=MAX_TICKET_TIERS
+    )
+
+    _tiers_valid = field_validator("ticket_tiers")(_check_tiers)
 
 
 class AdminEventUpdate(BaseModel):
@@ -315,7 +371,7 @@ class AdminEventUpdate(BaseModel):
     promo_description: (
         optional_safe_str(EVENT_PROMO_DESCRIPTION_MAX_LENGTH) | None
     ) = None
-    ticket_price: float | None = Field(default=None, ge=0)
+    ticket_price: float | None = Field(default=None, ge=0, le=TICKET_PRICE_MAX)
     ticket_currency: (
         optional_safe_str(EVENT_TICKET_CURRENCY_MAX_LENGTH) | None
     ) = None
@@ -324,7 +380,16 @@ class AdminEventUpdate(BaseModel):
     ticket_sales_end_at: datetime | None = None
     # Câte bilete online se pot vinde. NULL = nelimitat; altfel ≥ 1. Nu poate
     # coborî sub biletele deja vândute (409 `capacity_below_sold`, în serviciu).
+    # Cu tipuri de bilet = capacitatea TOTALĂ (peste plafoanele tipurilor).
     ticket_capacity: int | None = Field(default=None, ge=1)
+    # Tipurile de bilet (max 4), în ordinea de afișare. Când e trimis, e SURSA
+    # prețului: `ticket_price` devine prețul minim; `[]` = fără vânzare online.
+    # Netrimis (clienți vechi) = `ticket_price` se aplică ca preț unic.
+    ticket_tiers: list[AdminTicketTierIn] | None = Field(
+        default=None, max_length=MAX_TICKET_TIERS
+    )
+
+    _tiers_valid = field_validator("ticket_tiers")(_check_tiers)
 
 
 class AdminEventCoverOut(BaseModel):
@@ -365,6 +430,8 @@ class AdminEventOut(BaseModel):
     # (ocupate la aprobare, eliberate la anularea unui bilet emis).
     ticket_capacity: int | None = None
     tickets_sold: int = 0
+    # Tipurile de bilet (listă goală = preț unic, eveniment vechi).
+    ticket_tiers: list[AdminTicketTierOut] = Field(default_factory=list)
     # Participanții REALI (going=True) — adminul îi vede mereu.
     attendee_count: int = 0
     # „Participanți afișați" setat de admin (NULL = nesetat) și numărul pe care îl

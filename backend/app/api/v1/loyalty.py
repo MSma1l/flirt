@@ -74,7 +74,10 @@ async def redeem_invite(data: RedeemIn, db: DbDep, user: UserDep) -> RedeemOut:
     tags=["loyalty"],
 )
 async def ticket_quote(
-    event_id: uuid.UUID, db: DbDep, user: UserDep
+    event_id: uuid.UUID,
+    db: DbDep,
+    user: UserDep,
+    ticket_tier_id: uuid.UUID | None = None,
 ) -> TicketQuoteOut:
     """Cât plătesc EU pe biletul acestui eveniment, cu defalcarea reducerii.
 
@@ -82,4 +85,4 @@ async def ticket_quote(
     evenimentului și invitațiile efectiv folosite. 400 dacă evenimentul nu are
     preț, 404 dacă nu există.
     """
-    return await loyalty.ticket_quote(db, user, event_id)
+    return await loyalty.ticket_quote(db, user, event_id, ticket_tier_id)

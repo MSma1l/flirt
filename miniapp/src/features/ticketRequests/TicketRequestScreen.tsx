@@ -15,11 +15,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 
 import { formatEventDate } from '@/features/events/eventFormat';
 import { fetchEvent, type EventItem } from '@/features/events/eventsApi';
 import { salesNotice, salesRefusal, useSalesState, type SalesBlock } from '@/features/events/ticketSales';
+import { TicketTierPicker } from '@/features/events/TicketTierPicker';
+import { needsTierChoice, resolveTier } from '@/features/events/ticketTiers';
 import { formatPrice } from '@/features/loyalty/priceFormat';
 import { OrderStepper } from '@/features/tickets/OrderStepper';
 import { PaymentDetails } from '@/features/tickets/PaymentDetails';
@@ -96,6 +98,7 @@ function RequestSummary({ request }: { request: TicketRequest }) {
       <p className="caption">
         {formatEventDate(request.event_starts_at)} · {t('ticketRequests.ticketsCount', { count: request.ticket_quantity })} ·{' '}
         {formatPrice(request.total_amount, request.currency ?? 'lei')}
+        {request.ticket_tier_name ? ` · ${request.ticket_tier_name}` : ''}
       </p>
       <p className="tr-next" data-testid="request-next-step">
         {status.next}
@@ -180,6 +183,9 @@ export function TicketRequestScreen() {
   /** Serverul a închis / oprit vânzarea între timp (refuz la creare). */
   const [blockedByServer, setBlockedByServer] = useState<Exclude<SalesBlock, 'soldOut'> | null>(null);
   const [soldOutByServer, setSoldOutByServer] = useState(false);
+  // Tipul de bilet: preselectat din pagina evenimentului (`?tier=`), schimbabil aici.
+  const [searchParams] = useSearchParams();
+  const [tierChoice, setTierChoice] = useState<string | null>(() => searchParams.get('tier'));
 
   const { data: event, isPending: eventPending, isError: eventError } = useQuery<EventItem>({
     queryKey: ['event', eventId],
@@ -196,9 +202,16 @@ export function TicketRequestScreen() {
   const ownForEvent = useMemo(() => (requests ?? []).filter((r) => r.event_id === eventId), [eventId, requests]);
   const sales = useSalesState(event ?? {});
 
+  const selectedTier = resolveTier(event?.ticketTiers, tierChoice);
+  const chosenTierId = needsTierChoice(event?.ticketTiers) ? (selectedTier?.id ?? null) : null;
+
   const create = useMutation({
     mutationFn: () =>
-      createTicketRequest(eventId, { ...form, ticketQuantity: Number(form.ticketQuantity) }),
+      createTicketRequest(eventId, {
+        ...form,
+        ticketQuantity: Number(form.ticketQuantity),
+        ...(chosenTierId ? { ticketTierId: chosenTierId } : {}),
+      }),
     onSuccess: (created) => {
       if (created.bank_payment) client.setQueryData(['ticket-request-payment', created.id], created.bank_payment);
       setWantsAnother(false);
@@ -279,7 +292,7 @@ export function TicketRequestScreen() {
   const salesClosed = salesBlock !== null;
   const notice = salesBlock ? salesNotice(salesBlock, blockedByServer !== null) : null;
   const showForm = !salesClosed && !hasActive && (displayedRequests.length === 0 || wantsAnother);
-  const price = event.ticketPrice ?? 0;
+  const price = selectedTier?.price ?? event.ticketPrice ?? 0;
   const currency = event.ticketCurrency ?? 'lei';
   const fieldError = (key: keyof FormState) =>
     errors[key] ? (
@@ -332,6 +345,17 @@ export function TicketRequestScreen() {
             <p>
               {event.venue} · {event.city}
             </p>
+            {chosenTierId ? (
+              <TicketTierPicker
+                tiers={event.ticketTiers ?? []}
+                selectedId={chosenTierId}
+                currency={currency}
+                onSelect={(id) => {
+                  setTierChoice(id);
+                  setSoldOutByServer(false);
+                }}
+              />
+            ) : null}
             <dl className="tr-totals">
               <dt>{t('ticketRequests.form.pricePerTicket')}</dt>
               <dd>{formatPrice(price, currency)}</dd>

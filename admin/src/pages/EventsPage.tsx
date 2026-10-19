@@ -35,6 +35,7 @@ import { CoverFramer } from '../components/CoverFramer';
 import { EventPreview, kindLabel } from '../components/EventPreview';
 import { IMAGE_RULES, MediaUploadField, previewSrc } from '../components/MediaUploadField';
 import { Modal } from '../components/Modal';
+import { TicketTiersEditor } from '../components/TicketTiersEditor';
 import {
   Badge,
   Button,
@@ -63,6 +64,7 @@ import {
   toPayload,
   validate,
   warnings,
+  withTiers,
   type EventSort,
   type EventTimeFilter,
   type FormErrors,
@@ -75,10 +77,16 @@ const FILTER_OPTIONS: readonly EventTimeFilter[] = ['all', 'upcoming', 'past'] a
 
 const SORT_OPTIONS: readonly EventSort[] = ['soonest', 'latest'] as const;
 
-/** Prețul biletului pentru tabel: „50 lei" sau „—" când biletul online lipsește. */
-function ticketPriceLabel(event: AdminEvent): string {
+/**
+ * Prețul biletului pentru tabel: „50 lei", „de la 50 lei" (mai multe tipuri) sau
+ * „—" când biletul online lipsește.
+ */
+function ticketPriceLabel(event: AdminEvent, language: Language): string {
   if (event.ticket_price === null) return '—';
-  return formatMoney(event.ticket_price, event.ticket_currency);
+  const price = formatMoney(event.ticket_price, event.ticket_currency);
+  const tiers = event.ticket_tiers ?? [];
+  const distinct = new Set(tiers.map((tier) => tier.price));
+  return distinct.size > 1 ? eventsMessages[language].table.priceFrom(price) : price;
 }
 
 export function EventsPage(): JSX.Element {
@@ -117,6 +125,11 @@ export function EventsPage(): JSX.Element {
         // mesaj fără număr + reîmprospătăm lista ca editorul să afle cifra nouă.
         setFormError(null);
         setCapacityError(m.validation.capacityBelowSoldServer);
+        void invalidate();
+        return;
+      }
+      if (error instanceof ApiError && error.code === 'ticket_tier_in_use') {
+        setFormError(m.validation.tierInUseServer);
         void invalidate();
         return;
       }
@@ -374,7 +387,10 @@ function EventTable({
                 <td>{event.venue ?? '—'}</td>
                 <td>{kindLabel(event.kind, language)}</td>
                 <td className="mono">
-                  {ticketPriceLabel(event)}
+                  {ticketPriceLabel(event, language)}
+                  {(event.ticket_tiers?.length ?? 0) > 1 ? (
+                    <div className="muted">{t.tierCount(event.ticket_tiers?.length ?? 0)}</div>
+                  ) : null}
                   {event.ticket_price !== null && event.ticket_sales_end_at ? (
                     <div className="muted">{t.salesEnd(formatDateTime(event.ticket_sales_end_at))}</div>
                   ) : null}
@@ -680,23 +696,12 @@ function EventFormModal({
 
           <fieldset className="form-section">
             <legend>{f.ticketLegend}</legend>
+            <TicketTiersEditor
+              rows={form.ticket_tiers}
+              currency={form.ticket_currency}
+              onChange={(rows) => setForm((current) => withTiers(current, rows))}
+            />
             <div className="form-grid">
-              <div>
-                <Field label={f.ticketPrice} htmlFor="event-ticket-price">
-                  <TextInput
-                    id="event-ticket-price"
-                    type="number"
-                    inputMode="decimal"
-                    min={0}
-                    step="0.01"
-                    placeholder={f.ticketPricePlaceholder}
-                    value={form.ticket_price}
-                    aria-invalid={errors.ticket_price ? true : undefined}
-                    onChange={(e) => set('ticket_price', e.target.value)}
-                  />
-                </Field>
-                <FieldError message={errors.ticket_price} />
-              </div>
               <div>
                 <Field label={f.currency} htmlFor="event-ticket-currency">
                   <TextInput

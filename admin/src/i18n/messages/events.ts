@@ -53,6 +53,8 @@ export const eventsMessages = defineMessages({
       past: 'Trecut',
       ticketsTitle: 'Comenzi nerespinse (din care aprobate)',
       salesEnd: (when: string) => `Vânzare online până la ${when}`,
+      priceFrom: (price: string) => `de la ${price}`,
+      tierCount: (count: number) => (count === 1 ? '1 tip de bilet' : `${count} tipuri de bilet`),
       soldOf: (sold: number, capacity: number | null) =>
         `Vândute: ${sold} / ${capacity ?? 'nelimitat'}`,
       edit: 'Editează',
@@ -115,9 +117,10 @@ export const eventsMessages = defineMessages({
       currency: 'Monedă',
       salesEnd: 'Vânzarea online se închide la',
       salesEndHint: 'Gol = la începutul evenimentului',
-      ticketCapacity: 'Capacitate bilete',
+      ticketCapacity: 'Capacitate totală',
       ticketCapacityPlaceholder: 'gol = nelimitat',
-      ticketCapacityHint: 'Câte bilete se pot vinde în total (comenzi + cereri). Gol = nelimitat.',
+      ticketCapacityHint:
+        'Câte bilete se pot vinde în total, din toate tipurile (comenzi + cereri). Gol = nelimitat.',
       attendeesLegend: 'Participanți afișați',
       displayedAttendees: 'Participanți afișați',
       displayedAttendeesPlaceholder: 'gol = numărul real',
@@ -127,6 +130,29 @@ export const eventsMessages = defineMessages({
         'oameni decât ai scris, aplicația arată numărul real. Gol = numărul real.',
       realAttendees: (real: number, shown: number) =>
         `Înscriși real: ${real} · afișat în aplicație: ${shown}`,
+      tiers: {
+        title: 'Tipuri de bilet',
+        hint:
+          'Până la 4 prețuri (ex. Early bird, Standard, VIP, La intrare). Utilizatorul alege ' +
+          'tipul la cumpărare; cu un singur tip nu apare niciun pas în plus.',
+        empty: 'Biletul online e dezactivat. Adaugă un tip de bilet ca să pornești vânzarea.',
+        add: 'Adaugă tip de bilet',
+        limit: (max: number) => `Maximum ${max} tipuri de bilet.`,
+        row: (index: number) => `Tipul ${index}`,
+        name: 'Nume',
+        namePlaceholder: 'ex. Early bird',
+        price: 'Preț',
+        capacity: 'Locuri',
+        capacityPlaceholder: 'gol = fără plafon',
+        description: 'Descriere scurtă',
+        descriptionPlaceholder: 'opțional, ex. Primele 50 de bilete',
+        moveUp: 'Mută mai sus',
+        moveDown: 'Mută mai jos',
+        remove: 'Șterge tipul',
+        sold: (sold: number, capacity: number | null) =>
+          `Vândute: ${sold}${capacity === null ? '' : ` / ${capacity}`}`,
+        removeSoldHint: 'Are bilete vândute — nu poate fi șters, doar modificat.',
+      },
       soldOf: (sold: number, capacity: number | null) =>
         `Vândute: ${sold} / ${capacity ?? 'nelimitat'}`,
       promoLegend: 'Promo / Reducere la intrare',
@@ -159,6 +185,8 @@ export const eventsMessages = defineMessages({
       promoCode: 'Cod promo',
       promoDescription: 'Descriere promo',
       currency: 'Monedă',
+      tierName: 'Numele tipului',
+      tierDescription: 'Descrierea tipului',
     },
     validation: {
       titleRequired: 'Titlul este obligatoriu.',
@@ -174,6 +202,14 @@ export const eventsMessages = defineMessages({
       percentRange: 'Reducerea trebuie să fie între 0 și 100%.',
       percentInteger: 'Reducerea se exprimă în procente întregi.',
       priceNegative: 'Prețul biletului nu poate fi negativ.',
+      priceTooHigh: 'Prețul pare greșit (maximum 1 000 000).',
+      tierNameRequired: 'Numele tipului este obligatoriu.',
+      tierNameDuplicate: 'Există deja un tip cu acest nume.',
+      tierPriceRequired: 'Prețul este obligatoriu.',
+      tiersMax: (max: number) => `Maximum ${max} tipuri de bilet.`,
+      tiersInvalid: 'Corectează tipurile de bilet marcate.',
+      tierInUseServer:
+        'Un tip de bilet cu comenzi active nu poate fi șters. Respinge sau anulează întâi comenzile lui.',
       currencyRequired: 'Un preț fără monedă nu spune nimic.',
       salesEndTooLate:
         'Vânzarea online trebuie să se închidă cel târziu la 12 ore după începutul evenimentului.',
@@ -244,6 +280,9 @@ export const eventsMessages = defineMessages({
       past: 'Прошло',
       ticketsTitle: 'Неотклонённые заказы (из них одобренные)',
       salesEnd: (when: string) => `Онлайн-продажа до ${when}`,
+      priceFrom: (price: string) => `от ${price}`,
+      tierCount: (count: number) =>
+        count === 1 ? '1 тип билета' : count < 5 ? `${count} типа билетов` : `${count} типов билетов`,
       soldOf: (sold: number, capacity: number | null) =>
         `Продано: ${sold} / ${capacity ?? 'без ограничений'}`,
       edit: 'Изменить',
@@ -306,9 +345,10 @@ export const eventsMessages = defineMessages({
       currency: 'Валюта',
       salesEnd: 'Онлайн-продажа закрывается в',
       salesEndHint: 'Пусто = в момент начала события',
-      ticketCapacity: 'Вместимость билетов',
+      ticketCapacity: 'Общая вместимость',
       ticketCapacityPlaceholder: 'пусто = без ограничений',
-      ticketCapacityHint: 'Сколько билетов можно продать всего (заказы + заявки). Пусто = без ограничений.',
+      ticketCapacityHint:
+        'Сколько билетов можно продать всего, по всем типам (заказы + заявки). Пусто = без ограничений.',
       attendeesLegend: 'Показываемые участники',
       displayedAttendees: 'Показываемые участники',
       displayedAttendeesPlaceholder: 'пусто = реальное число',
@@ -318,6 +358,29 @@ export const eventsMessages = defineMessages({
         'людей, чем вы указали, приложение покажет реальное число. Пусто = реальное число.',
       realAttendees: (real: number, shown: number) =>
         `Записались реально: ${real} · показывается в приложении: ${shown}`,
+      tiers: {
+        title: 'Типы билетов',
+        hint:
+          'До 4 цен (например Early bird, Standard, VIP, На входе). Пользователь выбирает ' +
+          'тип при покупке; если тип один, лишнего шага нет.',
+        empty: 'Онлайн-билет отключён. Добавьте тип билета, чтобы включить продажу.',
+        add: 'Добавить тип билета',
+        limit: (max: number) => `Не более ${max} типов билетов.`,
+        row: (index: number) => `Тип ${index}`,
+        name: 'Название',
+        namePlaceholder: 'напр. Early bird',
+        price: 'Цена',
+        capacity: 'Мест',
+        capacityPlaceholder: 'пусто = без лимита',
+        description: 'Краткое описание',
+        descriptionPlaceholder: 'необязательно, напр. Первые 50 билетов',
+        moveUp: 'Выше',
+        moveDown: 'Ниже',
+        remove: 'Удалить тип',
+        sold: (sold: number, capacity: number | null) =>
+          `Продано: ${sold}${capacity === null ? '' : ` / ${capacity}`}`,
+        removeSoldHint: 'Есть проданные билеты — тип нельзя удалить, только изменить.',
+      },
       soldOf: (sold: number, capacity: number | null) =>
         `Продано: ${sold} / ${capacity ?? 'без ограничений'}`,
       promoLegend: 'Промо / Скидка на входе',
@@ -349,6 +412,8 @@ export const eventsMessages = defineMessages({
       promoCode: 'Промокод',
       promoDescription: 'Описание промо',
       currency: 'Валюта',
+      tierName: 'Название типа',
+      tierDescription: 'Описание типа',
     },
     validation: {
       titleRequired: 'Название обязательно.',
@@ -364,6 +429,14 @@ export const eventsMessages = defineMessages({
       percentRange: 'Скидка должна быть от 0 до 100%.',
       percentInteger: 'Скидка указывается в целых процентах.',
       priceNegative: 'Цена билета не может быть отрицательной.',
+      priceTooHigh: 'Цена выглядит ошибочной (максимум 1 000 000).',
+      tierNameRequired: 'Название типа обязательно.',
+      tierNameDuplicate: 'Тип с таким названием уже есть.',
+      tierPriceRequired: 'Цена обязательна.',
+      tiersMax: (max: number) => `Не более ${max} типов билетов.`,
+      tiersInvalid: 'Исправьте отмеченные типы билетов.',
+      tierInUseServer:
+        'Тип билета с активными заказами нельзя удалить. Сначала отклоните или отмените его заказы.',
       currencyRequired: 'Цена без валюты ничего не значит.',
       salesEndTooLate:
         'Онлайн-продажа должна закрываться не позднее чем через 12 часов после начала события.',

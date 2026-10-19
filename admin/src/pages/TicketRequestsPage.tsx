@@ -267,6 +267,11 @@ export function TicketRequestsPage(): JSX.Element {
                       <div className="muted">
                         {m.perTicket(request.ticket_quantity, formatMoney(request.ticket_price, request.currency))}
                       </div>
+                      {request.ticket_tier_name ? (
+                        <div data-testid="request-tier">
+                          <Badge tone="neutral">{request.ticket_tier_name}</Badge>
+                        </div>
+                      ) : null}
                     </td>
                     <td>
                       {request.payment_proof_uploaded ? (
@@ -370,6 +375,14 @@ function TicketRequestDetail({
                     {m.perTicket(current.ticket_quantity, formatMoney(current.ticket_price, current.currency))}
                   </div>
                 </div>
+                {current.ticket_tier_name ? (
+                  <div>
+                    <div className="ticket-summary__label">{m.fieldTier}</div>
+                    <div className="ticket-summary__value" data-testid="request-detail-tier">
+                      {current.ticket_tier_name}
+                    </div>
+                  </div>
+                ) : null}
                 <div>
                   <div className="ticket-summary__label">{m.colClient}</div>
                   <div style={{ fontWeight: 700 }}>{current.full_name ?? '—'}</div>

@@ -68,6 +68,9 @@ export interface TicketOrder {
   admittedAt?: string | null;
   /** Chitanța a fost încărcată (lipsește pe serverele vechi). */
   paymentProofUploaded?: boolean;
+  /** Tipul de bilet ales (Early bird / VIP …); null = preț unic / server vechi. */
+  ticketTierId?: string | null;
+  ticketTierName?: string | null;
 }
 
 /** O comandă din listă, cu evenimentul alăturat. */
@@ -107,6 +110,8 @@ export function mapOrder(o: Raw): TicketOrder {
     ticketCode: str(o.ticket_code),
     adminNote: str(o.admin_note),
     paymentProofUploaded: o.payment_proof_uploaded === true,
+    ticketTierId: str(o.ticket_tier_id),
+    ticketTierName: str(o.ticket_tier_name),
     ...orderTicketFields(o),
   };
 }

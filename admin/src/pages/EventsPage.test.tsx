@@ -74,6 +74,20 @@ async function fillRequired(
   await person.type(within(dialog).getByLabelText('Data și ora *'), datetimeLocalInDays(days));
 }
 
+/** Adaugă un tip de bilet (nume + preț) în editorul de tipuri. */
+async function addTier(
+  person: ReturnType<typeof userEvent.setup>,
+  dialog: HTMLElement,
+  name: string,
+  price: string,
+): Promise<void> {
+  await person.click(within(dialog).getByTestId('ticket-tier-add'));
+  const rows = within(dialog).getAllByTestId('ticket-tier-row');
+  const row = rows[rows.length - 1]!;
+  await person.type(within(row).getByLabelText('Nume'), name);
+  await person.type(within(row).getByLabelText(/^Preț \(/), price);
+}
+
 describe('EventsPage — creare', () => {
   it('creează un eveniment nou cu payload-ul corect', async () => {
     seedAdminSession();
@@ -125,7 +139,7 @@ describe('EventsPage — creare', () => {
       within(dialog).getByLabelText('URL copertă'),
       'https://cdn.exemplu.md/poster.jpg',
     );
-    await person.type(within(dialog).getByLabelText('Preț bilet'), '150');
+    await addTier(person, dialog, 'Standard', '150');
     await person.clear(within(dialog).getByLabelText('Monedă'));
     await person.type(within(dialog).getByLabelText('Monedă'), 'MDL');
     await person.type(within(dialog).getByLabelText('Reducere (%)'), '10');
@@ -149,7 +163,7 @@ describe('EventsPage — creare', () => {
       cover_url: 'https://cdn.exemplu.md/poster.jpg',
       lat: 47.0245,
       lng: 28.8322,
-      ticket_price: 150,
+      ticket_tiers: [{ id: null, name: 'Standard', price: 150, capacity: null, description: null }],
       ticket_currency: 'MDL',
       promo_discount_percent: 10,
       promo_code: 'FLIRT10',
@@ -188,7 +202,7 @@ describe('EventsPage — creare', () => {
     });
   });
 
-  it('trimite prețul biletului și moneda în payload', async () => {
+  it('trimite tipurile de bilet (în ordine) și moneda în payload', async () => {
     seedAdminSession();
     const api = mockFetch({
       'GET /admin/events': { body: [] },
@@ -201,14 +215,22 @@ describe('EventsPage — creare', () => {
 
     const dialog = await openNewEventForm(person);
     await fillRequired(person, dialog, { title: 'Gală', city: 'Cluj' });
-    await person.type(within(dialog).getByLabelText('Preț bilet'), '50');
+    await addTier(person, dialog, 'Early bird', '50');
+    await addTier(person, dialog, 'VIP', '200');
+    // VIP urcă primul, apoi primește un plafon propriu.
+    await person.click(within(dialog).getAllByRole('button', { name: 'Mută mai sus' })[1]!);
+    const vip = within(dialog).getAllByTestId('ticket-tier-row')[0]!;
+    await person.type(within(vip).getByLabelText('Locuri'), '20');
     await person.click(within(dialog).getByRole('button', { name: 'Creează evenimentul' }));
 
     await waitFor(() => {
       expect(api.callsTo('POST /admin/events')).toHaveLength(1);
     });
     expect(api.callsTo('POST /admin/events')[0]?.body).toMatchObject({
-      ticket_price: 50,
+      ticket_tiers: [
+        { id: null, name: 'VIP', price: 200, capacity: 20, description: null },
+        { id: null, name: 'Early bird', price: 50, capacity: null, description: null },
+      ],
       ticket_currency: 'lei',
     });
   });
@@ -232,7 +254,7 @@ describe('EventsPage — creare', () => {
       expect(api.callsTo('POST /admin/events')).toHaveLength(1);
     });
     const body = api.callsTo('POST /admin/events')[0]?.body as Record<string, unknown>;
-    expect(body.ticket_price).toBeNull();
+    expect(body.ticket_tiers).toEqual([]);
     expect(body.ticket_currency).toBeNull();
   });
 });
@@ -370,7 +392,7 @@ describe('EventsPage — previzualizare', () => {
     const dialog = await openNewEventForm(person);
     await fillRequired(person, dialog, { title: 'Noapte de vară', city: 'Chișinău' });
     await person.type(within(dialog).getByLabelText('Locație'), 'Club Nova');
-    await person.type(within(dialog).getByLabelText('Preț bilet'), '150');
+    await addTier(person, dialog, 'Standard', '150');
 
     const preview = within(dialog).getByLabelText('Previzualizare aplicație');
     expect(within(preview).getAllByText('Noapte de vară').length).toBeGreaterThan(0);
@@ -512,8 +534,45 @@ describe('EventsPage — editare', () => {
       lat: 47.0245,
       lng: 28.8322,
       cover_url: 'https://cdn.exemplu.md/a.jpg',
+      // Eveniment vechi (doar prețul unic) → un tip implicit cu același preț.
+      ticket_tiers: [{ id: null, name: 'Standard', price: 100, capacity: null, description: null }],
+      ticket_currency: 'lei',
+    });
+  });
+
+  it('păstrează id-urile tipurilor și blochează ștergerea unui tip cu bilete vândute', async () => {
+    seedAdminSession();
+    const existing = makeEvent({
       ticket_price: 100,
       ticket_currency: 'lei',
+      ticket_tiers: [
+        { id: 't-1', name: 'Early bird', description: null, price: 100, capacity: 10, sold: 4, position: 0 },
+        { id: 't-2', name: 'VIP', description: 'Lounge', price: 300, capacity: null, sold: 0, position: 1 },
+      ],
+    });
+    const api = mockFetch({
+      'GET /admin/events': { body: [existing] },
+      'PUT /admin/events/e-1': { body: existing },
+    });
+    const person = userEvent.setup();
+
+    renderWithProviders(<EventsPage />);
+    await screen.findByText('Seară de stand-up');
+    expect(screen.getByText(/^de la 100/)).toBeInTheDocument();
+
+    await person.click(screen.getByRole('button', { name: 'Editează' }));
+    const dialog = await screen.findByRole('dialog');
+    const removeButtons = within(dialog).getAllByRole('button', { name: 'Șterge tipul' });
+    expect(removeButtons[0]).toBeDisabled();
+    expect(removeButtons[1]).toBeEnabled();
+    await person.click(removeButtons[1]!);
+    await person.click(within(dialog).getByRole('button', { name: 'Salvează' }));
+
+    await waitFor(() => {
+      expect(api.callsTo('PUT /admin/events/e-1')).toHaveLength(1);
+    });
+    expect(api.callsTo('PUT /admin/events/e-1')[0]?.body).toMatchObject({
+      ticket_tiers: [{ id: 't-1', name: 'Early bird', price: 100, capacity: 10, description: null }],
     });
   });
 });
@@ -536,17 +595,17 @@ describe('EventsPage — capacitatea de bilete', () => {
 
     await person.click(screen.getAllByRole('button', { name: 'Editează' })[0]!);
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByLabelText('Capacitate bilete')).toHaveValue(50);
+    expect(within(dialog).getByLabelText('Capacitate totală')).toHaveValue(50);
     expect(within(dialog).getByTestId('event-tickets-sold')).toHaveTextContent('Vândute: 3 / 50');
 
     // Sub cele vândute: blocat local, cu mesaj sub câmp.
-    await person.clear(within(dialog).getByLabelText('Capacitate bilete'));
-    await person.type(within(dialog).getByLabelText('Capacitate bilete'), '2');
+    await person.clear(within(dialog).getByLabelText('Capacitate totală'));
+    await person.type(within(dialog).getByLabelText('Capacitate totală'), '2');
     expect(within(dialog).getByText('Capacitatea nu poate fi mai mică decât biletele deja vândute (3).')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Salvează' })).toBeDisabled();
 
     // Gol = nelimitat → `null` în payload.
-    await person.clear(within(dialog).getByLabelText('Capacitate bilete'));
+    await person.clear(within(dialog).getByLabelText('Capacitate totală'));
     await person.click(within(dialog).getByRole('button', { name: 'Salvează' }));
     await waitFor(() => expect(api.callsTo('PUT /admin/events/e-1')).toHaveLength(1));
     expect(api.callsTo('PUT /admin/events/e-1')[0]?.body).toMatchObject({ ticket_capacity: null });
@@ -567,13 +626,13 @@ describe('EventsPage — capacitatea de bilete', () => {
     await screen.findByText('Seară de stand-up');
     await person.click(screen.getByRole('button', { name: 'Editează' }));
     const dialog = await screen.findByRole('dialog');
-    const input = within(dialog).getByLabelText('Capacitate bilete');
+    const input = within(dialog).getByLabelText('Capacitate totală');
     await person.clear(input);
     await person.type(input, '4');
     await person.click(within(dialog).getByRole('button', { name: 'Salvează' }));
 
     expect(await within(dialog).findByText(/s-au vândut mai multe bilete decât capacitatea/)).toBeInTheDocument();
-    expect(within(dialog).getByLabelText('Capacitate bilete')).toHaveAttribute('aria-invalid', 'true');
+    expect(within(dialog).getByLabelText('Capacitate totală')).toHaveAttribute('aria-invalid', 'true');
     // Nu și ca eroare generică a formularului.
     expect(within(dialog).queryByText('Capacity below sold')).toBeNull();
   });

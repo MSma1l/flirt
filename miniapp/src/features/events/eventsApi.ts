@@ -22,17 +22,19 @@
  *   POST /events/{id}/going            → setGoing
  *   POST /events/{id}/checkin          → checkin
  *   GET  /ticket-orders/mine           → fetchMyTicketOrders
- *   POST /events/{id}/ticket-orders    → createTicketOrder
+ *   POST /events/{id}/ticket-orders    → createTicketOrder (local: trimite tipul de bilet)
  *
  * Detaliul evenimentului are nevoie de ambele familii: evenimentul în sine și
  * comanda de bilet online pentru el, de aceea stau împreună în acest modul.
  */
 import { api } from '@/api/client';
+import { mapOrder, type TicketOrder as OrderModel } from '@/features/tickets/orderModel';
+import { mapPayment, type PaymentInstructions } from '@/features/tickets/paymentModel';
 import type { EventItem as MobileEventItem } from '@mobile/features/events/types';
 
-export { checkin, setGoing } from '@mobile/features/events/eventsApi';
+import { mapTicketTiers, type TicketTier } from './ticketTiers';
 
-export { createTicketOrder } from '@mobile/features/tickets/ticketsApi';
+export { checkin, setGoing } from '@mobile/features/events/eventsApi';
 
 // Comenzile vin prin modelul local (nu prin mapperul mobil): aceeași cheie de
 // cache `['ticket-orders']` e citită și de ecranul de bilete, deci forma
@@ -59,6 +61,28 @@ export interface EventItem extends MobileEventItem {
   coverFocusX?: number | null;
   coverFocusY?: number | null;
   coverZoom?: number | null;
+  /** Tipurile de bilet (server nou); gol = preț unic (`ticketPrice`). */
+  ticketTiers?: TicketTier[];
+}
+
+/**
+ * `POST /events/{id}/ticket-orders`. Local (nu funcția mobilă) ca să poată
+ * trimite tipul de bilet ales; fără `tierId` corpul lipsește — exact cererea
+ * de dinainte, pe care serverul o acceptă la evenimentele cu un singur preț.
+ */
+export async function createTicketOrder(
+  eventId: string,
+  tierId?: string | null,
+): Promise<{ order: OrderModel; payment: PaymentInstructions | null }> {
+  const url = `/events/${encodeURIComponent(eventId)}/ticket-orders`;
+  type Created = { order: Raw; payment?: Raw | null };
+  const { data } = tierId
+    ? await api.post<Created>(url, { ticket_tier_id: tierId })
+    : await api.post<Created>(url);
+  return {
+    order: mapOrder(data.order),
+    payment: data.payment ? mapPayment(data.payment) : null,
+  };
 }
 
 type Raw = Record<string, unknown>;
@@ -98,6 +122,7 @@ export function mapEvent(raw: unknown): EventItem {
     ticketSalesEndAt: optStr(e.ticket_sales_end_at),
     ticketSalesOpen: typeof e.ticket_sales_open === 'boolean' ? e.ticket_sales_open : null,
     ticketSalesPaused: e.ticket_sales_paused === true,
+    ticketTiers: mapTicketTiers(e.ticket_tiers),
   };
 }
 

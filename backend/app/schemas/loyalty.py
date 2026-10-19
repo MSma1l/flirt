@@ -100,6 +100,8 @@ class TicketQuoteOut(BaseModel):
     """
 
     event_id: uuid.UUID
+    # Tipul de bilet cotat (None = preț unic / prețul minim „de la").
+    ticket_tier_id: uuid.UUID | None = None
     base_price: float
     currency: str
     # Componentele, fiecare deja plafonată la 0..100.

@@ -71,6 +71,15 @@ class TicketOrder(Base):
     # schimbă ulterior `Event.ticket_price`, comenzile deja emise păstrează prețul
     # cu care au fost create (userul plătește exact ce i s-a comunicat).
     price: Mapped[float] = mapped_column(Float, nullable=False)
+    # Tipul de bilet ales (Early bird / VIP …). NULL = eveniment cu preț unic
+    # (fără tipuri) sau tip șters între timp — `ticket_tier_name` rămâne snapshot,
+    # ca adminul să vadă mereu CE s-a cumpărat.
+    ticket_tier_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("event_ticket_tiers.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
+    ticket_tier_name: Mapped[str | None] = mapped_column(String(60), nullable=True)
     ticket_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     total_amount: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")
     full_name: Mapped[str | None] = mapped_column(String(200), nullable=True)

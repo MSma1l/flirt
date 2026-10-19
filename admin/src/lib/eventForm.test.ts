@@ -10,14 +10,19 @@ import { describe, expect, it } from 'vitest';
 import {
   EMPTY_FORM,
   EVENT_LIMITS,
+  canAddTier,
   hasValidCoords,
   isUpcoming,
+  moveTier,
+  newTierRow,
   selectEvents,
   shownAttendees,
   toForm,
   toPayload,
   validate,
+  validateTiers,
   warnings,
+  withTiers,
   type FormState,
 } from './eventForm';
 import type { AdminEvent } from '../api/types';
@@ -115,9 +120,14 @@ describe('validate — promo, bilet, copertă', () => {
     expect(validate(form({ promo_discount_percent: '10' })).promo_discount_percent).toBeUndefined();
   });
 
-  it('respinge prețul negativ și prețul fără monedă', () => {
-    expect(validate(form({ ticket_price: '-5' })).ticket_price).toBeDefined();
-    expect(validate(form({ ticket_price: '50', ticket_currency: '' })).ticket_currency).toBeDefined();
+  it('respinge un tip cu preț negativ și biletele fără monedă', () => {
+    const negative = form({ ticket_tiers: [newTierRow({ name: 'VIP', price: '-5' })] });
+    expect(validate(negative).ticket_tiers).toBeDefined();
+    const noCurrency = form({
+      ticket_tiers: [newTierRow({ name: 'VIP', price: '50' })],
+      ticket_currency: '',
+    });
+    expect(validate(noCurrency).ticket_currency).toBeDefined();
   });
 
   it('respinge o copertă care nu e adresă http(s)', () => {
@@ -157,7 +167,7 @@ describe('toPayload', () => {
     expect(payload.promo_code).toBeNull();
     expect(payload.lat).toBeNull();
     expect(payload.lng).toBeNull();
-    expect(payload.ticket_price).toBeNull();
+    expect(payload.ticket_tiers).toEqual([]);
     expect(payload.ticket_currency).toBeNull();
   });
 
@@ -173,7 +183,7 @@ describe('toPayload', () => {
         promo_discount_percent: '10',
         promo_code: 'FLIRT10',
         promo_description: 'Arată codul la intrare.',
-        ticket_price: '50',
+        ticket_tiers: [newTierRow({ name: ' Standard ', price: '50' })],
         ticket_currency: 'lei',
       }),
     );
@@ -188,7 +198,7 @@ describe('toPayload', () => {
       lng: 28.8322,
       promo_discount_percent: 10,
       promo_code: 'FLIRT10',
-      ticket_price: 50,
+      ticket_tiers: [{ id: null, name: 'Standard', price: 50, capacity: null, description: null }],
       ticket_currency: 'lei',
     });
     // `datetime-local` (ora locală) → ISO UTC, forma cerută de backend.
@@ -216,9 +226,75 @@ describe('toPayload', () => {
       lng: 28.8322,
       promo_discount_percent: 15,
       promo_code: 'F15',
-      ticket_price: 80,
+      // Eveniment vechi fără tipuri: prețul unic devine un tip implicit.
+      ticket_tiers: [{ id: null, name: 'Standard', price: 80, capacity: null, description: null }],
       ticket_currency: 'MDL',
     });
+  });
+});
+
+describe('tipuri de bilet (până la 4 prețuri)', () => {
+  const tier = (id: string, name: string, price: number, position: number, extra = {}) => ({
+    id,
+    name,
+    price,
+    position,
+    capacity: null,
+    description: null,
+    sold: 0,
+    ...extra,
+  });
+
+  it('toForm păstrează tipurile (ordine, id, plafon, vândute) și le trimite înapoi', () => {
+    const source = event({
+      ticket_price: 100,
+      ticket_currency: 'lei',
+      ticket_tiers: [
+        tier('t-vip', 'VIP', 300, 1, { capacity: 20, sold: 4, description: 'Lounge' }),
+        tier('t-early', 'Early bird', 100, 0),
+      ],
+    });
+    const state = toForm(source);
+    expect(state.ticket_tiers.map((row) => row.name)).toEqual(['Early bird', 'VIP']);
+    expect(state.ticket_tiers[1]).toMatchObject({ id: 't-vip', capacity: '20', sold: 4 });
+    expect(toPayload(state).ticket_tiers).toEqual([
+      { id: 't-early', name: 'Early bird', price: 100, capacity: null, description: null },
+      { id: 't-vip', name: 'VIP', price: 300, capacity: 20, description: 'Lounge' },
+    ]);
+  });
+
+  it('validează fiecare rând: nume obligatoriu și unic, preț, plafon ≥ vândute, HTML', () => {
+    const errors = validateTiers([
+      newTierRow({ name: '', price: '' }),
+      newTierRow({ name: 'VIP', price: '10' }),
+      newTierRow({ name: 'vip', price: '2000000' }),
+      newTierRow({ name: 'Early', price: '5', capacity: '2', sold: 3 }),
+      newTierRow({ name: 'X', price: '5', description: '<b>bold</b>' }),
+    ]);
+    expect(errors[0]?.name).toBeDefined();
+    expect(errors[0]?.price).toBeDefined();
+    expect(errors[1]).toEqual({});
+    expect(errors[2]?.name).toBeDefined();
+    expect(errors[2]?.price).toBeDefined();
+    expect(errors[3]?.capacity).toBeDefined();
+    expect(errors[4]?.description).toBeDefined();
+    expect(validateTiers([newTierRow({ name: 'A'.repeat(EVENT_LIMITS.tierName + 1), price: '1' })])[0]?.name)
+      .toBeDefined();
+  });
+
+  it('maximum 4 tipuri; reordonarea și prețul minim derivat', () => {
+    const rows = [1, 2, 3, 4].map((n) => newTierRow({ name: `T${n}`, price: String(n * 10) }));
+    expect(canAddTier(rows.slice(0, 3))).toBe(true);
+    expect(canAddTier(rows)).toBe(false);
+    expect(validate(form({ ticket_tiers: [...rows, newTierRow({ name: 'T5', price: '1' })] })).ticket_tiers)
+      .toBeDefined();
+
+    const moved = moveTier(rows, 3, -1);
+    expect(moved.map((row) => row.name)).toEqual(['T1', 'T2', 'T4', 'T3']);
+    expect(moveTier(rows, 0, -1)).toBe(rows);
+
+    expect(withTiers(form(), rows).ticket_price).toBe('10');
+    expect(withTiers(form(), []).ticket_price).toBe('');
   });
 });
 
