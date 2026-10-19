@@ -33,11 +33,23 @@ async def lifespan(app: FastAPI):
     log.info("shutdown", extra={"env": settings.environment})
 
 
+def _docs_kwargs(environment: str) -> dict[str, str | None]:
+    """Documentația interactivă (/docs, /redoc, /openapi.json) NU e servită în
+    producție: harta completă a API-ului (rute admin, scheme, câmpuri) e un cadou
+    pentru oricine scanează serverul, iar clienții noștri nu au nevoie de ea. În
+    dezvoltare/staging rămâne (Swagger pe LAN, vezi docker-compose.override.yml).
+    """
+    if environment == "production":
+        return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    return {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
+
+
 app = FastAPI(
     title=f"{settings.app_name} API",
     version="0.1.0",
     debug=settings.debug,
     lifespan=lifespan,
+    **_docs_kwargs(settings.environment),
 )
 
 # --------------------------------------------------------------------------- #
