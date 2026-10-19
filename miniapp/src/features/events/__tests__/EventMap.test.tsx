@@ -82,9 +82,15 @@ describe('harta reală', () => {
       'OpenStreetMap',
     );
 
-    // Markerul e un cerc SVG cu clasa noastră — nu un `L.marker` implicit, care
-    // ar fi cerut fișiere PNG rupte de bundling.
-    expect(container.querySelector('path.ev-map__marker')).not.toBeNull();
+    // Pin-ul e un `divIcon` cu SVG static și clasa noastră — nu iconița
+    // implicită a `L.marker`, care ar fi cerut fișiere PNG rupte de bundling.
+    expect(container.querySelector('.ev-map__pin svg')).not.toBeNull();
+
+    // Legătura spre aplicația de hărți, cu coordonatele exacte.
+    expect(screen.getByTestId('event-map-open')).toHaveAttribute(
+      'href',
+      'https://www.google.com/maps/search/?api=1&query=47.024500,28.832200',
+    );
 
     // `map.remove()` la demontare: panourile Leaflet dispar din container. Fără
     // el ar rămâne ascultători pe `window` agățați de un DOM inexistent.

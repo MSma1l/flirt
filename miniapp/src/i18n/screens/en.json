@@ -13,7 +13,8 @@
       "location": "Location: {{city}}",
       "locationUnavailable": "Location unavailable",
       "titled": "Venue map: {{title}}",
-      "untitled": "Venue map"
+      "untitled": "Venue map",
+      "open": "Open in maps"
     },
     "requestTicket": "Request a ticket",
     "sales": {
@@ -27,6 +28,14 @@
       "soldOutBody": "There are no more tickets available in the app for this event.",
       "pausedTitle": "Online sales are paused for now",
       "pausedBody": "Tickets can't be bought in the app right now. You can pay at the entrance."
+    },
+    "detail": {
+      "when": "When",
+      "where": "Where",
+      "participants": "Attendees",
+      "about": "About the event",
+      "tickets": "Tickets",
+      "location": "Location"
     }
   },
   "stories": {

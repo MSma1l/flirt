@@ -13,7 +13,8 @@
       "location": "Locație: {{city}}",
       "locationUnavailable": "Locație indisponibilă",
       "titled": "Harta locației: {{title}}",
-      "untitled": "Harta locației"
+      "untitled": "Harta locației",
+      "open": "Deschide în hărți"
     },
     "requestTicket": "Solicită bilet",
     "sales": {
@@ -27,6 +28,14 @@
       "soldOutBody": "Nu mai sunt bilete disponibile în aplicație pentru acest eveniment.",
       "pausedTitle": "Vânzarea online e oprită temporar",
       "pausedBody": "Momentan biletele nu se pot cumpăra din aplicație. Poți plăti la intrare."
+    },
+    "detail": {
+      "when": "Când",
+      "where": "Unde",
+      "participants": "Participanți",
+      "about": "Despre eveniment",
+      "tickets": "Bilete",
+      "location": "Locație"
     }
   },
   "stories": {

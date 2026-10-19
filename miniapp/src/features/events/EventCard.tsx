@@ -15,6 +15,8 @@
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { coverImageStyle } from './coverFraming';
+import { CalendarIcon, PinIcon, UsersIcon } from './EventIcons';
 import { formatEventDate, kindColorVar, kindLabel } from './eventFormat';
 import type { EventItem } from './eventsApi';
 
@@ -46,6 +48,9 @@ function EventCardBase({ event }: EventCardProps) {
                de ecran. */
             alt=""
             loading="lazy"
+            /* Încadrarea aleasă de admin (punct focal + zoom), aceeași ca pe
+               pagina evenimentului și în previzualizarea din panou. */
+            style={coverImageStyle(event)}
           />
         ) : null}
 
@@ -58,12 +63,17 @@ function EventCardBase({ event }: EventCardProps) {
 
       <div className="ev-card__body">
         <h2 className="ev-card__title">{event.title}</h2>
-        <p className="caption ev-card__meta">{formatEventDate(event.startsAt)}</p>
         <p className="caption ev-card__meta">
-          {event.venue} · {event.city}
+          <CalendarIcon width={16} height={16} />
+          <span>{formatEventDate(event.startsAt)}</span>
+        </p>
+        <p className="caption ev-card__meta">
+          <PinIcon width={16} height={16} />
+          <span>{event.venue ? `${event.venue} · ${event.city}` : event.city}</span>
         </p>
         <p className="caption ev-card__attendees">
-          {t('events:detail.attendees', { n: event.attendeeCount })}
+          <UsersIcon width={16} height={16} />
+          <span>{t('events:detail.attendees', { n: event.attendeeCount })}</span>
         </p>
       </div>
     </article>

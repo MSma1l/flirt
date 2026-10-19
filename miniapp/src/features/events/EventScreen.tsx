@@ -1,9 +1,12 @@
 /**
  * Detaliul unui eveniment (TZ secț. 8) pentru Mini App.
  *
- * PORT al lui `mobile/app/events/[id].tsx`, cu aceeași ordine a informației:
- * tip → titlu → dată → loc → descriere → promo → bilet online → hartă →
- * participanți → „Merg"/„Nu mai merg" → check-in.
+ * Structura (redesign după feedback-ul testerilor — „totul lipit"):
+ *   poster (încadrarea setată de admin) cu badge-ul de tip → titlu → rânduri de
+ *   informații cu iconițe (dată/oră, loc + oraș, participanți) → „Despre" →
+ *   promo → bilete → locația (hartă mare + „Deschide în hărți") → acțiuni
+ *   („Merg"/„Nu mai merg", check-in). Spațierea vine DOAR din scala de tokeni
+ *   (`--space-*`), cu un ritm constant între secțiuni (`events.css`).
  *
  * O SINGURĂ DIFERENȚĂ DE FOND față de mobil, și e deliberată: pe mobil erorile
  * mutațiilor ies prin `alertMessage` (dialog nativ). Aici NU avem voie:
@@ -46,8 +49,10 @@ import { useOrderStatusText } from '@/features/tickets/orderStatusLabel';
 import { ticketOrderPath } from '@/features/tickets/ticketRoutes';
 import { ticketRequestPath } from '@/features/ticketRequests/ticketRequestRoutes';
 
+import { coverImageStyle } from './coverFraming';
+import { CalendarIcon, PinIcon, UsersIcon } from './EventIcons';
 import { EventMap } from './EventMap';
-import { formatEventDate, kindColorVar, kindLabel } from './eventFormat';
+import { formatEventDate, formatEventDateParts, kindColorVar, kindLabel } from './eventFormat';
 import { EVENT_ID_PARAM } from './eventRoutes';
 import {
   checkin,
@@ -327,22 +332,85 @@ export function EventScreen() {
   }
 
   const hasPromo = event.promoDiscountPercent != null && event.promoCode != null;
+  const when = formatEventDateParts(event.startsAt);
+  const buyError =
+    buyMutation.isError && !refusal ? (
+      <p className="error-text ev-detail__error">{t('detail.createOrderError')}</p>
+    ) : null;
 
   return (
     <div className="ev-detail">
-      <span className="ev-detail__pill" style={{ background: kindColorVar(event.kind) }}>
-        {kindLabel(event.kind)}
-      </span>
+      {/*
+        Posterul: imaginea cu încadrarea aleasă de admin (punct focal + zoom),
+        aceeași proporție ca în previzualizarea din panou. Fără imagine — fondul
+        colorat după tip, cu o iconiță, ca pagina să nu înceapă cu un gol.
+      */}
+      <div
+        className="ev-hero"
+        style={{ background: kindColorVar(event.kind) }}
+        data-testid="event-hero"
+      >
+        {event.coverUrl ? (
+          <img
+            className="ev-hero__img"
+            src={event.coverUrl}
+            /* Decorativ: titlul și detaliile sunt scrise dedesubt. */
+            alt=""
+            style={coverImageStyle(event)}
+          />
+        ) : (
+          <span className="ev-hero__placeholder" aria-hidden="true">
+            <CalendarIcon width={48} height={48} strokeWidth={1.4} />
+          </span>
+        )}
+        <span className="ev-hero__badge">{kindLabel(event.kind)}</span>
+        {event.iAmGoing ? (
+          <span className="ev-hero__going">{t('screens:events.goingBadge')}</span>
+        ) : null}
+      </div>
 
       <h1 className="title ev-detail__title">{event.title}</h1>
 
-      <p className="ev-detail__date">{formatEventDate(event.startsAt)}</p>
+      <ul className="ev-facts">
+        <li className="ev-fact" data-testid="event-fact-date">
+          <span className="ev-fact__icon" aria-hidden="true">
+            <CalendarIcon />
+          </span>
+          <span className="ev-fact__text">
+            <span className="ev-fact__label">{t('screens:events.detail.when')}</span>
+            <span className="ev-fact__value">{when.day}</span>
+            {when.time ? <span className="ev-fact__sub">{when.time}</span> : null}
+          </span>
+        </li>
+        <li className="ev-fact" data-testid="event-fact-place">
+          <span className="ev-fact__icon" aria-hidden="true">
+            <PinIcon />
+          </span>
+          <span className="ev-fact__text">
+            <span className="ev-fact__label">{t('screens:events.detail.where')}</span>
+            <span className="ev-fact__value">{event.venue || event.city}</span>
+            {event.venue ? <span className="ev-fact__sub">{event.city}</span> : null}
+          </span>
+        </li>
+        <li className="ev-fact" data-testid="event-fact-attendees">
+          <span className="ev-fact__icon" aria-hidden="true">
+            <UsersIcon />
+          </span>
+          <span className="ev-fact__text">
+            <span className="ev-fact__label">{t('screens:events.detail.participants')}</span>
+            <span className="ev-fact__value ev-detail__attendees">
+              {t('detail.attendees', { n: event.attendeeCount })}
+            </span>
+          </span>
+        </li>
+      </ul>
 
-      <p className="body-text">
-        {event.venue} · {event.city}
-      </p>
-
-      {event.description ? <p className="ev-detail__desc">{event.description}</p> : null}
+      {event.description ? (
+        <section className="ev-section">
+          <h2 className="ev-section__title">{t('screens:events.detail.about')}</h2>
+          <p className="ev-detail__desc">{event.description}</p>
+        </section>
+      ) : null}
 
       {hasPromo ? (
         <div
@@ -373,46 +441,54 @@ export function EventScreen() {
         </div>
       ) : null}
 
-      {ticketSection}
-      {buyMutation.isError && !refusal ? (
-        <p className="error-text ev-detail__error">{t('detail.createOrderError')}</p>
-      ) : null}
+      {ticketSection ? (
+        <section className="ev-section">
+          <h2 className="ev-section__title">{t('screens:events.detail.tickets')}</h2>
+          {ticketSection}
+          {buyError}
+        </section>
+      ) : (
+        buyError
+      )}
 
-      <EventMap lat={event.lat} lng={event.lng} title={event.title} city={event.city} />
+      <section className="ev-section">
+        <h2 className="ev-section__title">{t('screens:events.detail.location')}</h2>
+        <EventMap lat={event.lat} lng={event.lng} title={event.title} city={event.city} />
+      </section>
 
-      <p className="ev-detail__attendees">{t('detail.attendees', { n: event.attendeeCount })}</p>
+      <div className="ev-actions">
+        <button
+          type="button"
+          className={event.iAmGoing ? 'button button--ghost ev-detail__action' : 'button ev-detail__action'}
+          data-testid="going-btn"
+          disabled={goingMutation.isPending}
+          onClick={() => goingMutation.mutate(!event.iAmGoing)}
+        >
+          {event.iAmGoing ? t('detail.notGoing') : t('detail.going')}
+        </button>
+        {goingMutation.isError ? (
+          <p className="error-text ev-detail__error">{t('detail.goingError')}</p>
+        ) : null}
 
-      <button
-        type="button"
-        className={event.iAmGoing ? 'button button--ghost ev-detail__action' : 'button ev-detail__action'}
-        data-testid="going-btn"
-        disabled={goingMutation.isPending}
-        onClick={() => goingMutation.mutate(!event.iAmGoing)}
-      >
-        {event.iAmGoing ? t('detail.notGoing') : t('detail.going')}
-      </button>
-      {goingMutation.isError ? (
-        <p className="error-text ev-detail__error">{t('detail.goingError')}</p>
-      ) : null}
+        <button
+          type="button"
+          className="button button--ghost ev-detail__action"
+          data-testid="checkin-btn"
+          disabled={checkinMutation.isPending}
+          onClick={() => checkinMutation.mutate()}
+        >
+          {t('detail.checkin')}
+        </button>
+        {checkinMutation.isError ? (
+          <p className="error-text ev-detail__error">{t('detail.checkinError')}</p>
+        ) : null}
 
-      <button
-        type="button"
-        className="button button--ghost ev-detail__action"
-        data-testid="checkin-btn"
-        disabled={checkinMutation.isPending}
-        onClick={() => checkinMutation.mutate()}
-      >
-        {t('detail.checkin')}
-      </button>
-      {checkinMutation.isError ? (
-        <p className="error-text ev-detail__error">{t('detail.checkinError')}</p>
-      ) : null}
-
-      {stampMessage ? (
-        <p className="ev-detail__stamp" data-testid="checkin-stamp">
-          {stampMessage}
-        </p>
-      ) : null}
+        {stampMessage ? (
+          <p className="ev-detail__stamp" data-testid="checkin-stamp">
+            {stampMessage}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }

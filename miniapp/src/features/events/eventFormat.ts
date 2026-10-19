@@ -103,3 +103,20 @@ export function formatStampDate(iso: string): string {
     return date.toISOString();
   }
 }
+
+/**
+ * Data evenimentului în două bucăți, pentru rândul de informații al paginii:
+ * ziua (cu ziua săptămânii, „Sâmbătă, 4 iulie") și ora („22:00"), ambele pe ora
+ * Chișinăului. O dată nevalidă întoarce șirul brut ca zi și o oră goală.
+ */
+export function formatEventDateParts(iso: string): { day: string; time: string } {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return { day: iso, time: '' };
+  try {
+    const day = formatInEventZone(date, { weekday: 'long', day: 'numeric', month: 'long' });
+    const time = formatInEventZone(date, { hour: '2-digit', minute: '2-digit' });
+    return { day: day.charAt(0).toLocaleUpperCase(i18n.language) + day.slice(1), time };
+  } catch {
+    return { day: date.toISOString(), time: '' };
+  }
+}
