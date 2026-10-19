@@ -20,11 +20,16 @@
  *   * ticket_capacity: opțional, ÎNTREG ≥ 1 (gol = nelimitat); sub `tickets_sold`
  *     backendul răspunde 409 `capacity_below_sold`;
  *   * cover_url: max 500 — backendul NU verifică forma (e `str`, nu `HttpUrl`),
- *     deci verificarea că e o adresă http(s) e responsabilitatea panoului.
+ *     deci verificarea că e o adresă http(s) e responsabilitatea panoului;
+ *   * cover_focus_x/y ∈ [0, 1], cover_zoom ∈ [1, 3] — vin din editorul de
+ *     încadrare (`CoverFramer`), deci sunt mereu în interval; le aducem oricum în
+ *     limite la `toPayload`;
+ *   * displayed_attendee_count: opțional, ÎNTREG ∈ [0, 100000] (gol = real).
  */
 import type { AdminEvent, EventInput } from '../api/types';
 import type { Language } from '../i18n/LanguageContext';
 import { eventsMessages } from '../i18n/messages/events';
+import { DEFAULT_FRAMING, normalizeFraming } from './coverFraming';
 import { fromDateTimeLocalValue, toDateTimeLocalValue } from './format';
 
 /** Lungimile maxime, aliniate 1:1 cu constantele `EVENT_*_MAX_LENGTH` din backend. */
@@ -38,6 +43,9 @@ export const EVENT_LIMITS = {
   promoDescription: 500,
   ticketCurrency: 8,
 } as const;
+
+/** Plafonul „Participanți afișați" (`EVENT_DISPLAYED_ATTENDEES_MAX` din backend). */
+export const DISPLAYED_ATTENDEES_MAX = 100_000;
 
 /** Cât de târziu după start se poate închide vânzarea online (oglinda backendului). */
 export const TICKET_SALES_END_MAX_AFTER_START_MS = 12 * 60 * 60 * 1000;
@@ -53,6 +61,11 @@ export interface FormState {
   venue: string;
   kind: string;
   cover_url: string;
+  /** Încadrarea copertei (editorul de poster) — numere, nu text: nu se tastează. */
+  cover_focus_x: number;
+  cover_focus_y: number;
+  cover_zoom: number;
+  displayed_attendee_count: string; // gol = numărul real
   lat: string;
   lng: string;
   promo_discount_percent: string;
@@ -72,6 +85,10 @@ export const EMPTY_FORM: FormState = {
   venue: '',
   kind: 'flirt_party',
   cover_url: '',
+  cover_focus_x: DEFAULT_FRAMING.x,
+  cover_focus_y: DEFAULT_FRAMING.y,
+  cover_zoom: DEFAULT_FRAMING.zoom,
+  displayed_attendee_count: '',
   lat: '',
   lng: '',
   promo_discount_percent: '',
@@ -92,6 +109,11 @@ export function toForm(event: AdminEvent): FormState {
     venue: event.venue ?? '',
     kind: event.kind,
     cover_url: event.cover_url ?? '',
+    ...framingFields(event),
+    displayed_attendee_count:
+      event.displayed_attendee_count === null || event.displayed_attendee_count === undefined
+        ? ''
+        : String(event.displayed_attendee_count),
     lat: event.lat === null ? '' : String(event.lat),
     lng: event.lng === null ? '' : String(event.lng),
     promo_discount_percent:
@@ -108,6 +130,23 @@ export function toForm(event: AdminEvent): FormState {
         ? ''
         : String(event.ticket_capacity),
   };
+}
+
+/** Încadrarea unui eveniment existent (backend vechi fără câmpuri → centru, zoom 1). */
+function framingFields(
+  event: AdminEvent,
+): Pick<FormState, 'cover_focus_x' | 'cover_focus_y' | 'cover_zoom'> {
+  const f = normalizeFraming({
+    x: event.cover_focus_x,
+    y: event.cover_focus_y,
+    zoom: event.cover_zoom,
+  });
+  return { cover_focus_x: f.x, cover_focus_y: f.y, cover_zoom: f.zoom };
+}
+
+/** Numărul văzut de utilizatori: `max(real, setat)` — regula din backend. */
+export function shownAttendees(real: number, displayed: number | null | undefined): number {
+  return Math.max(real, displayed ?? 0);
 }
 
 /* --------------------------- validare de câmp --------------------------- */
@@ -294,6 +333,18 @@ export function validate(
     }
   }
 
+  // --- participanți afișați (opțional; întreg între 0 și plafon) ---
+  const displayed = parseNumber(form.displayed_attendee_count);
+  if (
+    displayed !== null &&
+    (!Number.isFinite(displayed) ||
+      !Number.isInteger(displayed) ||
+      displayed < 0 ||
+      displayed > DISPLAYED_ATTENDEES_MAX)
+  ) {
+    errors.displayed_attendee_count = m.displayedAttendeesInteger;
+  }
+
   return errors;
 }
 
@@ -352,6 +403,11 @@ export function toPayload(form: FormState): EventInput {
   };
 
   const price = num(form.ticket_price);
+  const framing = normalizeFraming({
+    x: form.cover_focus_x,
+    y: form.cover_focus_y,
+    zoom: form.cover_zoom,
+  });
   return {
     title: form.title.trim(),
     description: orNull(form.description),
@@ -360,6 +416,11 @@ export function toPayload(form: FormState): EventInput {
     venue: orNull(form.venue),
     kind: form.kind,
     cover_url: orNull(form.cover_url),
+    cover_focus_x: framing.x,
+    cover_focus_y: framing.y,
+    cover_zoom: framing.zoom,
+    // Gol → `null` = aplicația arată numărul real de participanți.
+    displayed_attendee_count: num(form.displayed_attendee_count),
     lat: num(form.lat),
     lng: num(form.lng),
     promo_discount_percent: num(form.promo_discount_percent),

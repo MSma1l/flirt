@@ -799,3 +799,81 @@ describe('EventsPage — coperta încărcată de pe dispozitiv', () => {
     expect(save).toBeEnabled();
   });
 });
+
+describe('EventsPage — participanți afișați și încadrarea posterului', () => {
+  it('setează numărul afișat: ajutorul arată real vs afișat, previzualizarea max(real, setat)', async () => {
+    seedAdminSession();
+    const existing = makeEvent({
+      cover_url: 'https://cdn.exemplu.md/a.jpg',
+      cover_focus_x: 0.3,
+      cover_focus_y: 0.7,
+      cover_zoom: 1.6,
+    });
+    const api = mockFetch({
+      'GET /admin/events': { body: [existing] },
+      'PUT /admin/events/e-1': { body: existing },
+    });
+    const person = userEvent.setup();
+
+    renderWithProviders(<EventsPage />);
+    await screen.findByText('Seară de stand-up');
+    await person.click(screen.getByRole('button', { name: 'Editează' }));
+    const dialog = await screen.findByRole('dialog');
+
+    // Editorul de încadrare apare când există copertă, cu valorile salvate.
+    expect(within(dialog).getByTestId('cover-framer')).toBeInTheDocument();
+    expect(
+      (within(dialog).getByTestId('cover-framer-img') as HTMLImageElement).style.objectPosition,
+    ).toBe('30% 70%');
+
+    const input = within(dialog).getByLabelText('Participanți afișați');
+    await person.type(input, '50');
+    expect(within(dialog).getByTestId('event-attendees-real')).toHaveTextContent(
+      'Înscriși real: 12 · afișat în aplicație: 50',
+    );
+    const preview = within(dialog).getByLabelText('Previzualizare aplicație');
+    expect(within(preview).getByTestId('preview-card-attendees')).toHaveTextContent('50 participanți');
+
+    // Sub numărul real, aplicația arată tot numărul real.
+    await person.clear(input);
+    await person.type(input, '5');
+    expect(within(preview).getByTestId('preview-card-attendees')).toHaveTextContent('12 participanți');
+
+    await person.clear(input);
+    await person.type(input, '50');
+    await person.click(within(dialog).getByRole('button', { name: 'Salvează' }));
+    await waitFor(() => expect(api.callsTo('PUT /admin/events/e-1')).toHaveLength(1));
+    expect(api.callsTo('PUT /admin/events/e-1')[0]?.body).toMatchObject({
+      displayed_attendee_count: 50,
+      cover_focus_x: 0.3,
+      cover_focus_y: 0.7,
+      cover_zoom: 1.6,
+    });
+  });
+
+  it('valoare negativă blochează salvarea', async () => {
+    seedAdminSession();
+    mockFetch({ 'GET /admin/events': { body: [EVENT] } });
+    const person = userEvent.setup();
+
+    renderWithProviders(<EventsPage />);
+    await screen.findByText('Seară de stand-up');
+    await person.click(screen.getByRole('button', { name: 'Editează' }));
+    const dialog = await screen.findByRole('dialog');
+
+    await person.type(within(dialog).getByLabelText('Participanți afișați'), '-3');
+    expect(within(dialog).getByRole('button', { name: 'Salvează' })).toBeDisabled();
+  });
+
+  it('lista arată și numărul afișat lângă cel real', async () => {
+    seedAdminSession();
+    mockFetch({
+      'GET /admin/events': {
+        body: [makeEvent({ attendee_count: 4, displayed_attendee_count: 40, participants_count: 40 })],
+      },
+    });
+
+    renderWithProviders(<EventsPage />);
+    expect(await screen.findByTestId('event-shown-e-1')).toHaveTextContent('afișat: 40');
+  });
+});

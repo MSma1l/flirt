@@ -13,6 +13,7 @@ import {
   hasValidCoords,
   isUpcoming,
   selectEvents,
+  shownAttendees,
   toForm,
   toPayload,
   validate,
@@ -331,5 +332,57 @@ describe('ticket_capacity (capacitatea de bilete)', () => {
     expect(toPayload(toForm(event({ ticket_capacity: 120 }))).ticket_capacity).toBe(120);
     expect(toForm(event({ ticket_capacity: null })).ticket_capacity).toBe('');
     expect(toForm(event()).ticket_capacity).toBe('');
+  });
+});
+
+describe('încadrarea copertei', () => {
+  it('formular nou: centru, zoom 1 — trimise ca numere', () => {
+    expect(toPayload(form())).toMatchObject({ cover_focus_x: 0.5, cover_focus_y: 0.5, cover_zoom: 1 });
+  });
+
+  it('dus-întors prin `toForm` păstrează încadrarea', () => {
+    const payload = toPayload(toForm(event({ cover_focus_x: 0.2, cover_focus_y: 0.7, cover_zoom: 1.8 })));
+    expect(payload).toMatchObject({ cover_focus_x: 0.2, cover_focus_y: 0.7, cover_zoom: 1.8 });
+  });
+
+  it('un backend vechi (fără câmpuri) dă centrul; valorile aberante sunt aduse în limite', () => {
+    expect(toForm(event())).toMatchObject({ cover_focus_x: 0.5, cover_focus_y: 0.5, cover_zoom: 1 });
+    expect(toPayload(form({ cover_focus_x: 3, cover_focus_y: -1, cover_zoom: 9 }))).toMatchObject({
+      cover_focus_x: 1,
+      cover_focus_y: 0,
+      cover_zoom: 3,
+    });
+  });
+});
+
+describe('participanți afișați', () => {
+  it('gol → null (numărul real), fără eroare', () => {
+    expect(validate(form()).displayed_attendee_count).toBeUndefined();
+    expect(toPayload(form()).displayed_attendee_count).toBeNull();
+  });
+
+  it('acceptă 0 și întregi pozitivi până la plafon', () => {
+    expect(validate(form({ displayed_attendee_count: '0' }))).toEqual({});
+    expect(toPayload(form({ displayed_attendee_count: '150' })).displayed_attendee_count).toBe(150);
+    expect(validate(form({ displayed_attendee_count: '100000' }))).toEqual({});
+  });
+
+  it('respinge negativ, fracționar, text și peste plafon', () => {
+    for (const raw of ['-1', '2.5', 'abc', '100001']) {
+      expect(validate(form({ displayed_attendee_count: raw })).displayed_attendee_count).toBe(
+        'Participanții afișați: un număr întreg între 0 și 100000 (sau gol = numărul real).',
+      );
+    }
+  });
+
+  it('userii văd max(real, setat)', () => {
+    expect(shownAttendees(3, 50)).toBe(50);
+    expect(shownAttendees(80, 50)).toBe(80);
+    expect(shownAttendees(7, null)).toBe(7);
+  });
+
+  it('dus-întors prin `toForm`', () => {
+    expect(toForm(event({ displayed_attendee_count: 40 })).displayed_attendee_count).toBe('40');
+    expect(toForm(event({ displayed_attendee_count: null })).displayed_attendee_count).toBe('');
   });
 });

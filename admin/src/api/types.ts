@@ -138,7 +138,16 @@ export interface AdminEvent {
   lng: number | null;
   kind: string;
   cover_url: string | null;
+  /** Încadrarea copertei: punct focal (0..1) și zoom (1..3). Lipsă = centru, zoom 1. */
+  cover_focus_x?: number;
+  cover_focus_y?: number;
+  cover_zoom?: number;
+  /** Participanți REALI (going=True). */
   attendee_count: number;
+  /** „Participanți afișați" setat de admin. `null` = nesetat (se arată numărul real). */
+  displayed_attendee_count?: number | null;
+  /** Numărul văzut de utilizatori: `max(attendee_count, displayed_attendee_count)`. */
+  participants_count?: number;
   /** Promo la intrare: procentul reducerii (0..100). `null` = fără reducere. */
   promo_discount_percent: number | null;
   /** Codul pe care participantul îl arată la intrare. `null` = fără cod. */
@@ -185,6 +194,13 @@ export interface EventInput {
   lng: number | null;
   kind: string;
   cover_url: string | null;
+  /** Punctul focal al copertei, fracții 0..1 (centru = 0.5). */
+  cover_focus_x: number;
+  cover_focus_y: number;
+  /** Zoom-ul copertei, 1..3. */
+  cover_zoom: number;
+  /** „Participanți afișați" (întreg ≥ 0). Gol → `null` = numărul real. */
+  displayed_attendee_count: number | null;
   /** Promo la intrare: procentul reducerii (0..100). Gol → `null`. */
   promo_discount_percent: number | null;
   /** Codul promo (max 32). Gol → `null`. */

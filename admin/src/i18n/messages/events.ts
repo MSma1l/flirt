@@ -43,6 +43,7 @@ export const eventsMessages = defineMessages({
       kind: 'Tip',
       ticketPrice: 'Preț bilet',
       attendees: 'Participanți',
+      attendeesShown: (shown: number) => `afișat: ${shown}`,
       tickets: 'Bilete',
       actions: 'Acțiuni',
       promoFallback: 'Reducere la intrare',
@@ -94,6 +95,20 @@ export const eventsMessages = defineMessages({
         pasteUrl: 'sau lipește un URL',
         uploadInProgress: 'Așteaptă să se termine încărcarea copertei.',
       },
+      framing: {
+        legend: 'Încadrarea posterului',
+        hint:
+          'Trage imaginea ca să alegi ce se vede, iar cu zoom-ul o mărești. Exact așa ' +
+          'apare pe pagina evenimentului și pe cardul din listă.',
+        frameLabel:
+          'Încadrarea posterului. Trage cu mouse-ul sau cu degetul; săgețile mută imaginea.',
+        zoom: 'Zoom',
+        reset: 'Centrează',
+        heroCaption: 'Pagina evenimentului',
+        cardCaption: 'Cardul din listă',
+        loading: 'Se încarcă imaginea…',
+        broken: 'Imaginea nu se poate încărca — verifică adresa.',
+      },
       ticketLegend: 'Bilet online',
       ticketPrice: 'Preț bilet',
       ticketPricePlaceholder: 'gol = bilet online indisponibil',
@@ -103,6 +118,15 @@ export const eventsMessages = defineMessages({
       ticketCapacity: 'Capacitate bilete',
       ticketCapacityPlaceholder: 'gol = nelimitat',
       ticketCapacityHint: 'Câte bilete se pot vinde în total (comenzi + cereri). Gol = nelimitat.',
+      attendeesLegend: 'Participanți afișați',
+      displayedAttendees: 'Participanți afișați',
+      displayedAttendeesPlaceholder: 'gol = numărul real',
+      displayedAttendeesHint:
+        'Numărul arătat tuturor în aplicație (card + pagina evenimentului). Se afișează ' +
+        'cel MAI MARE dintre numărul real și cel setat aici — dacă se înscriu mai mulți ' +
+        'oameni decât ai scris, aplicația arată numărul real. Gol = numărul real.',
+      realAttendees: (real: number, shown: number) =>
+        `Înscriși real: ${real} · afișat în aplicație: ${shown}`,
       soldOf: (sold: number, capacity: number | null) =>
         `Vândute: ${sold} / ${capacity ?? 'nelimitat'}`,
       promoLegend: 'Promo / Reducere la intrare',
@@ -154,6 +178,7 @@ export const eventsMessages = defineMessages({
       salesEndTooLate:
         'Vânzarea online trebuie să se închidă cel târziu la 12 ore după începutul evenimentului.',
       capacityInteger: 'Capacitatea trebuie să fie un număr întreg de cel puțin 1 (sau gol = nelimitat).',
+      displayedAttendeesInteger: 'Participanții afișați: un număr întreg între 0 și 100000 (sau gol = numărul real).',
       capacityBelowSold: (sold: number) =>
         `Capacitatea nu poate fi mai mică decât biletele deja vândute (${sold}).`,
       capacityBelowSoldServer:
@@ -209,6 +234,7 @@ export const eventsMessages = defineMessages({
       kind: 'Тип',
       ticketPrice: 'Цена билета',
       attendees: 'Участники',
+      attendeesShown: (shown: number) => `показ.: ${shown}`,
       tickets: 'Билеты',
       actions: 'Действия',
       promoFallback: 'Скидка на входе',
@@ -260,6 +286,20 @@ export const eventsMessages = defineMessages({
         pasteUrl: 'или вставьте URL',
         uploadInProgress: 'Дождитесь окончания загрузки обложки.',
       },
+      framing: {
+        legend: 'Кадрирование афиши',
+        hint:
+          'Перетащите изображение, чтобы выбрать видимую часть, и увеличьте его зумом. ' +
+          'Именно так оно будет выглядеть на странице события и в карточке списка.',
+        frameLabel:
+          'Кадрирование афиши. Перетаскивайте мышью или пальцем; стрелки сдвигают изображение.',
+        zoom: 'Зум',
+        reset: 'По центру',
+        heroCaption: 'Страница события',
+        cardCaption: 'Карточка в списке',
+        loading: 'Загрузка изображения…',
+        broken: 'Изображение не загружается — проверьте адрес.',
+      },
       ticketLegend: 'Онлайн-билет',
       ticketPrice: 'Цена билета',
       ticketPricePlaceholder: 'пусто = онлайн-билет недоступен',
@@ -269,6 +309,15 @@ export const eventsMessages = defineMessages({
       ticketCapacity: 'Вместимость билетов',
       ticketCapacityPlaceholder: 'пусто = без ограничений',
       ticketCapacityHint: 'Сколько билетов можно продать всего (заказы + заявки). Пусто = без ограничений.',
+      attendeesLegend: 'Показываемые участники',
+      displayedAttendees: 'Показываемые участники',
+      displayedAttendeesPlaceholder: 'пусто = реальное число',
+      displayedAttendeesHint:
+        'Число, которое все видят в приложении (карточка + страница события). ' +
+        'Показывается БОЛЬШЕЕ из реального и указанного здесь — если запишется больше ' +
+        'людей, чем вы указали, приложение покажет реальное число. Пусто = реальное число.',
+      realAttendees: (real: number, shown: number) =>
+        `Записались реально: ${real} · показывается в приложении: ${shown}`,
       soldOf: (sold: number, capacity: number | null) =>
         `Продано: ${sold} / ${capacity ?? 'без ограничений'}`,
       promoLegend: 'Промо / Скидка на входе',
@@ -319,6 +368,7 @@ export const eventsMessages = defineMessages({
       salesEndTooLate:
         'Онлайн-продажа должна закрываться не позднее чем через 12 часов после начала события.',
       capacityInteger: 'Вместимость — целое число не меньше 1 (или пусто = без ограничений).',
+      displayedAttendeesInteger: 'Показываемые участники: целое число от 0 до 100000 (или пусто = реальное число).',
       capacityBelowSold: (sold: number) =>
         `Вместимость не может быть меньше уже проданных билетов (${sold}).`,
       capacityBelowSoldServer:

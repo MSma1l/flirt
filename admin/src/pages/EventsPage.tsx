@@ -31,8 +31,9 @@ import { createEvent, deleteEvent, fetchEvents, updateEvent, uploadEventCover } 
 import { ApiError } from '../api/client';
 import { EVENT_KINDS, type AdminEvent, type EventInput } from '../api/types';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { CoverFramer } from '../components/CoverFramer';
 import { EventPreview, kindLabel } from '../components/EventPreview';
-import { IMAGE_RULES, MediaUploadField } from '../components/MediaUploadField';
+import { IMAGE_RULES, MediaUploadField, previewSrc } from '../components/MediaUploadField';
 import { Modal } from '../components/Modal';
 import {
   Badge,
@@ -50,12 +51,14 @@ import { useLanguage, useMessages, type Language } from '../i18n/LanguageContext
 import { eventsMessages } from '../i18n/messages/events';
 import { errorMessage } from '../lib/errors';
 import {
+  DISPLAYED_ATTENDEES_MAX,
   EMPTY_FORM,
   EVENT_LIMITS,
   hasValidCoords,
   isUpcoming,
   parseNumber,
   selectEvents,
+  shownAttendees,
   toForm,
   toPayload,
   validate,
@@ -376,7 +379,18 @@ function EventTable({
                     <div className="muted">{t.salesEnd(formatDateTime(event.ticket_sales_end_at))}</div>
                   ) : null}
                 </td>
-                <td className="mono">{event.attendee_count}</td>
+                <td className="mono">
+                  {event.attendee_count}
+                  {event.displayed_attendee_count !== null &&
+                  event.displayed_attendee_count !== undefined ? (
+                    <div className="muted" data-testid={`event-shown-${event.id}`}>
+                      {t.attendeesShown(
+                        event.participants_count ??
+                          shownAttendees(event.attendee_count, event.displayed_attendee_count),
+                      )}
+                    </div>
+                  ) : null}
+                </td>
                 <td className="mono" title={t.ticketsTitle}>
                   {event.ticket_order_count === 0
                     ? '—'
@@ -418,6 +432,13 @@ const COVER_PREVIEW_STYLE = {
   aspectRatio: '3 / 4',
   objectFit: 'contain',
 } as const;
+
+/** Cât vor vedea utilizatorii după salvare: valoarea din formular, dacă e validă. */
+function shownAttendeesFor(event: AdminEvent, form: FormState): number {
+  const typed = parseNumber(form.displayed_attendee_count);
+  const valid = typed !== null && Number.isInteger(typed) && typed >= 0 ? typed : null;
+  return shownAttendees(event.attendee_count, valid);
+}
 
 /** Mesajul de eroare al unui câmp, sub input (sau nimic). */
 function FieldError({ message }: { message?: string }): JSX.Element | null {
@@ -640,6 +661,21 @@ function EventFormModal({
               urlInvalid={Boolean(errors.cover_url)}
             />
             <FieldError message={errors.cover_url} />
+            {form.cover_url.trim() !== '' && !errors.cover_url && !uploading ? (
+              <CoverFramer
+                src={previewSrc(form.cover_url.trim())}
+                value={{ x: form.cover_focus_x, y: form.cover_focus_y, zoom: form.cover_zoom }}
+                onChange={(next) =>
+                  setForm((current) => ({
+                    ...current,
+                    cover_focus_x: next.x,
+                    cover_focus_y: next.y,
+                    cover_zoom: next.zoom,
+                  }))
+                }
+                texts={f.framing}
+              />
+            ) : null}
           </fieldset>
 
           <fieldset className="form-section">
@@ -761,6 +797,31 @@ function EventFormModal({
               />
             </Field>
             <FieldError message={errors.promo_description} />
+          </fieldset>
+
+          <fieldset className="form-section">
+            <legend>{f.attendeesLegend}</legend>
+            <Field label={f.displayedAttendees} htmlFor="event-displayed-attendees">
+              <TextInput
+                id="event-displayed-attendees"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={DISPLAYED_ATTENDEES_MAX}
+                step={1}
+                placeholder={f.displayedAttendeesPlaceholder}
+                value={form.displayed_attendee_count}
+                aria-invalid={errors.displayed_attendee_count ? true : undefined}
+                onChange={(e) => set('displayed_attendee_count', e.target.value)}
+              />
+            </Field>
+            <p className="field__hint">{f.displayedAttendeesHint}</p>
+            {event ? (
+              <p className="field__hint" data-testid="event-attendees-real">
+                {f.realAttendees(event.attendee_count, shownAttendeesFor(event, form))}
+              </p>
+            ) : null}
+            <FieldError message={errors.displayed_attendee_count} />
           </fieldset>
 
           {hints.length > 0 ? (
