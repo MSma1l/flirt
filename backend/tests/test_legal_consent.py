@@ -258,7 +258,7 @@ async def test_versiune_noua_cere_din_nou_consimtamantul(client, monkeypatch):
 
     bumped = dict(LEGAL_DOCUMENTS)
     old = bumped["privacy"]
-    bumped["privacy"] = LegalDocument("privacy", "2.0", old.effective_date)
+    bumped["privacy"] = LegalDocument("privacy", f"{old.version}.1", old.effective_date)
     monkeypatch.setattr(legal_service, "LEGAL_DOCUMENTS", bumped)
 
     assert (await client.get(f"{API}/auth/me", headers=headers)).json()["consent_required"] is True
