@@ -463,10 +463,25 @@
       "play": "Play",
       "pause": "Pause",
       "denied": "Microphone access was denied. Allow it in your phone settings to send voice messages.",
-      "unavailable": "Voice recording isn’t available on this device."
+      "unavailable": "Voice recording isn’t available on this device.",
+      "loading": "Loading voice message…",
+      "error": "This voice message can’t be played on this device.",
+      "retry": "Try playing again"
     },
     "viewer": {
       "close": "Close"
+    },
+    "partner": {
+      "open": "Open {{name}}’s profile",
+      "loading": "Loading profile…",
+      "errorTitle": "Profile didn’t load",
+      "errorBody": "Check your connection and try again.",
+      "unavailableTitle": "Profile unavailable",
+      "unavailableBody": "This person’s profile can no longer be viewed.",
+      "backToChat": "Back to chat",
+      "write": "Send a message",
+      "compatibility": "{{score}}% compatible",
+      "aboutTitle": "About"
     }
   },
   "profileView": {

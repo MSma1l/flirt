@@ -21,3 +21,11 @@ export const CHAT_ROUTE_PATTERN = `${CHATS_PATH}/:${CHAT_ID_PARAM}`;
 export function chatPath(chatId: string): string {
   return `${CHATS_PATH}/${encodeURIComponent(chatId)}`;
 }
+
+/** Șablonul de rută pentru profilul partenerului unui dialog. */
+export const CHAT_PROFILE_ROUTE_PATTERN = `${CHAT_ROUTE_PATTERN}/profil`;
+
+/** Adresa profilului partenerului dintr-un dialog concret. */
+export function chatProfilePath(chatId: string): string {
+  return `${chatPath(chatId)}/profil`;
+}

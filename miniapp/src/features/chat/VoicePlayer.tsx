@@ -36,14 +36,32 @@ interface Props {
   own: boolean;
 }
 
+/**
+ * Starea redării, pe lângă play/pauză:
+ *   - `loading`: s-a cerut redarea, browserul încă descarcă (rețea lentă);
+ *   - `error`: fișierul nu poate fi redat (format nesuportat de WebView, rețea,
+ *     server) — arătăm un mesaj clar + reîncercare, nu un buton care „nu face
+ *     nimic" (exact simptomul raportat: vocalul apărea, dar nu se auzea).
+ */
+type PlaybackState = 'idle' | 'loading' | 'error';
+
 export function VoicePlayer({ id, src, durationMs, own }: Props) {
   const { t } = useTranslation('screens');
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
+  const [state, setState] = useState<PlaybackState>('idle');
   const [progress, setProgress] = useState(0);
   const [currentMs, setCurrentMs] = useState(0);
   const [mediaMs, setMediaMs] = useState<number | null>(null);
   const bars = useMemo(() => waveformBars(id), [id]);
+
+  // Fișier nou (ex. bula optimistă înlocuită de mesajul de pe server): de la zero.
+  useEffect(() => {
+    setState('idle');
+    setPlaying(false);
+    setProgress(0);
+    setCurrentMs(0);
+  }, [src]);
 
   const totalMs = durationMs ?? mediaMs ?? 0;
 
@@ -66,56 +84,105 @@ export function VoicePlayer({ id, src, durationMs, own }: Props) {
     };
     const onPause = () => setPlaying(false);
     const onPlay = () => setPlaying(true);
+    const onPlaying = () => setState('idle');
+    const onWaiting = () => {
+      if (!audio.paused) setState('loading');
+    };
+    const onError = () => {
+      setPlaying(false);
+      setState('error');
+    };
     audio.addEventListener('timeupdate', onTime);
     audio.addEventListener('loadedmetadata', onMeta);
     audio.addEventListener('ended', onEnd);
     audio.addEventListener('pause', onPause);
     audio.addEventListener('play', onPlay);
+    audio.addEventListener('playing', onPlaying);
+    audio.addEventListener('waiting', onWaiting);
+    audio.addEventListener('error', onError);
     return () => {
       audio.removeEventListener('timeupdate', onTime);
       audio.removeEventListener('loadedmetadata', onMeta);
       audio.removeEventListener('ended', onEnd);
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('play', onPlay);
+      audio.removeEventListener('playing', onPlaying);
+      audio.removeEventListener('waiting', onWaiting);
+      audio.removeEventListener('error', onError);
     };
   }, [totalMs]);
 
   const toggle = () => {
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio || !src) return;
     if (audio.paused) {
       // Un singur vocal pe rând: oprim celelalte playere din pagină.
       document.querySelectorAll('audio').forEach((other) => {
         if (other !== audio) other.pause();
       });
+      if (state === 'error') {
+        // Reîncercare: o eroare de rețea trecătoare nu blochează mesajul.
+        audio.load?.();
+      }
+      setState('loading');
       const played = audio.play?.();
-      if (played && typeof played.catch === 'function') played.catch(() => setPlaying(false));
+      if (played && typeof played.then === 'function') {
+        played.then(
+          () => setState('idle'),
+          (error: unknown) => {
+            setPlaying(false);
+            // `AbortError` = redarea a fost întreruptă de o pauză (alt vocal
+            // pornit); nu e o eroare a fișierului.
+            const name = (error as { name?: string } | null)?.name;
+            setState(name === 'AbortError' ? 'idle' : 'error');
+          },
+        );
+      } else {
+        setState('idle');
+      }
     } else {
       audio.pause();
+      setState('idle');
     }
   };
 
   const seek = (event: React.MouseEvent<HTMLDivElement>) => {
     const audio = audioRef.current;
-    if (!audio || totalMs <= 0) return;
+    if (!audio || state === 'error') return;
+    const lengthMs =
+      Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration * 1000 : totalMs;
+    if (lengthMs <= 0) return;
     const rect = event.currentTarget.getBoundingClientRect();
     if (rect.width <= 0) return;
     const fraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-    audio.currentTime = (fraction * totalMs) / 1000;
+    audio.currentTime = (fraction * lengthMs) / 1000;
     setProgress(fraction);
+    setCurrentMs(fraction * lengthMs);
   };
 
   const filled = Math.round(progress * bars.length);
+  const failed = state === 'error';
+  const loading = state === 'loading';
+
+  let label = playing ? t('chat.voice.pause') : t('chat.voice.play');
+  if (failed) label = t('chat.voice.retry');
+  else if (loading) label = t('chat.voice.loading');
 
   return (
-    <div className={own ? 'voice voice--own' : 'voice'} data-testid="voice-player">
+    <div
+      className={['voice', own ? 'voice--own' : '', failed ? 'voice--error' : ''].filter(Boolean).join(' ')}
+      data-testid="voice-player"
+      data-state={state}
+    >
       <button
         type="button"
-        className="voice__toggle"
-        aria-label={playing ? t('chat.voice.pause') : t('chat.voice.play')}
+        className={loading ? 'voice__toggle voice__toggle--loading' : 'voice__toggle'}
+        aria-label={label}
+        aria-busy={loading || undefined}
+        disabled={!src}
         onClick={toggle}
       >
-        <ChatIcon name={playing ? 'pause' : 'play'} size={20} />
+        <ChatIcon name={failed ? 'retry' : playing ? 'pause' : 'play'} size={20} />
       </button>
       <div className="voice__body">
         <div className="voice__wave" onClick={seek} aria-hidden="true">
@@ -128,9 +195,17 @@ export function VoicePlayer({ id, src, durationMs, own }: Props) {
             />
           ))}
         </div>
-        <span className="voice__time">
-          {formatDuration(playing || currentMs > 0 ? currentMs : totalMs)}
-        </span>
+        {failed ? (
+          <span className="voice__error" role="alert" data-testid="voice-play-error">
+            {t('chat.voice.error')}
+          </span>
+        ) : (
+          <span className="voice__time" data-testid="voice-time">
+            {playing || currentMs > 0
+              ? `${formatDuration(currentMs)}${totalMs > 0 ? ` / ${formatDuration(totalMs)}` : ''}`
+              : formatDuration(totalMs)}
+          </span>
+        )}
       </div>
       <audio ref={audioRef} src={src || undefined} preload="metadata" />
     </div>

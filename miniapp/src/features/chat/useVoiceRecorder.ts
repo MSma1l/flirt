@@ -10,8 +10,25 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { MEDIA_LIMITS } from './chatMedia';
 
-/** Formatele încercate, în ordinea preferinței. */
-const MIME_CANDIDATES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/ogg'];
+/**
+ * Formatele încercate, în ordinea preferinței.
+ *
+ * MP4/AAC ÎNTÂI: e singurul format pe care îl redau TOATE platformele — inclusiv
+ * WebView-ul Telegram de pe iOS, care NU redă WebM/Ogg/Opus. Înainte WebM era
+ * primul: un vocal înregistrat pe Android se trimitea și apărea în chat, dar
+ * interlocutorul de pe iPhone nu-l putea asculta. WebM/Ogg rămân ca rezervă
+ * (Firefox / Chrome vechi nu înregistrează MP4); serverul le convertește oricum
+ * în AAC/M4A (`backend/app/services/chat_media.py::ensure_playable_voice`).
+ */
+const MIME_CANDIDATES = [
+  'audio/mp4;codecs=mp4a.40.2',
+  'audio/mp4',
+  'audio/aac',
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/ogg;codecs=opus',
+  'audio/ogg',
+];
 
 export function isVoiceRecordingSupported(): boolean {
   return (
@@ -32,6 +49,7 @@ export function pickAudioMimeType(): string {
 /** Extensia potrivită formatului, pentru numele părții multipart. */
 export function audioExtension(mime: string): string {
   if (mime.includes('mp4')) return 'm4a';
+  if (mime.includes('aac')) return 'aac';
   if (mime.includes('ogg')) return 'ogg';
   return 'webm';
 }

@@ -467,10 +467,25 @@
       "play": "Ascultă",
       "pause": "Pauză",
       "denied": "Nu ai permis accesul la microfon. Permite-l din setările telefonului ca să trimiți mesaje vocale.",
-      "unavailable": "Înregistrarea vocală nu e disponibilă pe acest dispozitiv."
+      "unavailable": "Înregistrarea vocală nu e disponibilă pe acest dispozitiv.",
+      "loading": "Se încarcă mesajul vocal…",
+      "error": "Mesajul vocal nu poate fi redat pe acest dispozitiv.",
+      "retry": "Reîncearcă redarea"
     },
     "viewer": {
       "close": "Închide"
+    },
+    "partner": {
+      "open": "Deschide profilul lui {{name}}",
+      "loading": "Se încarcă profilul…",
+      "errorTitle": "Profilul nu s-a încărcat",
+      "errorBody": "Verifică conexiunea și încearcă din nou.",
+      "unavailableTitle": "Profil indisponibil",
+      "unavailableBody": "Profilul acestei persoane nu mai poate fi văzut.",
+      "backToChat": "Înapoi la conversație",
+      "write": "Scrie un mesaj",
+      "compatibility": "Compatibilitate {{score}}%",
+      "aboutTitle": "Despre"
     }
   },
   "profileView": {

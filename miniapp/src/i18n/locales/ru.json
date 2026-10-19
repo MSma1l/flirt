@@ -119,7 +119,8 @@
     "passport": "Flirt Passport",
     "tickets": "Мой билет",
     "subscription": "Подписка",
-    "privacy": "Конфиденциальность и данные"
+    "privacy": "Конфиденциальность и данные",
+    "partnerProfile": "Профиль"
   },
   "welcome": {
     "title": "Добро пожаловать в FLIRT",

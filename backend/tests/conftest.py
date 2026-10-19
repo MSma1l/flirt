@@ -262,3 +262,18 @@ async def _tg_notify_isolated():
     tg_notify.reset_state()
     yield
     await tg_notify.drain()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _telegram_avatar_offline(monkeypatch):
+    """Sincronizarea avatarului Telegram (`telegram_avatar.schedule_refresh`)
+    descarcă poze din rețea, în fundal, după login. În teste o oprim: multe
+    fișiere rulează login-ul Telegram în modul 'live' cu un token FALS, iar un
+    task rămas în zbor ar lovi api.telegram.org. Testele avatarului apelează
+    direct `refresh_avatar`, cu rețeaua înlocuită.
+    """
+    from app.services import telegram_avatar
+
+    monkeypatch.setattr(telegram_avatar, "schedule_refresh", lambda *a, **k: None)
+    yield
+    await telegram_avatar.drain()

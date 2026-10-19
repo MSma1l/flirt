@@ -111,6 +111,21 @@ class User(Base):
     # NULL = necunoscută → notificările pleacă în română (limba implicită).
     telegram_language: Mapped[str | None] = mapped_column(String(8), nullable=True)
 
+    # Poza de profil din Telegram — AVATAR DE REZERVĂ: se afișează altor useri
+    # (lista de chat, antetul conversației, profilul partenerului) DOAR cât timp
+    # userul nu are nicio poză proprie; pozele proprii au mereu prioritate
+    # (`telegram_avatar.avatar_url_for`). Scrise la login (`telegram_avatar`).
+    #   * `telegram_photo_url`: ce servim — copia din storage-ul nostru sau, până
+    #     la descărcare, URL-ul https Telegram validat (domenii Telegram only);
+    #   * `telegram_photo_source`: identitatea pozei sursă (URL-ul din initData
+    #     sau `file_unique_id` din Bot API) → nu re-descărcăm aceeași poză;
+    #   * `telegram_photo_checked_at`: ultima interogare Bot API (plafon).
+    telegram_photo_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    telegram_photo_source: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    telegram_photo_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # Preferințele notificărilor trimise de BOT în Telegram (`tg_notify`), câte
     # un comutator per tip de eveniment. Pornite implicit (`server_default` →
     # conturile existente le primesc fără backfill); userul le stinge din Mini App

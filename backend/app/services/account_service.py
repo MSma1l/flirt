@@ -1014,6 +1014,13 @@ async def purge_user_data(db: AsyncSession, user_id: uuid.UUID) -> None:
         user.email = _anonymized_email(user_id)
         user.password_hash = ""  # hash invalid → nicio parolă nu se potrivește
         user.profile_completed = False
+        # Avatarul preluat din Telegram e tot o poză a persoanei: copia din
+        # storage se șterge (no-op pentru un URL Telegram), câmpurile se golesc.
+        if user.telegram_photo_url:
+            files_to_delete.append(user.telegram_photo_url)
+        user.telegram_photo_url = None
+        user.telegram_photo_source = None
+        user.telegram_photo_checked_at = None
         # Marcaj de purjare verificat de `get_current_user` la FIECARE cerere.
         # Fără el, access token-ul stateless emis înainte de ștergere rămânea
         # valabil ~15 min: contul „șters" continua să facă cereri autentificate
