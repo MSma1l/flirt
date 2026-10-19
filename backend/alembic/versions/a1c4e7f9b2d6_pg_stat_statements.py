@@ -1,7 +1,7 @@
 """extensia pg_stat_statements (statistica query-urilor lente)
 
 Revision ID: a1c4e7f9b2d6
-Revises: d3f8a1c5e2b9
+Revises: b7e2d4f9a3c1
 
 Fără nicio schimbare de schemă a aplicației. Creează extensia ca să putem vedea
 ce query-uri consumă timp pe producție:
@@ -24,7 +24,7 @@ from typing import Sequence, Union
 from alembic import op
 
 revision: str = "a1c4e7f9b2d6"
-down_revision: Union[str, None] = "d3f8a1c5e2b9"
+down_revision: Union[str, None] = "b7e2d4f9a3c1"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
