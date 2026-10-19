@@ -11,6 +11,7 @@ from app.api import legal
 from app.api.v1 import health
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.core.http_cache import HTTPCacheMiddleware
 from app.core.logging import (
     REQUEST_ID_HEADER,
     AccessLogMiddleware,
@@ -33,11 +34,23 @@ async def lifespan(app: FastAPI):
     log.info("shutdown", extra={"env": settings.environment})
 
 
+def _docs_kwargs(environment: str) -> dict[str, str | None]:
+    """Documentația interactivă (/docs, /redoc, /openapi.json) NU e servită în
+    producție: harta completă a API-ului (rute admin, scheme, câmpuri) e un cadou
+    pentru oricine scanează serverul, iar clienții noștri nu au nevoie de ea. În
+    dezvoltare/staging rămâne (Swagger pe LAN, vezi docker-compose.override.yml).
+    """
+    if environment == "production":
+        return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    return {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
+
+
 app = FastAPI(
     title=f"{settings.app_name} API",
     version="0.1.0",
     debug=settings.debug,
     lifespan=lifespan,
+    **_docs_kwargs(settings.environment),
 )
 
 # --------------------------------------------------------------------------- #
@@ -46,6 +59,21 @@ app = FastAPI(
 # de orice altceva, ca toate log-urile cererii (inclusiv access log-ul și
 # stack trace-urile) să poarte aceeași corelare.
 # --------------------------------------------------------------------------- #
+# ETag + Cache-Control pe GET-urile JSON (vezi app/core/http_cache.py). Adăugat
+# ÎNAINTEA lui CORSMiddleware = mai în INTERIOR, ca răspunsul 304 construit aici
+# să treacă tot prin CORS și să primească antetele (altfel browserul îl respinge).
+# `public` DOAR pe rute care sigur nu depind de utilizator.
+_api = settings.api_v1_prefix.rstrip("/")
+app.add_middleware(
+    HTTPCacheMiddleware,
+    public_paths={
+        f"{_api}/capabilities": "public, max-age=300",
+        f"{_api}/profiles/reference": "public, max-age=3600",
+    },
+    public_prefixes={
+        f"{_api}/legal/documents/": "public, max-age=3600",
+    },
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -57,6 +85,11 @@ app.add_middleware(
     # îl ascunde de JS — un client web nu putea paginile deloc. Pe mobil (RN) nu
     # se aplică politica CORS, de aceea a trecut neobservat.
     expose_headers=[REQUEST_ID_HEADER, "X-Next-Cursor"],
+    # Browserul păstrează răspunsul la preflight (OPTIONS) 2 ore în loc de 10
+    # minute (implicitul Starlette 600s): mai puține OPTIONS în plus înaintea
+    # cererilor cross-origin ale Mini App-ului cu Authorization. 7200 = plafonul
+    # Chromium.
+    max_age=7200,
 )
 app.add_middleware(AccessLogMiddleware)
 app.add_middleware(RequestContextMiddleware)

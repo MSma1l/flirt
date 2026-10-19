@@ -201,6 +201,10 @@ services:
       - nginx_certs:/etc/nginx/certs          # certificatul activ (LE sau self-signed)
       - admin_dist:/var/www/admin:ro          # build-ul panoului de admin
       - miniapp_dist:/var/www/miniapp:ro      # build-ul Telegram Mini App
+      # Media încărcată (STORAGE_PROVIDER=local), servită DIRECT de nginx la
+      # /media/* (cache 1 an, fără Python). Read-only: nginx doar citește; scrie
+      # numai `api`. Dovezile de plată (ticket-proofs/) sunt blocate în nginx.conf.
+      - mediadata:/var/www/media:ro
     # Randează configul (${DOMAIN}) → asigură un certificat → `nginx -t` → pornește
     # → supraveghează certificatul și dă reload când certbot îl emite/reînnoiește.
     command: ["/bin/sh", "/usr/local/bin/nginx-entrypoint.sh"]

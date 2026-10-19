@@ -113,6 +113,17 @@ class Settings(BaseSettings):
     postgres_host: str = "db"
     postgres_port: int = 5432
     database_url: str | None = None
+    # Pool-ul de conexiuni, PER PROCES (fiecare worker gunicorn are pool-ul lui).
+    # Buget: (pool_size + max_overflow) × WEB_CONCURRENCY (+ serviciul `purge`)
+    # trebuie să rămână sub `max_connections` al Postgres (100 implicit):
+    # 10 × 5 workeri (plafonul entrypoint-ului pe 2 vCPU) + 10 = 60.
+    # `pool_timeout` scurt: sub suprasarcină e mai bine un 500 rapid decât o
+    # cerere care atârnă 30s (implicitul SQLAlchemy) și ține și clientul blocat.
+    # `pool_recycle` reînnoiește conexiunile vechi (pre-ping rămâne pornit).
+    db_pool_size: int = 5
+    db_max_overflow: int = 5
+    db_pool_timeout: int = 10
+    db_pool_recycle: int = 1800
 
     # JWT
     jwt_algorithm: str = "RS256"
