@@ -61,16 +61,18 @@ This policy does not cover third-party services, for example Telegram, app store
 | Category | What data | Source |
 |---|---|---|
 | **Telegram account** | your Telegram user identifier and Telegram interface language (ro/ru/en). For these accounts a technical e-mail address is also generated; it does not belong to you and is not used for communication. | Telegram, when you open the Mini App |
-| **Telegram data displayed only on the device** | your Telegram first name, last name, username and profile photo. The Mini App uses them on your phone: it pre-fills your name in the profile and in the ticket order and shows the photo on the welcome screen. **The server does not store them**. Your Telegram photo **does not become** your FLIRT profile photo. | Telegram |
+| **Telegram data used only on the device** | your Telegram first name, last name and username. The Mini App uses them on your phone: it pre-fills your name in the profile and in the ticket order. **The server does not store them**. | Telegram |
+| **Telegram profile photo (fallback avatar)** | each time you sign in via Telegram we retrieve your Telegram profile photo, download it and **store it on our server** (a JPEG of at most 640 px, without metadata), together with its source address and the date of the last check. We show it to the people you have a conversation with (conversation list, conversation header, profile opened from the conversation) **only while you have no photos of your own in FLIRT**. It does not appear in recommendations and does not become a profile photo. | Telegram: the Mini App launch data or the Bot API, within your Telegram privacy settings |
 | **Other sign-in methods** (mobile app only, when enabled) | e-mail and password (the password is stored only as an Argon2 hash), phone number for the SMS code, Google or Apple identifier | you / Google / Apple |
 | **Account status** | role, creation date, last activity, any suspension and its reason, deletion request | the system |
 | **Profile** | display name, date of birth (we show others only your age), gender, height, nationality, languages spoken, bio (max. 500 characters), interests, dating status (what you are looking for), "verified" badge | you |
 | **Photos and stories** | 2–9 profile photos; stories, with a photo or video and a caption | you |
 | **Location** | city (required), street (optional) and the coordinates derived from them by geocoding. **We do not use the device's GPS location** in the Mini App. | you / the geocoding service |
 | **Preferences** | the genders you are interested in, age range, search radius, profile hiding, notification settings, activation of AI features | you |
-| **Humor test** | your ratings of jokes ("funny" / "not") and the humor profile calculated from them (7 humor types) | you / automatic calculation |
+| **Humor test** (only when enabled, see section 8) | your ratings of jokes ("funny" / "not") and the humor profile calculated from them (7 humor types) | you / automatic calculation |
 | **Social activity** | likes and passes, super likes (with the attached message, if any), matches, favorites, blocks | you |
-| **Conversations** | text messages, photos, videos and voice messages sent; reactions; read status; file metadata (size, duration, resolution) | you and your conversation partners |
+| **Profile views and activity center** | when someone likes or passes on your profile in recommendations or opens your profile (for example from a conversation), we record who viewed it, whose profile it was and the day: a single row per visitor, per profile and per day. We also keep the point up to which you have read your activity (read / unread). | you and other users / the system |
+| **Conversations** | text messages, photos, videos and voice messages sent; reactions; read status; file metadata (size, duration, resolution). Voice messages are converted on our server to AAC/M4A so that they can be played on any device; no third party is involved in the conversion. | you and your conversation partners |
 | **Reports** | reports submitted by you or about you: category, note, reference to the conversation, status | users / moderators |
 | **Events and loyalty** | event attendance ("going"), ticket (code displayed as a QR code), entry scan, Flirt Passport stamps, loyalty level and discounts, invitation codes used | you / entry staff |
 | **Ticket orders** | full name, phone, e-mail, your message, number of tickets, amount, payment method (MIA instant payment or bank transfer), payment reference and description, **proof of payment** (image or PDF, which may contain banking details), order status, administrator notes, the times of the decision and of entry | you / administrators |
@@ -90,7 +92,9 @@ We process data only if we have a legal basis under Art. 6 (and, for special cat
 | Purpose | Data used | Legal basis | How long we keep it |
 |---|---|---|---|
 | Creating and managing the account, authentication | account, account status, technical data | performance of a contract (Terms of Use), Art. 6 | as long as the account exists (see section 12) |
-| Displaying the profile, recommendations, likes, matches | profile, photos, location, preferences, humor test, social activity | performance of a contract, Art. 6 | as long as the account exists |
+| Displaying the profile, recommendations, likes, matches | profile, photos, location, preferences, humor test (when enabled), social activity | performance of a contract, Art. 6 | as long as the account exists |
+| Telegram photo as a fallback avatar in conversations | Telegram profile photo | performance of a contract (conversations) and legitimate interest (so that your conversation partners recognize you while you have no photos of your own), Art. 6 | as long as the account exists; replaced when you change the photo in Telegram and deleted when it is no longer available there (see section 12) |
+| Activity center: number of profile views, statistics (likes, super likes, passes, matches), list of people who liked you or matched with you | profile views, social activity | performance of a contract, Art. 6; recording your visits to other people's profiles: legitimate interest, Art. 6 | as long as the account exists (see section 12) |
 | Recommendations based on gender and the genders you are interested in (may reveal sexual orientation) | gender, genders you are interested in, dating status | **explicit consent**, Art. 6 and Art. 9 (see section 6) | as long as the account exists or until you withdraw your consent |
 | Conversations and stories | conversations, stories | performance of a contract, Art. 6 | until the message / story or the account is deleted |
 | Events, tickets, entry, Flirt Passport | events, orders, loyalty | performance of a contract, Art. 6 | see section 12 |
@@ -139,11 +143,13 @@ We use the following automated processing (Art. 22):
 **Order of recommendations (profiling).** For each suitable profile we calculate a compatibility score from:
 
 - shared interests (the highest weight);
-- similarity of humor profiles;
+- similarity of humor profiles (only while the humor test is enabled);
 - shared dating statuses;
 - distance (the closer, the higher);
 - shared languages;
 - recent activity in the app and the "verified" badge.
+
+**The humor test** is turned off by default and we may enable it from the administration panel. When it is enabled, you are told what it is for before you start, and you may be asked to complete it before liking profiles. The result affects the compatibility score only while the test is enabled.
 
 We first show you the profiles that match your preferences (gender, age, radius), in order of score. We do not show accounts inactive for more than 30 days. When there are no more such profiles, we may gradually widen the search: first without the age and radius limits, then with profiles you passed on at least 24 hours ago ("second chance"), then with other profiles. The score is not shown to other users and is not sold to anyone.
 
@@ -163,6 +169,8 @@ FLIRT is intended exclusively for people aged at least **18**. You confirm your 
 
 **Other users.** Other users see your public profile: name, age, photos, city, approximate distance (in whole kilometers), interests, bio, "verified" badge and stories. Messages are visible only to the participants in the conversation. We do not show your e-mail, phone, date of birth, street, coordinates or the genders you are interested in.
 
+In the activity center, the people you like (including with a super like) and the people you have matched with see your profile. Passes are shown to the other person only as a total number, without your identity. Profile views are shown only as a number (total, last 7 days and per day), never who visited. If you have no photos of your own, your conversation partners see your Telegram profile photo (section 4).
+
 **Event entry staff.** When scanning a ticket, staff see the holder's first name, age and first profile photo to confirm their identity.
 
 **Processors** (process data on our behalf, in accordance with Art. 28):
@@ -170,7 +178,7 @@ FLIRT is intended exclusively for people aged at least **18**. You confirm your 
 | Recipient | Role | What it receives | Where | When |
 |---|---|---|---|---|
 | Hosting provider (data center in Chișinău) | servers, database, media files, backups | all stored data (encrypted in transit) | Republic of Moldova | permanently |
-| Telegram (Telegram FZ-LLC and affiliates) | authentication, running the Mini App, bot notifications | Telegram identifier, notification text | global infrastructure | permanently |
+| Telegram (Telegram FZ-LLC and affiliates) | authentication, running the Mini App, bot notifications, retrieving the Telegram profile photo | Telegram identifier, notification text | global infrastructure | permanently |
 | OpenRouter, Inc. and Anthropic PBC | AI features; automated photo moderation | conversation excerpts and the data in section 7; the uploaded photo, without your identifier | USA | only when the features are enabled |
 | OpenStreetMap Foundation (Nominatim) | converting the city / street into coordinates | only the text "street, city", without your identifier | EU / United Kingdom | when the profile is saved |
 | Amazon Web Services | face verification (Rekognition); optional storage (S3) | selfie, profile photo | EU / USA | only when enabled (currently not) |
@@ -182,7 +190,8 @@ Providers process data only on our instructions and are contractually bound to p
 
 - the Telegram Web App script (telegram.org);
 - Google Fonts (Google);
-- OpenStreetMap maps on the events page.
+- OpenStreetMap maps on the events page;
+- your conversation partners' Telegram profile photos (from Telegram's servers), only until their copy reaches our server.
 
 We do not share any other data about you with them.
 
@@ -210,6 +219,8 @@ We share as little data as possible. The AI provider receives only short excerpt
 | **Account deletion request** | the profile is hidden immediately and all sessions are closed. A grace period of **{{grace_days}} days** follows, during which you can cancel the request. After it, the data is automatically and permanently deleted or anonymized (see below). |
 | Photos, stories, messages, likes, matches, favorites, blocks, settings, sessions, devices, ticket, attendances, Flirt Passport stamps, subscription | until you delete them or until the account is deleted. Messages are also deleted when the conversation partner's account is deleted. |
 | Stories | visible to others for 24 hours, then they remain archived in your account until you delete them or until the account is deleted |
+| Telegram profile photo (copy on the server) | refreshed each time you sign in via Telegram. If you delete or hide the photo in Telegram, the copy is deleted at a later sign-in. It is also deleted when the account is permanently deleted. |
+| Profile views and the "read" status of the activity | as long as the account exists; there is no automatic deletion period. After the account is permanently deleted, they are no longer shown to anyone and remain linked only to the internal identifier of the deleted account, without a profile, name or photos. |
 | Ticket orders | on account deletion they are anonymized: the name, phone, e-mail, messages, notes and payment description are deleted. The amount, currency, number of tickets, payment reference, event, dates and order status remain as accounting records, in accordance with Law No. 287/2017, and no longer identify you. |
 | Proofs of payment (receipt images) | **{{proof_retention_years}} years** from the order date, as supporting accounting documents, then automatically deleted. Proofs for rejected or canceled orders are deleted **{{rejected_proof_days}} days** after the decision or immediately on account deletion. |
 | Event entry records and invitation codes used | as records of events and of discounts granted. They are no longer linked to a profile after account deletion. |
@@ -267,7 +278,7 @@ We apply technical and organizational measures appropriate to the risk (Art. 32)
 - sessions use signed access tokens (JWT) valid for 15 minutes and rotated refresh tokens, stored on the server only as a hash. Reuse of an old token closes the session. On a deletion request, all sessions are closed;
 - passwords (mobile app) are stored exclusively as Argon2 hashes;
 - the number of requests is limited, as protection against attacks and abuse;
-- uploaded files are validated (type, size, content). Photos in conversations are stripped of metadata (including GPS location in EXIF), and the Mini App resizes profile photos on the device before upload;
+- uploaded files are validated (type, size, content). Uploaded photos and the copy of the Telegram photo are re-encoded on the server without metadata (including GPS location in EXIF), and reduced-size copies (WebP) are generated for display. In addition, the Mini App resizes profile photos on the device before upload;
 - access to production data is restricted to authorized persons, and administrative actions are logged. The admin panel does not allow reading conversations;
 - we make daily backups with a limited retention period.
 

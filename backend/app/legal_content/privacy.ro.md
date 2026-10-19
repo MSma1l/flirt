@@ -61,16 +61,18 @@ Politica nu acoperă serviciile terților, de exemplu Telegram, magazinele de ap
 | Categorie | Ce date | Sursa |
 |---|---|---|
 | **Cont Telegram** | identificatorul de utilizator Telegram și limba interfeței Telegram (ro/ru/en). Pentru aceste conturi se generează și o adresă de e-mail tehnică, care nu vă aparține și nu e folosită pentru comunicare. | Telegram, la deschiderea Mini App-ului |
-| **Date Telegram afișate doar pe dispozitiv** | prenumele, numele, numele de utilizator și fotografia de profil Telegram. Mini App-ul le folosește pe telefonul dumneavoastră: completează automat numele în profil și în comanda de bilet și afișează fotografia pe ecranul de bun venit. **Serverul nu le stochează**. Fotografia Telegram **nu devine** fotografie de profil FLIRT. | Telegram |
+| **Date Telegram folosite doar pe dispozitiv** | prenumele, numele și numele de utilizator Telegram. Mini App-ul le folosește pe telefonul dumneavoastră: completează automat numele în profil și în comanda de bilet. **Serverul nu le stochează**. | Telegram |
+| **Fotografia de profil Telegram (avatar de rezervă)** | la fiecare intrare prin Telegram preluăm fotografia dumneavoastră de profil Telegram, o descărcăm și **o stocăm pe serverul nostru** (JPEG de cel mult 640 px, fără metadate), împreună cu adresa ei de origine și data ultimei verificări. O afișăm persoanelor cu care aveți o conversație (lista conversațiilor, antetul conversației, profilul deschis din conversație) **numai cât timp nu aveți fotografii proprii în FLIRT**. Nu apare în recomandări și nu devine fotografie de profil. | Telegram: datele de lansare ale Mini App-ului sau Bot API, în limita setărilor de confidențialitate Telegram |
 | **Alte metode de autentificare** (doar aplicația mobilă, când sunt activate) | e-mailul și parola (parola e stocată numai ca hash Argon2), numărul de telefon pentru codul SMS, identificatorul Google sau Apple | dumneavoastră / Google / Apple |
 | **Starea contului** | rolul, data creării, ultima activitate, eventuala suspendare și motivul ei, cererea de ștergere | sistemul |
 | **Profil** | numele afișat, data nașterii (altora le arătăm doar vârsta), genul, înălțimea, naționalitatea, limbile vorbite, descrierea (max. 500 de caractere), interesele, statutul de întâlniri (ce căutați), insigna „verificat” | dumneavoastră |
 | **Fotografii și povești** | 2–9 fotografii de profil; poveștile (stories), cu fotografie sau video și descriere | dumneavoastră |
 | **Localizare** | orașul (obligatoriu), strada (opțional) și coordonatele obținute din ele prin geocodare. **Nu folosim localizarea GPS a dispozitivului** în Mini App. | dumneavoastră / serviciul de geocodare |
 | **Preferințe** | genurile care vă interesează, intervalul de vârstă, raza de căutare, ascunderea profilului, setările de notificare, activarea funcțiilor AI | dumneavoastră |
-| **Testul de umor** | aprecierile dumneavoastră la glume („amuzant” / „nu”) și profilul de umor calculat din ele (7 tipuri de umor) | dumneavoastră / calcul automat |
+| **Testul de umor** (doar când este activat, vezi secțiunea 8) | aprecierile dumneavoastră la glume („amuzant” / „nu”) și profilul de umor calculat din ele (7 tipuri de umor) | dumneavoastră / calcul automat |
 | **Activitate socială** | aprecierile și respingerile, super-aprecierile (cu mesajul atașat, dacă există), potrivirile (match-urile), favoritele, blocările | dumneavoastră |
-| **Conversații** | mesajele text, fotografiile, video-urile și mesajele vocale trimise; reacțiile; starea de citire; metadatele fișierelor (dimensiune, durată, rezoluție) | dumneavoastră și interlocutorii |
+| **Vizualizări de profil și centrul de activitate** | când cineva vă apreciază sau vă respinge profilul în recomandări ori vă deschide profilul (de exemplu din conversație), înregistrăm cine a văzut, al cui profil și ziua: un singur rând pe vizitator, pe profil și pe zi. Păstrăm și momentul până la care v-ați citit activitatea (citit / necitit). | dumneavoastră și ceilalți utilizatori / sistemul |
+| **Conversații** | mesajele text, fotografiile, video-urile și mesajele vocale trimise; reacțiile; starea de citire; metadatele fișierelor (dimensiune, durată, rezoluție). Mesajele vocale sunt convertite pe serverul nostru în format AAC/M4A, ca să poată fi ascultate pe orice dispozitiv; conversia nu implică terți. | dumneavoastră și interlocutorii |
 | **Raportări** | raportările trimise de dumneavoastră sau despre dumneavoastră: categorie, notă, referință la conversație, stare | utilizatori / moderatori |
 | **Evenimente și fidelitate** | participarea la evenimente („merg”), biletul (cod afișat ca QR), scanarea la intrare, ștampilele Flirt Passport, nivelul de fidelitate și reducerile, codurile de invitație folosite | dumneavoastră / personalul de la intrare |
 | **Comenzi de bilete** | numele complet, telefonul, e-mailul, mesajul dumneavoastră, numărul de bilete, suma, metoda de plată (plată instant MIA sau transfer bancar), referința și descrierea plății, **dovada plății** (imagine sau PDF, care poate conține date bancare), starea comenzii, notele administratorului, momentele deciziei și ale intrării | dumneavoastră / administratori |
@@ -90,7 +92,9 @@ Prelucrăm datele numai dacă avem un temei prevăzut la art. 6 (pentru categori
 | Scop | Date folosite | Temei legal | Cât păstrăm |
 |---|---|---|---|
 | Crearea și administrarea contului, autentificarea | cont, stare cont, date tehnice | executarea contractului (Termenii de utilizare), art. 6 | cât există contul (vezi secțiunea 12) |
-| Afișarea profilului, recomandări, aprecieri, potriviri | profil, fotografii, localizare, preferințe, test de umor, activitate socială | executarea contractului, art. 6 | cât există contul |
+| Afișarea profilului, recomandări, aprecieri, potriviri | profil, fotografii, localizare, preferințe, test de umor (când este activat), activitate socială | executarea contractului, art. 6 | cât există contul |
+| Fotografia Telegram ca avatar de rezervă în conversații | fotografia de profil Telegram | executarea contractului (conversațiile) și interes legitim (să vă recunoască interlocutorii cât timp nu aveți fotografii proprii), art. 6 | cât există contul; se înlocuiește când schimbați fotografia în Telegram și se șterge când nu mai este disponibilă acolo (vezi secțiunea 12) |
+| Centrul de activitate: numărul vizualizărilor de profil, statistici (aprecieri, super-aprecieri, respingeri, potriviri), lista celor care v-au apreciat sau cu care aveți potrivire | vizualizări de profil, activitate socială | executarea contractului, art. 6; înregistrarea vizitelor dumneavoastră la profilurile altora: interes legitim, art. 6 | cât există contul (vezi secțiunea 12) |
 | Recomandări după gen și genurile care vă interesează (pot dezvălui orientarea sexuală) | gen, genurile care vă interesează, statut de întâlniri | **consimțământ explicit**, art. 6 și art. 9 (vezi secțiunea 6) | cât există contul sau până vă retrageți consimțământul |
 | Conversații și povești | conversații, povești | executarea contractului, art. 6 | până la ștergerea mesajului / poveștii sau a contului |
 | Evenimente, bilete, intrare, Flirt Passport | evenimente, comenzi, fidelitate | executarea contractului, art. 6 | vezi secțiunea 12 |
@@ -139,11 +143,13 @@ Folosim următoarele prelucrări automate (art. 22):
 **Ordinea recomandărilor (profilare).** Pentru fiecare profil potrivit calculăm un scor de compatibilitate din:
 
 - interesele comune (cea mai mare pondere);
-- asemănarea profilurilor de umor;
+- asemănarea profilurilor de umor (numai cât timp testul de umor este activat);
 - statutele de întâlniri comune;
 - distanță (cu cât mai aproape, cu atât mai mult);
 - limbile comune;
 - activitatea recentă în aplicație și insigna „verificat”.
+
+**Testul de umor** este dezactivat implicit și îl putem activa din administrare. Când este activ, vi se explică înainte de început la ce folosește, iar completarea lui poate fi cerută înainte de a aprecia profiluri. Rezultatul influențează scorul de compatibilitate numai cât timp testul este activ.
 
 Vă arătăm întâi profilurile care corespund preferințelor dumneavoastră (gen, vârstă, rază), în ordinea scorului. Nu arătăm conturile inactive de peste 30 de zile. Când nu mai există astfel de profiluri, putem lărgi treptat căutarea: întâi fără limitele de vârstă și rază, apoi cu profiluri respinse de dumneavoastră acum cel puțin 24 de ore („a doua șansă”), apoi cu alte profiluri. Scorul nu este afișat altor utilizatori și nu este vândut nimănui.
 
@@ -163,6 +169,8 @@ FLIRT este destinat exclusiv persoanelor de cel puțin **18 ani**. Confirmați v
 
 **Altor utilizatori.** Alți utilizatori văd profilul dumneavoastră public: numele, vârsta, fotografiile, orașul, distanța aproximativă (în kilometri întregi), interesele, descrierea, insigna „verificat” și poveștile. Mesajele sunt vizibile doar participanților la conversație. Nu afișăm e-mailul, telefonul, data nașterii, strada, coordonatele și genurile care vă interesează.
 
+În centrul de activitate, persoanele pe care le apreciați (inclusiv prin super-apreciere) și cele cu care aveți o potrivire văd profilul dumneavoastră. Respingerile apar celuilalt doar ca număr total, fără identitate. Vizualizările de profil apar doar ca număr (total, ultimele 7 zile și pe zile), niciodată cine a vizitat. Dacă nu aveți fotografii proprii, interlocutorii văd fotografia dumneavoastră de profil Telegram (secțiunea 4).
+
 **Personalului de la intrarea la evenimente.** La scanarea biletului, personalul vede prenumele, vârsta și prima fotografie de profil a titularului, ca să confirme identitatea.
 
 **Persoane împuternicite** (prelucrează date în numele nostru, conform art. 28):
@@ -170,7 +178,7 @@ FLIRT este destinat exclusiv persoanelor de cel puțin **18 ani**. Confirmați v
 | Destinatar | Rol | Ce primește | Unde | Când |
 |---|---|---|---|---|
 | Furnizorul de găzduire (centru de date din Chișinău) | serverele, baza de date, fișierele media, copiile de siguranță | toate datele stocate (criptate în tranzit) | Republica Moldova | permanent |
-| Telegram (Telegram FZ-LLC și afiliații) | autentificarea, rularea Mini App-ului, notificările prin bot | identificatorul Telegram, textul notificărilor | infrastructură globală | permanent |
+| Telegram (Telegram FZ-LLC și afiliații) | autentificarea, rularea Mini App-ului, notificările prin bot, preluarea fotografiei de profil Telegram | identificatorul Telegram, textul notificărilor | infrastructură globală | permanent |
 | OpenRouter, Inc. și Anthropic PBC | funcțiile AI; moderarea automată a fotografiilor | fragmentele de conversație și datele din secțiunea 7; fotografia încărcată, fără identificatorul dumneavoastră | SUA | doar când funcțiile sunt activate |
 | OpenStreetMap Foundation (Nominatim) | transformarea orașului / străzii în coordonate | doar textul „stradă, oraș”, fără identificatorul dumneavoastră | UE / Regatul Unit | la salvarea profilului |
 | Amazon Web Services | verificarea facială (Rekognition); stocare opțională (S3) | selfie, fotografia de profil | UE / SUA | doar când sunt activate (în prezent nu) |
@@ -182,7 +190,8 @@ Furnizorii prelucrează datele numai pe baza instrucțiunilor noastre și sunt o
 
 - scriptul Telegram Web App (telegram.org);
 - fonturile Google Fonts (Google);
-- hărțile OpenStreetMap de pe pagina evenimentelor.
+- hărțile OpenStreetMap de pe pagina evenimentelor;
+- fotografiile de profil Telegram ale interlocutorilor (de pe serverele Telegram), doar până când copia lor ajunge pe serverul nostru.
 
 Nu le transmitem alte date despre dumneavoastră.
 
@@ -210,6 +219,8 @@ Transmitem cât mai puține date. Furnizorul AI primește doar fragmente scurte,
 | **Cererea de ștergere a contului** | profilul este ascuns imediat și toate sesiunile se închid. Urmează o perioadă de grație de **{{grace_days}} de zile**, în care puteți anula cererea. După ea, datele se șterg sau se anonimizează automat și definitiv (vezi mai jos). |
 | Fotografii, povești, mesaje, aprecieri, potriviri, favorite, blocări, setări, sesiuni, dispozitive, bilet, participări, ștampile Flirt Passport, abonament | până le ștergeți dumneavoastră sau până la ștergerea contului. Mesajele se șterg și la ștergerea contului interlocutorului. |
 | Poveștile | sunt vizibile altora 24 de ore, apoi rămân arhivate în contul dumneavoastră până le ștergeți sau până la ștergerea contului |
+| Fotografia de profil Telegram (copia de pe server) | se reîmprospătează la fiecare intrare prin Telegram. Dacă ștergeți sau ascundeți fotografia în Telegram, copia se șterge la o intrare ulterioară. Se șterge și la ștergerea definitivă a contului. |
+| Vizualizările de profil și starea „citit” a activității | cât există contul; nu au un termen automat de ștergere. După ștergerea definitivă a contului nu mai sunt afișate nimănui și rămân doar legate de identificatorul intern al contului șters, fără profil, nume sau fotografii. |
 | Comenzile de bilete | la ștergerea contului se anonimizează: se șterg numele, telefonul, e-mailul, mesajele, notele și descrierea plății. Suma, moneda, numărul de bilete, referința de plată, evenimentul, datele și starea comenzii rămân ca evidență contabilă, conform Legii nr. 287/2017, și nu vă mai identifică. |
 | Dovezile de plată (imaginile chitanțelor) | **{{proof_retention_years}} ani** de la data comenzii, ca documente justificative contabile, apoi se șterg automat. Dovezile comenzilor respinse sau anulate se șterg la **{{rejected_proof_days}} de zile** de la decizie sau imediat la ștergerea contului. |
 | Înregistrările de intrare la evenimente și codurile de invitație folosite | ca evidență a evenimentelor și a reducerilor acordate. Nu mai sunt legate de un profil după ștergerea contului. |
@@ -267,7 +278,7 @@ Aplicăm măsuri tehnice și organizatorice adecvate riscului (art. 32):
 - sesiunile folosesc jetoane de acces semnate (JWT) valabile 15 minute și jetoane de reîmprospătare rotite, stocate pe server doar ca hash. Reutilizarea unui jeton vechi închide sesiunea. La cererea de ștergere se închid toate sesiunile;
 - parolele (aplicația mobilă) sunt stocate exclusiv ca hash Argon2;
 - numărul de cereri este limitat, ca protecție împotriva atacurilor și abuzurilor;
-- fișierele încărcate sunt validate (tip, dimensiune, conținut). Fotografiile din conversații sunt curățate de metadate (inclusiv localizarea GPS din EXIF), iar Mini App-ul redimensionează fotografiile de profil pe dispozitiv înainte de încărcare;
+- fișierele încărcate sunt validate (tip, dimensiune, conținut). Fotografiile încărcate și copia fotografiei Telegram sunt re-encodate pe server fără metadate (inclusiv localizarea GPS din EXIF), iar pentru afișare se generează copii micșorate (WebP). Mini App-ul redimensionează în plus fotografiile de profil pe dispozitiv înainte de încărcare;
 - accesul la datele de producție este limitat la persoane autorizate, iar acțiunile administrative sunt jurnalizate. Panoul de administrare nu permite citirea conversațiilor;
 - facem copii de siguranță zilnice, cu termen limitat de păstrare.
 

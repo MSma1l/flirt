@@ -88,6 +88,16 @@
     white-space: nowrap;
   }
   code { background: var(--surface); border-radius: 4px; padding: 1px 5px; font-size: 14px; }
+  /* Tabelele politicii (randate din markdown): derulare orizontală pe telefon,
+     fără să lățească pagina. */
+  .table { overflow-x: auto; margin: 14px 0; -webkit-overflow-scrolling: touch; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; line-height: 1.5; }
+  th, td {
+    border: 1px solid var(--border); padding: 8px 10px;
+    text-align: left; vertical-align: top;
+  }
+  th { background: var(--surface); }
+  section + section { margin-top: 48px; padding-top: 8px; border-top: 2px solid var(--accent); }
   footer {
     margin-top: 44px; padding-top: 18px;
     border-top: 1px solid var(--border);
@@ -106,8 +116,7 @@
   <header class="brand">
     <p class="logo">FLIRT <span>· No Regrets</span></p>
     <nav class="langs">
-      <a href="#ro">Română</a>
-      <a href="#en">English</a>
+      $nav
     </nav>
   </header>
 

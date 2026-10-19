@@ -26,12 +26,19 @@ HTML-ul stă în `app/templates/legal/*.html` (fragmentele RO+EN) + `_base.html`
 din CSS ar fi trebuit escapate peste tot. Rezultatul e memorat în cache (`lru_cache`) —
 paginile sunt statice, nu recitim fișierele la fiecare cerere.
 
+EXCEPȚIE — POLITICA DE CONFIDENȚIALITATE: `/legal/privacy` NU are text propriu. Randează
+documentul versionat `app/legal_content/privacy.{ro,en,ru}.md` (același pe care îl
+acceptă utilizatorii în aplicație, prin `legal_service.render_document`), convertit în
+HTML de `markdown_to_html` de mai jos. Așa pagina publică nu poate rămâne în urma
+documentului acceptat (o copie HTML separată ajunsese să promită altceva decât v2.0).
+
 FĂRĂ DEPENDENȚE EXTERNE: zero CDN, zero fonturi și scripturi de pe alte domenii. Pagina
 trebuie să se încarce identic și într-o rețea care blochează CDN-urile.
 """
 from __future__ import annotations
 
 import html
+import re
 from functools import lru_cache
 from pathlib import Path
 from string import Template
@@ -40,6 +47,7 @@ from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
 from app.core.config import settings
+from app.services import legal_service
 
 router = APIRouter(prefix="/legal", tags=["legal"])
 
@@ -97,18 +105,138 @@ def _operator(lang: str) -> str:
     return f'<span class="todo">{todo}</span>'
 
 
+# --------------------------------------------------------------------------- #
+# Markdown → HTML (doar subsetul folosit în `app/legal_content/*.md`)
+# --------------------------------------------------------------------------- #
+# Fără dependență nouă: documentele folosesc doar titluri `#`, paragrafe, liste `-`,
+# tabele `| … |`, `**bold**` și linkuri `[text](url)`. Textul e ESCAPAT întâi (inclusiv
+# valorile din config injectate în placeholdere), abia apoi se aplică marcajele —
+# deci nimic din document nu poate deveni HTML activ. Linkurile acceptă doar
+# `https:` și `mailto:`; orice altă schemă rămâne text simplu.
+_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
+_LIST_RE = re.compile(r"^\s*[-*]\s+(.*)$")
+_TABLE_SEP_RE = re.compile(r"^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?$")
+_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+
+# Limbile paginii publice: RO și EN (recenzentul Apple), plus RU (utilizatorii).
+PRIVACY_LANGS = (("ro", "Română"), ("en", "English"), ("ru", "Русский"))
+
+
+def _inline(text: str) -> str:
+    out = html.escape(text, quote=True)
+
+    def _link(m: re.Match) -> str:
+        label, url = m.group(1), m.group(2)
+        if url.startswith(("https://", "mailto:")):
+            return f'<a href="{url}">{label}</a>'
+        return label
+
+    out = _LINK_RE.sub(_link, out)
+    return _BOLD_RE.sub(r"<strong>\1</strong>", out)
+
+
+def _table(rows: list[str]) -> str:
+    def cells(row: str) -> list[str]:
+        return [c.strip() for c in row.strip().strip("|").split("|")]
+
+    head, body = cells(rows[0]), [r for r in rows[1:] if not _TABLE_SEP_RE.match(r.strip())]
+    parts = ['<div class="table"><table>']
+    if any(head):  # antet gol („| | |") = tabel cheie/valoare, fără <thead>
+        parts.append("<thead><tr>" + "".join(f"<th>{_inline(c)}</th>" for c in head) + "</tr></thead>")
+    parts.append("<tbody>")
+    for row in body:
+        parts.append("<tr>" + "".join(f"<td>{_inline(c)}</td>" for c in cells(row)) + "</tr>")
+    parts.append("</tbody></table></div>")
+    return "".join(parts)
+
+
+def markdown_to_html(md: str) -> str:
+    """Convertește subsetul markdown al documentelor legale în HTML sigur."""
+    lines = md.splitlines()
+    out: list[str] = []
+    para: list[str] = []
+
+    def flush() -> None:
+        if para:
+            out.append(f"<p>{_inline(' '.join(para))}</p>")
+            para.clear()
+
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].strip()
+        if not stripped:
+            flush()
+            i += 1
+            continue
+        heading = _HEADING_RE.match(stripped)
+        if heading:
+            flush()
+            level = len(heading.group(1))
+            out.append(f"<h{level}>{_inline(heading.group(2))}</h{level}>")
+            i += 1
+            continue
+        if stripped.startswith("|"):
+            flush()
+            rows = []
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                rows.append(lines[i].strip())
+                i += 1
+            out.append(_table(rows))
+            continue
+        if _LIST_RE.match(lines[i]):
+            flush()
+            items = []
+            while i < len(lines) and _LIST_RE.match(lines[i]):
+                items.append(_LIST_RE.match(lines[i]).group(1))  # type: ignore[union-attr]
+                i += 1
+            out.append("<ul>" + "".join(f"<li>{_inline(x)}</li>" for x in items) + "</ul>")
+            continue
+        para.append(stripped)
+        i += 1
+    flush()
+
+    result = "\n".join(out)
+    # Placeholderele necompletate („[de completat]") — vizibile, ca în celelalte pagini.
+    for mark in legal_service._MISSING_MARK.values():
+        result = result.replace(mark, f'<span class="todo">{mark}</span>')
+    return result
+
+
+def _privacy_body() -> str:
+    """Politica: documentul versionat (RO, EN, RU), fără text HTML duplicat."""
+    sections = []
+    for lang, _label in PRIVACY_LANGS:
+        doc = legal_service.render_document("privacy", lang)
+        sections.append(
+            f'<section id="{lang}" lang="{lang}">\n{markdown_to_html(doc["content"])}\n</section>'
+        )
+    return "<main>\n" + "\n\n".join(sections) + "\n</main>"
+
+
+def _nav(langs: tuple[tuple[str, str], ...]) -> str:
+    return "\n      ".join(f'<a href="#{code}">{label}</a>' for code, label in langs)
+
+
 @lru_cache(maxsize=8)
 def render_page(page: str) -> str:
     """Randează o pagină legală (layout + fragment RO/EN). Rezultatul e cache-uit."""
-    body = Template((TEMPLATES_DIR / f"{page}.html").read_text(encoding="utf-8")).substitute(
-        contact_email=CONTACT_EMAIL,
-        operator_ro=_operator("ro"),
-        operator_en=_operator("en"),
-        updated_ro=LAST_UPDATED_RO,
-        updated_en=LAST_UPDATED_EN,
-    )
+    if page == "privacy":
+        body = _privacy_body()
+        nav = _nav(PRIVACY_LANGS)
+    else:
+        body = Template((TEMPLATES_DIR / f"{page}.html").read_text(encoding="utf-8")).substitute(
+            contact_email=CONTACT_EMAIL,
+            operator_ro=_operator("ro"),
+            operator_en=_operator("en"),
+            updated_ro=LAST_UPDATED_RO,
+            updated_en=LAST_UPDATED_EN,
+        )
+        nav = _nav(PRIVACY_LANGS[:2])
     base = Template((TEMPLATES_DIR / "_base.html").read_text(encoding="utf-8"))
-    return base.substitute(title=_TITLES[page], body=body, contact_email=CONTACT_EMAIL)
+    return base.substitute(
+        title=_TITLES[page], body=body, nav=nav, contact_email=CONTACT_EMAIL
+    )
 
 
 def _page(name: str) -> HTMLResponse:
