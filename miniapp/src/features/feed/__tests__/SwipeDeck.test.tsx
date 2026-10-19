@@ -291,7 +291,7 @@ describe('match', () => {
     drag(card, 200, 0);
 
     expect(await screen.findByRole('dialog')).toHaveTextContent('Aveți match!');
-    fireEvent.click(screen.getByRole('button', { name: 'Continuă' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continuă să cauți' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });

@@ -63,7 +63,11 @@
     "match": {
       "title": "Aveți match!",
       "body": "Ție și lui {{name}} vă place unul de altul.",
-      "continue": "Continuă"
+      "continue": "Continuă",
+      "write": "Scrie un mesaj",
+      "keepSwiping": "Continuă să cauți",
+      "you": "Tu",
+      "label": "Match nou"
     },
     "emptyBody": "Nu e o eroare: chiar nu mai avem pe cine să-ți arătăm acum. Revino mai târziu sau lărgește filtrele din Setări.",
     "undoNothing": "Nu mai e nimic de anulat: serverul nu are niciun swipe al tău.",
@@ -120,7 +124,8 @@
     "tickets": "Biletul meu",
     "subscription": "Abonament",
     "privacy": "Confidențialitate și date",
-    "partnerProfile": "Profil"
+    "partnerProfile": "Profil",
+    "activity": "Activitate"
   },
   "welcome": {
     "title": "Bine ai venit la FLIRT",
@@ -230,5 +235,34 @@
     "terms": "Termeni",
     "privacy": "Confidențialitate",
     "support": "Suport"
+  },
+  "activity": {
+    "statsTitle": "Profilul tău în cifre",
+    "listTitle": "Ce s-a întâmplat",
+    "stats": {
+      "views": "Vizualizări ale profilului",
+      "viewsWeek": "+{{count}} în ultimele 7 zile",
+      "likes": "Like-uri",
+      "superLikes": "Super like-uri",
+      "dislikes": "Dislike-uri",
+      "matches": "Match-uri"
+    },
+    "dislikesNote": "Cine a spus „nu\" rămâne anonim — vezi doar numărul.",
+    "item": {
+      "match": "Match cu {{name}}! Scrie-i primul.",
+      "like": "{{name}} ți-a dat like",
+      "super_like": "{{name}} ți-a trimis un super like",
+      "views_one": "O persoană ți-a văzut profilul",
+      "views_few": "{{count}} persoane ți-au văzut profilul",
+      "views_other": "{{count}} de persoane ți-au văzut profilul"
+    },
+    "new": "Nou",
+    "unread": "Necitite: {{count}}",
+    "openChat": "Deschide conversația",
+    "loadMore": "Arată mai multe",
+    "loading": "Se încarcă activitatea…",
+    "error": "Nu am putut încărca activitatea. Verifică conexiunea și reîncearcă.",
+    "emptyTitle": "Încă e liniște",
+    "emptyBody": "Când cineva îți dă like, îți vede profilul sau aveți match, afli aici."
   }
 }

@@ -17,7 +17,7 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate, useParams } from 'react-router';
 
@@ -36,6 +36,7 @@ import {
   SparkIcon,
   VerifiedIcon,
 } from '@/features/profile/ProfileIcons';
+import { recordProfileView } from '@/features/notifications/activityApi';
 import { fetchReference, interestLabel, labelOf } from '@/features/profile/profileApi';
 import { cssVarColors } from '@/theme/tokens';
 
@@ -216,6 +217,12 @@ export function PartnerProfileScreen() {
     queryFn: () => fetchReference(language),
     staleTime: REFERENCE_STALE_MS,
   });
+
+  // Deschiderea profilului din chat contează ca vizualizare (centrul de activitate).
+  const viewedUserId = profileQuery.data?.userId;
+  useEffect(() => {
+    if (viewedUserId) recordProfileView(viewedUserId);
+  }, [viewedUserId]);
 
   if (profileQuery.isPending) {
     return (

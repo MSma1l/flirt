@@ -38,9 +38,13 @@ import {
 import type { FeedCard, SwipeAction } from '@mobile/features/feed/types';
 
 import { StatusScreen, type StatusAction } from '@/components/StatusScreen';
+import { chatPath } from '@/features/chat/chatRoutes';
+import { ACTIVITY_UNREAD_KEY } from '@/features/notifications/activityApi';
+import { CHATS_PATH } from '@/features/onboarding/paths';
 import { StoriesStrip } from '@/features/stories/StoriesStrip';
 import { haptic } from '@/telegram/bridge';
 
+import { MatchOverlay } from './MatchOverlay';
 import { ProfileCardView } from './ProfileCardView';
 import { useInterestLabels } from './useInterestLabels';
 
@@ -183,7 +187,8 @@ export function SwipeDeck() {
   const [actionError, setActionError] = useState<string | null>(null);
   /** Refuz de autorizare: NU o eroare de reîncercat, ci ceva de rezolvat. */
   const [block, setBlock] = useState<SwipeBlock | null>(null);
-  const [matchName, setMatchName] = useState<string | null>(null);
+  /** Match-ul tocmai produs de swipe-ul meu: cine e și unde e conversația. */
+  const [match, setMatch] = useState<{ card: FeedCard; chatId: string | null } | null>(null);
 
   // Punctul de plecare al gestului curent. `null` = niciun deget pe card.
   const dragStart = useRef<{ x: number; y: number; pointerId: number } | null>(null);
@@ -328,7 +333,13 @@ export function SwipeDeck() {
     try {
       const result = await swipe(card.userId, action);
       if (card.outsideFilters === true) sessionSwipedFallback.add(card.userId);
-      if (result.matched) setMatchName(card.name);
+      if (result.matched) {
+        setMatch({ card, chatId: result.chatId ?? null });
+        // Conversația există deja pe server (creată odată cu match-ul): lista de
+        // mesaje și centrul de activitate se resincronizează, nu așteaptă poll-ul.
+        void queryClient.invalidateQueries({ queryKey: ['chats'] });
+        void queryClient.invalidateQueries({ queryKey: ACTIVITY_UNREAD_KEY });
+      }
       setSwipeCount((c) => c + 1);
       setIndex((i) => i + 1);
     } catch (error) {
@@ -346,7 +357,14 @@ export function SwipeDeck() {
       setOffset(ORIGIN);
       setBusy(false);
     }
-  }, [t]);
+  }, [queryClient, t]);
+
+  const closeMatch = useCallback(() => setMatch(null), []);
+  const writeToMatch = useCallback(() => {
+    const chatId = match?.chatId;
+    setMatch(null);
+    void navigate(chatId ? chatPath(chatId) : CHATS_PATH);
+  }, [match, navigate]);
 
   const onUndo = useCallback(async () => {
     if (busy || swipeCount === 0) return;
@@ -519,16 +537,13 @@ export function SwipeDeck() {
   }
 
   const matchModal =
-    matchName !== null ? (
-      <div className="match-modal" role="dialog" aria-modal="true">
-        <div className="match-modal__box">
-          <h2 className="title">{t('feed.match.title')}</h2>
-          <p className="body-text">{t('feed.match.body', { name: matchName })}</p>
-          <button type="button" className="button" onClick={() => setMatchName(null)}>
-            {t('feed.match.continue')}
-          </button>
-        </div>
-      </div>
+    match !== null ? (
+      <MatchOverlay
+        name={match.card.name}
+        photo={match.card.photos[0] ?? null}
+        onWrite={writeToMatch}
+        onContinue={closeMatch}
+      />
     ) : null;
 
   const errorText = actionError ? (
@@ -597,7 +612,9 @@ export function SwipeDeck() {
               testId: 'deck-retry',
             },
           ]}
-        />
+        >
+          {matchModal}
+        </StatusScreen>
       </div>
     );
   }

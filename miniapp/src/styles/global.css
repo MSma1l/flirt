@@ -287,6 +287,23 @@ body {
   flex: 1;
 }
 
+/* Numărul de necitite pe rândul „Activitate". */
+.more-item__badge {
+  flex: none;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  box-sizing: border-box;
+  font-size: 12px;
+  line-height: 22px;
+  font-weight: 800;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .more-item__chevron {
   width: 18px;
   height: 18px;

@@ -1,9 +1,10 @@
 """Rute anketă/profil — sub prefixul /api/v1/profiles."""
 import io
 import logging
+import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -19,7 +20,7 @@ from app.schemas.profile import (
     ProfileOut,
     ReferenceOut,
 )
-from app.services import legal_service, profile_service
+from app.services import activity_service, legal_service, profile_service
 from app.services.photo_moderation import get_photo_moderator
 from app.services.storage import key_from_own_url
 
@@ -334,3 +335,16 @@ async def verify_face(request: Request, db: DbDep, user: UserDep) -> FaceVerifyO
         selfie = b""
 
     return await profile_service.verify_face(db, user, selfie)
+
+
+@router.post("/{user_id}/view", status_code=status.HTTP_204_NO_CONTENT)
+async def record_profile_view(user_id: uuid.UUID, db: DbDep, user: UserDep) -> Response:
+    """Notează că userul curent a DESCHIS anketa lui `user_id` (protejat).
+
+    Alimentează „cine ți-a văzut profilul" din centrul de activitate. Deduplicat
+    per viewer per zi în baza de date. Răspunde 204 ORICUM (inclusiv pentru un id
+    inexistent, blocat sau propriu) — ruta nu e un oracol despre alți useri.
+    Vizualizările din feed se notează pe server, la swipe, fără cerere separată.
+    """
+    await activity_service.record_profile_open(db, user, user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

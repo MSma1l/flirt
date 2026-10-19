@@ -17,6 +17,8 @@ import { Icon, type IconName } from './icons';
 
 import { BLOCKLIST_PATH, FAVORITES_PATH } from '@/features/social/socialRoutes';
 import { HUMOR_PATH } from '@/features/humor/humorRoutes';
+import { useActivityUnread } from '@/features/notifications/activityApi';
+import { ACTIVITY_PATH } from '@/features/notifications/activityRoutes';
 import { LEGAL_HUB_PATH } from '@/features/legal/legalRoutes';
 import { PASSPORT_PATH } from '@/features/passport/passportRoutes';
 import { SETTINGS_PATH } from '@/features/onboarding/paths';
@@ -39,6 +41,8 @@ interface MenuEntry {
  * intrebe care dintre ele e cea adevarata. Ruta ramane inregistrata, ca
  * linkurile directe deja trimise sa nu se rupa. */
 export const MENU_ENTRIES: MenuEntry[] = [
+  // Primul: aici ajunge utilizatorul când tabul meniului are badge.
+  { to: ACTIVITY_PATH, labelKey: 'nav.activity', icon: 'bell' },
   { to: FAVORITES_PATH, labelKey: 'nav.favorites', icon: 'star' },
   { to: HUMOR_PATH, labelKey: 'nav.humor', icon: 'smile' },
   { to: PASSPORT_PATH, labelKey: 'nav.passport', icon: 'passport' },
@@ -49,22 +53,45 @@ export const MENU_ENTRIES: MenuEntry[] = [
   { to: LEGAL_HUB_PATH, labelKey: 'nav.privacy', icon: 'shield' },
 ];
 
+const UNREAD_DESCRIPTION_ID = 'menu-activity-unread';
+
 export function MoreScreen() {
   const { t } = useTranslation('miniapp');
+  const unread = useActivityUnread().data ?? 0;
 
   return (
     <div className="more-screen">
       <h1 className="more-screen__title">{t('nav.more')}</h1>
       <nav className="more-list" aria-label={t('nav.more')}>
-        {MENU_ENTRIES.map((entry) => (
-          <Link key={entry.to} to={entry.to} className="more-item">
-            <span className="more-item__icon">
-              <Icon name={entry.icon} />
-            </span>
-            <span className="more-item__label">{t(entry.labelKey)}</span>
-            <Icon name="chevron" className="more-item__chevron" />
-          </Link>
-        ))}
+        {MENU_ENTRIES.map((entry) => {
+          const badge = entry.to === ACTIVITY_PATH && unread > 0;
+          return (
+            <Link
+              key={entry.to}
+              to={entry.to}
+              className="more-item"
+              aria-describedby={badge ? UNREAD_DESCRIPTION_ID : undefined}
+            >
+              <span className="more-item__icon">
+                <Icon name={entry.icon} />
+              </span>
+              <span className="more-item__label">{t(entry.labelKey)}</span>
+              {/* Numărul e decor vizual: numele legăturii rămâne EXACT eticheta,
+                  iar necititele se anunță ca DESCRIERE (`aria-describedby`). */}
+              {badge ? (
+                <>
+                  <span className="more-item__badge" aria-hidden="true" data-testid="menu-activity-badge">
+                    {unread > 99 ? '99+' : unread}
+                  </span>
+                  <span id={UNREAD_DESCRIPTION_ID} hidden>
+                    {t('activity.unread', { count: unread })}
+                  </span>
+                </>
+              ) : null}
+              <Icon name="chevron" className="more-item__chevron" />
+            </Link>
+          );
+        })}
       </nav>
     </div>
   );

@@ -43,6 +43,9 @@ export type IconName =
   | 'block'
   | 'settings'
   | 'shield'
+  // centrul de activitate
+  | 'bell'
+  | 'eye'
   // decor de listă
   | 'chevron';
 
@@ -132,6 +135,18 @@ export const ICON_PATHS: Record<IconName, string> = {
    * SCUT — confidențialitate și date. Scut cu bifă: „datele tale, protejate".
    */
   shield: 'M12 3.2 19 5.9v5.5c0 4.4-2.9 8.1-7 9.4-4.1-1.3-7-5-7-9.4V5.9ZM8.9 12.1l2.2 2.2 4-4.1',
+
+  /**
+   * CLOPOȚEL — centrul de activitate. Corp rotunjit pe aceeași curbură ca
+   * restul setului, cu limba clopoțelului desenată separat dedesubt.
+   */
+  bell: 'M12 3.4a5.6 5.6 0 0 1 5.6 5.6v3.7l1.7 3.3H4.7l1.7-3.3V9A5.6 5.6 0 0 1 12 3.4ZM9.9 19.2a2.2 2.2 0 0 0 4.2 0',
+
+  /**
+   * OCHI — vizualizările de profil. Migdala din două arce, cu pupila goală în
+   * mijloc, ca cercurile din „setări" și „pașaport".
+   */
+  eye: 'M2.8 12C5 8 8.2 5.8 12 5.8S19 8 21.2 12C19 16 15.8 18.2 12 18.2S5 16 2.8 12ZM12 9.2a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6Z',
 
   /** SĂGEATĂ — „intră aici". Singurul desen deschis din set. */
   chevron: 'M9.5 5.5 16 12l-6.5 6.5',

@@ -63,7 +63,11 @@
     "match": {
       "title": "It's a match!",
       "body": "You and {{name}} like each other.",
-      "continue": "Continue"
+      "continue": "Continue",
+      "write": "Send a message",
+      "keepSwiping": "Keep swiping",
+      "you": "You",
+      "label": "New match"
     },
     "emptyBody": "This isn't an error: there really is nobody left to show right now. Come back later or widen your filters in Settings.",
     "undoNothing": "Nothing to undo: the server has no swipes of yours.",
@@ -120,7 +124,8 @@
     "tickets": "My ticket",
     "subscription": "Subscription",
     "privacy": "Privacy & data",
-    "partnerProfile": "Profile"
+    "partnerProfile": "Profile",
+    "activity": "Activity"
   },
   "welcome": {
     "title": "Welcome to FLIRT",
@@ -230,5 +235,33 @@
     "terms": "Terms",
     "privacy": "Privacy",
     "support": "Support"
+  },
+  "activity": {
+    "statsTitle": "Your profile in numbers",
+    "listTitle": "What happened",
+    "stats": {
+      "views": "Profile views",
+      "viewsWeek": "+{{count}} in the last 7 days",
+      "likes": "Likes",
+      "superLikes": "Super likes",
+      "dislikes": "Dislikes",
+      "matches": "Matches"
+    },
+    "dislikesNote": "Whoever said \"no\" stays anonymous — you only see the number.",
+    "item": {
+      "match": "It's a match with {{name}}! Say hi first.",
+      "like": "{{name}} liked you",
+      "super_like": "{{name}} sent you a super like",
+      "views_one": "One person viewed your profile",
+      "views_other": "{{count}} people viewed your profile"
+    },
+    "new": "New",
+    "unread": "Unread: {{count}}",
+    "openChat": "Open chat",
+    "loadMore": "Show more",
+    "loading": "Loading your activity…",
+    "error": "We couldn't load your activity. Check your connection and try again.",
+    "emptyTitle": "All quiet for now",
+    "emptyBody": "When someone likes you, views your profile or you get a match, you'll see it here."
   }
 }

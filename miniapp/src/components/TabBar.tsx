@@ -16,6 +16,7 @@
 import { NavLink, useLocation } from 'react-router';
 import { useTranslation } from 'react-i18next';
 
+import { useActivityUnread } from '@/features/notifications/activityApi';
 import { STORIES_PATH } from '@/features/stories/storyRoutes';
 import { VERIFICATION_PATH } from '@/features/verification/verificationRoutes';
 import { haptic } from '@/telegram/bridge';
@@ -76,9 +77,17 @@ export function isTabActive(tab: TabItem, pathname: string): boolean {
   return [tab.to, ...(tab.also ?? [])].some((base) => underPath(pathname, base));
 }
 
+/** Textul badge-ului: peste 99 nu mai contează cifra exactă, doar „multe". */
+export function badgeText(count: number): string {
+  return count > 99 ? '99+' : String(count);
+}
+
 export function TabBar() {
   const { t } = useTranslation('miniapp');
   const { pathname } = useLocation();
+  // Necititele din centrul de activitate (like, super like, match, vizualizări).
+  // Centrul se deschide din meniu, deci badge-ul stă pe tabul meniului.
+  const unread = useActivityUnread().data ?? 0;
 
   return (
     <nav className="tab-bar" aria-label={t('nav.label')}>
@@ -93,6 +102,13 @@ export function TabBar() {
           >
             <span className="tab__icon">
               <Icon name={tab.icon} active={isActive} />
+              {/* Ascuns de cititorul de ecran: numele legăturii rămâne EXACT
+                  eticheta; numărul îl anunță rândul „Activitate" din meniu. */}
+              {tab.to === MORE_PATH && unread > 0 ? (
+                <span className="tab__badge" aria-hidden="true" data-testid="tab-activity-badge">
+                  {badgeText(unread)}
+                </span>
+              ) : null}
             </span>
             <span className="tab__label">{t(tab.labelKey)}</span>
             {/*
