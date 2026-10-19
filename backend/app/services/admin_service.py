@@ -1446,6 +1446,9 @@ def _to_event_out(
         lng=event.lng,
         kind=event.kind,
         cover_url=event.cover_url,
+        cover_focus_x=event.cover_focus_x,
+        cover_focus_y=event.cover_focus_y,
+        cover_zoom=event.cover_zoom,
         promo_discount_percent=event.promo_discount_percent,
         promo_code=event.promo_code,
         promo_description=event.promo_description,
@@ -1455,10 +1458,28 @@ def _to_event_out(
         ticket_capacity=event.ticket_capacity,
         tickets_sold=event.tickets_sold or 0,
         attendee_count=attendees,
+        displayed_attendee_count=event.displayed_attendee_count,
+        participants_count=event.displayed_participants(attendees),
         ticket_order_count=ticket_orders,
         ticket_approved_count=ticket_approved,
         created_at=event.created_at,
     )
+
+
+# Încadrarea implicită a copertei (centru, fără zoom) — coloanele sunt NOT NULL.
+_COVER_FRAMING_DEFAULTS: dict[str, float] = {
+    "cover_focus_x": 0.5,
+    "cover_focus_y": 0.5,
+    "cover_zoom": 1.0,
+}
+
+
+def _cover_framing(values: dict[str, float | None]) -> dict[str, float]:
+    """Câmpurile de încadrare primite, cu `None` înlocuit de valoarea implicită."""
+    return {
+        key: _COVER_FRAMING_DEFAULTS[key] if value is None else value
+        for key, value in values.items()
+    }
 
 
 async def list_events(
@@ -1549,6 +1570,8 @@ async def create_event(
         lng=data.lng,
         kind=data.kind,
         cover_url=data.cover_url,
+        **_cover_framing(data.model_dump(include=set(_COVER_FRAMING_DEFAULTS))),
+        displayed_attendee_count=data.displayed_attendee_count,
         promo_discount_percent=data.promo_discount_percent,
         promo_code=data.promo_code,
         promo_description=data.promo_description,
@@ -1618,6 +1641,11 @@ async def update_event(
     _check_ticket_sales_end(
         changes.get("ticket_sales_end_at", event.ticket_sales_end_at),
         changes.get("starts_at") or event.starts_at,
+    )
+    # Încadrarea copertei e NOT NULL: un `null` explicit înseamnă „resetează la
+    # centru / zoom 1", nu o eroare de integritate.
+    changes.update(
+        _cover_framing({k: v for k, v in changes.items() if k in _COVER_FRAMING_DEFAULTS})
     )
     for field, value in changes.items():
         setattr(event, field, value)
