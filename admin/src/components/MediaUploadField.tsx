@@ -66,7 +66,7 @@ function hasAllowedType(file: File, rules: MediaRules): boolean {
 }
 
 /** URL-urile relative (`/media/...`) întoarse de backend se previzualizează de pe API. */
-function previewSrc(url: string): string {
+export function previewSrc(url: string): string {
   return url.startsWith('/') && !url.startsWith('//') ? `${API_BASE}${url}` : url;
 }
 

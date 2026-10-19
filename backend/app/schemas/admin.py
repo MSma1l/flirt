@@ -40,6 +40,15 @@ EVENT_DESCRIPTION_MAX_LENGTH = 2000
 # Promo/reducere de marketing (aliniate cu coloanele Event.promo_*).
 EVENT_PROMO_CODE_MAX_LENGTH = 32
 EVENT_PROMO_DESCRIPTION_MAX_LENGTH = 500
+# Încadrarea copertei: punct focal ca fracție din imagine, zoom 1..3 (oglinda
+# editorului din panou și a clienților care o aplică).
+EVENT_COVER_FOCUS_MIN = 0.0
+EVENT_COVER_FOCUS_MAX = 1.0
+EVENT_COVER_ZOOM_MIN = 1.0
+EVENT_COVER_ZOOM_MAX = 3.0
+# „Participanți afișați": plafon de bun-simț (o greșeală de tastare cu zerouri
+# în plus nu are voie să ajungă pe ecranul userilor).
+EVENT_DISPLAYED_ATTENDEES_MAX = 100_000
 # Moneda biletului online (aliniată cu Event.ticket_currency = String(8)).
 EVENT_TICKET_CURRENCY_MAX_LENGTH = 8
 # Motivul banului / al deciziei de moderare (aliniat cu User.ban_reason).
@@ -234,6 +243,20 @@ class AdminEventIn(BaseModel):
     lat: float | None = Field(default=None, ge=-90.0, le=90.0)
     lng: float | None = Field(default=None, ge=-180.0, le=180.0)
     cover_url: str | None = Field(default=None, max_length=EVENT_COVER_URL_MAX_LENGTH)
+    # Încadrarea copertei (editorul de poster din panou). Lipsă = centru, zoom 1.
+    cover_focus_x: float | None = Field(
+        default=None, ge=EVENT_COVER_FOCUS_MIN, le=EVENT_COVER_FOCUS_MAX
+    )
+    cover_focus_y: float | None = Field(
+        default=None, ge=EVENT_COVER_FOCUS_MIN, le=EVENT_COVER_FOCUS_MAX
+    )
+    cover_zoom: float | None = Field(
+        default=None, ge=EVENT_COVER_ZOOM_MIN, le=EVENT_COVER_ZOOM_MAX
+    )
+    # „Participanți afișați": userii văd `max(real, valoarea asta)`. NULL = real.
+    displayed_attendee_count: int | None = Field(
+        default=None, ge=0, le=EVENT_DISPLAYED_ATTENDEES_MAX
+    )
     # Promo/reducere de marketing — ACELAȘI pentru toți userii care merg (nu se
     # generează coduri per user). Percent 0..100; textul trece prin validatorii
     # anti-XSS ai proiectului ca orice câmp liber.
@@ -273,6 +296,20 @@ class AdminEventUpdate(BaseModel):
     lat: float | None = Field(default=None, ge=-90.0, le=90.0)
     lng: float | None = Field(default=None, ge=-180.0, le=180.0)
     cover_url: str | None = Field(default=None, max_length=EVENT_COVER_URL_MAX_LENGTH)
+    # Încadrarea copertei (editorul de poster din panou). `null` = centru, zoom 1.
+    cover_focus_x: float | None = Field(
+        default=None, ge=EVENT_COVER_FOCUS_MIN, le=EVENT_COVER_FOCUS_MAX
+    )
+    cover_focus_y: float | None = Field(
+        default=None, ge=EVENT_COVER_FOCUS_MIN, le=EVENT_COVER_FOCUS_MAX
+    )
+    cover_zoom: float | None = Field(
+        default=None, ge=EVENT_COVER_ZOOM_MIN, le=EVENT_COVER_ZOOM_MAX
+    )
+    # „Participanți afișați": userii văd `max(real, valoarea asta)`. NULL = real.
+    displayed_attendee_count: int | None = Field(
+        default=None, ge=0, le=EVENT_DISPLAYED_ATTENDEES_MAX
+    )
     promo_discount_percent: int | None = Field(default=None, ge=0, le=100)
     promo_code: optional_safe_str(EVENT_PROMO_CODE_MAX_LENGTH) | None = None
     promo_description: (
@@ -314,6 +351,9 @@ class AdminEventOut(BaseModel):
     lng: float | None = None
     kind: str
     cover_url: str | None = None
+    cover_focus_x: float = 0.5
+    cover_focus_y: float = 0.5
+    cover_zoom: float = 1.0
     promo_discount_percent: int | None = None
     promo_code: str | None = None
     promo_description: str | None = None
@@ -325,7 +365,12 @@ class AdminEventOut(BaseModel):
     # (ocupate la aprobare, eliberate la anularea unui bilet emis).
     ticket_capacity: int | None = None
     tickets_sold: int = 0
+    # Participanții REALI (going=True) — adminul îi vede mereu.
     attendee_count: int = 0
+    # „Participanți afișați" setat de admin (NULL = nesetat) și numărul pe care îl
+    # văd efectiv userii: `max(attendee_count, displayed_attendee_count)`.
+    displayed_attendee_count: int | None = None
+    participants_count: int = 0
     # Comenzi de bilet ONLINE legate de acest eveniment. Sunt aici pentru un
     # singur motiv concret: confirmarea de ștergere din panou trebuie să spună
     # CE se pierde. Un eveniment cu bilete plătite nu se șterge „din reflex".

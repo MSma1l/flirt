@@ -17,20 +17,33 @@
  *     de `img-src 'self' https: data: blob:`.
  * Deci: NICIO schimbare de CSP / nginx nu e necesară.
  *
- * DE CE `circleMarker` ȘI NU `L.marker`: markerul implicit al Leaflet își ia
- * iconița din trei fișiere PNG (`marker-icon.png`, `marker-icon-2x.png`,
- * `marker-shadow.png`) pe care le rezolvă din calea CSS-ului, la runtime. După
- * bundling, CSS-ul ajunge sub `/assets/…` cu hash în nume, iar PNG-urile NU sunt
- * importate de nimeni ⇒ 404 și marker invizibil. `circleMarker` desenează un
- * cerc SVG: zero asset-uri, zero configurări de `L.Icon.Default`. Culoarea lui
- * vine dintr-o clasă CSS (`ev-map__marker`), nu din opțiuni cu valori fixe, ca
- * să rămână legată de variabilele temei.
+ * PIN-UL e un `L.divIcon` cu un SVG STATIC (constantă din cod, zero date de la
+ * server în markup), nu `L.marker` cu iconița implicită: aceea își ia PNG-urile
+ * din calea CSS-ului la runtime, iar după bundling ele dau 404 (marker
+ * invizibil). Culorile pin-ului vin din clase CSS (`ev-map__pin`), legate de
+ * variabilele temei.
+ *
+ * DE CE HARTA IEȘEA CA O FÂȘIE DE 20–40 px (bug raportat de testeri): era copil
+ * al unui container flex pe coloană cu `overflow-y: auto` și `overflow: hidden`
+ * pe ea însăși ⇒ `min-height: auto` devenea 0 și flex-ul o turtea când pagina
+ * avea mult conținut. Acum înălțimea e fixă și `flex-shrink: 0` (`events.css`),
+ * iar Leaflet primește `invalidateSize()` după montare și la fiecare
+ * redimensionare a containerului (ResizeObserver) — altfel ar fi calculat
+ * dalele pe dimensiunea de la primul cadru.
+ *
+ * DERULAREA PAGINII: pe ecranele tactile tragerea cu un deget NU mută harta
+ * (ar fi „capturat" derularea paginii); zoom-ul rămâne cu două degete și cu
+ * butoanele +/−. Pentru navigare reală e butonul „Deschide în hărți".
  *
  * Fără coordonate valide, cade elegant pe caseta cu orașul — exact ca pe mobil.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as L from 'leaflet';
+
+import { getWebApp } from '@/telegram/bridge';
+
+import { RouteIcon } from './EventIcons';
 
 import 'leaflet/dist/leaflet.css';
 import './events.css';
@@ -43,6 +56,13 @@ const ATTRIBUTION = '© OpenStreetMap contributors';
 
 /** Nivel stradă/cvartal: destul cât să recunoști locul, fără a arăta tot orașul. */
 const ZOOM = 15;
+
+/** Pin-ul: SVG static (fără date de la server), colorat din CSS. */
+const PIN_HTML =
+  '<svg viewBox="0 0 32 42" width="32" height="42" aria-hidden="true" focusable="false">' +
+  '<path class="ev-map__pin-body" d="M16 41s14-13.2 14-24.5C30 8 23.7 2 16 2S2 8 2 16.5C2 27.8 16 41 16 41z"/>' +
+  '<circle class="ev-map__pin-dot" cx="16" cy="16.5" r="5.5"/>' +
+  '</svg>';
 
 export interface EventMapProps {
   /** Latitudinea evenimentului (grade zecimale). */
@@ -74,6 +94,33 @@ export function hasValidCoords(lat?: number | null, lng?: number | null): boolea
   );
 }
 
+/**
+ * Legătura universală Google Maps: pe telefon deschide aplicația de hărți (dacă
+ * e instalată), altfel site-ul — pe Android, iOS și desktop.
+ */
+export function mapsUrl(lat: number, lng: number): string {
+  return `https://www.google.com/maps/search/?api=1&query=${lat.toFixed(6)},${lng.toFixed(6)}`;
+}
+
+/** În Telegram, legătura externă se deschide prin `openLink` (browserul clientului). */
+function openExternal(event: MouseEvent<HTMLAnchorElement>, href: string) {
+  const app = getWebApp();
+  if (app && typeof app.openLink === 'function') {
+    try {
+      app.openLink(href);
+      event.preventDefault();
+    } catch {
+      /* lăsăm legătura obișnuită să funcționeze */
+    }
+  }
+}
+
+/** Ecran tactil (telefon/tabletă): tragerea cu un deget derulează pagina. */
+function isTouchDevice(): boolean {
+  if (typeof window === 'undefined') return false;
+  return Boolean(L.Browser?.mobile) || window.matchMedia?.('(pointer: coarse)').matches === true;
+}
+
 export function EventMap({ lat, lng, title, city }: EventMapProps) {
   const { t } = useTranslation('screens');
   const containerRef = useRef<HTMLDivElement>(null);
@@ -86,21 +133,33 @@ export function EventMap({ lat, lng, title, city }: EventMapProps) {
     if (!container || typeof lat !== 'number' || typeof lng !== 'number') return;
     if (!hasValidCoords(lat, lng)) return;
 
+    const touch = isTouchDevice();
     const map = L.map(container, {
       center: [lat, lng],
       zoom: ZOOM,
       // Mini App-ul e un ecran care se derulează: rotița peste hartă trebuie să
       // deruleze pagina, nu să schimbe zoom-ul sub degetul utilizatorului.
       scrollWheelZoom: false,
+      // Pe touch, un deget = derularea paginii; harta se mișcă doar cu două
+      // degete (pinch) sau din butoane.
+      dragging: !touch,
+      touchZoom: true,
       zoomControl: true,
       attributionControl: true,
     });
 
     L.tileLayer(TILE_URL, { maxZoom: 19, attribution: ATTRIBUTION }).addTo(map);
 
-    const marker = L.circleMarker([lat, lng], {
-      radius: 9,
-      className: 'ev-map__marker',
+    const marker = L.marker([lat, lng], {
+      icon: L.divIcon({
+        className: 'ev-map__pin',
+        html: PIN_HTML,
+        iconSize: [32, 42],
+        // Vârful pin-ului (jos, la mijloc) stă exact pe coordonate.
+        iconAnchor: [16, 41],
+        popupAnchor: [0, -38],
+      }),
+      keyboard: false,
     }).addTo(map);
 
     if (title) {
@@ -111,15 +170,31 @@ export function EventMap({ lat, lng, title, city }: EventMapProps) {
       marker.bindPopup(label);
     }
 
+    // Containerul își primește dimensiunea finală abia după layout (și se poate
+    // schimba: rotirea ecranului, tastatura, fontul). Leaflet trebuie anunțat,
+    // altfel desenează dalele pe dimensiunea veche — fâșia gri raportată.
+    const refit = () => {
+      map.invalidateSize?.();
+      map.setView?.([lat, lng], map.getZoom?.() ?? ZOOM, { animate: false });
+    };
+    const frame = window.requestAnimationFrame(refit);
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => refit());
+      observer.observe(container);
+    }
+
     // Harta își pune ascultători pe `window` (resize) și un `<canvas>`/`<svg>`
     // propriu. Fără `remove()` la demontare, ele rămân agățate de un container
     // care nu mai există — scurgere de memorie la fiecare intrare pe ecran.
     return () => {
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
       map.remove();
     };
   }, [lat, lng, title]);
 
-  if (!valid) {
+  if (!valid || typeof lat !== 'number' || typeof lng !== 'number') {
     return (
       <div
         className="ev-map ev-map--fallback"
@@ -134,14 +209,28 @@ export function EventMap({ lat, lng, title, city }: EventMapProps) {
     );
   }
 
+  const href = mapsUrl(lat, lng);
   return (
-    <div
-      className="ev-map"
-      role="img"
-      aria-label={title ? t('events.map.titled', { title }) : t('events.map.untitled')}
-      data-testid="event-map"
-    >
-      <div className="ev-map__canvas" ref={containerRef} />
+    <div className="ev-map-block">
+      <div
+        className="ev-map"
+        role="img"
+        aria-label={title ? t('events.map.titled', { title }) : t('events.map.untitled')}
+        data-testid="event-map"
+      >
+        <div className="ev-map__canvas" ref={containerRef} />
+      </div>
+      <a
+        className="ev-map__open"
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        data-testid="event-map-open"
+        onClick={(e) => openExternal(e, href)}
+      >
+        <RouteIcon width={18} height={18} />
+        <span>{t('events.map.open')}</span>
+      </a>
     </div>
   );
 }

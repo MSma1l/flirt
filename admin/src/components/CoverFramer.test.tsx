@@ -1,0 +1,102 @@
+/**
+ * Editorul de încadrare a posterului: tragere, tastatură, zoom, resetare.
+ *
+ * jsdom nu încarcă imagini și nu face layout: declanșăm `load` manual (cu
+ * dimensiuni naturale puse pe element) și dăm ramei un `getBoundingClientRect`
+ * real, ca formula de tragere să aibă cu ce lucra.
+ */
+import { fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
+import { describe, expect, it } from 'vitest';
+
+import { DEFAULT_FRAMING, type Framing } from '../lib/coverFraming';
+import { eventsMessages } from '../i18n/messages/events';
+import { CoverFramer } from './CoverFramer';
+
+const TEXTS = eventsMessages.ro.form.framing;
+
+// jsdom nu are `PointerEvent`: fără el, `fireEvent.pointerDown` creează un
+// `Event` gol (fără `clientX`/`pointerId`). Un dublu minimal peste `MouseEvent`.
+if (typeof window.PointerEvent === 'undefined') {
+  class PointerEventStub extends MouseEvent {
+    pointerId: number;
+    pointerType: string;
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init);
+      this.pointerId = init.pointerId ?? 0;
+      this.pointerType = init.pointerType ?? 'mouse';
+    }
+  }
+  window.PointerEvent = PointerEventStub as unknown as typeof PointerEvent;
+}
+
+function Harness({ initial = DEFAULT_FRAMING }: { initial?: Framing }) {
+  const [value, setValue] = useState<Framing>(initial);
+  return (
+    <>
+      <CoverFramer src="https://cdn.exemplu.md/poster.jpg" value={value} onChange={setValue} texts={TEXTS} />
+      <output data-testid="value">{`${value.x.toFixed(2)} ${value.y.toFixed(2)} ${value.zoom.toFixed(2)}`}</output>
+    </>
+  );
+}
+
+/** Imagine portret 600×900 într-o ramă 400×300. */
+function loadImage(): HTMLElement {
+  const img = screen.getByTestId('cover-framer-img') as HTMLImageElement;
+  Object.defineProperty(img, 'naturalWidth', { value: 600 });
+  Object.defineProperty(img, 'naturalHeight', { value: 900 });
+  fireEvent.load(img);
+  const frame = screen.getByTestId('cover-framer-frame');
+  frame.getBoundingClientRect = () =>
+    ({ width: 400, height: 300, top: 0, left: 0, right: 400, bottom: 300, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+  return frame;
+}
+
+describe('CoverFramer', () => {
+  it('tragerea mută punctul focal, iar imaginea primește stilul exact', () => {
+    render(<Harness />);
+    const frame = loadImage();
+
+    fireEvent.pointerDown(frame, { pointerId: 1, clientX: 200, clientY: 100, button: 0, pointerType: 'mouse' });
+    fireEvent.pointerMove(frame, { pointerId: 1, clientX: 200, clientY: 250, pointerType: 'mouse' });
+    fireEvent.pointerUp(frame, { pointerId: 1, pointerType: 'mouse' });
+
+    // Surplus vertical 300 px ⇒ 150 px în jos = vârful imaginii (y = 0).
+    expect(screen.getByTestId('value')).toHaveTextContent('0.50 0.00 1.00');
+    expect((screen.getByTestId('cover-framer-img') as HTMLImageElement).style.objectPosition).toBe('50% 0%');
+  });
+
+  it('slider-ul de zoom și butonul „Centrează"', () => {
+    render(<Harness />);
+    loadImage();
+
+    fireEvent.change(screen.getByLabelText(/Zoom/), { target: { value: '2' } });
+    expect(screen.getByTestId('value')).toHaveTextContent('0.50 0.50 2.00');
+    expect((screen.getByTestId('cover-framer-img') as HTMLImageElement).style.transform).toBe('scale(2)');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Centrează' }));
+    expect(screen.getByTestId('value')).toHaveTextContent('0.50 0.50 1.00');
+  });
+
+  it('tastatura: săgețile mută imaginea, +/− schimbă zoom-ul', () => {
+    render(<Harness />);
+    const frame = loadImage();
+
+    fireEvent.keyDown(frame, { key: 'ArrowDown' });
+    expect(screen.getByTestId('value')).toHaveTextContent('0.50 0.48 1.00');
+    fireEvent.keyDown(frame, { key: '+' });
+    expect(screen.getByTestId('value')).toHaveTextContent('0.50 0.48 1.10');
+  });
+
+  it('arată aceeași încadrare și în rama cardului din listă', () => {
+    render(<Harness initial={{ x: 0.3, y: 0.6, zoom: 1.5 }} />);
+    const images = screen
+      .getByTestId('cover-framer')
+      .querySelectorAll<HTMLImageElement>('img.cover-framer__img');
+    expect(images).toHaveLength(2);
+    for (const img of images) {
+      expect(img.style.objectPosition).toBe('30% 60%');
+      expect(img.style.transform).toBe('scale(1.5)');
+    }
+  });
+});

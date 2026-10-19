@@ -139,6 +139,10 @@ export const coreMessages = defineMessages({
       promo: (percent: number) => `−${percent}% la intrare`,
       buyTicket: (price: number, currency: string) => `Cumpără bilet — ${price} ${currency}`,
       onMap: 'Apare pe harta din aplicație',
+      openInMaps: 'Verifică în Google Maps',
+      when: 'Când',
+      where: 'Unde',
+      participants: 'Participanți',
       noCoords:
         'Fără coordonate: în locul hărții rămâne doar numele orașului, iar evenimentul NU apare pe hartă.',
       going: 'Merg',
@@ -270,6 +274,10 @@ export const coreMessages = defineMessages({
       promo: (percent: number) => `−${percent}% на вход`,
       buyTicket: (price: number, currency: string) => `Купить билет — ${price} ${currency}`,
       onMap: 'Отображается на карте в приложении',
+      openInMaps: 'Проверить в Google Maps',
+      when: 'Когда',
+      where: 'Где',
+      participants: 'Участники',
       noCoords:
         'Нет координат: вместо карты будет только название города, и событие НЕ появится на карте.',
       going: 'Пойду',

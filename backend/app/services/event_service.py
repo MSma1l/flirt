@@ -307,6 +307,7 @@ def _to_event_out(
     # „Ar vinde" după regulile evenimentului (preț, închidere, sold-out); comutatorul
     # global doar o SUSPENDĂ, fără să atingă setările evenimentului.
     would_sell = event.ticket_sales_open()
+    participants = event.displayed_participants(attendee_count)
     return EventOut(
         id=event.id,
         title=event.title,
@@ -318,6 +319,9 @@ def _to_event_out(
         lng=event.lng,
         kind=event.kind,
         cover_url=event.cover_url,
+        cover_focus_x=_or_default(event.cover_focus_x, 0.5),
+        cover_focus_y=_or_default(event.cover_focus_y, 0.5),
+        cover_zoom=_or_default(event.cover_zoom, 1.0),
         promo_discount_percent=event.promo_discount_percent,
         promo_code=event.promo_code,
         promo_description=event.promo_description,
@@ -326,6 +330,13 @@ def _to_event_out(
         ticket_sales_end_at=event.effective_ticket_sales_end,
         ticket_sales_open=would_sell and online_sales_enabled,
         ticket_sales_paused=would_sell and not online_sales_enabled,
-        attendee_count=attendee_count,
+        attendee_count=participants,
+        participants_count=participants,
         i_am_going=i_am_going,
     )
+
+
+def _or_default(value: float | None, default: float) -> float:
+    """Obiectele create în memorie (încă neflush-uite) au coloanele cu default
+    încă `None`; răspunsul cere mereu un număr."""
+    return default if value is None else value

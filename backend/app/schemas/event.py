@@ -20,6 +20,11 @@ class EventOut(BaseModel):
     lng: float | None = None
     kind: str
     cover_url: str | None = None
+    # Încadrarea copertei setată de admin: punct focal (0..1) + zoom (1..3).
+    # Default = centru, zoom 1 (coperta arată ca înainte de editor).
+    cover_focus_x: float = 0.5
+    cover_focus_y: float = 0.5
+    cover_zoom: float = 1.0
     # Promo/reducere de marketing setată de admin (același pentru toți).
     promo_discount_percent: int | None = None
     promo_code: str | None = None
@@ -41,8 +46,12 @@ class EventOut(BaseModel):
     # nu s-a închis, nu e sold-out) — clientul afișează „vânzare suspendată
     # temporar" în loc de „s-a închis".
     ticket_sales_paused: bool = False
-    # Câți useri au going=True + dacă userul curent merge.
+    # Numărul de participanți AFIȘAT: `max(going=True reali, setat de admin)`.
+    # `participants_count` e numele nou; `attendee_count` rămâne cu ACEEAȘI
+    # valoare pentru clienții existenți (aplicația mobilă). Valoarea brută setată
+    # de admin nu se expune separat.
     attendee_count: int
+    participants_count: int = 0
     i_am_going: bool
 
 

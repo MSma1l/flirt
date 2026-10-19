@@ -50,9 +50,16 @@ vi.mock('leaflet', () => {
     bindPopup: vi.fn(() => layer),
   };
   return {
-    map: vi.fn(() => ({ remove: vi.fn() })),
+    map: vi.fn(() => ({
+      remove: vi.fn(),
+      invalidateSize: vi.fn(),
+      setView: vi.fn(),
+      getZoom: vi.fn(() => 15),
+    })),
     tileLayer: vi.fn(() => layer),
-    circleMarker: vi.fn(() => layer),
+    marker: vi.fn(() => layer),
+    divIcon: vi.fn(() => ({})),
+    Browser: { mobile: false },
   };
 });
 
@@ -172,8 +179,15 @@ describe('randarea detaliului', () => {
     expect(fetchEvent).toHaveBeenCalledWith('e1');
 
     expect(screen.getByText('Flirt Party')).toBeInTheDocument();
-    expect(screen.getByText('Club Mono · Chișinău')).toBeInTheDocument();
+    // Locul: sala ca valoare principală, orașul dedesubt, în rândul „Unde".
+    const place = screen.getByTestId('event-fact-place');
+    expect(place).toHaveTextContent('Unde');
+    expect(place).toHaveTextContent('Club Mono');
+    expect(place).toHaveTextContent('Chișinău');
+    expect(screen.getByTestId('event-fact-date')).toHaveTextContent('Când');
+    expect(screen.getByText('Despre eveniment')).toBeInTheDocument();
     expect(screen.getByText('Seară de cunoștințe, muzică live și jocuri.')).toBeInTheDocument();
+    expect(screen.getByTestId('event-fact-attendees')).toHaveTextContent('42 participanți');
     expect(screen.getByText('42 participanți')).toBeInTheDocument();
 
     const promo = screen.getByTestId('event-promo');
@@ -193,6 +207,33 @@ describe('randarea detaliului', () => {
     expect(screen.queryByTestId('ticket-status')).not.toBeInTheDocument();
     // Fără coordonate → caseta cu orașul, nu o hartă goală.
     expect(screen.getByTestId('event-map-fallback')).toHaveTextContent('📍 Chișinău');
+  });
+
+  it('posterul aplică încadrarea setată de admin (punct focal + zoom)', async () => {
+    vi.mocked(fetchEvent).mockResolvedValue({
+      ...EVENT,
+      coverUrl: 'https://cdn.example.com/poster.jpg',
+      coverFocusX: 0.25,
+      coverFocusY: 0.8,
+      coverZoom: 1.5,
+    });
+    renderDetail();
+
+    await screen.findByText('Flirt Party Chișinău');
+    const img = screen.getByTestId('event-hero').querySelector('img');
+    expect(img).not.toBeNull();
+    expect(img?.style.objectPosition).toBe('25% 80%');
+    expect(img?.style.transform).toBe('scale(1.5)');
+  });
+
+  it('cu coordonate, harta are buton „Deschide în hărți" spre locație', async () => {
+    renderDetail();
+
+    await screen.findByText('Flirt Party Chișinău');
+    expect(screen.getByTestId('event-map')).toBeInTheDocument();
+    const open = screen.getByTestId('event-map-open');
+    expect(open).toHaveTextContent('Deschide în hărți');
+    expect(open.getAttribute('href')).toContain('query=47.024500,28.832200');
   });
 
   it('eroarea de încărcare se anunță și se poate reîncerca cu succes', async () => {

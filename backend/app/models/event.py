@@ -46,6 +46,25 @@ class Event(Base):
     # Tipul evenimentului: 'flirt_party' | 'concert' | 'other'.
     kind: Mapped[str] = mapped_column(String(32), nullable=False, default="other")
     cover_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Încadrarea copertei, setată de admin în editorul de poster: punctul focal
+    # (fracții 0..1 din lățimea / înălțimea imaginii) și zoom-ul (1..3). Clienții
+    # le aplică prin `object-position` + `transform: scale`. Default = centru,
+    # fără zoom — exact cum arătau copertele înainte de editor.
+    cover_focus_x: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.5, server_default="0.5"
+    )
+    cover_focus_y: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.5, server_default="0.5"
+    )
+    cover_zoom: Mapped[float] = mapped_column(
+        Float, nullable=False, default=1.0, server_default="1"
+    )
+    # „Participanți afișați" setat de admin (marketing). NULL = numărul real.
+    # Userii văd `max(real, setat)` — vezi `displayed_participants`; valoarea
+    # brută NU iese în API-ul public.
+    displayed_attendee_count: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
     # Promo/reducere de marketing setată de admin — ACELAȘI pentru toți userii care
     # merg la eveniment (nu se generează coduri per user). Toate opționale =
     # retrocompatibil: un eveniment fără promo rămâne valid.
@@ -76,6 +95,15 @@ class Event(Base):
     ticket_sales_end_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    def displayed_participants(self, real_count: int) -> int:
+        """Numărul de participanți arătat userilor: `max(real, setat de admin)`.
+
+        Maximul (nu înlocuirea) garantează că numărul nu scade niciodată sub cei
+        care chiar au apăsat „Merg" — un eveniment plin nu pare gol din cauza
+        unei valori de marketing uitate.
+        """
+        return max(real_count, self.displayed_attendee_count or 0)
 
     @property
     def effective_ticket_sales_end(self) -> datetime:

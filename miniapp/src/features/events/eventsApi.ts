@@ -17,7 +17,7 @@
  *    și Mini App-ul primește schimbarea fără nicio editare.
  *
  * Rutele acoperite (`backend/app/api/v1/events.py`, `ticket_orders.py`):
- *   GET  /events/                      → fetchEvents
+ *   GET  /events/                      → fetchEvents (mapare locală, vezi mai jos)
  *   GET  /events/{id}                  → fetchEvent (mapare locală, vezi mai jos)
  *   POST /events/{id}/going            → setGoing
  *   POST /events/{id}/checkin          → checkin
@@ -30,11 +30,7 @@
 import { api } from '@/api/client';
 import type { EventItem as MobileEventItem } from '@mobile/features/events/types';
 
-export {
-  checkin,
-  fetchEvents,
-  setGoing,
-} from '@mobile/features/events/eventsApi';
+export { checkin, setGoing } from '@mobile/features/events/eventsApi';
 
 export { createTicketOrder } from '@mobile/features/tickets/ticketsApi';
 
@@ -45,29 +41,39 @@ export { createTicketOrder } from '@mobile/features/tickets/ticketsApi';
 export { fetchMyTicketOrdersWithEvent as fetchMyTicketOrders } from '@/features/tickets/orderModel';
 
 /**
- * Evenimentul, plus fereastra de vânzare online (contract nou, opțional):
- * `ticketSalesEndAt` = închiderea efectivă (ISO), `ticketSalesOpen` = verdictul
- * serverului acum, `ticketSalesPaused` = vânzarea online oprită global de admin.
- * Pe un server vechi lipsesc → vânzarea e tratată ca deschisă, fără pauză.
+ * Evenimentul, plus câmpurile pe care mapperul mobil nu le cunoaște:
+ *   - fereastra de vânzare online: `ticketSalesEndAt` = închiderea efectivă
+ *     (ISO), `ticketSalesOpen` = verdictul serverului acum, `ticketSalesPaused`
+ *     = vânzarea online oprită global de admin;
+ *   - încadrarea copertei setată de admin (`coverFocusX/Y` 0..1, `coverZoom` 1..3).
+ * Pe un server vechi lipsesc → vânzarea e tratată ca deschisă, fără pauză, iar
+ * coperta e centrată, fără zoom.
+ *
+ * `attendeeCount` e numărul AFIȘAT (`participants_count` de pe server, adică
+ * `max(real, setat de admin)`); pe un server vechi cade pe `attendee_count`.
  */
 export interface EventItem extends MobileEventItem {
   ticketSalesEndAt?: string | null;
   ticketSalesOpen?: boolean | null;
   ticketSalesPaused?: boolean;
+  coverFocusX?: number | null;
+  coverFocusY?: number | null;
+  coverZoom?: number | null;
 }
 
 type Raw = Record<string, unknown>;
 
 /**
- * Detaliul unui eveniment. Mapat AICI (nu prin funcția mobilă) pentru că
- * mapperul mobil aruncă orice câmp pe care nu-l cunoaște — inclusiv fereastra
- * de vânzare. Restul mapării e identic cu cel din `mobile/`.
+ * Maparea snake_case → camelCase, făcută AICI (nu prin funcția mobilă) pentru
+ * că mapperul mobil aruncă orice câmp pe care nu-l cunoaște — inclusiv
+ * fereastra de vânzare și încadrarea copertei. Restul mapării e identic cu cel
+ * din `mobile/`.
  */
-export async function fetchEvent(id: string): Promise<EventItem> {
-  const { data } = await api.get<Raw>(`/events/${encodeURIComponent(id)}`);
-  const e = data ?? {};
-  const optNum = (v: unknown) => (typeof v === 'number' ? v : undefined);
+export function mapEvent(raw: unknown): EventItem {
+  const e = (raw && typeof raw === 'object' ? raw : {}) as Raw;
+  const optNum = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
   const optStr = (v: unknown) => (typeof v === 'string' && v !== '' ? v : null);
+  const count = optNum(e.participants_count) ?? optNum(e.attendee_count) ?? 0;
   return {
     id: String(e.id ?? ''),
     title: String(e.title ?? ''),
@@ -79,7 +85,10 @@ export async function fetchEvent(id: string): Promise<EventItem> {
     lng: optNum(e.lng),
     kind: String(e.kind ?? ''),
     coverUrl: optStr(e.cover_url) ?? undefined,
-    attendeeCount: typeof e.attendee_count === 'number' ? e.attendee_count : 0,
+    coverFocusX: optNum(e.cover_focus_x) ?? null,
+    coverFocusY: optNum(e.cover_focus_y) ?? null,
+    coverZoom: optNum(e.cover_zoom) ?? null,
+    attendeeCount: count,
     iAmGoing: Boolean(e.i_am_going),
     promoDiscountPercent: typeof e.promo_discount_percent === 'number' ? e.promo_discount_percent : null,
     promoCode: optStr(e.promo_code),
@@ -90,5 +99,17 @@ export async function fetchEvent(id: string): Promise<EventItem> {
     ticketSalesOpen: typeof e.ticket_sales_open === 'boolean' ? e.ticket_sales_open : null,
     ticketSalesPaused: e.ticket_sales_paused === true,
   };
+}
+
+/** Lista evenimentelor viitoare (prima pagină, ca înainte). */
+export async function fetchEvents(): Promise<EventItem[]> {
+  const { data } = await api.get<unknown[]>('/events/');
+  return (Array.isArray(data) ? data : []).map(mapEvent);
+}
+
+/** Detaliul unui eveniment. */
+export async function fetchEvent(id: string): Promise<EventItem> {
+  const { data } = await api.get<Raw>(`/events/${encodeURIComponent(id)}`);
+  return mapEvent(data);
 }
 export type { TicketOrderListItem as TicketOrder } from '@/features/tickets/orderModel';
