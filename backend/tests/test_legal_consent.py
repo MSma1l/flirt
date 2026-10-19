@@ -116,6 +116,26 @@ async def test_politica_v2_contine_elementele_cerute_de_lege(client, lang):
     assert data["version"] == "2.0"
 
 
+_NEW_FEATURES = {
+    # avatar Telegram stocat pe server | vizualizări doar ca număr | AAC/M4A | WebP
+    "ro": ("o stocăm pe serverul nostru", "doar ca număr", "AAC/M4A", "WebP"),
+    "en": ("store it on our server", "only as a number", "AAC/M4A", "WebP"),
+    "ru": ("храним на нашем сервере", "только как число", "AAC/M4A", "WebP"),
+}
+
+
+@pytest.mark.parametrize("lang", ["ro", "ru", "en"])
+async def test_politica_reflecta_functiile_noi(client, lang):
+    """Avatarul Telegram SE STOCHEAZĂ (politica veche spunea contrariul), vizualizările
+    de profil, conversia vocalelor și curățarea pozelor sunt declarate în toate limbile."""
+    content = (await client.get(f"{API}/legal/documents/privacy?lang={lang}")).json()["content"]
+    for marker in _NEW_FEATURES[lang]:
+        assert marker in content, f"{lang}: lipsește {marker!r}"
+    # Fraza veche, falsă acum, nu mai apare.
+    assert "Fotografia Telegram **nu devine**" not in content
+    assert "**The server does not store them**. Your Telegram photo" not in content
+
+
 @pytest.mark.parametrize("lang", ["ro", "ru", "en"])
 async def test_acordul_v2_are_consimtaminte_separate(client, lang):
     data = (await client.get(f"{API}/legal/documents/consent?lang={lang}")).json()

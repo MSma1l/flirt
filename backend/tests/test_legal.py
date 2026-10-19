@@ -135,16 +135,16 @@ async def test_privacy_contine_datele_scopurile_si_dreptul_la_stergere(client):
     lower = text.lower()
 
     # Ce colectăm (declarat explicit).
-    for marker in ("e-mail", "telefon", "data nașterii", "locație", "fotografii", "mesaj"):
+    for marker in ("e-mail", "telefon", "data nașterii", "localizare", "fotografii", "mesaj"):
         assert marker in lower, f"lipsește categoria de date: {marker}"
-    for marker in ("phone", "date of birth", "location", "photos", "purchase history"):
+    for marker in ("phone", "date of birth", "location", "photos", "subscriptions"):
         assert marker in lower, f"lipsește categoria de date (EN): {marker}"
 
     # Dreptul la ștergere + perioada REALĂ de grație din cod (30 de zile).
     assert "ștergerea contului" in lower
     assert "delete account" in lower
     assert "right to be forgotten" in lower
-    assert "30 de zile" in lower and "30-day" in lower
+    assert "30 de zile" in lower and "30 days" in lower
 
     # GDPR, 18+, contact.
     assert "gdpr" in lower
@@ -159,7 +159,63 @@ async def test_privacy_declara_aceeasi_perioada_de_gratie_ca_backendul(client):
 
     resp = await client.get("/legal/privacy")
     assert f"{settings.account_deletion_grace_days} de zile" in resp.text
-    assert f"{settings.account_deletion_grace_days}-day" in resp.text
+    assert f"{settings.account_deletion_grace_days} days" in resp.text
+
+
+@_aio
+async def test_pagina_publica_afiseaza_documentul_versionat(client):
+    """`/legal/privacy` = EXACT documentul acceptat în aplicație (v2.0), nu o copie HTML.
+
+    Pagina veche („actualizat 14 iulie 2026") rămăsese în urma politicii v2.0; acum
+    textul vine din `app/legal_content/privacy.{ro,en,ru}.md`, prin `render_document`.
+    """
+    from app.services import legal_service
+
+    legal.render_page.cache_clear()
+    text = (await client.get("/legal/privacy")).text
+    assert "14 iulie 2026" not in text
+    for lang in ("ro", "en", "ru"):
+        doc = legal_service.render_document("privacy", lang)
+        assert f'id="{lang}"' in text
+        # Titlul și linia cu versiunea + data intrării în vigoare, pe fiecare limbă.
+        assert doc["title"] in text
+        version_line = doc["content"].splitlines()[2]
+        assert version_line in text
+    assert text.index('id="ro"') < text.index('id="en"') < text.index('id="ru"')
+    assert 'href="#ru"' in text
+    # Tabelele markdown devin tabele HTML; marcajul markdown nu ajunge în pagină.
+    assert "<table>" in text and "|---|" not in text
+    assert "{{" not in text
+    # Conținut nou din v2.0 (avatarul Telegram stocat, vizualizări de profil).
+    assert "avatar de rezervă" in text and "fallback avatar" in text
+    assert "Vizualizări de profil" in text
+
+
+def test_privacy_escapeaza_valorile_din_config(monkeypatch):
+    """Placeholderele din document trec prin escape înainte de marcajele markdown."""
+    monkeypatch.setattr(settings, "legal_operator_name", '<img src=x onerror="alert(1)">')
+    legal.render_page.cache_clear()
+    try:
+        html_text = legal.render_page("privacy")
+        assert "<img src=x" not in html_text
+        assert "&lt;img" in html_text
+    finally:
+        legal.render_page.cache_clear()
+
+
+def test_markdown_to_html_subsetul_folosit_si_linkuri_sigure():
+    out = legal.markdown_to_html(
+        "## Titlu\n\nText cu **bold** și [site](https://example.org), "
+        "[mail](mailto:a@b.md), [rău](javascript:alert(1)).\n\n"
+        "- unu\n- doi\n\n| A | B |\n|---|---|\n| <b>x</b> | y |\n"
+    )
+    assert "<h2>Titlu</h2>" in out
+    assert "<strong>bold</strong>" in out
+    assert '<a href="https://example.org">site</a>' in out
+    assert '<a href="mailto:a@b.md">mail</a>' in out
+    assert "javascript" not in out  # schemă nepermisă → doar textul linkului
+    assert "<ul><li>unu</li><li>doi</li></ul>" in out
+    assert "<th>A</th>" in out and "<td>&lt;b&gt;x&lt;/b&gt;</td>" in out
 
 
 @_aio
@@ -203,9 +259,12 @@ async def test_fara_resurse_externe(client, path):
     assert "cdn" not in lower
     assert "//fonts." not in lower
     assert "@import" not in lower
-    # Singurele linkuri absolute permise sunt `mailto:` — restul sunt relative (/legal/*).
-    assert 'href="http' not in lower
+    # Nicio RESURSĂ de pe alt domeniu (src / <link>). Linkurile pe care cititorul le
+    # poate urma (`<a href="https://…">`, ex. site-ul CNPDCP din politică) nu încarcă
+    # nimic la deschiderea paginii — sunt permise, dar doar pe https.
     assert 'src="http' not in lower
+    assert "<link" not in lower
+    assert 'href="http:' not in lower
 
 
 @_aio
