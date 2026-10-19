@@ -40,6 +40,7 @@ const LoyaltyPage = lazy(() =>
 const InvitesPage = lazy(() =>
   import('./pages/InvitesPage').then((m) => ({ default: m.InvitesPage })),
 );
+const HumorPage = lazy(() => import('./pages/HumorPage').then((m) => ({ default: m.HumorPage })));
 
 export function App(): JSX.Element {
   return (
@@ -66,6 +67,8 @@ export function App(): JSX.Element {
           <Route path="/loyalty" element={<LoyaltyPage />} />
           {/* `/invites?event=<id>` — venind din tabelul de evenimente, filtrat. */}
           <Route path="/invites" element={<InvitesPage />} />
+          {/* Testul de umor: comutator global + glume editabile. */}
+          <Route path="/humor" element={<HumorPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

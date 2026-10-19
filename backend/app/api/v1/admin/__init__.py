@@ -30,6 +30,7 @@ from app.api.v1.admin import (
     audit,
     auth,
     events,
+    humor,
     loyalty,
     moderation,
     stats,
@@ -61,3 +62,4 @@ router.include_router(ticket_orders.router, dependencies=_admin_only)
 router.include_router(ticket_requests.router, dependencies=_admin_only)
 router.include_router(ticket_scan.router, dependencies=_admin_only)
 router.include_router(loyalty.router, dependencies=_admin_only)
+router.include_router(humor.router, dependencies=_admin_only)

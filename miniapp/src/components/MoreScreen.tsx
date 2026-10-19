@@ -10,12 +10,14 @@
  * decorativ: „❖", „▣" sau „⊘" nu există în toate fonturile de sistem, deci pe
  * unele telefoane rândul rămânea cu un pătrat gol în locul simbolului.
  */
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
 import { Icon, type IconName } from './icons';
 
 import { BLOCKLIST_PATH, FAVORITES_PATH } from '@/features/social/socialRoutes';
+import { HUMOR_CONFIG_QUERY_KEY, fetchHumorConfig } from '@/features/humor/humorApi';
 import { HUMOR_PATH } from '@/features/humor/humorRoutes';
 import { LEGAL_HUB_PATH } from '@/features/legal/legalRoutes';
 import { PASSPORT_PATH } from '@/features/passport/passportRoutes';
@@ -49,14 +51,32 @@ export const MENU_ENTRIES: MenuEntry[] = [
   { to: LEGAL_HUB_PATH, labelKey: 'nav.privacy', icon: 'shield' },
 ];
 
+/**
+ * Intrările vizibile acum. Testul de umor se ASCUNDE doar când serverul spune
+ * explicit că e oprit din panou (`enabled === false`): cât timp starea se
+ * încarcă sau cererea a căzut, intrarea rămâne — ecranul testului știe singur
+ * să spună „nu e disponibil", deci un link în plus nu duce nicăieri greșit.
+ */
+export function visibleMenuEntries(humorEnabled: boolean | undefined): MenuEntry[] {
+  return humorEnabled === false
+    ? MENU_ENTRIES.filter((entry) => entry.to !== HUMOR_PATH)
+    : MENU_ENTRIES;
+}
+
 export function MoreScreen() {
   const { t } = useTranslation('miniapp');
+  const humorConfig = useQuery({
+    queryKey: [...HUMOR_CONFIG_QUERY_KEY],
+    queryFn: fetchHumorConfig,
+    staleTime: 60_000,
+  });
+  const entries = visibleMenuEntries(humorConfig.data?.enabled);
 
   return (
     <div className="more-screen">
       <h1 className="more-screen__title">{t('nav.more')}</h1>
       <nav className="more-list" aria-label={t('nav.more')}>
-        {MENU_ENTRIES.map((entry) => (
+        {entries.map((entry) => (
           <Link key={entry.to} to={entry.to} className="more-item">
             <span className="more-item__icon">
               <Icon name={entry.icon} />

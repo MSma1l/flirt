@@ -121,6 +121,20 @@ PNG_1X1 = base64.b64decode(
 )
 
 
+async def enable_humor_test(db, enabled: bool = True) -> None:
+    """Pornește (sau oprește) testul de umor din setările globale.
+
+    Testul e OPRIT implicit (comutat din panou); testele care verifică poarta de
+    umor la swipe trebuie să-l pornească explicit. Primește sesiunea testului
+    (aceeași cu a clientului), ca setarea să fie văzută de cererile următoare.
+    """
+    from app.services import humor_service
+
+    row = await humor_service._get_or_create_settings(db)
+    row.enabled = enabled
+    await db.commit()
+
+
 async def complete_humor(client, headers: dict, api: str = "/api/v1") -> None:
     """Completează testul de umor (TZ 2.7) prin API-ul REAL.
 

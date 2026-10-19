@@ -37,6 +37,7 @@ from app.models.swipe import Like, Match
 from app.models.user import User
 from app.schemas.feed import FeedCard, FeedPage, MatchOut, SwipeResult, UndoResult
 from app.services import account_service, billing, chat_service, geo, push, tg_notify
+from app.services import humor_service
 from app.services.compatibility import behavior_score, compute_compatibility
 from app.services.contact_masker import mask_contacts
 
@@ -359,6 +360,8 @@ async def _rank(
         db, [my_profile.id] + [p.id for p in candidates]
     )
     my_interests = interests_map.get(my_profile.id, set())
+    # Testul de umor oprit din panou ⇒ umorul nu mai contează la scor.
+    humor_enabled = await humor_service.is_enabled(db)
 
     scored: list[tuple[int, Profile, set[str], float | None]] = []
     for p in candidates:
@@ -375,7 +378,13 @@ async def _rank(
             verified=bool(getattr(p, "verified", False)),
         )
         score = compute_compatibility(
-            my_profile, p, my_interests, p_interests, distance_km, behavior
+            my_profile,
+            p,
+            my_interests,
+            p_interests,
+            distance_km,
+            behavior,
+            humor_enabled=humor_enabled,
         )
         scored.append((score, p, p_interests, distance_km))
 
@@ -729,7 +738,9 @@ async def _authorize_swipe(
     # DE CE 403 CU MESAJ DISTINCT: separat de „profil incomplet" (anketă/poze), ca
     # mobilul să redirecționeze la `/humor`, nu la anketă. Feed-ul (browsing) rămâne
     # permis — gate-ul e pe acțiune, exact unde umorul devine obligatoriu.
-    if not _has_humor(my_profile):
+    #
+    # COMUTAT DIN PANOU: cu testul de umor oprit (implicit), poarta nu se aplică.
+    if not _has_humor(my_profile) and await humor_service.is_enabled(db):
         raise CodedHTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=HUMOR_REQUIRED_DETAIL,

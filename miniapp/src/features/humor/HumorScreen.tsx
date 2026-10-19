@@ -11,6 +11,12 @@
  * continue oricum". Din același motiv butonul final face `navigate(-1)`:
  * întoarce exact de unde a venit userul, fără să inventeze o rută nouă.
  *
+ * COMUTAT DIN PANOU: testul poate fi oprit de admin (`GET /humor/config`).
+ * Oprit → ecranul spune asta și nu mai încarcă glumele (linkurile vechi spre
+ * `/humor` nu duc într-un test pe care nimeni nu-l mai cere). Pornit → întâi un
+ * ecran de INTRODUCERE (de ce facem testul, cât durează, cine vede răspunsurile),
+ * cu text editabil din panou și fallback în catalogul `screens:humorIntro`.
+ *
  * Limba: DOUĂ surse diferite, ambele cu fallback pe română.
  *  - textul glumei vine de la server (`text_ro/ru/uk/en`) → `cardText`;
  *  - restul ecranului (titlu, butoane, erori) vine din catalogul `humor` → `t()`.
@@ -25,8 +31,8 @@ import { cardText } from '@mobile/features/humor/cardText';
 
 import { DEFAULT_LANGUAGE, normalizeLanguage } from '@/i18n/config';
 
-import { fetchQuiz, submitQuiz } from './humorApi';
-import type { HumorAnswer, HumorCard, HumorProfile } from './humorApi';
+import { HUMOR_CONFIG_QUERY_KEY, fetchHumorConfig, fetchQuiz, submitQuiz } from './humorApi';
+import type { HumorAnswer, HumorCard, HumorConfig, HumorProfile } from './humorApi';
 
 import './humor.css';
 
@@ -62,16 +68,26 @@ export function HumorScreen(): ReactElement {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { t, i18n } = useTranslation('humor');
+  const { t: ts } = useTranslation('screens');
   // Limba glumei se ia din i18n, nu din vreun store propriu: ecranul trebuie să
   // arate exact limba în care e scris restul interfeței.
   const language = normalizeLanguage(i18n.language) ?? DEFAULT_LANGUAGE;
 
+  const [started, setStarted] = useState(false);
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<HumorAnswer[]>([]);
+
+  const configQuery = useQuery<HumorConfig>({
+    queryKey: [...HUMOR_CONFIG_QUERY_KEY],
+    queryFn: fetchHumorConfig,
+  });
+  const enabled = configQuery.data?.enabled === true;
 
   const { data, isPending, isError, refetch, isFetching } = useQuery<HumorCard[]>({
     queryKey: ['humor-quiz'],
     queryFn: fetchQuiz,
+    // Glumele se cer doar când testul e PORNIT: oprit, nu au ce căuta pe ecran.
+    enabled,
   });
 
   const submitMutation = useMutation<HumorProfile, Error, HumorAnswer[]>({
@@ -82,6 +98,82 @@ export function HumorScreen(): ReactElement {
       queryClient.setQueryData([...HUMOR_ME_QUERY_KEY], profile);
     },
   });
+
+  if (configQuery.isPending) {
+    return (
+      <div className="hm-state">
+        <div className="spinner" role="status" aria-label={t('quiz.title')} />
+      </div>
+    );
+  }
+
+  if (configQuery.isError) {
+    return (
+      <div className="hm-state" data-testid="humor-error">
+        <p className="error-text">{t('quiz.loadError')}</p>
+        <button
+          type="button"
+          className="button"
+          data-testid="humor-load-retry"
+          disabled={configQuery.isFetching}
+          onClick={() => void configQuery.refetch()}
+        >
+          {t('quiz.retry')}
+        </button>
+      </div>
+    );
+  }
+
+  if (!enabled) {
+    return (
+      <div className="hm-state" data-testid="humor-disabled">
+        <p className="title hm-saved">{ts('humorIntro.disabledTitle')}</p>
+        <p className="body-text hm-intro__body">{ts('humorIntro.disabledBody')}</p>
+        <button type="button" className="button" onClick={() => void navigate(-1)}>
+          {ts('humorIntro.back')}
+        </button>
+      </div>
+    );
+  }
+
+  // Ecranul de introducere: userul află DE CE i se cere testul înainte de prima
+  // glumă. Textul vine din panou (`intro_<limbă>`), cu fallback pe catalog.
+  if (!started) {
+    const config = configQuery.data;
+    // Fără fallback pe româna din panou: un text gol într-o limbă cade pe
+    // explicația implicită ÎN LIMBA userului, nu pe o limbă pe care n-o vorbește.
+    const intro = config?.[`intro_${language}` as const]?.trim() || ts('humorIntro.body');
+    return (
+      <div className="hm-screen hm-intro" data-testid="humor-intro">
+        <p className="hm-emoji" aria-hidden="true">
+          🎭
+        </p>
+        <h1 className="title">{ts('humorIntro.title')}</h1>
+        <div className="hm-intro__body" data-testid="humor-intro-text">
+          {intro.split(/\n{2,}/).map((paragraph, i) => (
+            <p key={i} className="body-text">
+              {paragraph}
+            </p>
+          ))}
+        </div>
+        <ul className="hm-intro__facts">
+          <li>{ts('humorIntro.factDuration')}</li>
+          <li>{ts('humorIntro.factNoWrong')}</li>
+          <li>{ts('humorIntro.factPrivate')}</li>
+        </ul>
+        <div className="hm-actions">
+          <button
+            type="button"
+            className="button"
+            data-testid="humor-start"
+            onClick={() => setStarted(true)}
+          >
+            {ts('humorIntro.start')}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (isPending) {
     return (
