@@ -1,0 +1,162 @@
+"""nginx: media servită direct, gzip, limită pe /health.
+
+CE VERIFICĂM
+------------
+1. `/media/*` e servit de nginx din volumul montat (nu proxat la Python), pe o
+   zonă de limitare PROPRIE (nu `flirt_general`, care rupea pozele cu 429), cu
+   cache lung `immutable` și cu antetele de securitate repetate (un `add_header`
+   în location anulează moștenirea celor de la nivel de server).
+2. Dovezile de plată (`/media/ticket-proofs/*`) NU sunt servite: aceeași regulă
+   ca `_PublicMediaFiles` din app/main.py.
+3. `docker-compose.yml` montează volumul de media în nginx, read-only, exact la
+   rădăcina folosită de config.
+4. gzip e activ la nivel de `http`, cu JSON în listă.
+
+Folosim parserul și randarea din `test_nginx_ratelimit_zones.py` (aceeași
+randare ca producția, prin `nginx/entrypoint.sh`).
+"""
+from __future__ import annotations
+
+import re
+
+import pytest
+
+from tests.test_nginx_ratelimit_zones import (  # noqa: F401  (fixture importat)
+    BACKEND,
+    _api_server,
+    _locations,
+    _match_location,
+    _zone_of,
+    _zones,
+    rendered,
+)
+
+COMPOSE = BACKEND / "docker-compose.yml"
+
+SECURITY_HEADERS = [
+    "add_header X-Content-Type-Options nosniff always;",
+    "add_header X-Frame-Options DENY always;",
+    "add_header Referrer-Policy no-referrer always;",
+    'add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;',
+]
+
+MEDIA_URIS = [
+    "/media/photos/1b4e28ba-2fa1-11d2-883f-0016d3cca427/0f8fad5bcf8a4c2e9d1b.jpg",
+    "/media/stories/1b4e28ba/abc.mp4",
+    "/media/chat-media/x/y.webp",
+]
+
+
+def _http_level(conf: str) -> str:
+    """Directivele din afara oricărui bloc `server { ... }` (nivelul `http`)."""
+    out, depth = [], 0
+    for line in conf.splitlines():
+        stripped = line.split("#", 1)[0]
+        if depth == 0 and re.match(r"^\s*(map|server)\b", stripped) is None:
+            out.append(stripped)
+        depth += stripped.count("{") - stripped.count("}")
+    return "\n".join(out)
+
+
+# --------------------------------------------------------------------------- #
+# 1. /media servit de nginx
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("uri", MEDIA_URIS)
+def test_media_e_servita_din_disc_nu_proxata(rendered, uri):
+    mod, path, body = _match_location(_locations(_api_server(rendered)), uri)
+
+    assert (mod, path) == ("", "/media/")
+    assert "proxy_pass" not in body, "media nu mai are voie să treacă prin Python"
+    assert re.search(r"^\s*root /var/www;", body, re.MULTILINE)
+    assert "try_files $uri =404;" in body
+
+
+def test_media_are_zona_proprie_larga(rendered):
+    body = _match_location(_locations(_api_server(rendered)), MEDIA_URIS[0])[2]
+    zones = _zones(rendered)
+
+    zone = _zone_of(body)
+    assert zone == "flirt_media", "media a rămas pe zona generală (429 = poze rupte)"
+    assert zones[zone]["rate"] == "100r/s"
+    assert "limit_req zone=flirt_media burst=200 nodelay;" in body
+
+
+def test_media_are_cache_lung_imuabil(rendered):
+    body = _match_location(_locations(_api_server(rendered)), MEDIA_URIS[0])[2]
+
+    assert 'add_header Cache-Control "public, max-age=31536000, immutable" always;' in body
+    # `expires` ar adăuga un al doilea antet Cache-Control.
+    assert not re.search(r"^\s*expires\b", body, re.MULTILINE)
+
+
+def test_media_repeta_antetele_de_securitate(rendered):
+    body = _match_location(_locations(_api_server(rendered)), MEDIA_URIS[0])[2]
+    for header in SECURITY_HEADERS:
+        assert header in body, f"lipsește din /media/: {header}"
+
+
+# --------------------------------------------------------------------------- #
+# 2. Dovezile de plată NU sunt publice
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "uri",
+    [
+        "/media/ticket-proofs",
+        "/media/ticket-proofs/",
+        "/media/ticket-proofs/0f8fad5b/abc.jpg",
+    ],
+)
+def test_dovezile_de_plata_dau_404(rendered, uri):
+    mod, path, body = _match_location(_locations(_api_server(rendered)), uri)
+
+    assert path.startswith("/media/ticket-proofs"), f"{uri} cade pe {path}"
+    assert re.search(r"^\s*return 404;", body, re.MULTILINE)
+    assert "root" not in body and "try_files" not in body
+
+
+def test_nu_exista_location_regex_care_ar_putea_ocoli_blocarea(rendered):
+    """Un `location ~` ar fi evaluat ÎNAINTEA prefixelor și ar putea servi
+    `/media/ticket-proofs/...`. Parserul nostru (și regula de mai sus) presupun
+    că nu există niciunul în serverul API."""
+    assert not re.search(r"^\s*location\s+~", _api_server(rendered), re.MULTILINE)
+
+
+# --------------------------------------------------------------------------- #
+# 3. Volumul de media e montat în nginx
+# --------------------------------------------------------------------------- #
+
+
+def test_compose_monteaza_media_in_nginx_read_only():
+    compose = COMPOSE.read_text(encoding="utf-8")
+    match = re.search(r"^  nginx:\n((?:    .*\n|\s*\n)+)", compose, re.MULTILINE)
+    assert match, "serviciul nginx lipsește din docker-compose.yml"
+    nginx_service = match.group(1)
+
+    assert re.search(r"^\s+- mediadata:/var/www/media:ro\b", nginx_service, re.MULTILINE)
+    # Același volum pe care îl scrie API-ul.
+    api = re.search(r"^  api:\n((?:    .*\n|\s*\n)+)", compose, re.MULTILINE).group(1)
+    assert re.search(r"^\s+- mediadata:/data/media\b", api, re.MULTILINE)
+
+
+# --------------------------------------------------------------------------- #
+# 4. gzip
+# --------------------------------------------------------------------------- #
+
+
+def test_gzip_activ_la_nivel_http(rendered):
+    http = _http_level(rendered)
+
+    assert re.search(r"^gzip on;", http, re.MULTILINE)
+    assert re.search(r"^gzip_proxied any;", http, re.MULTILINE), (
+        "fără gzip_proxied, răspunsurile proxate (API-ul) nu se comprimă"
+    )
+    assert re.search(r"^gzip_vary on;", http, re.MULTILINE)
+    types = re.search(r"^gzip_types (.+);", http, re.MULTILINE)
+    assert types, "lipsește gzip_types"
+    for mime in ("application/json", "application/javascript", "text/css"):
+        assert mime in types.group(1).split()
+
