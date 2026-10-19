@@ -245,7 +245,12 @@ interface BrowserImage extends DecodedImage {
 /** Decodare cu `createImageBitmap`, cu revenire pe `<img>` + objectURL. */
 async function decodeInBrowser(file: Blob): Promise<BrowserImage> {
   if (typeof createImageBitmap === 'function') {
-    const bitmap = await createImageBitmap(file);
+    // `from-image` = orientarea din EXIF aplicată în pixeli. E deja implicită în
+    // browserele noi, dar o cerem EXPLICIT: un WebView mai vechi care ar ignora
+    // EXIF-ul ar desena pe canvas poza de telefon rotită sau întoarsă, iar JPEG-ul
+    // re-encodat nu mai are EXIF care să o corecteze la afișare — greșeala ar
+    // rămâne permanentă în povestea publicată.
+    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
     return {
       width: bitmap.width,
       height: bitmap.height,

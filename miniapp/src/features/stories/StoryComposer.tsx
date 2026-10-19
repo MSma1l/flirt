@@ -11,8 +11,14 @@
  *    video (Apple Guideline 1.2). Un buton de „încarcă video" ar fi deci un
  *    buton care garantat eșuează;
  *  - camera LIVE este încercată prin `getUserMedia`; dacă Telegram/WebView nu
- *    oferă permisiunea, fluxul păstrează alegerea din galerie și atributul
- *    `capture`, care poate deschide camera nativă a telefonului.
+ *    oferă permisiunea, declanșatorul deschide camera NATIVĂ a telefonului
+ *    (un al doilea câmp de fișier, cu `capture`).
+ *
+ * GALERIA vs CAMERA NATIVĂ — DOUĂ câmpuri, nu unul. Atributul `capture` pe un
+ * `<input type="file">` îi spune telefonului „deschide direct camera": pe
+ * Android (inclusiv WebView-ul Telegram) și pe iOS, butonul de galerie ar fi
+ * pornit tot camera, iar o poză deja făcută n-ar fi putut fi aleasă deloc.
+ * Câmpul de galerie NU are deci `capture`; doar câmpul camerei native îl are.
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
@@ -28,12 +34,17 @@ import { MY_STORIES_QUERY_KEY, STORIES_QUERY_KEY } from './useStories';
 export const CAPTION_MAX_LENGTH = 500;
 
 /**
- * Ce acceptă `<input type="file">` — exact allowlist-ul serverului
- * (`allowed_image_types` din `backend/app/core/config.py`). Filtrul e o
- * comoditate, nu o garanție: verificarea reală o face `imageResize.ts` înainte
- * de upload, iar poarta finală rămâne backendul (magic-bytes).
+ * Ce acceptă `<input type="file">`: ORICE imagine, nu lista exactă a serverului.
+ *
+ * DE CE `image/*` și nu `image/jpeg,image/png,image/webp`: cu o listă de tipuri
+ * MIME, unele WebView-uri Android (Telegram printre ele) deschid managerul de
+ * fișiere în loc de galeria foto, iar pe unele telefoane nu se mai poate alege
+ * nimic. `image/*` deschide galeria peste tot; iOS convertește singur HEIC în
+ * JPEG la alegere. Filtrul a fost oricum doar o comoditate: `imageResize.ts`
+ * re-encodează în JPEG orice tip care nu e în allowlist, iar poarta finală
+ * rămâne backendul (magic-bytes).
  */
-export const ACCEPTED_IMAGE_TYPES = 'image/jpeg,image/png,image/webp';
+export const ACCEPTED_IMAGE_TYPES = 'image/*';
 
 /** `detail`-ul întors de FastAPI, dacă e text. Vine deja în română. */
 function serverDetail(error: unknown): string {
@@ -84,6 +95,7 @@ export function StoryComposer({ onClose }: Props) {
   const [uploadError, setUploadError] = useState<ShownError | null>(null);
   const [progress, setProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const stageRef = useRef<PublishStage>('prepare');
 
   /**
@@ -178,10 +190,14 @@ export function StoryComposer({ onClose }: Props) {
 
   const onPickFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
+    // Golim câmpul: altfel alegerea ACELEIAȘI poze a doua oară (după „Refă")
+    // nu mai declanșează `change`, iar butonul pare stricat.
+    event.target.value = '';
+    if (!file) return;
     setUploadError(null);
     publishMutation.reset();
     setPickedFile(file);
-    if (file) setCameraOpen(false);
+    setCameraOpen(false);
   };
 
   const onCameraCapture = (file: File) => {
@@ -194,6 +210,10 @@ export function StoryComposer({ onClose }: Props) {
   const openFilePicker = () => {
     // Câmpul e ascuns vizual, dar rămâne în DOM: butonul doar îl declanșează.
     fileInputRef.current?.click();
+  };
+
+  const openNativeCamera = () => {
+    cameraInputRef.current?.click();
   };
 
   return (
@@ -218,7 +238,19 @@ export function StoryComposer({ onClose }: Props) {
         accept={ACCEPTED_IMAGE_TYPES}
         className="st-file-input"
         data-testid="story-file-input"
+        onChange={onPickFile}
+        disabled={publishing}
+      />
+      {/* Camera NATIVĂ: același flux, dar cu `capture` — vezi antetul fișierului. */}
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept={ACCEPTED_IMAGE_TYPES}
         capture="user"
+        className="st-file-input"
+        data-testid="story-camera-input"
+        tabIndex={-1}
+        aria-hidden="true"
         onChange={onPickFile}
         disabled={publishing}
       />
@@ -228,6 +260,7 @@ export function StoryComposer({ onClose }: Props) {
           onClose={onClose}
           onCapture={onCameraCapture}
           onPickGallery={openFilePicker}
+          onNativeCamera={openNativeCamera}
         />
       ) : null}
 

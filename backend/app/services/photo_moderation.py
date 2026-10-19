@@ -65,16 +65,27 @@ _LOCAL_MAX_SIDE = 64
 # RO: prompt-ul e în ENGLEZĂ (modelul e antrenat mai bine așa) și e EXPLICIT că e o
 # aplicație de dating: fără contextul ăsta modelul respinge poze de plajă perfect
 # normale, iar produsul devine inutilizabil.
+#
+# DE CE e atât de insistent pe „minor": aceeași funcție moderează și pozele de
+# STORY, care arată momente obișnuite (o sală de curs, o stradă, prieteni). În
+# testare, modelul a respins o poză cu studenți fotografiați din spate într-un
+# amfiteatru ca „minor" — doar fiindcă oamenii păreau tineri. Regula „minor" are
+# sens DOAR combinată cu nuditate / context sexual; vârsta aparentă singură nu e
+# niciodată motiv de respingere. Promptul cere și `confidence` + `sexual_content`,
+# iar `_verdict_from_payload` aplică regulile în cod, nu doar în text.
 _PROMPT = """\
 You are a content moderator for FLIRT, an 18+ dating app. Users upload profile \
-photos of themselves. Beach, gym, and nightlife photos are completely normal and \
-expected on a dating app — do NOT reject them.
+photos of themselves and 24-hour "stories" with everyday moments: friends, groups, \
+classrooms and lecture halls, offices, streets, cafes, food, pets, landscapes, \
+events. Beach, gym, and nightlife photos are completely normal and expected on a \
+dating app — do NOT reject them.
 
-REJECT the photo (allowed=false) only if it clearly contains any of:
-- nudity: exposed genitals, exposed female breasts/nipples, or exposed buttocks;
+REJECT the photo (allowed=false) only if it clearly and explicitly contains any of:
+- nudity: exposed genitals, exposed female breasts/nipples, or fully exposed buttocks;
 - sexual_activity: any depicted sexual act, masturbation, or sex toys in use;
-- minor: any person who appears to be under 18 depicted in a sexualized way \
-(swimwear/underwear, suggestive pose, or sexual context);
+- minor: a person who clearly appears to be a child or young teenager AND the \
+photo is sexualized (nudity, underwear/swimwear shown in a suggestive way, a \
+sexual pose, or a sexual context). Both conditions must be true;
 - violence: graphic violence, gore, wounds, blood, weapons used against a person.
 
 ALLOW the photo (allowed=true) for anything else, including:
@@ -83,15 +94,27 @@ ALLOW the photo (allowed=true) for anything else, including:
 - cleavage, bare male chest/torso, tight or revealing clothing;
 - sport, gym, dance, and fitness photos;
 - tattoos, body art, piercings, body paint;
-- artistic or fashion photography without explicit nudity.
+- artistic or fashion photography without explicit nudity;
+- fully clothed people of ANY apparent age in ordinary, non-sexual situations: \
+students in a classroom or lecture hall, people seen from behind, crowds, \
+families, school or university settings, young-looking adults.
 
-When in doubt about an adult photo, ALLOW it. Be strict only about the four \
-rejection categories above.
+Looking young, being in a school or university, or being in a group is NEVER by \
+itself a reason to reject. When in doubt, ALLOW the photo. Reject only when you \
+are highly confident one of the four categories above clearly applies.
 
 Answer with ONLY a JSON object, no prose, in exactly this shape:
 {"allowed": true or false, "category": one of \
-"safe", "nudity", "sexual_activity", "minor", "violence"}
+"safe", "nudity", "sexual_activity", "minor", "violence", \
+"confidence": a number from 0 to 1 — how certain you are that the category applies, \
+"sexual_content": true only if the photo shows nudity or sexual content, else false}
 Use "safe" as the category whenever allowed is true."""
+
+# Sub pragul ăsta de încredere declarată de model, un verdict negativ NU respinge
+# poza: trece, marcată pentru review uman (`needs_review`). Respingem doar ce
+# modelul vede CLAR — o poză legitimă respinsă e un user pierdut, iar un caz
+# limită rămâne oricum în fața unui om, prin log.
+_REJECT_MIN_CONFIDENCE = 0.8
 
 # Schema pentru structured outputs — garantează un JSON parsabil, fără prompt-
 # engineering fragil („răspunde doar cu JSON, te rog").
@@ -110,17 +133,23 @@ _OUTPUT_SCHEMA = {
                 CATEGORY_OTHER,
             ],
         },
+        "confidence": {"type": "number"},
+        "sexual_content": {"type": "boolean"},
     },
-    "required": ["allowed", "category"],
+    "required": ["allowed", "category", "confidence", "sexual_content"],
     "additionalProperties": False,
 }
 
 # Etichetele Rekognition (top-level `detect_moderation_labels`) → categoriile noastre.
 # Cheia e verificată pe `ParentName` sau `Name`, case-insensitive.
+# RO: familia „Non-Explicit Nudity of Intimate Parts and Kissing" (sărut, spate gol,
+# piept de bărbat, nuditate DOAR sugerată) NU mai respinge: pe un app de dating e
+# conținut normal, iar respingerea trebuie să rămână pentru ce e cu adevărat
+# EXPLICIT (familia „Explicit").
 _REKOGNITION_CATEGORY_MAP = {
     "explicit nudity": CATEGORY_NUDITY,
     "explicit": CATEGORY_NUDITY,
-    "non-explicit nudity of intimate parts and kissing": CATEGORY_NUDITY,
+    "explicit sexual activity": CATEGORY_SEXUAL_ACTIVITY,
     "sexual activity": CATEGORY_SEXUAL_ACTIVITY,
     "violence": CATEGORY_VIOLENCE,
     "visually disturbing": CATEGORY_VIOLENCE,
@@ -260,19 +289,15 @@ class AnthropicPhotoModerator:
         try:
             text = next(b.text for b in response.content if b.type == "text")
             payload = json.loads(text)
-            allowed = bool(payload["allowed"])
-            category = str(payload["category"])
+            if not isinstance(payload, dict) or "allowed" not in payload:
+                raise ValueError("lipsește câmpul 'allowed'")
         except (StopIteration, KeyError, TypeError, ValueError):
             logger.error(
                 "photo_moderation: răspuns Anthropic neparsabil — încerc rezerva LOCALĂ."
             )
             return await _local_fallback(image, media_type, "unparsable_response")
 
-        if allowed or category == CATEGORY_SAFE:
-            return ModerationVerdict(allowed=True, raw_label=category)
-        return ModerationVerdict(
-            allowed=False, reason=category, raw_label=category
-        )
+        return _verdict_from_payload(payload)
 
 
 class OpenRouterPhotoModerator:
@@ -314,7 +339,6 @@ class OpenRouterPhotoModerator:
             payload = json.loads(_strip_code_fence(result.text or ""))
             if not isinstance(payload, dict) or "allowed" not in payload:
                 raise ValueError("lipsește câmpul 'allowed'")
-            allowed = bool(payload["allowed"])
         except (TypeError, ValueError):
             # RO: `allowed` e câmpul PORTANT. Fără el nu putem decide → rezervă locală,
             # apoi fail-open (ca pe calea de rețea căzută).
@@ -323,17 +347,7 @@ class OpenRouterPhotoModerator:
             )
             return await _local_fallback(image, media_type, "unparsable_response")
 
-        # RO: `category` e SECUNDARĂ — doar eticheta respingerii. Modelele de pe
-        # OpenRouter uneori o omit sau o numesc altfel (`reason`). NU cădem în
-        # fail-open pentru asta: ar lăsa o poză RESPINSĂ (`allowed=false`) să
-        # treacă doar fiindcă modelul n-a numit categoria. Derivăm o etichetă
-        # sigură când lipsește: poză permisă → 'safe', respinsă → 'other'.
-        raw = payload.get("category") or payload.get("reason")
-        category = str(raw) if raw else (CATEGORY_SAFE if allowed else "other")
-
-        if allowed or category == CATEGORY_SAFE:
-            return ModerationVerdict(allowed=True, raw_label=category)
-        return ModerationVerdict(allowed=False, reason=category, raw_label=category)
+        return _verdict_from_payload(payload)
 
 
 class RekognitionPhotoModerator:
@@ -495,6 +509,69 @@ async def _local_fallback(image: bytes, media_type: str, label: str) -> Moderati
         return verdict
     # RO: local a permis SAU n-a putut decoda → nu s-a schimbat nimic față de acum.
     return _fail_open(label)
+
+
+def _confidence(value: object) -> float | None:
+    """Încrederea declarată de model, adusă în [0, 1]; None dacă lipsește/e invalidă.
+
+    Unele modele răspund pe scara 0–100 în loc de 0–1 — le normalizăm, altfel un
+    „95" ar fi tratat ca încredere maximă doar din noroc, iar un „0.95" scris ca
+    „95%" ar strica parsarea.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return None
+    try:
+        number = float(str(value).strip().rstrip("%"))
+    except ValueError:
+        return None
+    if number != number or number < 0:  # NaN sau negativ
+        return None
+    if number > 1:
+        number = number / 100 if number <= 100 else 1.0
+    return number
+
+
+def _verdict_from_payload(payload: dict) -> ModerationVerdict:
+    """Transformă răspunsul JSON al modelului (Anthropic SAU OpenRouter) în verdict.
+
+    Regulile sunt în COD, nu doar în prompt — un model prea prudent nu mai poate
+    respinge singur o poză obișnuită:
+
+    1. `allowed=true` sau categoria 'safe' → permisă.
+    2. `category` e SECUNDARĂ — doar eticheta respingerii. Modelele de pe
+       OpenRouter uneori o omit sau o numesc altfel (`reason`). NU cădem în
+       fail-open pentru asta: ar lăsa o poză RESPINSĂ să treacă doar fiindcă
+       modelul n-a numit categoria. Lipsă → 'other'.
+    3. Încredere declarată SUB `_REJECT_MIN_CONFIDENCE` → poza trece, marcată
+       pentru review uman. Fără câmpul `confidence` (model care îl ignoră) NU
+       relaxăm: verdictul negativ rămâne valabil, ca înainte.
+    4. 'minor' respinge DOAR împreună cu `sexual_content=true`. „Pare tânăr"
+       singur (o sală de curs, un grup de studenți) → trece, cu review uman: nu
+       stingem protecția, doar mutăm cazul limită de la respingere automată la om.
+    """
+    allowed = bool(payload.get("allowed"))
+    raw = payload.get("category") or payload.get("reason")
+    category = str(raw) if raw else (CATEGORY_SAFE if allowed else CATEGORY_OTHER)
+
+    if allowed or category == CATEGORY_SAFE:
+        return ModerationVerdict(allowed=True, raw_label=category)
+
+    confidence = _confidence(payload.get("confidence"))
+    if confidence is not None and confidence < _REJECT_MIN_CONFIDENCE:
+        return ModerationVerdict(
+            allowed=True,
+            raw_label=f"{category}_low_confidence_{confidence:.2f}",
+            needs_review=True,
+        )
+
+    if category == CATEGORY_MINOR and payload.get("sexual_content") is not True:
+        return ModerationVerdict(
+            allowed=True,
+            raw_label="minor_without_sexual_content",
+            needs_review=True,
+        )
+
+    return ModerationVerdict(allowed=False, reason=category, raw_label=category)
 
 
 def _strip_code_fence(text: str) -> str:

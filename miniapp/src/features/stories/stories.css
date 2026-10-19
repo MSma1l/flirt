@@ -15,7 +15,13 @@
   min-height: 0;
   gap: var(--space-md);
   padding-bottom: var(--space-xl);
+  min-width: 0;
   overflow-y: auto;
+  /* Ecranul se derulează DOAR pe verticală: un element prea lat (un cuvânt lung,
+     două butoane pe un telefon îngust) nu are voie să facă pagina „să alunece"
+     stânga-dreapta sub deget. */
+  overflow-x: hidden;
+  touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -24,6 +30,14 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-sm);
+  min-width: 0;
+}
+
+.st-head .title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .st-icon-button {
@@ -222,6 +236,11 @@
   flex-direction: column;
   gap: var(--space-md);
   min-height: 0;
+  /* Coloana nu e niciodată mai lată decât ecranul: fără `min-width: 0`, un copil
+     flex cu conținut lung își impune lățimea și împinge totul în afara ecranului. */
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 /*
@@ -258,12 +277,25 @@
   inset: 0;
   display: flex;
   align-items: flex-end;
+  min-width: 0;
   padding: var(--space-lg);
 }
 
 .st-compose__caption-input {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 88px;
+  max-height: 40%;
+  /* Textul rămâne ÎN cadrul pozei: un cuvânt lung sau un link se rup pe rânduri
+     în loc să iasă din container, iar câmpul se derulează doar pe verticală. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  touch-action: pan-y;
+  -webkit-user-select: text;
+  user-select: text;
   resize: none;
   border: 0;
   outline: none;
@@ -290,6 +322,7 @@
   position: absolute;
   inset: 0;
   width: 100%;
+  max-width: 100%;
   height: 100%;
   object-fit: cover;
 }
@@ -374,10 +407,17 @@
   display: flex;
   flex-direction: row;
   gap: var(--space-md);
+  min-width: 0;
 }
 
+/* Pe un telefon îngust (320px) „Переснять" + „Опубликовать" nu încap cu
+   padding-ul implicit al butonului: fără `min-width: 0` ar împinge rândul în
+   afara ecranului și ar apărea derularea orizontală. */
 .st-compose__actions .button {
   flex: 1;
+  min-width: 0;
+  padding-inline: var(--space-md);
+  overflow-wrap: anywhere;
 }
 
 @media (prefers-reduced-motion: reduce) {

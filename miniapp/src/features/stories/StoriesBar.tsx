@@ -96,7 +96,15 @@ export function StoriesBar({ selectedUserId = null, onOpenGroup, onAdd, variant 
         onClick={onAdd}
       >
         <span className="st-bar__ring st-bar__ring--add" aria-hidden="true">
-          ＋
+          <svg className="st-bar__plus" viewBox="0 0 24 24" focusable="false">
+            <path
+              d="M12 4v16M4 12h16"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              fill="none"
+            />
+          </svg>
         </span>
         <span className="caption st-bar__name">{t('stories:bar.add')}</span>
       </button>
