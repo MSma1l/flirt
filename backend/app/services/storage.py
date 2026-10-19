@@ -9,6 +9,26 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 from app.core.config import settings
+from app.services.image_variants import variant_key
+
+# RO: variantele WebP generate la upload (`image_variants.process_image`) —
+# `delete` le șterge împreună cu originalul, ca să nu rămână orfane.
+VARIANT_SIZES: tuple[int, ...] = (256, 800, 480)
+_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
+
+
+def variant_keys_for(key: str) -> list[str]:
+    """Cheile variantelor (`<stem>_<n>.webp`) ale unei chei de imagine; [] altfel.
+
+    Nu derivă variante pentru o cheie care e deja o variantă sau nu e imagine
+    (ex. video-ul unei povești) — acolo n-are ce să existe.
+    """
+    lower = key.lower()
+    if not lower.endswith(_IMAGE_EXTS):
+        return []
+    if any(lower.endswith(f"_{n}.webp") for n in VARIANT_SIZES):
+        return []
+    return [variant_key(key, n) for n in VARIANT_SIZES]
 
 # RO: mapare tip-conținut → extensie (allowlist intrinsecă, aliniată cu
 # settings.allowed_image_types). Sursa de adevăr pentru extensia sigură a cheii.
@@ -210,7 +230,14 @@ class S3Storage:
             key = rel if rel and rel.startswith("stories/") else None
         if not key:
             return None
-        self._client().delete_object(Bucket=settings.s3_bucket, Key=key)
+        client = self._client()
+        client.delete_object(Bucket=settings.s3_bucket, Key=key)
+        # Variantele WebP (dacă lipsesc, S3 întoarce tot 204 — fără eroare).
+        for vkey in variant_keys_for(key):
+            try:
+                client.delete_object(Bucket=settings.s3_bucket, Key=vkey)
+            except Exception:  # noqa: BLE001 — o variantă rămasă nu blochează ștergerea
+                pass
         return None
 
     async def read(self, url: str) -> tuple[bytes, str] | None:
@@ -254,7 +281,8 @@ class LocalStorage:
         return f"{settings.storage_base_url.rstrip('/')}/{key.lstrip('/')}"
 
     async def delete(self, url: str) -> None:
-        """Șterge fișierul dacă URL-ul e al nostru și calea rămâne sub rădăcină."""
+        """Șterge fișierul (și variantele lui WebP) dacă URL-ul e al nostru și
+        calea rămâne sub rădăcină. Variantele lipsă sunt ignorate."""
         key = _relative_key(url)
         if not key:
             return None
@@ -264,6 +292,12 @@ class LocalStorage:
             return None
         if target.is_file():
             target.unlink()
+        for vkey in variant_keys_for(key):
+            try:
+                vpath = self._path_for_key(vkey)
+            except ValueError:
+                continue
+            vpath.unlink(missing_ok=True)
         return None
 
     async def read(self, url: str) -> tuple[bytes, str] | None:
