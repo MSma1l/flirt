@@ -88,10 +88,17 @@ async def test_s3_delete_calls_delete_object_with_derived_key(fake_s3):
     url = "https://flirt-media.s3.eu-central-1.amazonaws.com/photos/abc/poza.jpg"
     await S3Storage().delete(url)
 
-    assert len(fake_s3.delete_calls) == 1
+    # Originalul primul, apoi variantele redimensionate (`_256/_800/_480.webp`).
     call = fake_s3.delete_calls[0]
     assert call["Bucket"] == "flirt-media"
     assert call["Key"] == "photos/abc/poza.jpg"
+    keys = {c["Key"] for c in fake_s3.delete_calls}
+    assert keys == {
+        "photos/abc/poza.jpg",
+        "photos/abc/poza_256.webp",
+        "photos/abc/poza_800.webp",
+        "photos/abc/poza_480.webp",
+    }
 
 
 @pytest.mark.asyncio
