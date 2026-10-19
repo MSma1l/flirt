@@ -1,7 +1,18 @@
 """Model profil / anketă — datele din chestionarul de înregistrare (TZ 2.4–2.7)."""
 import uuid
+from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, Date, Float, ForeignKey, Index, Integer, String
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -67,3 +78,11 @@ class Profile(Base):
 
     # Verificare facială reușită (TZ 2.2) — setat de /profiles/verify-face
     verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Începutul TRECERII curente prin feed (`feed_service.get_feed`). Dislike-urile
+    # date înainte de acest moment nu mai exclud: când userul a văzut pe toată
+    # lumea, feed-ul o ia de la capăt și profilurile refuzate reapar. NULL = încă
+    # nicio trecere încheiată (orice dislike exclude). Like-urile exclud mereu.
+    feed_cycle_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

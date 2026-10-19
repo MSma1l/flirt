@@ -64,10 +64,10 @@ def test_sort_key_orders_by_score_desc():
 
 def test_cursor_round_trip():
     uid = uuid.uuid4()
-    cur = F._encode_cursor(85, uid)
-    score, user_id_str = F._decode_cursor(cur)
-    assert score == 85
-    assert user_id_str == str(uid)
+    cur = F._encode_cursor(85, uid, tier=1)
+    # Cursorul se decodează direct în cheia de sortare: (treaptă, -scor, user_id).
+    assert F._decode_cursor(cur) == (1, -85, str(uid))
+    assert F._decode_cursor(cur) == F._feed_key(1, 85, uid)
 
 
 def test_decode_cursor_invalid_422():

@@ -1,16 +1,19 @@
-"""Feed în TREPTE: când feed-ul strict s-a epuizat, arătăm profiluri ORICUM.
+"""Feed în TREPTE + TRECERI: arătăm profiluri ORICUM, în ordine, fără repetări.
 
-Ordinea: strict → relaxed (fără vârstă/rază/inactivitate) → second_chance
-(dislike-uri vechi de ≥ 24h) → other_gender. Gate-urile DURE (profil complet,
-18+, poze, self, block, ban, ascuns, șters, like/match deja dat) se aplică în
-TOATE treptele. Testele apelează serviciul direct (fixturi în DB), ca în
-`test_feed_service_unit.py`.
+Ordinea: strict → relaxed (fără vârstă/rază/inactivitate) → other_gender, în
+fiecare treaptă compatibilitate DESCRESCĂTOR. TRECERI: un dislike exclude până
+la sfârșitul trecerii curente; când toți au fost văzuți, feed-ul o ia de la
+capăt (dislike-urile revin ca `second_chance`, like-urile / match-urile nu).
+Gate-urile DURE (profil complet, 18+, poze, self, block, ban, ascuns, șters,
+like/match deja dat) se aplică în TOATE treptele. Testele apelează serviciul
+direct (fixturi în DB), ca în `test_feed_service_unit.py`.
 """
 from __future__ import annotations
 
+import base64
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import func, select, update
+from sqlalchemy import event, func, select, update
 
 from app.core.config import settings
 from app.core.security import hash_password
@@ -47,6 +50,8 @@ async def _profile(
     where: tuple[float, float] = NEAR,
     photos: int | None = None,
     completed: bool = True,
+    languages: list[str] | None = None,
+    statuses: list[str] | None = None,
 ) -> Profile:
     n_photos = settings.min_photos if photos is None else photos
     profile = Profile(
@@ -58,8 +63,8 @@ async def _profile(
         city="Chișinău",
         lat=where[0],
         lng=where[1],
-        languages=["ro"],
-        dating_statuses=["serious"],
+        languages=languages or ["ro"],
+        dating_statuses=statuses or ["serious"],
         photos=[f"https://cdn.flirt.local/{user.id}/{i}.jpg" for i in range(n_photos)],
         humor_vector={t: 1.0 / len(HUMOR_TYPES) for t in HUMOR_TYPES},
         completed=completed,
@@ -110,6 +115,10 @@ async def _age_swipe(db, me: User, target: User, hours: int) -> None:
 
 async def _feed(db, me: User, limit: int = 50):
     return (await F.get_feed(db, me, limit=limit)).items
+
+
+async def _my_profile(db, me: User) -> Profile:
+    return await db.scalar(select(Profile).where(Profile.user_id == me.id))
 
 
 def _ids(cards) -> list:
@@ -173,24 +182,25 @@ async def test_other_gender_is_last_and_flagged(db_session):
     await _age_swipe(db_session, me, disliked, hours=25)
 
     cards = await _feed(db_session, me)
-    assert _ids(cards) == [old.id, disliked.id, man.id]
-    assert [c.fallback_tier for c in cards] == ["relaxed", "second_chance", "other_gender"]
+    # Dislike-ul din trecerea curentă NU revine (oricât de vechi ar fi): abia o
+    # trecere nouă îl readuce.
+    assert _ids(cards) == [old.id, man.id]
+    assert [c.fallback_tier for c in cards] == ["relaxed", "other_gender"]
     assert cards[-1].outside_filters is True
 
 
-async def test_other_gender_excludes_liked_and_recent_dislike(db_session):
+async def test_other_gender_excludes_liked_and_disliked_in_pass(db_session):
     me = await _me(db_session)
     liked = await _person(db_session, "liked@example.com", gender="male")
-    recent = await _person(db_session, "recent@example.com", gender="male")
-    old_dis = await _person(db_session, "olddis@example.com", gender="male")
+    disliked = await _person(db_session, "dis@example.com", gender="male")
+    fresh = await _person(db_session, "fresh@example.com", gender="male")
     await F.swipe(db_session, me, liked.id, "like")
-    await F.swipe(db_session, me, recent.id, "dislike")
-    await F.swipe(db_session, me, old_dis.id, "dislike")
+    await F.swipe(db_session, me, disliked.id, "dislike")
     await _age_swipe(db_session, me, liked, hours=72)
-    await _age_swipe(db_session, me, old_dis, hours=25)
+    await _age_swipe(db_session, me, disliked, hours=25)
 
     cards = await _feed(db_session, me)
-    assert _ids(cards) == [old_dis.id]
+    assert _ids(cards) == [fresh.id]
     assert cards[0].fallback_tier == "other_gender"
 
 
@@ -204,35 +214,179 @@ async def test_no_other_gender_tier_without_gender_preference(db_session):
 
 
 # --------------------------------------------------------------------------- #
-# A doua șansă
+# Ordine: compatibilitate DESCRESCĂTOR, fără duplicate între pagini
 # --------------------------------------------------------------------------- #
-async def test_second_chance_only_after_24h(db_session):
+async def _ranked_people(db) -> list[User]:
+    """Trei candidate stricte cu scoruri DIFERITE (limbă + status), în ordine."""
+    best = await _person(db, "best@example.com")  # ro + serious, ca mine
+    mid = await _person(db, "mid@example.com", languages=["ru"])
+    low = await _person(db, "low@example.com", languages=["ru"], statuses=["fun"])
+    return [best, mid, low]
+
+
+async def test_order_is_compatibility_desc(db_session):
+    me = await _me(db_session)
+    people = await _ranked_people(db_session)
+    cards = await _feed(db_session, me)
+    assert _ids(cards) == [u.id for u in people]
+    scores = [c.compatibility for c in cards]
+    assert scores == sorted(scores, reverse=True) and len(set(scores)) == 3
+
+
+async def test_cursor_pages_have_no_duplicates_across_tiers(db_session):
+    me = await _me(db_session)
+    for i in range(4):
+        await _person(db_session, f"s{i}@example.com")
+    await _person(db_session, "old@example.com", age=45)
+    await _person(db_session, "far@example.com", where=FAR)
+    await _person(db_session, "man@example.com", gender="male")
+
+    seen: list = []
+    keys: list = []
+    cursor = None
+    for _ in range(10):
+        page = await F.get_feed(db_session, me, limit=3, cursor=cursor)
+        for c in page.items:
+            seen.append(c.user_id)
+            tier = {None: 0, "relaxed": 1, "other_gender": 2}[c.fallback_tier]
+            keys.append((tier, -c.compatibility, str(c.user_id)))
+        cursor = page.next_cursor
+        if cursor is None:
+            break
+    assert len(seen) == 7 and len(set(seen)) == 7
+    assert keys == sorted(keys), "Treaptă, apoi compatibilitate descrescător."
+
+
+async def _feed_statements(db, engine, me: User, limit: int) -> tuple[list, list[str]]:
+    statements: list[str] = []
+
+    def _count(_conn, _cursor, statement, *_args):
+        statements.append(statement)
+
+    event.listen(engine.sync_engine, "before_cursor_execute", _count)
+    try:
+        cards = await _feed(db, me, limit=limit)
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", _count)
+    return cards, statements
+
+
+async def test_all_tiers_come_from_at_most_two_retrieval_queries(db_session, engine):
+    """Performanță: strict + TOATE treptele de completare = 2 retrieval-uri + 1 interese.
+
+    Înainte, fiecare treaptă de fallback rula propriul retrieval + interese (până
+    la ~11 query-uri per cerere, cu `NOT IN (…uuid)` pentru deduplicare).
+    """
+    me = await _me(db_session)
+    await _person(db_session, "s@example.com")
+    await _person(db_session, "old@example.com", age=45)
+    await _person(db_session, "man@example.com", gender="male")
+
+    cards, statements = await _feed_statements(db_session, engine, me, limit=50)
+    assert len(cards) == 3
+    assert sum("FROM profiles JOIN users" in s for s in statements) == 2, statements
+    assert sum("FROM profile_interests" in s for s in statements) == 1, statements
+    assert len(statements) <= 7, statements
+
+
+async def test_full_strict_page_needs_one_retrieval_query(db_session, engine):
+    """Cazul obișnuit: strict-ul umple pagina ⇒ treptele de completare nici nu se citesc."""
+    me = await _me(db_session)
+    for i in range(3):
+        await _person(db_session, f"s{i}@example.com")
+    await _person(db_session, "man@example.com", gender="male")
+
+    cards, statements = await _feed_statements(db_session, engine, me, limit=2)
+    assert len(cards) == 2 and all(c.fallback_tier is None for c in cards)
+    assert sum("FROM profiles JOIN users" in s for s in statements) == 1, statements
+
+
+async def test_legacy_cursor_is_still_accepted(db_session):
+    me = await _me(db_session)
+    people = await _ranked_people(db_session)
+    first = (await F.get_feed(db_session, me, limit=1)).items[0]
+    legacy = (
+        base64.urlsafe_b64encode(f"{first.compatibility}:{first.user_id}".encode())
+        .decode()
+        .rstrip("=")
+    )
+    page = await F.get_feed(db_session, me, limit=5, cursor=legacy)
+    assert _ids(page.items) == [u.id for u in people[1:]]
+
+
+# --------------------------------------------------------------------------- #
+# Treceri: după ce i-a văzut pe toți, feed-ul o ia de la capăt
+# --------------------------------------------------------------------------- #
+async def test_disliked_comes_back_only_in_a_new_pass(db_session):
     me = await _me(db_session)
     her = await _person(db_session, "her@example.com")
+    other = await _person(db_session, "other@example.com")
+
     await F.swipe(db_session, me, her.id, "dislike")
+    # Mai e cineva nevăzut ⇒ aceeași trecere, ea nu revine.
+    assert _ids(await _feed(db_session, me)) == [other.id]
+    assert (await _my_profile(db_session, me)).feed_cycle_started_at is None
 
-    assert her.id not in _ids(await _feed(db_session, me))
-
-    await _age_swipe(db_session, me, her, hours=23)
-    assert her.id not in _ids(await _feed(db_session, me))
-
-    await _age_swipe(db_session, me, her, hours=25)
+    await F.swipe(db_session, me, other.id, "dislike")
     cards = await _feed(db_session, me)
-    assert _tier(cards, her) == "second_chance"
+    # Toți văzuți ⇒ trecere nouă: amândouă revin, marcate „încă o șansă".
+    assert set(_ids(cards)) == {her.id, other.id}
+    assert all(c.fallback_tier == "second_chance" for c in cards)
+    assert all(c.outside_filters is False for c in cards)
+    assert (await _my_profile(db_session, me)).feed_cycle_started_at is not None
 
 
-async def test_second_chance_never_liked_or_matched(db_session):
+async def test_new_pass_keeps_compatibility_order(db_session):
+    me = await _me(db_session)
+    people = await _ranked_people(db_session)
+    for u in people:
+        await F.swipe(db_session, me, u.id, "dislike")
+    cards = await _feed(db_session, me)
+    assert _ids(cards) == [u.id for u in people]
+
+
+async def test_new_pass_never_brings_back_liked_or_matched(db_session):
     me = await _me(db_session)
     liked = await _person(db_session, "liked@example.com")
     matched = await _person(db_session, "matched@example.com")
+    disliked = await _person(db_session, "dis@example.com")
     await F.swipe(db_session, me, liked.id, "like")
     await F.swipe(db_session, matched, me.id, "like")
     res = await F.swipe(db_session, me, matched.id, "like")
     assert res.matched is True
-    for u in (liked, matched):
-        await _age_swipe(db_session, me, u, hours=24 * 30)
+    await F.swipe(db_session, me, disliked.id, "dislike")
 
+    for _ in range(3):  # oricâte treceri: doar dislike-ul revine
+        assert _ids(await _feed(db_session, me)) == [disliked.id]
+        await F.swipe(db_session, me, disliked.id, "dislike")
+
+
+async def test_super_liked_never_comes_back(db_session):
+    me = await _me(db_session)
+    her = await _person(db_session, "her@example.com")
+    await F.swipe(db_session, me, her.id, "super_like")
     assert await _feed(db_session, me) == []
+
+
+async def test_only_likes_means_truly_empty_without_new_pass(db_session):
+    me = await _me(db_session)
+    her = await _person(db_session, "her@example.com")
+    await F.swipe(db_session, me, her.id, "like")
+    assert await _feed(db_session, me) == []
+    # Nicio trecere nouă inutilă (n-avea pe cine readuce).
+    assert (await _my_profile(db_session, me)).feed_cycle_started_at is None
+
+
+async def test_new_pass_starts_only_without_cursor(db_session):
+    me = await _me(db_session)
+    her = await _person(db_session, "her@example.com")
+    first = (await F.get_feed(db_session, me, limit=1)).items[0]
+    cursor = F._encode_cursor(first.compatibility, first.user_id)
+    await F.swipe(db_session, me, her.id, "dislike")
+    # Capătul unei liste paginate pe cursor = gol; trecerea nouă o pornește
+    # cererea de la începutul listei.
+    assert (await F.get_feed(db_session, me, cursor=cursor)).items == []
+    assert _ids(await _feed(db_session, me)) == [her.id]
 
 
 async def test_matched_never_shown_even_without_my_like_row(db_session):
@@ -246,13 +400,13 @@ async def test_matched_never_shown_even_without_my_like_row(db_session):
 
 
 # --------------------------------------------------------------------------- #
-# Gate-uri dure — în TOATE treptele
+# Gate-uri dure — în TOATE treptele și în orice trecere
 # --------------------------------------------------------------------------- #
 async def test_hard_gates_hold_in_every_tier(db_session):
     me = await _me(db_session)
     now = datetime.now(timezone.utc)
     gated: list[User] = []
-    # Fiecare gate, pe AMBELE genuri (female = strict/relaxed/second_chance,
+    # Fiecare gate, pe AMBELE genuri (female = strict/relaxed,
     # male = other_gender) — niciunul nu are voie să apară.
     for gender in ("female", "male"):
         blocked_by_me = await _person(db_session, f"bme-{gender}@example.com", gender=gender)
@@ -277,7 +431,7 @@ async def test_hard_gates_hold_in_every_tier(db_session):
         await db_session.commit()
         gated += [blocked_by_me, blocks_me, banned, deleted, hidden, minor, no_photos, incomplete]
 
-    # Dislike vechi pe toți (ca și second_chance / other_gender să-i poată „vedea").
+    # Dislike vechi pe toți (o trecere nouă i-ar readuce, dacă ar fi eligibili).
     for u in gated:
         db_session.add(
             Like(
@@ -302,8 +456,10 @@ async def test_hard_gates_hold_in_every_tier(db_session):
     shown = set(_ids(cards))
     assert me.id not in shown
     assert not shown & {u.id for u in gated + [fresh_minor, fresh_banned]}, cards
-    # Nimeni eligibil ⇒ feed GOL (singurul caz în care e gol).
+    # Nimeni eligibil ⇒ feed GOL (singurul caz în care e gol), și după ce s-a
+    # încercat o trecere nouă.
     assert cards == []
+    assert await _feed(db_session, me) == []
 
 
 async def test_my_own_gates_still_apply(db_session):
@@ -324,14 +480,15 @@ async def test_empty_only_when_truly_nobody(db_session):
 
 
 # --------------------------------------------------------------------------- #
-# Re-swipe pe o cartelă „a doua șansă"
+# Re-swipe pe o cartelă revenită într-o trecere nouă
 # --------------------------------------------------------------------------- #
-async def test_reswipe_second_chance_dislike_again_restarts_cooldown(db_session):
+async def test_dislike_again_in_new_pass_excludes_until_next_pass(db_session):
     me = await _me(db_session)
     her = await _person(db_session, "her@example.com")
+    other = await _person(db_session, "other@example.com")
     await F.swipe(db_session, me, her.id, "dislike")
-    await _age_swipe(db_session, me, her, hours=25)
-    assert _tier(await _feed(db_session, me), her) == "second_chance"
+    await F.swipe(db_session, me, other.id, "dislike")
+    assert set(_ids(await _feed(db_session, me))) == {her.id, other.id}  # trecere nouă
 
     res = await F.swipe(db_session, me, her.id, "dislike")
     assert res.matched is False
@@ -341,8 +498,8 @@ async def test_reswipe_second_chance_dislike_again_restarts_cooldown(db_session)
         )
     ).all()
     assert len(rows) == 1 and rows[0].is_like is False
-    # Perioada de 24h a repornit ⇒ nu revine la cererea următoare.
-    assert her.id not in _ids(await _feed(db_session, me))
+    # Refuzată din nou în trecerea curentă ⇒ nu revine până la următoarea.
+    assert _ids(await _feed(db_session, me)) == [other.id]
 
 
 async def test_reswipe_second_chance_like_creates_match_and_notifies(
@@ -357,14 +514,16 @@ async def test_reswipe_second_chance_like_creates_match_and_notifies(
     monkeypatch.setattr(tg_notify, "notify_match", lambda **kw: sent_matches.append(kw))
 
     await F.swipe(db_session, me, her.id, "dislike")
-    await _age_swipe(db_session, me, her, hours=25)
     # Ea îmi dă like între timp.
     await F.swipe(db_session, her, me.id, "like")
     # Un swipe mai recent pe altcineva (pentru verificarea lui undo).
     await F.swipe(db_session, me, other.id, "like")
     sent_likes.clear()
 
-    assert _tier(await _feed(db_session, me), her) == "second_chance"
+    # Toți văzuți (dislike / like) ⇒ trecere nouă: ea revine, like-ul nu.
+    cards = await _feed(db_session, me)
+    assert _ids(cards) == [her.id]
+    assert _tier(cards, her) == "second_chance"
     res = await F.swipe(db_session, me, her.id, "like")
     assert res.matched is True and res.chat_id is not None
     assert len(sent_matches) == 1 and sent_matches[0]["recipient_id"] == her.id
@@ -394,7 +553,6 @@ async def test_second_chance_like_without_reciprocal_notifies_like(
     monkeypatch.setattr(tg_notify, "notify_like", lambda **kw: sent.append(kw))
 
     await F.swipe(db_session, me, her.id, "dislike")
-    await _age_swipe(db_session, me, her, hours=25)
     res = await F.swipe(db_session, me, her.id, "like")
     assert res.matched is False
     # Trecerea dislike → like declanșează notificarea de like (o singură dată).
@@ -402,7 +560,7 @@ async def test_second_chance_like_without_reciprocal_notifies_like(
 
 
 async def test_second_chance_reswipe_is_undone_first(db_session):
-    """Re-swipe-ul de „a doua șansă" primește `created_at` proaspăt ⇒ undo îl ia."""
+    """Re-swipe-ul unui dislike primește `created_at` proaspăt ⇒ undo îl ia."""
     me = await _me(db_session)
     her = await _person(db_session, "her@example.com")
     other = await _person(db_session, "other@example.com")
@@ -416,10 +574,25 @@ async def test_second_chance_reswipe_is_undone_first(db_session):
     assert undo.target_user_id == her.id
 
 
+async def test_redislike_consumes_daily_quota(db_session, monkeypatch):
+    """Re-swipe pe un dislike e o decizie NOUĂ ⇒ intră în limita zilnică."""
+    me = await _me(db_session)
+    her = await _person(db_session, "her@example.com")
+    await F.swipe(db_session, me, her.id, "dislike")
+    await _age_swipe(db_session, me, her, hours=25)
+    monkeypatch.setattr(F.settings, "free_daily_swipe_limit", 0)
+    try:
+        await F.swipe(db_session, me, her.id, "dislike")
+    except F.HTTPException as exc:
+        assert exc.status_code == 429
+    else:  # pragma: no cover - mesaj clar la regresie
+        raise AssertionError("Re-swipe-ul unui dislike trebuie să consume din cotă.")
+
+
 # --------------------------------------------------------------------------- #
-# Progres: ce am swipe-uit acum nu revine la cererea următoare
+# Progres: în aceeași trecere nimic nu se repetă; apoi doar dislike-urile revin
 # --------------------------------------------------------------------------- #
-async def test_progress_swiped_cards_never_come_back(db_session):
+async def test_progress_no_repeats_within_a_pass(db_session):
     me = await _me(db_session)
     await _person(db_session, "s@example.com")
     await _person(db_session, "old@example.com", age=45)
@@ -429,20 +602,30 @@ async def test_progress_swiped_cards_never_come_back(db_session):
     await F.swipe(db_session, me, dis.id, "dislike")
     await _age_swipe(db_session, me, dis, hours=25)
 
-    swiped: set = set()
+    liked: set = set()
+    disliked: set = {dis.id}
+    shown_in_pass: set = set()
     rounds = 0
     while True:
         page = await F.get_feed(db_session, me, limit=2)
-        if not page.items:
-            break
+        assert page.items, "Feed-ul nu are voie să se golească: există dislike-uri."
         rounds += 1
         assert rounds < 10, "Feed-ul nu face progres."
+        ids = set(_ids(page.items))
+        if ids & (liked | disliked):
+            # Trecere NOUĂ: abia după ce TOȚI au fost văzuți, și doar dislike-urile.
+            assert len(liked | disliked) == 5
+            assert not ids & liked
+            break
         for card in page.items:
-            assert card.user_id not in swiped, "Cartelă swipe-uită revenită în feed."
+            assert card.user_id not in shown_in_pass, "Repetare în aceeași trecere."
+            shown_in_pass.add(card.user_id)
             # Alternăm like/dislike: ambele trebuie să excludă cartela.
-            action = "like" if len(swiped) % 2 == 0 else "dislike"
-            await F.swipe(db_session, me, card.user_id, action)
-            swiped.add(card.user_id)
+            if len(shown_in_pass) % 2:
+                await F.swipe(db_session, me, card.user_id, "like")
+                liked.add(card.user_id)
+            else:
+                await F.swipe(db_session, me, card.user_id, "dislike")
+                disliked.add(card.user_id)
 
-    assert len(swiped) == 5
-    assert await _feed(db_session, me) == []
+    assert set(_ids(await _feed(db_session, me))) == disliked

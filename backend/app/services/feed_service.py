@@ -2,17 +2,17 @@
 
 Feed-ul are DOUĂ etape distincte (ca orice sistem de recomandare corect):
 
-1. RETRIEVAL (SQL) — toate filtrele DURE se aplică în bază, pe index-uri:
-   profil completat, 18+ (aplicația e 18+ only), genurile căutate
-   (`interested_in`), intervalul de vârstă, raza de căutare (bounding-box pe
-   `lat`/`lng`), excluderile (swipe-uit / blocat / ascuns) prin `NOT EXISTS`,
-   inactivitatea. Ordinea e DETERMINISTĂ (recența activității + tie-break pe id),
-   deci fereastra de candidați nu mai e un eșantion arbitrar din heap.
+1. RETRIEVAL (SQL, max. două query-uri) — filtrele DURE se aplică în bază, pe
+   index-uri: profil completat, 18+ (aplicația e 18+ only), poze, excluderile
+   (swipe-uit în trecerea curentă / blocat / ascuns / match) prin `NOT EXISTS`.
+   Preferințele (gen, vârstă, rază, activitate) dau TREAPTA, calculată tot în SQL
+   (`CASE`). Ordinea e DETERMINISTĂ (treaptă, recența activității, id).
 
 2. RANKING (Python, pur) — `compute_compatibility` peste fereastra retrievată,
    cu distanța reală injectată (calculată din coordonatele PERSISTATE, fără
-   niciun apel de rețea per candidat). Rezultatul e paginat cu cursor pe
-   (scor, user_id) — fără duplicate între pagini.
+   niciun apel de rețea per candidat). Ordinea finală: treaptă, apoi procentul
+   de compatibilitate DESCRESCĂTOR, apoi user_id — totală, deci fără duplicate
+   între pagini. Când toți candidații au fost văzuți, începe o trecere nouă.
 """
 from __future__ import annotations
 
@@ -24,7 +24,17 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, func, nullslast, or_, select
+from sqlalchemy import (
+    and_,
+    case,
+    false,
+    func,
+    literal_column,
+    not_,
+    nullslast,
+    or_,
+    select,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -99,20 +109,28 @@ def _normalized_pair(x: uuid.UUID, y: uuid.UUID) -> tuple[uuid.UUID, uuid.UUID]:
 
 
 # --- Cursor de paginare ------------------------------------------------------
-def _encode_cursor(score: int, user_id: uuid.UUID) -> str:
+def _encode_cursor(score: int, user_id: uuid.UUID, tier: int = 0) -> str:
     """Cursor opac (base64url) peste cheia de sortare a ultimei cartele redate."""
-    raw = f"{score}:{user_id}".encode()
+    raw = f"{tier}:{score}:{user_id}".encode()
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
 
-def _decode_cursor(cursor: str) -> tuple[int, str]:
-    """Decodează cursorul → (scor, user_id ca string). 422 dacă e stricat."""
+def _decode_cursor(cursor: str) -> tuple[int, int, str]:
+    """Decodează cursorul → cheia `(treaptă, -scor, user_id)`. 422 dacă e stricat.
+
+    Acceptă și formatul vechi `scor:user_id` (dinaintea treptelor ⇒ treapta 0).
+    """
     try:
         padding = "=" * (-len(cursor) % 4)
         raw = base64.urlsafe_b64decode(cursor + padding).decode()
-        score_str, user_id_str = raw.split(":", 1)
+        parts = raw.split(":", 2)
+        if len(parts) == 3:
+            tier_str, score_str, user_id_str = parts
+        else:
+            tier_str = "0"
+            score_str, user_id_str = raw.split(":", 1)
         # Validăm forma UUID; un cursor fabricat nu poate injecta nimic.
-        return int(score_str), str(uuid.UUID(user_id_str))
+        return _feed_key(int(tier_str), int(score_str), str(uuid.UUID(user_id_str)))
     except (ValueError, binascii.Error, UnicodeDecodeError):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -121,12 +139,17 @@ def _decode_cursor(cursor: str) -> tuple[int, str]:
 
 
 def _sort_key(score: int, user_id: uuid.UUID | str) -> tuple[int, str]:
-    """Cheia de ordonare a feed-ului: scor DESCRESCĂTOR, apoi user_id (tie-break).
+    """Cheia de ordonare ÎN treaptă: scor DESCRESCĂTOR, apoi user_id (tie-break).
 
     Ordonarea e TOTALĂ (user_id e unic), deci paginarea pe cursor nu poate
     întoarce duplicate și nici nu poate sări cartele la scoruri egale.
     """
     return (-score, str(user_id))
+
+
+def _feed_key(tier: int, score: int, user_id: uuid.UUID | str) -> tuple[int, int, str]:
+    """Cheia TOTALĂ a feed-ului: treapta, apoi `_sort_key` (scor desc, user_id)."""
+    return (tier, *_sort_key(score, user_id))
 
 
 async def _interests_by_profile(
@@ -230,27 +253,34 @@ def _distance_between(a: Profile, b: Profile) -> float | None:
     return geo.haversine_km(float(a.lat), float(a.lng), float(b.lat), float(b.lng))
 
 
-# --- Feed în TREPTE (fallback când feed-ul strict s-a epuizat) ----------------
+# --- Feed în TREPTE + TRECERI (cicluri) -------------------------------------
 # Context: cu puține profiluri reale, userii epuizau repede feed-ul strict și
 # vedeau „Nu mai sunt ankete". Decizie de produs („Tot, în trepte"): arătăm
 # profiluri ORICUM, dar în ordine — întâi cele mai apropiate de preferințe.
-#   1. strict         — feed-ul normal (neschimbat);
-#   2. relaxed        — fără interval de vârstă, rază și filtru de inactivitate,
-#                       dar cu genul căutat;
-#   3. second_chance  — profiluri cărora le-am dat DISLIKE acum ≥ 24h (genul
-#                       căutat, vârstă/rază relaxate);
-#   4. other_gender   — alte genuri decât cele căutate, ne-swipe-uite (sau
-#                       dislike vechi de ≥ 24h).
+#   1. strict        — preferințele complete (gen, vârstă, rază, activitate);
+#   2. relaxed       — genul căutat, dar în afara vârstei / razei sau inactivi;
+#   3. other_gender  — alte genuri decât cele căutate.
+# ÎN FIECARE treaptă ordinea e procentul de compatibilitate DESCRESCĂTOR (exact
+# cifra din badge-ul cartelei), tie-break pe user_id ⇒ ordine totală, stabilă.
+#
+# TRECERI („pass" / ciclu). Feed-ul parcurge candidații o dată, fără repetări:
+# un like / super like exclude DEFINITIV (aștepți răspuns sau aveți match), un
+# dislike exclude până la sfârșitul TRECERII curente. Când nu mai rămâne nimeni
+# nevăzut, feed-ul pornește singur o trecere nouă (`profiles.feed_cycle_started_at`
+# = acum): dislike-urile din trecerile anterioare nu mai exclud, deci profilurile
+# refuzate reapar, din nou de la cel mai compatibil. Ecranul gol rămâne DOAR
+# pentru „chiar nu există niciun candidat eligibil".
+#
 # Gate-urile DURE (profil complet, 18+, poze, self, block, ban, ascuns, șters,
 # like/match deja dat) NU se relaxează în nicio treaptă — vezi `_hard_gates`.
+FeedTier = Literal["strict", "relaxed", "other_gender"]
 FallbackTier = Literal["relaxed", "second_chance", "other_gender"]
-FALLBACK_TIERS: tuple[FallbackTier, ...] = ("relaxed", "second_chance", "other_gender")
+_TIER_RANK: dict[str, int] = {"strict": 0, "relaxed": 1, "other_gender": 2}
+_RANK_TIER: dict[int, FeedTier] = {0: "strict", 1: "relaxed", 2: "other_gender"}
 
-# După cât timp un dislike devine „a doua șansă". Momentul de referință e
-# `likes.updated_at` — re-swipe-ul îl reîmprospătează, deci un nou dislike
-# repornește perioada (progres garantat: o cartelă refuzată acum nu revine
-# la următoarea cerere).
-SECOND_CHANCE_AFTER = timedelta(hours=24)
+# Un candidat clasat: (rang treaptă, scor, profil, interese, distanță, refuzat
+# într-o trecere anterioară).
+Ranked = tuple[int, int, Profile, set[str], "float | None", bool]
 
 
 def _hard_gates(user_id: uuid.UUID, today: date) -> list:
@@ -258,7 +288,7 @@ def _hard_gates(user_id: uuid.UUID, today: date) -> list:
 
     Profil complet, nu eu, 18+, minimul de poze, block în orice direcție, profil
     ascuns, cont banat sau purjat GDPR, match existent. Excluderea celor cărora
-    le-am dat deja like/dislike e specifică fiecărei trepte (vezi `get_feed`).
+    le-am dat deja like/dislike depinde de trecere (`_swipe_exclusion_clause`).
     """
     conditions = [
         Profile.completed.is_(True),
@@ -317,28 +347,75 @@ def _hard_gates(user_id: uuid.UUID, today: date) -> list:
     return conditions
 
 
-def _not_swiped_clause(user_id: uuid.UUID):
-    """Filtru SQL: n-am dat încă niciun swipe (like SAU dislike) profilului."""
-    return ~(
+def _swipe_exclusion_clause(user_id: uuid.UUID, cycle_started_at: datetime | None):
+    """Filtru SQL: cine NU mai are voie în trecerea curentă din cauza swipe-urilor.
+
+    Exclus: orice like / super like (definitiv — aștepți răspunsul sau aveți
+    deja match) și orice dislike dat în TRECEREA CURENTĂ (`updated_at` ≥ startul
+    trecerii; re-swipe-ul îl reîmprospătează). `cycle_started_at is None` = userul
+    n-a încheiat încă nicio trecere ⇒ orice swipe exclude. Un singur NOT EXISTS
+    pe indexul unic `(from_user_id, to_user_id)`.
+    """
+    swiped = select(Like.id).where(
+        Like.from_user_id == user_id, Like.to_user_id == Profile.user_id
+    )
+    if cycle_started_at is not None:
+        swiped = swiped.where(
+            or_(Like.is_like.is_(True), Like.updated_at >= cycle_started_at)
+        )
+    return ~swiped.exists()
+
+
+def _disliked_before_expr(user_id: uuid.UUID):
+    """Coloană SQL: i-am dat dislike cândva (deci într-o trecere ANTERIOARĂ).
+
+    Folosită DOAR după `_swipe_exclusion_clause`, care a scos deja dislike-urile
+    din trecerea curentă — orice dislike rămas e, prin construcție, mai vechi.
+    """
+    return (
         select(Like.id)
-        .where(Like.from_user_id == user_id, Like.to_user_id == Profile.user_id)
+        .where(
+            Like.from_user_id == user_id,
+            Like.to_user_id == Profile.user_id,
+            Like.is_like.is_(False),
+        )
         .exists()
     )
 
 
-async def _retrieve(db: AsyncSession, conditions: list) -> list:
-    """Un SINGUR query de retrieval: (Profile, User) eligibili, ordine deterministă.
+async def _has_dislikes_in_cycle(
+    db: AsyncSession, user_id: uuid.UUID, cycle_started_at: datetime | None
+) -> bool:
+    """True dacă o trecere nouă ar avea pe cine readuce (dislike-uri în trecerea curentă).
 
-    ORDER BY DETERMINIST + plafon de scanare (anti-DoS, `feed_scan_limit`).
-    Fereastra nu e un eșantion arbitrar din heap: e „cei mai recent activi"
-    candidați ELIGIBILI (candidate generation), peste care se aplică ranking-ul.
-    Același plafon pentru fiecare treaptă.
+    Fără ele, „trecere nouă" n-ar schimba nimic: nu scriem degeaba pe profil la
+    fiecare cerere a unui user care chiar nu are candidați.
     """
+    stmt = select(Like.id).where(Like.from_user_id == user_id, Like.is_like.is_(False))
+    if cycle_started_at is not None:
+        stmt = stmt.where(Like.updated_at >= cycle_started_at)
+    return (await db.execute(stmt.limit(1))).first() is not None
+
+
+async def _retrieve(
+    db: AsyncSession, conditions: list, tier_rank, disliked_before
+) -> list:
+    """Un query de retrieval: (Profile, last_active_at, rang treaptă, refuzat_înainte).
+
+    Treapta se calculează în SQL (`CASE`), deci treptele de completare vin
+    TOATE dintr-un singur query, fără `NOT IN (…uuid)` pentru deduplicare. Din
+    `users` luăm DOAR `last_active_at` (semnalul comportamental), nu tot rândul.
+
+    ORDER BY DETERMINIST + plafon de scanare (anti-DoS, `feed_scan_limit`):
+    treapta, apoi cei mai recent activi, tie-break pe id. Ranking-ul pe
+    compatibilitate se face peste fereastră.
+    """
+    rank_col = tier_rank.label("tier_rank")
     stmt = (
-        select(Profile, User)
+        select(Profile, User.last_active_at, rank_col, disliked_before.label("seen"))
         .join(User, User.id == Profile.user_id)
         .where(*conditions)
-        .order_by(nullslast(User.last_active_at.desc()), Profile.user_id)
+        .order_by(rank_col, nullslast(User.last_active_at.desc()), Profile.user_id)
         .limit(max(0, settings.feed_scan_limit))
     )
     return list((await db.execute(stmt)).all())
@@ -349,41 +426,41 @@ async def _rank(
     my_profile: Profile,
     rows: list,
     radius_km: int | None,
-) -> list[tuple[int, Profile, set[str], float | None]]:
+) -> list[Ranked]:
     """RANKING pur peste fereastra retrievată, cu distanța reală injectată.
 
-    `radius_km` setat = filtru EXACT pe rază (bounding-box-ul din SQL e doar un
-    superset al cercului); `None` = fără filtru de rază (treptele de fallback).
+    `radius_km` setat = raza EXACTĂ (bounding-box-ul din SQL e doar un superset
+    al cercului): un candidat „strict" în afara cercului coboară în `relaxed`.
     Un singur query de interese pentru toată fereastra — fără N+1.
+
+    Ordinea întoarsă: treaptă, apoi compatibilitate DESCRESCĂTOR, apoi user_id.
     """
     if not rows:
         return []
-    candidates = [row[0] for row in rows]
-    # User-ul e deja în ACELAȘI rând (join-ul exista deja pentru ORDER BY), deci
-    # semnalul comportamental (recența activității) nu costă niciun query în plus
-    # — fără N+1. Indexat pe `profile.id` pentru lookup în bucla de scoring.
-    users_by_profile: dict[uuid.UUID, User] = {row[0].id: row[1] for row in rows}
-
     interests_map = await _interests_by_profile(
-        db, [my_profile.id] + [p.id for p in candidates]
+        db, [my_profile.id] + [row[0].id for row in rows]
     )
     my_interests = interests_map.get(my_profile.id, set())
     # Testul de umor oprit din panou ⇒ umorul nu mai contează la scor.
     humor_enabled = await humor_service.is_enabled(db)
 
-    scored: list[tuple[int, Profile, set[str], float | None]] = []
-    for p in candidates:
+    ranked: list[Ranked] = []
+    for p, last_active_at, tier_rank, seen_before in rows:
         distance_km = _distance_between(my_profile, p)
-        if radius_km is not None and distance_km is not None and distance_km > radius_km:
-            continue
+        tier = int(tier_rank)
+        if (
+            tier == _TIER_RANK["strict"]
+            and radius_km is not None
+            and distance_km is not None
+            and distance_km > radius_km
+        ):
+            tier = _TIER_RANK["relaxed"]
         p_interests = interests_map.get(p.id, set())
         # Semnal comportamental: recența activității țintei + profil verificat.
         # Datele vin din rândul deja retrievat (fără query în plus). Cazul fără
         # `last_active_at` (rând legacy) cade elegant pe neutru în `behavior_score`.
-        cand_user = users_by_profile.get(p.id)
         behavior = behavior_score(
-            cand_user.last_active_at if cand_user is not None else None,
-            verified=bool(getattr(p, "verified", False)),
+            last_active_at, verified=bool(getattr(p, "verified", False))
         )
         score = compute_compatibility(
             my_profile,
@@ -394,11 +471,11 @@ async def _rank(
             behavior,
             humor_enabled=humor_enabled,
         )
-        scored.append((score, p, p_interests, distance_km))
+        ranked.append((tier, score, p, p_interests, distance_km, bool(seen_before)))
 
-    # Ordonare TOTALĂ, deterministă: scor desc, apoi user_id (tie-break).
-    scored.sort(key=lambda item: _sort_key(item[0], item[1].user_id))
-    return scored
+    # Ordonare TOTALĂ, deterministă: treaptă, scor desc, apoi user_id (tie-break).
+    ranked.sort(key=lambda item: _feed_key(item[0], item[1], item[2].user_id))
+    return ranked
 
 
 def _make_card(
@@ -435,7 +512,7 @@ async def get_feed(
     limit: int | None = None,
     cursor: str | None = None,
 ) -> FeedPage:
-    """O pagină din feed-ul lui `user`, sortată descrescător după compatibilitate.
+    """O pagină din feed-ul lui `user`: trepte, apoi compatibilitate descrescător.
 
     Filtre DURE (toate în SQL, pe index-uri), valabile în ORICE treaptă:
       - profil completat, nu userul curent;
@@ -443,31 +520,29 @@ async def get_feed(
       - minimul de poze;
       - excluderi prin `NOT EXISTS` (nu prin `NOT IN` cu liste materializate):
         blocați în orice direcție (I1), profil ascuns (I2), match existent;
-      - conturi banate / purjate GDPR.
+      - conturi banate / purjate GDPR;
+      - like / super like dat (definitiv), dislike dat în trecerea curentă.
 
-    Feed-ul STRICT (treapta 1) mai aplică preferințele:
-      - genurile căutate (`interested_in`) și intervalul de vârstă (`age_min`,
-        `age_max`) — fără ele un bărbat heterosexual primea bărbați în feed;
-      - raza de căutare (`search_radius_km`) — bounding-box pe `lat`/`lng`, apoi
-        haversine EXACT în Python (setarea nu mai e decorativă);
-      - deja swipe-uiți (like sau dislike);
-      - conturi inactive de peste `feed_max_inactive_days`.
+    Treapta (vezi comentariul de la `FeedTier`) e calculată în SQL — întâi
+    strict-ul, apoi (doar dacă nu umple pagina) restul treptelor într-un query:
+      - strict: genurile căutate (`interested_in`), intervalul de vârstă, raza
+        (bounding-box în SQL, haversine EXACT în Python), activ în ultimele
+        `feed_max_inactive_days` zile;
+      - relaxed: genul căutat, restul în afara preferințelor;
+      - other_gender: alte genuri (doar când există o preferință de gen).
 
-    Limba NU mai e un gate DUR (pool mai larg): profilurile fără limbă comună
-    RĂMÂN în feed, dar factorul de limbă (10% din scor) le clasează mai jos.
-    Vezi `compatibility._languages_score`.
+    Limba NU e un gate DUR (pool mai larg): profilurile fără limbă comună RĂMÂN
+    în feed, dar factorul de limbă (10% din scor) le clasează mai jos.
 
-    FALLBACK ÎN TREPTE: dacă feed-ul strict NU umple pagina, completăm, în
-    ordine, din `relaxed` → `second_chance` → `other_gender` (vezi
-    `FALLBACK_TIERS`). O treaptă rulează DOAR dacă precedentele n-au umplut
-    pagina; fiecare e UN query de retrieval + UN query de interese. Cartelele
-    din fallback poartă `fallback_tier` + `outside_filters` și NU au cursor
-    (clientul recere prima pagină și deduplică după user_id); progresul e
-    garantat de excluderi: like ⇒ exclus definitiv, dislike ⇒ exclus 24h.
+    Cartelele din afara feed-ului strict poartă `fallback_tier` + `outside_filters`;
+    o cartelă strictă refuzată într-o trecere anterioară poartă `second_chance`.
 
-    Ranking: `compute_compatibility` (pur), cu distanța reală + semnalul
-    comportamental (recența activității + verificare) injectate.
-    Paginare (strict): cursor pe (scor, user_id) — fără duplicate între pagini.
+    TRECERI: când nu mai rămâne niciun candidat nevăzut, pornim automat o trecere
+    nouă și întoarcem prima ei pagină — dislike-urile reapar, like-urile nu.
+
+    Paginare: clientul poate re-cere prima pagină după swipe-uri (serverul
+    exclude ce s-a swipe-uit) sau poate folosi cursorul pe (treaptă, scor,
+    user_id) — ordinea e totală, deci fără duplicate între pagini.
     """
     # Limita implicită + plafonul vin din config (fără hardcodare).
     limit = settings.feed_limit if limit is None else limit
@@ -497,45 +572,32 @@ async def get_feed(
     today = date.today()
     wanted_genders = list(prefs.interested_in or [])
 
-    # --- 1. RETRIEVAL STRICT: gate-uri dure + preferințe, în SQL --------------
-    conditions = _hard_gates(user.id, today)
-
-    # Intervalul de vârstă căutat (preferință) — tot pe coloana indexată.
+    # --- 1. Preferințele ⇒ expresia de TREAPTĂ (nu filtre de excludere) ------
     earliest, latest = _birth_date_bounds(prefs.age_min, prefs.age_max, today)
-    conditions.append(Profile.birth_date >= earliest)
-    conditions.append(Profile.birth_date <= latest)
-
+    strict_conditions = [
+        Profile.birth_date >= earliest,
+        Profile.birth_date <= latest,
+    ]
     # Gen / orientare: genurile căutate. Listă goală = fără restricție.
     if wanted_genders:
-        conditions.append(Profile.gender.in_(wanted_genders))
+        strict_conditions.append(Profile.gender.in_(wanted_genders))
 
-    # Deja swipe-uiți (like sau dislike) — nu reapar în feed-ul strict.
-    conditions.append(_not_swiped_clause(user.id))
-
-    # Conturi abandonate: inactive de peste N zile (0 = filtru oprit).
+    # Conturi abandonate: inactive de peste N zile (0 = filtru oprit) ⇒ relaxed.
     # `last_active_at IS NULL` = rând vechi, dinainte de coloană → tratat ca activ.
     if settings.feed_max_inactive_days > 0:
         inactive_cutoff = datetime.now(timezone.utc) - timedelta(
             days=settings.feed_max_inactive_days
         )
-        conditions.append(
+        strict_conditions.append(
             or_(
                 User.last_active_at.is_(None),
                 User.last_active_at >= inactive_cutoff,
             )
         )
 
-    # LIMBA — DELIBERAT FĂRĂ gate dur aici (decizie: pool mai larg). Înainte,
-    # un pre-filtru SQL + un gate exact în Python EXCLUDEAU complet profilurile
-    # fără nicio limbă comună, îngustând mult fereastra de candidați. Acum limba
-    # e o PREFERINȚĂ soft: candidații fără limbă comună rămân în retrieval și
-    # sunt clasați mai jos prin factorul de limbă (10%) din scor. Gate-urile care
-    # au sens (18+, gen, vârstă, poze, rază, block/hidden/ban, self) rămân dure.
-
-    # Raza de căutare: bounding-box pe coordonatele persistate (index lat/lng).
-    # Candidații FĂRĂ coordonate (oraș negeocodabil) NU sunt eliminați aici —
-    # distanța lor e necunoscută, iar un filtru pe rază nu poate decide: ar fi
-    # o excludere arbitrară. Ei rămân, cu scor de distanță neutru.
+    # Raza de căutare: bounding-box pe coordonatele persistate. Candidații FĂRĂ
+    # coordonate (oraș negeocodabil) rămân în strict — distanța lor e
+    # necunoscută, iar o excludere ar fi arbitrară (scor de distanță neutru).
     apply_radius = (
         settings.feed_radius_filter_enabled
         and prefs.radius_km > 0
@@ -549,40 +611,21 @@ async def get_feed(
         box = [Profile.lat.between(min_lat, max_lat)]
         if min_lng is not None and max_lng is not None:
             box.append(Profile.lng.between(min_lng, max_lng))
-        conditions.append(or_(Profile.lat.is_(None), and_(*box)))
+        strict_conditions.append(or_(Profile.lat.is_(None), and_(*box)))
 
-    # --- 2. RANKING: scor pur, cu distanța reală injectată --------------------
-    rows = await _retrieve(db, conditions)
-    scored = await _rank(
-        db, my_profile, rows, prefs.radius_km if apply_radius else None
-    )
-
-    # --- 3. PAGINARE pe cursor -----------------------------------------------
-    remaining = scored
-    if cursor:
-        after = _decode_cursor(cursor)
-        remaining = [
-            item
-            for item in scored
-            if _sort_key(item[0], item[1].user_id) > _sort_key(after[0], after[1])
-        ]
-
-    page = remaining[:limit]
-    next_cursor = (
-        _encode_cursor(page[-1][0], page[-1][1].user_id)
-        if page and len(remaining) > len(page)
-        else None
-    )
-    cards = [_make_card(*item) for item in page]
-    if len(cards) >= limit:
-        return FeedPage(items=cards, next_cursor=next_cursor)
-
-    # --- 4. FALLBACK ÎN TREPTE (strict-ul nu a umplut pagina) ----------------
-    # Dedupe: excludem TOT strict-ul (inclusiv paginile deja livrate prin
-    # cursor), nu doar pagina curentă — altfel `relaxed` (un superset al
-    # strict-ului) ar re-livra cartele strict deja văzute.
-    seen: set[uuid.UUID] = {item[1].user_id for item in scored}
-    second_chance_cutoff = datetime.now(timezone.utc) - SECOND_CHANCE_AFTER
+    # `coalesce`: un predicat NULL (ex. `lng` lipsă) nu are voie să scoată rândul
+    # din AMBELE query-uri (strict și restul) — cade în restul treptelor.
+    is_strict = func.coalesce(and_(*strict_conditions), false())
+    if wanted_genders:
+        # Restul treptelor: genul căutat ⇒ relaxed, altfel other_gender.
+        rest_rank = case(
+            (Profile.gender.in_(wanted_genders), _TIER_RANK["relaxed"]),
+            else_=_TIER_RANK["other_gender"],
+        )
+    else:
+        # Fără preferință de gen, „alte genuri" nu există.
+        rest_rank = literal_column(str(_TIER_RANK["relaxed"]))
+    radius_km = prefs.radius_km if apply_radius else None
 
     def _outside_prefs(p: Profile, distance_km: float | None) -> bool:
         """True dacă profilul e în afara preferințelor (vârstă, rază sau gen)."""
@@ -594,77 +637,85 @@ async def get_feed(
             apply_radius and distance_km is not None and distance_km > prefs.radius_km
         )
 
-    for tier in FALLBACK_TIERS:
-        tier_conditions = _hard_gates(user.id, today)
-        if tier == "relaxed":
-            # Fără vârstă / rază / inactivitate; genul căutat rămâne.
-            if wanted_genders:
-                tier_conditions.append(Profile.gender.in_(wanted_genders))
-            tier_conditions.append(_not_swiped_clause(user.id))
-        elif tier == "second_chance":
-            # DOAR dislike-uri vechi de ≥ 24h. Rândul e unic pe pereche, deci un
-            # dislike exclude implicit like-ul (și, prin el, match-ul).
-            if wanted_genders:
-                tier_conditions.append(Profile.gender.in_(wanted_genders))
-            tier_conditions.append(
-                select(Like.id)
-                .where(
-                    Like.from_user_id == user.id,
-                    Like.to_user_id == Profile.user_id,
-                    Like.is_like.is_(False),
-                    Like.updated_at <= second_chance_cutoff,
-                )
-                .exists()
-            )
-        else:  # other_gender
-            # Fără preferință de gen, „alte genuri" nu există — strict-ul și
-            # relaxed le-au acoperit deja pe toate.
-            if not wanted_genders:
-                continue
-            tier_conditions.append(Profile.gender.not_in(wanted_genders))
-            # Ne-swipe-uiți SAU cu dislike vechi de ≥ 24h: excludem orice like
-            # și orice dislike recent.
-            tier_conditions.append(
-                ~select(Like.id)
-                .where(
-                    Like.from_user_id == user.id,
-                    Like.to_user_id == Profile.user_id,
-                    or_(
-                        Like.is_like.is_(True),
-                        Like.updated_at > second_chance_cutoff,
-                    ),
-                )
-                .exists()
-            )
-        # Dedupe în SQL, ca fereastra de scanare să nu fie consumată de cartele
-        # deja alese. Lista e plafonată (≤ feed_scan_limit per treaptă).
-        if seen:
-            tier_conditions.append(Profile.user_id.not_in(list(seen)))
+    async def _candidates(cycle_started_at: datetime | None) -> list[Ranked]:
+        """Retrieval în cel mult DOUĂ query-uri + UN query de interese.
 
-        tier_rows = await _retrieve(db, tier_conditions)
-        for score, p, p_interests, distance_km in await _rank(
-            db, my_profile, tier_rows, None
-        ):
-            if p.user_id in seen:
-                continue
-            seen.add(p.user_id)
-            cards.append(
-                _make_card(
-                    score,
-                    p,
-                    p_interests,
-                    distance_km,
-                    outside_filters=_outside_prefs(p, distance_km),
-                    fallback_tier=tier,
-                )
-            )
-            if len(cards) >= limit:
-                break
-        if len(cards) >= limit:
-            break
+        Întâi treapta strictă (cazul obișnuit: ea umple pagina, iar fereastra
+        scanată și scorată e mică). Abia dacă strict-ul NU umple pagina (sau se
+        cere o pagină prin cursor, care poate cădea în orice treaptă), încă UN
+        query aduce TOATE treptele de completare deodată — nu câte unul per
+        treaptă, ca înainte.
+        """
+        base = _hard_gates(user.id, today)
+        base.append(_swipe_exclusion_clause(user.id, cycle_started_at))
+        disliked = _disliked_before_expr(user.id)
+        strict_rank = literal_column(str(_TIER_RANK["strict"]))
+        rows = await _retrieve(db, [*base, is_strict], strict_rank, disliked)
+        strict_count = sum(
+            1
+            for row in rows
+            if radius_km is None
+            or (distance := _distance_between(my_profile, row[0])) is None
+            or distance <= radius_km
+        )
+        if cursor is not None or strict_count <= limit:
+            rows += await _retrieve(db, [*base, not_(is_strict)], rest_rank, disliked)
+        return await _rank(db, my_profile, rows, radius_km)
 
-    # Pagina conține cartele de fallback ⇒ fără cursor (strict-ul s-a epuizat).
-    return FeedPage(items=cards, next_cursor=None)
+    # --- 2. RETRIEVAL + RANKING ----------------------------------------------
+    ranked = await _candidates(my_profile.feed_cycle_started_at)
+
+    # --- 3. TRECERE NOUĂ: toți candidații au fost văzuți ----------------------
+    # Doar la cererea fără cursor (începutul listei) și doar dacă există pe cine
+    # readuce. Altfel ecranul gol e adevărul: nu există niciun candidat eligibil.
+    if (
+        not ranked
+        and cursor is None
+        and await _has_dislikes_in_cycle(
+            db, user.id, my_profile.feed_cycle_started_at
+        )
+    ):
+        my_profile.feed_cycle_started_at = datetime.now(timezone.utc)
+        await db.commit()
+        logger.info("Feed: trecere nouă pentru user_id=%s", user.id)
+        ranked = await _candidates(my_profile.feed_cycle_started_at)
+
+    # --- 4. PAGINARE pe cursor -----------------------------------------------
+    remaining = ranked
+    if cursor:
+        after = _decode_cursor(cursor)
+        remaining = [
+            item
+            for item in ranked
+            if _feed_key(item[0], item[1], item[2].user_id) > after
+        ]
+
+    page = remaining[:limit]
+    next_cursor = (
+        _encode_cursor(page[-1][1], page[-1][2].user_id, page[-1][0])
+        if page and len(remaining) > len(page)
+        else None
+    )
+    cards: list[FeedCard] = []
+    for tier_rank_value, score, p, p_interests, distance_km, seen_before in page:
+        tier = _RANK_TIER[tier_rank_value]
+        if tier == "strict":
+            fallback: FallbackTier | None = "second_chance" if seen_before else None
+            outside = False
+        else:
+            fallback = tier
+            outside = _outside_prefs(p, distance_km)
+        cards.append(
+            _make_card(
+                score,
+                p,
+                p_interests,
+                distance_km,
+                outside_filters=outside,
+                fallback_tier=fallback,
+            )
+        )
+    return FeedPage(items=cards, next_cursor=next_cursor)
 
 
 async def _authorize_swipe(
@@ -891,21 +942,17 @@ async def swipe(
         db.add(like)
     else:
         now = datetime.now(timezone.utc)
-        # „A doua șansă" (treapta `second_chance` din feed): re-swipe pe un
-        # dislike mai vechi de `SECOND_CHANCE_AFTER`. E un swipe NOU în fapt —
-        # consumă din cota zilnică și primește `created_at` proaspăt, ca `undo`
-        # (ordonat pe `created_at`) să-l anuleze pe EL, nu un swipe mai vechi.
-        last_swiped_at = like.updated_at or like.created_at
-        if (
-            not like.is_like
-            and last_swiped_at is not None
-            and last_swiped_at <= now - SECOND_CHANCE_AFTER
-        ):
+        # Re-swipe pe un DISLIKE = o decizie NOUĂ: cartela a revenit într-o
+        # trecere nouă a feed-ului (sau userul răspunde la un like primit). E un
+        # swipe nou în fapt — consumă din cota zilnică și primește `created_at`
+        # proaspăt, ca `undo` (ordonat pe `created_at`) să-l anuleze pe EL, nu un
+        # swipe mai vechi.
+        if not like.is_like:
             await _enforce_daily_swipe_limit(db, user)
             like.created_at = now
         # Momentul swipe-ului, EXPLICIT: un dislike repetat nu schimbă nicio
-        # coloană, deci `onupdate` n-ar rula. Fără asta, perioada de 24h a celei
-        # de-a doua șanse nu ar reporni și cartela ar reveni imediat în feed.
+        # coloană, deci `onupdate` n-ar rula. Fără asta, dislike-ul n-ar conta în
+        # trecerea curentă a feed-ului și cartela ar reveni imediat.
         like.updated_at = now
         like.is_like = is_like
         # Re-swipe suprascrie flagul, în ambele sensuri: like → super like îl
