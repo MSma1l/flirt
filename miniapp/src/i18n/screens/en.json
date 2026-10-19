@@ -614,5 +614,16 @@
       "allow": "Yes, notify me",
       "later": "Not now"
     }
+  },
+  "humorIntro": {
+    "title": "Why a humor test?",
+    "body": "We'll show you a few short jokes and you tell us whether they made you laugh. That's how we learn your sense of humor, show you more people whose humor clicks with yours, and make the chemistry score more accurate.",
+    "factDuration": "It takes 1–2 minutes.",
+    "factNoWrong": "There are no wrong answers — just be honest.",
+    "factPrivate": "Your answers don't appear on your profile and nobody sees them; we only use them for matching.",
+    "start": "Start the test",
+    "disabledTitle": "The humor test isn't available right now",
+    "disabledBody": "There's nothing you need to do: use the app as usual.",
+    "back": "Back"
   }
 }

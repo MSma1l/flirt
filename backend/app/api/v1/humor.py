@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.humor import HumorCard, HumorProfileOut, HumorSubmitIn
+from app.schemas.humor import (
+    HumorCard,
+    HumorConfigOut,
+    HumorProfileOut,
+    HumorSubmitIn,
+)
 from app.services import humor_service
 
 router = APIRouter()
@@ -20,10 +25,22 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 UserDep = Annotated[User, Depends(get_current_user)]
 
 
+@router.get("/config", response_model=HumorConfigOut)
+async def get_config(db: DbDep, user: UserDep) -> HumorConfigOut:
+    """Testul e activ? + textul ecranului de introducere (protejat).
+
+    Mini App-ul ascunde intrările spre test când `enabled=false`.
+    """
+    return await humor_service.get_config(db)
+
+
 @router.get("/quiz", response_model=list[HumorCard])
-async def get_quiz(user: UserDep) -> list[HumorCard]:
-    """Cardurile quiz-ului de umor (protejat)."""
-    return humor_service.get_quiz()
+async def get_quiz(db: DbDep, user: UserDep) -> list[HumorCard]:
+    """Cardurile ACTIVE ale quiz-ului de umor, în ordinea din panou (protejat).
+
+    Servit și cu testul oprit: aplicația nativă publicată îl cere în onboarding.
+    """
+    return await humor_service.get_quiz(db)
 
 
 @router.post("/submit", response_model=HumorProfileOut)

@@ -1,4 +1,4 @@
-"""Unit teste pentru humor_service — quiz, vector, submit, 404."""
+"""Unit teste pentru humor_service — quiz, vector, submit, 404, comutator."""
 from datetime import date
 
 import pytest
@@ -32,15 +32,21 @@ async def _make_profile(db, user) -> None:
     await db.commit()
 
 
-def test_get_quiz_returns_all_types():
-    cards = H.get_quiz()
+_TYPES_BY_KEY = {q["key"]: q["humor_type"] for q in H.DEFAULT_QUESTIONS}
+
+
+@pytest.mark.asyncio
+async def test_get_quiz_returns_all_types(db_session):
+    """Seed-ul leneș (baza fără migrații) aduce cele 7 glume istorice."""
+    cards = await H.get_quiz(db_session)
     assert len(cards) == len(H.HUMOR_TYPES)
     assert {c.type for c in cards} == set(H.HUMOR_TYPES)
+    assert [c.id for c in cards] == [q["key"] for q in H.DEFAULT_QUESTIONS]
 
 
 def test_build_vector_uniform_when_no_funny():
     answers = [HumorAnswer(card_id="c1", funny=False)]
-    vector = H._build_vector(answers)
+    vector = H._build_vector(answers, _TYPES_BY_KEY)
     assert abs(sum(vector.values()) - 1.0) < 1e-9
     # Toate egale.
     assert len(set(round(v, 6) for v in vector.values())) == 1
@@ -52,7 +58,7 @@ def test_build_vector_weighted_by_funny():
         HumorAnswer(card_id="c2", funny=True),   # dark
         HumorAnswer(card_id="c3", funny=False),  # memes (ignorat)
     ]
-    vector = H._build_vector(answers)
+    vector = H._build_vector(answers, _TYPES_BY_KEY)
     assert abs(sum(vector.values()) - 1.0) < 1e-9
     assert vector["sarcasm"] == 0.5
     assert vector["dark"] == 0.5
@@ -61,7 +67,7 @@ def test_build_vector_weighted_by_funny():
 
 def test_build_vector_ignores_unknown_card():
     answers = [HumorAnswer(card_id="does-not-exist", funny=True)]
-    vector = H._build_vector(answers)
+    vector = H._build_vector(answers, _TYPES_BY_KEY)
     # Niciun card cunoscut amuzant → uniform.
     assert abs(sum(vector.values()) - 1.0) < 1e-9
 
@@ -101,3 +107,35 @@ async def test_get_humor_404_without_profile(db_session):
     with pytest.raises(HTTPException) as exc:
         await H.get_humor(db_session, user)
     assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_is_enabled_defaults_off_without_side_effects(db_session):
+    """Rândul de setări lipsă = OPRIT, iar citirea nu creează nimic."""
+    from app.models.humor import HumorSettings
+
+    assert await H.is_enabled(db_session) is False
+    assert await db_session.get(HumorSettings, H.SETTINGS_ID) is None
+
+
+@pytest.mark.asyncio
+async def test_submit_scores_answers_for_deleted_question_as_unknown(db_session):
+    """O glumă ștearsă între timp nu crapă trimiterea: răspunsul e ignorat."""
+    from sqlalchemy import select
+
+    from app.models.humor import HumorQuestion
+
+    user = await _make_user(db_session, "h5@example.com")
+    await _make_profile(db_session, user)
+    await H.get_quiz(db_session)  # seed
+    q = await db_session.scalar(select(HumorQuestion).where(HumorQuestion.key == "c1"))
+    await db_session.delete(q)
+    await db_session.commit()
+
+    out = await H.submit_quiz(
+        db_session,
+        user,
+        [HumorAnswer(card_id="c1", funny=True), HumorAnswer(card_id="c2", funny=True)],
+    )
+    assert out.vector["dark"] == 1.0
+    assert out.vector["sarcasm"] == 0.0

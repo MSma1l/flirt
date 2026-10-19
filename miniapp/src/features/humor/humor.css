@@ -122,6 +122,50 @@
   overflow-wrap: anywhere;
 }
 
+/* ——— Introducerea (de ce facem testul) ——— */
+
+.hm-intro {
+  text-align: center;
+  align-items: center;
+}
+
+.hm-intro .title {
+  margin: 0;
+}
+
+.hm-intro__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  max-width: 360px;
+  /* Textul vine din panou: îl lăsăm să curgă, fără să-l tăiem. */
+  overflow-wrap: anywhere;
+}
+
+.hm-intro__body p {
+  margin: 0;
+}
+
+.hm-intro__facts {
+  width: 100%;
+  max-width: 360px;
+  margin: 0;
+  padding: var(--space-md) var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  text-align: left;
+  color: var(--color-text-primary);
+}
+
+.hm-intro .hm-actions {
+  width: 100%;
+  max-width: 360px;
+}
+
 /* ——— Butoane ——— */
 
 .hm-actions {

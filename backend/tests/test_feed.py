@@ -1097,8 +1097,10 @@ async def _make_user_without_humor(
 
 
 @pytest.mark.asyncio
-async def test_swipe_rejected_without_humor(client):
+async def test_swipe_rejected_without_humor(client, db_session):
     """User fără vector de umor → swipe respins cu 403 și mesajul specific de umor."""
+    # Poarta de umor există doar cu testul PORNIT din panou (implicit oprit).
+    await conftest.enable_humor_test(db_session)
     a_headers, _ = await _make_user_without_humor(
         client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
     )
@@ -1120,13 +1122,15 @@ async def test_swipe_rejected_without_humor(client):
 
 
 @pytest.mark.asyncio
-async def test_swipe_target_without_humor_still_allowed(client):
+async def test_swipe_target_without_humor_still_allowed(client, db_session):
     """Ținta FĂRĂ umor NU e blocată: gate-ul e doar pe cel care acționează.
 
     A (cu umor) dă like lui B (fără umor). B rămâne o țintă validă — umorul lui
     contează doar la scor, nu la disponibilitate. Confirmă că nu am exclus din
     feed / din swipe userii legacy fără umor.
     """
+    # Poarta de umor există doar cu testul PORNIT din panou (implicit oprit).
+    await conftest.enable_humor_test(db_session)
     a_headers, _ = await _make_user(
         client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
     )
@@ -1144,8 +1148,10 @@ async def test_swipe_target_without_humor_still_allowed(client):
 
 
 @pytest.mark.asyncio
-async def test_swipe_allowed_after_humor_submitted(client):
+async def test_swipe_allowed_after_humor_submitted(client, db_session):
     """Același user, după ce dă testul de umor, poate da swipe (gate-ul se ridică)."""
+    # Poarta de umor există doar cu testul PORNIT din panou (implicit oprit).
+    await conftest.enable_humor_test(db_session)
     a_headers, _ = await _make_user_without_humor(
         client, "a@example.com", _anketa(name="A", birth_year=_ADULT_YEAR)
     )

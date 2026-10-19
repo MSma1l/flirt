@@ -52,6 +52,7 @@ const NAV_SECTIONS: readonly NavSection[] = [
       { to: '/users', key: 'users' },
       { to: '/subscriptions', key: 'subscriptions' },
       { to: '/invites', key: 'invites' },
+      { to: '/humor', key: 'humor' },
     ],
   },
   {

@@ -22,6 +22,7 @@ from app.models.swipe import Like, Match
 from app.models.user import User
 from app.services import feed_service as F
 from app.services.humor_service import HUMOR_TYPES
+from tests.conftest import enable_humor_test
 
 # `asyncio_mode = "auto"` marchează testele `async def`; fără `pytestmark` global,
 # ca helper-ele pure SINCRONE de mai jos să nu fie marcate greșit ca asyncio.
@@ -263,11 +264,27 @@ async def test_swipe_without_humor_403_distinct_detail(db_session):
     # Golim umorul actorului: „complet" (anketă+poze) dar fără testul de umor.
     pa.humor_vector = None
     await db_session.commit()
+    # Poarta există doar cu testul PORNIT din panou (implicit e oprit).
+    await enable_humor_test(db_session)
 
     with pytest.raises(HTTPException) as exc:
         await F.swipe(db_session, a, b.id, "like")
     assert exc.value.status_code == 403
     assert exc.value.detail == F.HUMOR_REQUIRED_DETAIL
+
+
+async def test_swipe_without_humor_allowed_when_test_disabled(db_session):
+    """Testul de umor OPRIT (implicit) ⇒ lipsa vectorului nu mai blochează swipe-ul."""
+    a = await _make_user(db_session, "humor_off_a@example.com")
+    b = await _make_user(db_session, "humor_off_b@example.com")
+    pa = await _complete_profile(db_session, a, gender="male", name="Fara")
+    await _complete_profile(db_session, b, gender="female", name="Cu")
+    pa.humor_vector = None
+    await db_session.commit()
+    await enable_humor_test(db_session, enabled=False)
+
+    result = await F.swipe(db_session, a, b.id, "like")
+    assert result.matched is False
 
 
 async def test_swipe_without_enough_photos_403_distinct_detail(db_session):

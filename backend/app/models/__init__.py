@@ -38,3 +38,4 @@ from app.models.loyalty import (  # noqa: F401
 )
 from app.models.consent import UserConsent  # noqa: F401
 from app.models.activity import ActivityReadMark, ProfileView  # noqa: F401
+from app.models.humor import HumorQuestion, HumorSettings  # noqa: F401

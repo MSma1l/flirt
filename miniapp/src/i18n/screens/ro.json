@@ -618,5 +618,16 @@
       "allow": "Da, anunță-mă",
       "later": "Nu acum"
     }
+  },
+  "humorIntro": {
+    "title": "De ce un test de umor?",
+    "body": "Îți arătăm câteva glume scurte și ne spui dacă te-au amuzat. Așa aflăm ce fel de umor ai și îți arătăm mai des oameni cu un simț al umorului compatibil, iar scorul de chimie devine mai precis.",
+    "factDuration": "Durează 1–2 minute.",
+    "factNoWrong": "Nu există răspunsuri greșite — răspunde sincer.",
+    "factPrivate": "Răspunsurile nu apar în profil și nu le vede nimeni; le folosim doar pentru potrivire.",
+    "start": "Începe testul",
+    "disabledTitle": "Testul de umor nu e disponibil acum",
+    "disabledBody": "Nu trebuie să faci nimic: poți folosi aplicația normal.",
+    "back": "Înapoi"
   }
 }

@@ -51,7 +51,7 @@ from app.schemas.ai import (
     ChatHintOut,
     ChemistryOut,
 )
-from app.services import ai, chat_service, feed_service
+from app.services import ai, chat_service, feed_service, humor_service
 from app.services.compatibility import behavior_score, compute_compatibility
 from app.services.contact_masker import mask_contacts
 
@@ -477,6 +477,7 @@ async def chemistry(
         other_interests,
         distance_km,
         behavior,
+        humor_enabled=await humor_service.is_enabled(db),
     )
 
     # 4. Explicația e opțională: fără AI, scorul rămâne complet valid.

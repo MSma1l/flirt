@@ -193,6 +193,7 @@ def compute_compatibility(
     b_interests: set[str],
     distance_km: float | None = None,
     behavior: float | None = None,
+    humor_enabled: bool = True,
 ) -> int:
     """Scorul de compatibilitate 0–100 între profilurile `a` și `b` (TZ 4.6).
 
@@ -206,12 +207,16 @@ def compute_compatibility(
     deci apelanții care nu au datele de activitate la îndemână (ex. lista de
     match-uri) rămân valizi și neschimbați numeric.
 
+    `humor_enabled=False` (testul de umor oprit din panou) ⇒ factorul de umor
+    ia valoarea neutră pentru TOATĂ lumea: vectorii vechi nu mai diferențiază
+    perechile, dar ponderea rămâne, deci scorurile nu sar brusc pe o scară nouă.
+
     Robust la câmpuri lipsă/None: fiecare factor se degradează la o valoare
     neutră sau placeholder documentat.
     """
     interests = _jaccard(_as_set(a_interests), _as_set(b_interests))
     status = _status_overlap(a, b)
-    humor = _humor_similarity(a, b)
+    humor = _humor_similarity(a, b) if humor_enabled else NEUTRAL_HUMOR
     distance = _distance_score(distance_km)
     languages = _languages_score(a, b)
     behavior = BEHAVIOR_NEUTRAL if behavior is None else _clamp01(behavior)
