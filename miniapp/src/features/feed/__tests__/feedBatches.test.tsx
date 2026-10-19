@@ -15,7 +15,7 @@ import type { FeedCard } from '@mobile/features/feed/types';
 
 import { createTestQueryClient } from '@/test/harness';
 
-import { freshCards, placeInNewList, SwipeDeck } from '../SwipeDeck';
+import { freshCards, nextBatch, placeInNewList, SwipeDeck } from '../SwipeDeck';
 
 vi.mock('@mobile/features/feed/feedApi', () => ({
   fetchFeed: vi.fn(),
@@ -165,6 +165,10 @@ describe('placeInNewList', () => {
     expect(placeInNewList([a, b], 2, [a, b, c])).toBe(2);
   });
 
+  it('trecere nouă lipită la coadă: cardurile refuzate deja nu sunt sărite', () => {
+    expect(placeInNewList([a, b], 2, [a, b, a, b])).toBe(2);
+  });
+
   it('nimic nou → rămâne la capăt', () => {
     expect(placeInNewList([a, b], 2, [a, b])).toBe(2);
   });
@@ -175,5 +179,28 @@ describe('freshCards', () => {
     expect(freshCards([card(1), card(2)], [card(2), card(3), card(3)]).map((x) => x.userId)).toEqual([
       'u3',
     ]);
+  });
+});
+
+describe('nextBatch', () => {
+  const ids = (cards: FeedCard[]) => cards.map((x) => x.userId);
+
+  it('aceeași trecere: scoate cardurile nevăzute deja în listă', () => {
+    // Userul stă la u2; serverul retrimite u2, u3 (nevăzute) + u4 (nou).
+    expect(ids(nextBatch([card(1), card(2), card(3)], 1, [card(2), card(3), card(4)]))).toEqual(['u4']);
+  });
+
+  it('trecere nouă: cardurile swipe-uite înainte de cerere revin', () => {
+    // Toți trei au fost swipe-uiți; serverul a pornit o trecere nouă.
+    expect(ids(nextBatch([card(1), card(2), card(3)], 3, [card(1), card(2), card(3)]))).toEqual([
+      'u1',
+      'u2',
+      'u3',
+    ]);
+  });
+
+  it('un card swipe-uit cât timp cererea era pe drum nu se dublează', () => {
+    // Cererea a plecat de la u2; u2 a fost swipe-uit între timp, dar e în lot.
+    expect(ids(nextBatch([card(1), card(2), card(3)], 1, [card(2), card(4)]))).toEqual(['u4']);
   });
 });

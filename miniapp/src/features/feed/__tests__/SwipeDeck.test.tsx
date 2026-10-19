@@ -254,7 +254,8 @@ describe('erori de acțiune', () => {
   });
 
   it('un refuz al anulării oprește și butonul de undo din starea goală', async () => {
-    vi.mocked(fetchFeed).mockResolvedValue([CARDS[0] as FeedCard]);
+    // Ca serverul real: un card plăcut nu mai revine în loturile următoare.
+    vi.mocked(fetchFeed).mockResolvedValueOnce([CARDS[0] as FeedCard]).mockResolvedValue([]);
     const card = await renderDeck();
     drag(card, 200, 0);
     await waitFor(() => expect(swipe).toHaveBeenCalledOnce());

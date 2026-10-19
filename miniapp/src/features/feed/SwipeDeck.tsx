@@ -67,13 +67,13 @@ const FEED_QUERY_KEY = ['feed'] as const;
 const PREFETCH_REMAINING = 2;
 
 /**
- * Lotul următor de ankete: cardurile din `page` care NU sunt deja în listă.
+ * Lotul următor de ankete: cardurile din `page` care NU sunt deja în `known`.
  *
- * `GET /feed/` întoarce un singur lot (`feed_limit`, implicit 10) și exclude pe
- * server tot ce userul a swipe-uit deja. Deci aceeași cerere, repetată după ce
- * lotul curent s-a consumat, aduce exact următorii candidați — fără cursor (al
- * cărui scor se mișcă odată cu activitatea candidaților). Cardurile încă
- * nevăzute din lotul curent revin și ele în răspuns; le scoatem aici.
+ * `GET /feed/` întoarce un lot (`feed_limit`, implicit 10), ordonat după
+ * compatibilitate, și exclude pe server tot ce userul a swipe-uit în TRECEREA
+ * curentă. Deci aceeași cerere, repetată după ce lotul curent s-a consumat, aduce
+ * exact următorii candidați. Cardurile încă nevăzute din lotul curent revin și
+ * ele în răspuns; le scoatem aici, ca și dublurile din pagină.
  */
 export function freshCards(known: readonly FeedCard[], page: readonly FeedCard[]): FeedCard[] {
   const seen = new Set(known.map((card) => card.userId));
@@ -87,28 +87,21 @@ export function freshCards(known: readonly FeedCard[], page: readonly FeedCard[]
 }
 
 /**
- * Cardurile DE COMPLETARE (în afara filtrelor) pe care userul le-a swipe-uit în
- * sesiunea curentă a Mini App-ului.
+ * Ce lipim la coada listei dintr-un lot cerut când userul stătea la `from`.
  *
- * Când potrivirile stricte se termină, serverul umple lotul pe trepte, iar
- * treapta `second_chance` aduce înapoi profiluri refuzate cândva. Un astfel de
- * card, refuzat ACUM, nu trebuie să mai apară în aceeași sesiune — nici în
- * lotul următor, nici la o reîncărcare a listei (invalidare, „Caută mai
- * multe"). Serverul exclude deja swipe-urile normale; aici e plasa de siguranță
- * pentru treptele care, prin definiție, readuc profiluri. La nivel de modul, ca
- * să supraviețuiască schimbării de tab (deck-ul se demontează).
+ * Comparăm DOAR cu cardurile de la `from` încolo: cele încă nevăzute și cele
+ * swipe-uite cât timp cererea era pe drum (serverul le-a putut citi înainte de
+ * swipe). Cardurile de dinainte de `from` au fost swipe-uite și confirmate de
+ * server ÎNAINTE de cerere — dacă serverul le trimite din nou, înseamnă că a
+ * pornit o TRECERE NOUĂ (toți au fost văzuți, iar refuzații revin de la cel mai
+ * compatibil). Atunci ele chiar trebuie să reapară, nu să fie ascunse ca dubluri.
  */
-const sessionSwipedFallback = new Set<string>();
-
-/** Doar pentru teste: o sesiune nouă. */
-export function resetSessionSwipes(): void {
-  sessionSwipedFallback.clear();
-}
-
-/** Un lot de la server, fără cardurile de completare swipe-uite în sesiune. */
-async function fetchFeedPage(): Promise<FeedCard[]> {
-  const page = await fetchFeed();
-  return page.filter((card) => !sessionSwipedFallback.has(card.userId));
+export function nextBatch(
+  known: readonly FeedCard[],
+  from: number,
+  page: readonly FeedCard[],
+): FeedCard[] {
+  return freshCards(known.slice(Math.max(0, from)), page);
 }
 
 /**
@@ -131,6 +124,16 @@ export function placeInNewList(
       0,
       next.findIndex((card) => card.userId === anchor),
     );
+  }
+  // Lot LIPIT la coada listei (aceeași listă + carduri noi la final): userul
+  // continuă exact de unde era. Contează la o trecere nouă, când cardurile
+  // lipite sunt chiar cele refuzate deja — n-au voie să fie sărite ca „trecute".
+  if (
+    previous &&
+    next.length >= previous.length &&
+    previous.every((card, i) => next[i]?.userId === card.userId)
+  ) {
+    return Math.min(index, next.length);
   }
   const passed = new Set((previous ?? []).slice(0, index).map((card) => card.userId));
   const first = next.findIndex((card) => !passed.has(card.userId));
@@ -172,7 +175,7 @@ export function SwipeDeck() {
   const queryClient = useQueryClient();
   const { data, isLoading, isError, refetch } = useQuery<FeedCard[]>({
     queryKey: FEED_QUERY_KEY,
-    queryFn: fetchFeedPage,
+    queryFn: fetchFeed,
   });
 
   const [index, setIndex] = useState(0);
@@ -277,45 +280,57 @@ export function SwipeDeck() {
    * următor când rămân `PREFETCH_REMAINING` carduri și îl LIPIM la coada listei
    * (aceeași cheie de cache), deci poziția userului nu se mișcă.
    *
-   * Starea „gata" e legată de lista pentru care s-a constatat: o listă nouă
-   * (reîncărcare, invalidare din Setări) are voie să ceară din nou.
+   * Starea e legată de lista pentru care s-a constatat: o listă nouă
+   * (reîncărcare, invalidare din Setări) are voie să ceară din nou. „Gata" e
+   * legat și de POZIȚIA la care s-a constatat: după încă un swipe întrebăm din
+   * nou, fiindcă după ultimul card serverul poate porni o trecere nouă (cei
+   * refuzați revin). Ecranul gol rămâne doar pentru „serverul chiar n-are pe
+   * nimeni", nici măcar după o trecere nouă.
    */
   const [more, setMore] = useState<{
     status: 'idle' | 'loading' | 'error' | 'done';
     /** Lista pentru care e valabilă starea; alta = `idle`. */
     list?: FeedCard[];
+    /** Poziția la care s-a constatat „gata"; alta = `idle`. */
+    at?: number;
   }>({ status: 'idle' });
-  const moreStatus = more.list === data ? more.status : 'idle';
+  const moreStatus =
+    more.list !== data || (more.status === 'done' && more.at !== index) ? 'idle' : more.status;
   const loadingMoreRef = useRef(false);
-  const loadMore = useCallback(async () => {
-    const base = queryClient.getQueryData<FeedCard[]>(FEED_QUERY_KEY);
-    if (!base || loadingMoreRef.current) return;
-    loadingMoreRef.current = true;
-    setMore({ status: 'loading', list: base });
-    try {
-      const page = await fetchFeedPage();
-      const known = queryClient.getQueryData<FeedCard[]>(FEED_QUERY_KEY) ?? base;
-      const fresh = freshCards(known, page);
-      if (fresh.length === 0) {
-        setMore({ status: 'done', list: known });
-      } else {
-        queryClient.setQueryData<FeedCard[]>(FEED_QUERY_KEY, [...known, ...fresh]);
-        setMore({ status: 'idle' });
+  const loadMore = useCallback(
+    async (from: number) => {
+      const base = queryClient.getQueryData<FeedCard[]>(FEED_QUERY_KEY);
+      if (!base || loadingMoreRef.current) return;
+      loadingMoreRef.current = true;
+      setMore({ status: 'loading', list: base });
+      try {
+        const page = await fetchFeed();
+        const known = queryClient.getQueryData<FeedCard[]>(FEED_QUERY_KEY) ?? base;
+        // Lista a fost înlocuită între timp (reîncărcare): poziția nu mai e a ei,
+        // deci comparăm cu toată lista.
+        const fresh = known === base ? nextBatch(known, from, page) : freshCards(known, page);
+        if (fresh.length === 0) {
+          setMore({ status: 'done', list: known, at: from });
+        } else {
+          queryClient.setQueryData<FeedCard[]>(FEED_QUERY_KEY, [...known, ...fresh]);
+          setMore({ status: 'idle' });
+        }
+      } catch {
+        setMore({ status: 'error', list: base });
+      } finally {
+        loadingMoreRef.current = false;
       }
-    } catch {
-      setMore({ status: 'error', list: base });
-    } finally {
-      loadingMoreRef.current = false;
-    }
-  }, [queryClient]);
+    },
+    [queryClient],
+  );
 
   const remaining = cards.length - index;
   useEffect(() => {
     // Un feed gol de la prima cerere e chiar „nu e nimeni": nu insistăm.
     if (!data || data.length === 0 || isError) return;
     if (remaining > PREFETCH_REMAINING || moreStatus !== 'idle') return;
-    void loadMore();
-  }, [data, isError, remaining, moreStatus, loadMore]);
+    void loadMore(index);
+  }, [data, isError, remaining, moreStatus, loadMore, index]);
 
   const resetCard = useCallback(() => {
     setSettling(true);
@@ -327,7 +342,6 @@ export function SwipeDeck() {
     setActionError(null);
     try {
       const result = await swipe(card.userId, action);
-      if (card.outsideFilters === true) sessionSwipedFallback.add(card.userId);
       if (result.matched) setMatchName(card.name);
       setSwipeCount((c) => c + 1);
       setIndex((i) => i + 1);
@@ -355,8 +369,6 @@ export function SwipeDeck() {
     try {
       const result = await undoSwipe();
       if (result.undone) {
-        // Cardul anulat revine pe ecran: nu-l mai ascundem din loturile viitoare.
-        if (result.targetUserId) sessionSwipedFallback.delete(result.targetUserId);
         setSwipeCount((c) => Math.max(0, c - 1));
         setIndex((i) => Math.max(0, i - 1));
         setOffset(ORIGIN);
@@ -593,7 +605,7 @@ export function SwipeDeck() {
           actions={[
             {
               label: t('actions.retry', { ns: 'common' }),
-              onClick: () => void loadMore(),
+              onClick: () => void loadMore(index),
               testId: 'deck-retry',
             },
           ]}
