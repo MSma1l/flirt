@@ -92,6 +92,14 @@
   line-height: 30px;
 }
 
+/* „+" desenat (SVG), nu caracterul `＋`: glifa lată din font stă diferit pe
+   fiecare telefon (de obicei prea jos) și nu se centra în cerc. */
+.st-bar__plus {
+  width: 45%;
+  height: 45%;
+  display: block;
+}
+
 .st-bar__item--active .st-bar__ring {
   box-shadow: 0 0 0 3px var(--color-accent-glow);
 }
@@ -205,6 +213,11 @@
   padding-left: max(var(--safe-left), var(--space-lg));
   padding-right: max(var(--safe-right), var(--space-lg));
   overflow-y: auto;
+  /* Overlay-ul (vizualizare + „Новая история") se derulează DOAR vertical. Fără
+     asta, `overflow-y: auto` face și axa X derulabilă, iar orice pixel în plus pe
+     lățime lasă ecranul să „alunece" stânga-dreapta sub deget. */
+  overflow-x: hidden;
+  touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
 }
@@ -217,7 +230,8 @@
   gap: var(--space-md);
   padding-block: var(--space-md);
   width: 100%;
-  max-width: 520px;
+  max-width: min(520px, 100%);
+  min-width: 0;
   margin: 0 auto;
 }
 
@@ -229,9 +243,14 @@
   z-index: 31;
   background: var(--color-bg);
   overflow: hidden;
+  /* Camera e un ecran fix: niciun gest nu derulează sau mișcă ceva sub ea. */
+  touch-action: none;
 }
 
 .st-camera__video { width: 100%; height: 100%; object-fit: cover; }
+/* Camera frontală: previzualizarea e oglindită ca într-o aplicație de cameră,
+   DOAR vizual. Poza capturată rămâne neoglindită — vezi `StoryCamera.tsx`. */
+.st-camera__video--mirrored { transform: scaleX(-1); }
 .st-camera__top { position: absolute; top: var(--safe-top); right: max(var(--safe-right), var(--space-lg)); z-index: 1; }
 .st-camera__icon, .st-camera__side { appearance: none; border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: var(--color-bg); color: var(--color-text-primary); min-width: 52px; min-height: 52px; font: inherit; font-size: 22px; }
 .st-camera__notice { position: absolute; top: 45%; right: var(--space-xl); left: var(--space-xl); margin: 0; text-align: center; }

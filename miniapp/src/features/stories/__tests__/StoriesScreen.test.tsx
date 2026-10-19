@@ -346,6 +346,37 @@ describe('crearea unei povești', () => {
     expect(fetchMyStories).toHaveBeenCalledTimes(2);
   });
 
+  it('galeria deschide GALERIA (fără `capture`), camera nativă e un câmp separat', async () => {
+    renderScreen();
+    fireEvent.click(await screen.findByTestId('stories-add'));
+
+    // Cu `capture`, telefonul ar fi pornit camera și n-ar fi lăsat alegerea unei
+    // poze deja făcute — exact bugul raportat de testeri.
+    const gallery = await screen.findByTestId('story-file-input');
+    expect(gallery).not.toHaveAttribute('capture');
+    expect(gallery).toHaveAttribute('accept', 'image/*');
+
+    const camera = screen.getByTestId('story-camera-input');
+    expect(camera).toHaveAttribute('capture', 'user');
+  });
+
+  it('poza din camera nativă ajunge în composer ca orice poză din galerie', async () => {
+    renderScreen();
+    fireEvent.click(await screen.findByTestId('stories-add'));
+    const camera = await screen.findByTestId('story-camera-input');
+    fireEvent.change(camera, { target: { files: [pickedFile()] } });
+
+    expect(await screen.findByTestId('story-publish')).toBeEnabled();
+  });
+
+  it('anularea alegerii nu pierde poza deja aleasă', async () => {
+    renderScreen();
+    const input = await pick(pickedFile());
+    fireEvent.change(input, { target: { files: [] } });
+
+    expect(screen.getByTestId('story-publish')).toBeEnabled();
+  });
+
   it('fără fișier ales, publicarea e blocată', async () => {
     renderScreen();
     fireEvent.click(await screen.findByTestId('stories-add'));
