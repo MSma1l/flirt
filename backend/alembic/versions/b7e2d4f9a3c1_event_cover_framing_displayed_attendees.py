@@ -1,7 +1,7 @@
 """events: incadrarea copertei + participanti afisati
 
 Revision ID: b7e2d4f9a3c1
-Revises: d3f8a1c5e2b9
+Revises: b6e1d4a7c9f2
 
 Adauga pe `events`:
   * `cover_focus_x`, `cover_focus_y` — punctul focal al copertei (0..1), NOT NULL
@@ -20,7 +20,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision: str = "b7e2d4f9a3c1"
-down_revision: Union[str, None] = "d3f8a1c5e2b9"
+down_revision: Union[str, None] = "b6e1d4a7c9f2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
