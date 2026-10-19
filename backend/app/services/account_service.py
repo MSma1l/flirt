@@ -22,6 +22,7 @@ from app.models.account import (
     Ticket,
     UserSettings,
 )
+from app.models.activity import ActivityReadMark, ProfileView
 from app.models.billing import Subscription
 from app.models.chat import Chat, Message
 from app.models.consent import UserConsent
@@ -952,6 +953,14 @@ async def purge_user_data(db: AsyncSession, user_id: uuid.UUID) -> None:
             or_(Match.user_a_id == user_id, Match.user_b_id == user_id)
         )
     )
+    # Vizualizările de profil (oricare rol) și semnul de citit al centrului de
+    # activitate: rândul `users` rămâne (anonimizat), deci cascada FK nu se aplică.
+    await db.execute(
+        delete(ProfileView).where(
+            or_(ProfileView.viewer_id == user_id, ProfileView.viewed_id == user_id)
+        )
+    )
+    await db.execute(delete(ActivityReadMark).where(ActivityReadMark.user_id == user_id))
 
     # Favorite și block-uri care implică userul (oricare rol).
     await db.execute(

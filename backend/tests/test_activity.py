@@ -339,3 +339,27 @@ async def test_like_de_la_user_blocat_dispare_din_lista(client):
     assert b_id not in actors
     # Statisticile rămân totaluri brute: like-ul a existat.
     assert page["stats"]["likes"] == 2
+
+
+@pytest.mark.asyncio
+async def test_purjarea_contului_sterge_vizualizarile_si_semnul_de_citit(client, db_session):
+    from app.models.activity import ActivityReadMark
+    from app.services import account_service
+
+    a_h, a_id = await _make_user(client, "pg-a@example.com", "Ana")
+    b_h, b_id = await _make_user(client, "pg-b@example.com", "Bogdan")
+    assert (await client.post(f"{API}/profiles/{a_id}/view", headers=b_h)).status_code == 204
+    assert (await client.post(f"{API}/profiles/{b_id}/view", headers=a_h)).status_code == 204
+    assert (await client.post(f"{API}/notifications/activity/read", headers=a_h)).status_code in (200, 204)
+
+    await account_service.purge_user_data(db_session, uuid.UUID(str(a_id)))
+    await db_session.commit()
+
+    views = await db_session.scalar(select(func.count(ProfileView.id)))
+    assert views == 0
+    marks = await db_session.scalar(
+        select(func.count()).select_from(ActivityReadMark).where(
+            ActivityReadMark.user_id == uuid.UUID(str(a_id))
+        )
+    )
+    assert marks == 0
