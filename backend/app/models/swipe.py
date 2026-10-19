@@ -19,6 +19,10 @@ class Like(Base):
         # (`ORDER BY created_at DESC`) — fără el se scanează toate like-urile
         # userului la fiecare swipe.
         Index("ix_likes_from_user_created", "from_user_id", "created_at"),
+        # Simetricul pentru latura PRIMITĂ: centrul de activitate listează
+        # like-urile primite cronologic (`WHERE to_user_id = ? ORDER BY
+        # created_at DESC`) și numără necititele (`created_at > ?`).
+        Index("ix_likes_to_user_created", "to_user_id", "created_at"),
     )
 
     from_user_id: Mapped[uuid.UUID] = mapped_column(

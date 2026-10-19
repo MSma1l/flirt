@@ -39,6 +39,8 @@ import {
   LEGAL_HUB_PATH,
 } from '@/features/legal/legalRoutes';
 import { PrivacyCenterScreen } from '@/features/legal/PrivacyCenterScreen';
+import { ActivityScreen } from '@/features/notifications/ActivityScreen';
+import { ACTIVITY_PATH } from '@/features/notifications/activityRoutes';
 import { PASSPORT_PATH } from '@/features/passport/passportRoutes';
 import { PassportScreen } from '@/features/passport/PassportScreen';
 import {
@@ -105,6 +107,7 @@ function CompletedRoutes() {
         {(
           [
             [EVENT_ROUTE_PATTERN, 'nav.event', <EventScreen key="ev" />],
+            [ACTIVITY_PATH, 'nav.activity', <ActivityScreen key="ac" />],
             [STORIES_PATH, 'nav.stories', <StoriesScreen key="st" />],
             [HUMOR_PATH, 'nav.humor', <HumorScreen key="hu" />],
             [FAVORITES_PATH, 'nav.favorites', <FavoritesScreen key="fa" />],

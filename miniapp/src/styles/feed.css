@@ -584,32 +584,7 @@
   line-height: 20px;
 }
 
-/* ——— Match ——————————————————————————————————————————————————— */
-
-.match-modal {
-  position: fixed;
-  inset: 0;
-  background: var(--color-scrim);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-xl);
-  z-index: 10;
-  color: var(--color-text-primary);
-}
-
-.match-modal__box {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  padding: var(--space-xl);
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
-  max-width: 320px;
-  width: 100%;
-}
+/* ——— Match: ecranul întreg stă în `features/feed/match.css` ———————— */
 
 /* ——— Mai puțină mișcare —————————————————————————————————————— */
 

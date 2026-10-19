@@ -68,8 +68,34 @@
 }
 
 .tab__icon {
+  /* `relative` pentru badge-ul de necitite, poziționat absolut față de desen. */
+  position: relative;
   display: block;
   transition: transform 140ms ease;
+}
+
+/*
+ * Badge-ul de necitite (centrul de activitate) pe tabul meniului. Absolut, deci
+ * apariția lui nu mișcă eticheta și nici bara.
+ */
+.tab__badge {
+  position: absolute;
+  top: -6px;
+  left: calc(100% - 8px);
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border: 2px solid var(--color-surface);
+  box-sizing: border-box;
+  font-size: 10px;
+  line-height: 14px;
+  font-weight: 800;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
 /* Apăsarea strânge doar desenul, nu și eticheta: un `transform` nu reașază

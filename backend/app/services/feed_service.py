@@ -36,7 +36,15 @@ from app.models.profile import Profile
 from app.models.swipe import Like, Match
 from app.models.user import User
 from app.schemas.feed import FeedCard, FeedPage, MatchOut, SwipeResult, UndoResult
-from app.services import account_service, billing, chat_service, geo, push, tg_notify
+from app.services import (
+    account_service,
+    activity_service,
+    billing,
+    chat_service,
+    geo,
+    push,
+    tg_notify,
+)
 from app.services.compatibility import behavior_score, compute_compatibility
 from app.services.contact_masker import mask_contacts
 
@@ -832,6 +840,11 @@ async def swipe(
 
     # Swipe = activitate reală (scriere rară, cu prag din config).
     await account_service.touch_last_active(db, user)
+
+    # Swipe-ul e dovada că ținta i-a fost AFIȘATĂ în feed: o vizualizare de
+    # profil (centrul de activitate), deduplicată per zi de baza de date. Se
+    # comite odată cu swipe-ul, fără cerere separată din client.
+    await activity_service.record_profile_view(db, user.id, target_user_id)
 
     # Un super like ESTE un like (swipe sus), doar cu accent. De aici încolo
     # `is_like` e adevărat pentru ambele, deci match-ul, mesajul deferred și

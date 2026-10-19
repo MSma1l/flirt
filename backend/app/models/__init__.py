@@ -37,3 +37,4 @@ from app.models.loyalty import (  # noqa: F401
     LoyaltySettings,
 )
 from app.models.consent import UserConsent  # noqa: F401
+from app.models.activity import ActivityReadMark, ProfileView  # noqa: F401
