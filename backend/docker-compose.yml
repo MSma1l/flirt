@@ -52,6 +52,27 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-flirt}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
       POSTGRES_DB: ${POSTGRES_DB:-flirt}
+    # Tuning pentru serverul de producție (2 vCPU, presupune >= 2 GB RAM; pe un
+    # VPS mai mic coboară shared_buffers la ~25% din RAM). Valorile implicite ale
+    # imaginii (shared_buffers=128MB, random_page_cost=4 — gândit pentru HDD)
+    # lasă aproape toată memoria nefolosită și împing planificatorul spre
+    # seq scan pe un SSD. `shm_size` trebuie să fie > 64MB (implicitul Docker),
+    # altfel query-urile paralele/sortările mari cad cu „could not resize shared
+    # memory segment". `pg_stat_statements` = statistica de query-uri lente
+    # (extensia e creată de migrația a1c4e7f9b2d6). Schimbarea cere RESTART db.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - effective_cache_size=2GB
+      - -c
+      - work_mem=8MB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+    shm_size: 256mb
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

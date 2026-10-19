@@ -163,6 +163,11 @@ class User(Base):
     profile: Mapped["Profile | None"] = relationship(
         "Profile",
         uselist=False,
-        lazy="selectin",
+        # NU `selectin`: `get_current_user` face `db.get(User)` la FIECARE cerere
+        # autentificată, iar `selectin` adăuga o interogare în plus pe `profiles`
+        # de fiecare dată, deși aproape nicio rută nu citește `user.profile`.
+        # `raise` face orice acces leneș o eroare explicită: cine are nevoie de
+        # profil îl încarcă explicit (`selectinload(User.profile)`) sau separat.
+        lazy="raise",
         viewonly=True,
     )
