@@ -18,7 +18,7 @@ import type { ChatSummary } from '@mobile/features/chat/types';
 import { cssVarColors } from '@/theme/tokens';
 
 import type { ChatSummaryEx } from './chatApi';
-import { chatPath } from './chatRoutes';
+import { chatPath, chatProfilePath } from './chatRoutes';
 
 interface Props {
   chat: ChatSummary & Partial<Pick<ChatSummaryEx, 'lastMessageKind' | 'otherPhotoUrl'>>;
@@ -76,9 +76,22 @@ function ChatListRowBase({ chat }: Props) {
 
   return (
     <li className="chat-row__item">
+      {/* Atingerea AVATARULUI deschide profilul partenerului; restul rândului,
+          conversația. Linkul avatarului stă PESTE avatarul din rând (frate, nu
+          copil: două `<a>` imbricate nu sunt HTML valid). */}
+      <Link
+        className="chat-row__avatar-link"
+        to={chatProfilePath(chat.chatId)}
+        data-testid="chat-row-avatar"
+        aria-label={t('screens:chat.partner.open', { name: chat.otherName })}
+      />
       <Link className="chat-row" to={chatPath(chat.chatId)} data-testid="chat-row">
         <span className="chat-row__avatar" aria-hidden="true">
-          {chat.otherPhotoUrl ? <img src={chat.otherPhotoUrl} alt="" /> : initial(chat.otherName)}
+          {chat.otherPhotoUrl ? (
+            <img src={chat.otherPhotoUrl} alt="" loading="lazy" referrerPolicy="no-referrer" />
+          ) : (
+            initial(chat.otherName)
+          )}
         </span>
 
         <span className="chat-row__body">

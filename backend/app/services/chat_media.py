@@ -8,20 +8,35 @@ declarat de client (spoofabil):
 Orice altceva → 415.
 
 Pozele sunt RE-ENCODATE cu Pillow fără EXIF/XMP (fără GPS, model telefon etc.),
-cu orientarea EXIF aplicată în pixeli înainte. Video și audio NU se transcodează.
+cu orientarea EXIF aplicată în pixeli înainte. Video-ul NU se transcodează.
+
+MESAJELE VOCALE SE TRANSCODEAZĂ în AAC/M4A (`ensure_playable_voice`), dacă
+ffmpeg există: fiecare platformă înregistrează în alt format (Android/desktop
+Chrome → WebM/Opus, Firefox → Ogg/Opus, Chrome recent → MP4/Opus, iOS →
+MP4/AAC), iar WebView-ul Telegram de pe iOS NU redă WebM/Ogg/Opus — exact
+defectul „vocalul se trimite, dar celălalt nu-l poate asculta". AAC în MP4 se
+redă peste tot (iOS, Android, desktop). Fără ffmpeg (ex. mediu de dev), fișierul
+rămâne neschimbat — degradare, nu eroare.
 """
 from __future__ import annotations
 
+import asyncio
 import io
+import logging
 import mimetypes
+import os
 import secrets
+import shutil
 import struct
+import tempfile
 import uuid
 from dataclasses import dataclass
 
 from fastapi import HTTPException
 
 from app.core.config import settings
+
+logger = logging.getLogger("app.chat.media")
 
 # RO: StaticFiles (STORAGE_PROVIDER=local) ghicește Content-Type-ul după extensie
 # din tabela `mimetypes` — pe imaginea Docker slim lipsesc unele tipuri audio.
@@ -323,3 +338,96 @@ def build_attachment_key(chat_id: uuid.UUID, mime: str) -> str:
     public), deci confidențialitatea vine din tokenul aleator din cheie.
     """
     return f"chat-media/{chat_id}/{secrets.token_hex(16)}.{_MIME_EXT[mime]}"
+
+
+# --------------------------------------------------------------------------- #
+# Mesaje vocale redabile peste tot (AAC / M4A)
+# --------------------------------------------------------------------------- #
+
+# Demuxerul ffmpeg FORȚAT pentru fiecare format deja validat prin magic bytes —
+# ffmpeg nu mai ghicește singur formatul unui fișier venit de la client.
+_FFMPEG_DEMUXER = {"audio/webm": "matroska", "audio/ogg": "ogg", "audio/mp4": "mov"}
+_TRANSCODE_TIMEOUT_S = 60
+
+
+def _ffmpeg_path() -> str | None:
+    return shutil.which("ffmpeg")
+
+
+def needs_voice_transcode(media: ChatMedia) -> bool:
+    """True dacă vocalul NU e deja AAC (redabil pe iOS fără conversie).
+
+    WebM / Ogg (Opus/Vorbis) → da. MP4 → doar dacă nu conține o pistă AAC
+    (`mp4a`): Chrome recent înregistrează MP4 cu Opus, pe care iOS vechi nu-l
+    redă. AAC brut (ADTS) și MP3 se redau peste tot → nu.
+    """
+    if media.kind != "voice":
+        return False
+    if media.mime in ("audio/webm", "audio/ogg"):
+        return True
+    if media.mime == "audio/mp4":
+        return b"mp4a" not in media.content
+    return False
+
+
+async def _run_ffmpeg(ffmpeg: str, src_path: str, demuxer: str, dst_path: str) -> bool:
+    proc = await asyncio.create_subprocess_exec(
+        ffmpeg,
+        "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+        "-protocol_whitelist", "file",
+        "-f", demuxer, "-i", src_path,
+        "-vn", "-sn", "-dn", "-map_metadata", "-1",
+        "-ac", "1", "-ar", "44100", "-c:a", "aac", "-b:a", "64k",
+        "-movflags", "+faststart",
+        "-f", "ipod", dst_path,
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        _, stderr = await asyncio.wait_for(proc.communicate(), _TRANSCODE_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        logger.warning("chat voice: ffmpeg a depășit %ss", _TRANSCODE_TIMEOUT_S)
+        return False
+    if proc.returncode != 0:
+        logger.warning(
+            "chat voice: ffmpeg a eșuat (%s): %s",
+            proc.returncode,
+            (stderr or b"").decode("utf-8", "replace")[:300],
+        )
+        return False
+    return True
+
+
+async def ensure_playable_voice(media: ChatMedia) -> ChatMedia:
+    """Vocalul convertit în AAC/M4A (redabil pe iOS + Android), dacă e nevoie.
+
+    Best-effort: fără ffmpeg sau la o conversie eșuată întoarce fișierul
+    original (validat deja), cu un avertisment în log — trimiterea nu pică.
+    """
+    if not needs_voice_transcode(media):
+        return media
+    ffmpeg = _ffmpeg_path()
+    if ffmpeg is None:
+        logger.warning("chat voice: ffmpeg lipsește → vocal %s netranscodat", media.mime)
+        return media
+
+    with tempfile.TemporaryDirectory(prefix="flirt-voice-") as tmp:
+        src = os.path.join(tmp, "in.bin")
+        dst = os.path.join(tmp, "out.m4a")
+        with open(src, "wb") as fh:
+            fh.write(media.content)
+        ok = await _run_ffmpeg(ffmpeg, src, _FFMPEG_DEMUXER[media.mime], dst)
+        if not ok or not os.path.isfile(dst):
+            return media
+        with open(dst, "rb") as fh:
+            converted = fh.read()
+
+    if not converted or len(converted) > settings.chat_voice_max_bytes:
+        return media
+    duration = _mp4_duration_ms(converted) or media.duration_ms
+    return ChatMedia(
+        kind="voice", mime="audio/mp4", content=converted, duration_ms=duration
+    )

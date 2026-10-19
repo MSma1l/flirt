@@ -7,9 +7,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Dependențe de sistem minime (build asyncpg / cryptography)
+# Dependențe de sistem minime (build asyncpg / cryptography) + ffmpeg: mesajele
+# vocale din chat se convertesc în AAC/M4A (`chat_media.ensure_playable_voice`),
+# altfel un vocal WebM/Opus înregistrat pe Android nu se aude pe iOS.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libpq-dev curl \
+    build-essential libpq-dev curl ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml ./

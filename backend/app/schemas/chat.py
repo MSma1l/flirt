@@ -25,6 +25,9 @@ class ChatSummary(BaseModel):
     other_name: str
     other_age: int | None = None
     other_city: str | None = None
+    # Avatarul celuilalt (aditiv): prima lui poză sau, dacă n-are poze proprii,
+    # poza preluată automat din Telegram. None = clientul afișează inițiala.
+    other_photo_url: str | None = None
     last_message: str | None = None
     last_message_at: datetime | None = None
     # Tipul ultimului mesaj (aditiv): la media `last_message` e legenda sau "",
@@ -32,6 +35,31 @@ class ChatSummary(BaseModel):
     last_message_kind: MessageKind | None = None
     unread_count: int = 0
     # Scorul de compatibilitate cu celălalt participant, 0–100 (TZ 5.2 / 4.6).
+    compatibility: int = 0
+
+
+class PartnerProfileOut(BaseModel):
+    """Profilul public al partenerului de conversație (`GET /chats/{id}/partner`).
+
+    Doar ce vede oricum un match (ca un card de feed, plus detaliile anketei).
+    Fără stradă, coordonate, dată de naștere sau date de cont.
+    """
+
+    user_id: uuid.UUID
+    name: str
+    age: int
+    gender: str
+    city: str
+    height_cm: int | None = None
+    nationality: str | None = None
+    languages: list[str] = Field(default_factory=list)
+    about: str | None = None
+    dating_statuses: list[str] = Field(default_factory=list)
+    interests: list[str] = Field(default_factory=list)  # slug-uri, sortate
+    # Pozele proprii; dacă nu are niciuna, poza din Telegram (dacă există).
+    photos: list[str] = Field(default_factory=list)
+    avatar_url: str | None = None
+    verified: bool = False
     compatibility: int = 0
 
 

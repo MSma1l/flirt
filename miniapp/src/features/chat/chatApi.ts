@@ -22,6 +22,7 @@
  *   POST   /chats/{chat_id}/messages/{id}/react     → MessageOut
  *   POST   /chats/{chat_id}/read                    → 204
  *   POST   /chats/{chat_id}/attachments (multipart)  → MessageOut (201)
+ *   GET    /chats/{chat_id}/partner                 → PartnerProfileOut
  *
  * MEDIA: `MessageOut` poartă `kind` ("text" | "image" | "video" | "voice") și
  * `attachment` ({url, mime, size_bytes, duration_ms, width, height} | null).
@@ -58,7 +59,10 @@ export interface ChatMessageEx extends ChatMessage {
 export interface ChatSummaryEx extends ChatSummary {
   /** Tipul ultimului mesaj, dacă serverul îl trimite (`last_message_kind`). */
   lastMessageKind?: MessageKind;
-  /** Poza celuilalt, dacă serverul o trimite (`other_photo_url`). */
+  /**
+   * Avatarul celuilalt (`other_photo_url`): prima lui poză sau, dacă n-are poze
+   * proprii, poza preluată automat din Telegram. Lipsă → inițiala.
+   */
   otherPhotoUrl?: string;
 }
 
@@ -241,4 +245,73 @@ export async function uploadAttachment(
     },
   });
   return mapMessage(data);
+}
+
+/**
+ * Profilul partenerului de conversație (`GET /chats/{id}/partner`), în
+ * camelCase. Serverul îl dă DOAR participanților (străin → 404) și refuză cu
+ * 403 dacă există un block în oricare direcție.
+ */
+export interface PartnerProfile {
+  userId: string;
+  name: string;
+  age: number;
+  gender: string;
+  city: string;
+  heightCm: number | null;
+  nationality: string | null;
+  languages: string[];
+  about: string | null;
+  datingStatuses: string[];
+  /** Slug-uri; etichetele traduse vin din catalogul de referință. */
+  interests: string[];
+  /** Pozele proprii sau, fără ele, poza din Telegram. Poate fi gol. */
+  photos: string[];
+  avatarUrl: string | null;
+  verified: boolean;
+  compatibility: number;
+}
+
+interface PartnerProfileResponse {
+  user_id: string;
+  name: string;
+  age: number;
+  gender: string;
+  city: string;
+  height_cm?: number | null;
+  nationality?: string | null;
+  languages?: string[] | null;
+  about?: string | null;
+  dating_statuses?: string[] | null;
+  interests?: string[] | null;
+  photos?: string[] | null;
+  avatar_url?: string | null;
+  verified?: boolean | null;
+  compatibility?: number | null;
+}
+
+const strings = (raw: unknown): string[] =>
+  Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string' && v.length > 0) : [];
+
+export async function fetchPartnerProfile(chatId: string): Promise<PartnerProfile> {
+  const { data } = await api.get<PartnerProfileResponse>(
+    `/chats/${encodeURIComponent(chatId)}/partner`,
+  );
+  return {
+    userId: data.user_id,
+    name: data.name ?? '',
+    age: data.age,
+    gender: data.gender ?? '',
+    city: data.city ?? '',
+    heightCm: data.height_cm ?? null,
+    nationality: data.nationality ?? null,
+    languages: strings(data.languages),
+    about: data.about ?? null,
+    datingStatuses: strings(data.dating_statuses),
+    interests: strings(data.interests),
+    photos: strings(data.photos),
+    avatarUrl: data.avatar_url ?? null,
+    verified: !!data.verified,
+    compatibility: data.compatibility ?? 0,
+  };
 }

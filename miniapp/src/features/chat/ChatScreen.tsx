@@ -64,7 +64,7 @@ import {
   type MediaErrorReason,
   type MediaKind,
 } from './chatMedia';
-import { CHAT_ID_PARAM } from './chatRoutes';
+import { CHAT_ID_PARAM, chatProfilePath } from './chatRoutes';
 import { usePollInterval } from './usePollInterval';
 import { audioExtension, type VoiceRecording } from './useVoiceRecorder';
 
@@ -530,6 +530,11 @@ export function ChatScreen() {
 
   const subtitle = [summary?.otherAge, summary?.otherCity].filter(Boolean).join(' · ');
 
+  const openProfile = () => {
+    if (!chatId) return;
+    void navigate(chatProfilePath(chatId), { state: { fromChat: true } });
+  };
+
   let composerError: string | null = null;
   let composerErrorId: string | undefined;
   if (draftError) {
@@ -550,15 +555,31 @@ export function ChatScreen() {
           care leagă butonul nativ al Telegramului. Al doilea buton „înapoi" ar
           fi doar zgomot. */}
       <header className="chat-header">
-        <span className="chat-header__avatar" aria-hidden="true">
+        {/* Avatarul și numele deschid profilul partenerului (toate pozele, bio,
+            interese). `fromChat` îi spune ecranului de profil că „înapoi la
+            chat" e un pas înapoi în istoric, nu o conversație nouă în stivă. */}
+        <button
+          type="button"
+          className="chat-header__avatar chat-header__avatar--button"
+          data-testid="chat-open-profile"
+          aria-label={t('screens:chat.partner.open', { name: headerName })}
+          disabled={!chatId}
+          onClick={openProfile}
+        >
           {summary?.otherPhotoUrl ? (
-            <img src={summary.otherPhotoUrl} alt="" />
+            <img src={summary.otherPhotoUrl} alt="" referrerPolicy="no-referrer" />
           ) : (
             headerName.trim().charAt(0).toUpperCase() || '?'
           )}
-        </span>
-        <div className="chat-header__info">
-          <h2 className="chat-header__title">{headerName}</h2>
+        </button>
+        <div className="chat-header__info" onClick={openProfile}>
+          <h2 className="chat-header__title">
+            {/* Fără handler propriu: click-ul (și Enter de la tastatură) urcă
+                la `chat-header__info`. */}
+            <button type="button" className="chat-header__name" data-testid="chat-open-profile-name">
+              {headerName}
+            </button>
+          </h2>
           {subtitle ? <span className="chat-header__subtitle">{subtitle}</span> : null}
         </div>
         {typeof summary?.compatibility === 'number' ? (

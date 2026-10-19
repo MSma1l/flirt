@@ -22,8 +22,9 @@ import { AppShell } from '@/components/AppShell';
 import { DeepScreen } from '@/components/DeepScreen';
 import { StatusScreen } from '@/components/StatusScreen';
 import { ChatListScreen } from '@/features/chat/ChatListScreen';
-import { CHAT_ROUTE_PATTERN } from '@/features/chat/chatRoutes';
+import { CHAT_PROFILE_ROUTE_PATTERN, CHAT_ROUTE_PATTERN } from '@/features/chat/chatRoutes';
 import { ChatScreen } from '@/features/chat/ChatScreen';
+import { PartnerProfileScreen } from '@/features/chat/PartnerProfileScreen';
 import { EventScreen } from '@/features/events/EventScreen';
 import { EVENT_ROUTE_PATTERN, EVENTS_PATH } from '@/features/events/eventRoutes';
 import { EventsScreen } from '@/features/events/EventsScreen';
@@ -95,6 +96,16 @@ function CompletedRoutes() {
           element={
             <DeepScreen title={t('nav.chat')}>
               <ChatScreen />
+            </DeepScreen>
+          }
+        />
+        {/* Profilul partenerului, deschis din conversație sau din lista de
+            dialoguri (tap pe avatar / nume). ÎNAPOI nativ → înapoi în chat. */}
+        <Route
+          path={CHAT_PROFILE_ROUTE_PATTERN}
+          element={
+            <DeepScreen title={t('nav.partnerProfile')}>
+              <PartnerProfileScreen />
             </DeepScreen>
           }
         />

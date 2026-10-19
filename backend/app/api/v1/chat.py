@@ -16,10 +16,15 @@ from app.schemas.chat import (
     ChatSummary,
     MessageIn,
     MessageOut,
+    PartnerProfileOut,
     ReactionIn,
 )
 from app.services import chat_service
-from app.services.chat_media import max_attachment_bytes, validate_attachment
+from app.services.chat_media import (
+    ensure_playable_voice,
+    max_attachment_bytes,
+    validate_attachment,
+)
 from app.services.pagination import MAX_CURSOR_LENGTH, MESSAGES_MAX_LIMIT
 
 router = APIRouter()
@@ -68,6 +73,18 @@ def _parse_duration(raw: object) -> int | None:
 async def list_chats(db: DbDep, user: UserDep) -> list[ChatSummary]:
     """Lista dialogurilor userului curent (TZ 5.1)."""
     return await chat_service.list_chats(db, user)
+
+
+@router.get("/{chat_id}/partner", response_model=PartnerProfileOut)
+async def get_partner_profile(
+    chat_id: uuid.UUID, db: DbDep, user: UserDep
+) -> PartnerProfileOut:
+    """Profilul partenerului de conversație: poze, vârstă, oraș, bio, interese.
+
+    Doar pentru participanții la chat (străin → 404); block în oricare
+    direcție → 403. Fără poze proprii, `photos` conține poza din Telegram.
+    """
+    return await chat_service.get_partner_profile(db, user, chat_id)
 
 
 @router.get("/{chat_id}/messages", response_model=list[MessageOut])
@@ -154,6 +171,8 @@ async def send_attachment(
         )
 
     media = validate_attachment(content, duration_ms)
+    # Vocalele WebM/Ogg/Opus → AAC/M4A, ca să se poată asculta și pe iOS.
+    media = await ensure_playable_voice(media)
     return await chat_service.send_attachment(db, user, chat, media, caption)
 
 

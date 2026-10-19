@@ -25,7 +25,7 @@ from app.core.security import (
 from app.models.session import RefreshSession
 from app.models.user import User
 from app.schemas.auth import TokenPair
-from app.services import bot_texts
+from app.services import bot_texts, telegram_avatar
 from app.services.telegram_auth import TelegramUser
 
 # RO: Hash Argon2 „dummy", constant, pentru a rula MEREU o verificare de parolă
@@ -232,9 +232,19 @@ async def login_with_telegram(
     # fiecare login, ca o schimbare de limbă în Telegram să ajungă și la noi.
     # `lang_for` mapează orice cod pe ro/ru/en (necunoscut → ro).
     user.telegram_language = bot_texts.lang_for(telegram_user.language_code)
+    # Poza din Telegram = avatarul de rezervă (cât timp userul n-are poze
+    # proprii). Reîmprospătată la fiecare login; copia din storage o aduce un
+    # task în fundal, după commit — login-ul nu așteaptă rețeaua.
+    stale_avatar = telegram_avatar.apply_login_photo(user, telegram_user.photo_url)
 
     pair = await _issue_token_pair(db, user, family_id=uuid.uuid4().hex)
     await db.commit()
+    await telegram_avatar.delete_stored(stale_avatar)
+    telegram_avatar.schedule_refresh(
+        user.id,
+        telegram_id,
+        had_photo_url=telegram_avatar.sanitize_photo_url(telegram_user.photo_url) is not None,
+    )
     return pair
 
 

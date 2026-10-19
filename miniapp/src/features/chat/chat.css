@@ -65,9 +65,37 @@
   background: var(--color-surface-hover);
 }
 
+/* Rândul e un link spre conversație; linkul AVATARULUI (spre profilul
+   partenerului) e fratele lui, poziționat exact peste avatar. */
+.chat-row__item {
+  position: relative;
+}
+
+.chat-row__avatar-link {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  /* padding-ul rândului + bordura de 1px */
+  left: calc(var(--space-md) + 1px);
+  width: 48px;
+  height: 48px;
+  margin-top: -24px;
+  border-radius: var(--radius-pill);
+}
+
+.chat-row__avatar-link:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.chat-row__avatar-link:active + .chat-row .chat-row__avatar {
+  transform: scale(0.94);
+}
+
 .chat-row__avatar {
   flex: 0 0 auto;
   overflow: hidden;
+  transition: transform 0.15s ease;
   width: 48px;
   height: 48px;
   border-radius: var(--radius-pill);
@@ -182,6 +210,11 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  /* Nicio derulare orizontală: nimic din conversație nu are voie să împingă
+     lățimea ecranului (defectul „mesajele și orele tăiate în dreapta"). */
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
   position: relative;
 }
 
@@ -189,12 +222,14 @@
   display: flex;
   align-items: center;
   gap: var(--space-sm);
+  min-width: 0;
   padding: var(--space-sm) 0 var(--space-md);
   border-bottom: 1px solid var(--color-border);
 }
 
 .chat-header__avatar {
   flex: 0 0 auto;
+  overflow: hidden;
   width: 42px;
   height: 42px;
   border-radius: var(--radius-pill);
@@ -215,11 +250,48 @@
   object-fit: cover;
 }
 
+/* Avatarul din antet e un buton: deschide profilul partenerului. */
+.chat-header__avatar--button {
+  appearance: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.chat-header__avatar--button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.chat-header__avatar--button:focus-visible,
+.chat-header__name:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 .chat-header__info {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  cursor: pointer;
+}
+
+.chat-header__name {
+  appearance: none;
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 .chat-header__title {
@@ -243,6 +315,8 @@
 
 .chat-header__compat {
   --compat-color: var(--color-accent);
+  flex: 0 0 auto;
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -300,7 +374,11 @@
 .chat-thread {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   overflow-y: auto;
+  /* Explicit: cu `overflow-y: auto`, `overflow-x` ar deveni și el `auto`, iar
+     orice bulă prea lată ar face firul derulabil pe orizontală. */
+  overflow-x: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   padding: var(--space-md) 2px var(--space-lg);
@@ -320,6 +398,10 @@
   padding: 0;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  /* Lățimea firului e referința (`cqi`) pentru poze și playerul vocal: așa
+     încap mereu în bula de 80%, pe orice telefon. */
+  container-type: inline-size;
 }
 
 .chat-day {
@@ -345,6 +427,7 @@
   align-items: flex-start;
   align-self: flex-start;
   max-width: 80%;
+  min-width: 0;
   gap: 2px;
   margin-top: 2px;
   animation: bubble-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
@@ -355,6 +438,12 @@
   align-items: flex-end;
   align-self: flex-end;
   transform-origin: bottom right;
+}
+
+/* Nimic din bulă nu iese din coloana ei (cu excepția selectorului de reacții,
+   care are regula lui mai jos). */
+.bubble-wrap > :not(.bubble__picker) {
+  max-width: 100%;
 }
 
 /* Între grupuri — aer; în interiorul unui grup — bulele stau lipite. */
@@ -395,6 +484,9 @@
      tăiem, nu-l reformatăm — doar îl lăsăm să curgă pe mai multe rânduri. */
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
+  min-width: 0;
   /* Mesajul e text real: trebuie să poată fi selectat, spre deosebire de restul
      Mini App-ului, unde selecția e dezactivată pentru gesturi. */
   -webkit-user-select: text;
@@ -522,6 +614,13 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.bubble-row > .bubble {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .bubble-wrap--own .bubble-row {
@@ -575,7 +674,11 @@
   appearance: none;
   position: relative;
   display: block;
-  width: min(260px, 64vw);
+  /* Fallback pe `vw`, apoi lățimea reală a firului (bula are 80%, minus butonul
+     de reacție și padding-ul) — poza nu mai împinge firul în dreapta. */
+  width: min(260px, 56vw);
+  width: min(260px, calc(80cqi - 48px));
+  max-width: 100%;
   max-height: 340px;
   padding: 0;
   border: none;
@@ -719,7 +822,9 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: min(230px, 58vw);
+  min-width: min(230px, 50vw);
+  min-width: min(230px, calc(80cqi - 80px));
+  max-width: 100%;
 }
 
 .voice__toggle {
@@ -779,6 +884,49 @@
   background: var(--color-on-accent);
 }
 
+.voice__toggle:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Se descarcă: un inel care se rotește în jurul butonului. */
+.voice__toggle--loading {
+  position: relative;
+}
+
+.voice__toggle--loading::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  animation: voice-spin 0.8s linear infinite;
+}
+
+@keyframes voice-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.voice--error .voice__toggle {
+  background: var(--color-danger);
+  color: var(--color-on-accent);
+}
+
+.voice__error {
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--color-danger);
+  overflow-wrap: anywhere;
+}
+
+.voice--own .voice__error {
+  color: var(--color-on-accent);
+  font-weight: 600;
+}
+
 .voice__time {
   font-size: 11px;
   line-height: 14px;
@@ -811,6 +959,12 @@
 
 .bubble__picker {
   display: flex;
+  /* Lat cât cele 6 emoji, chiar dacă bula e îngustă („ok"); dar niciodată mai
+     lat decât firul — se rupe pe două rânduri pe ecranele foarte înguste. */
+  width: max-content;
+  max-width: calc(100vw - 48px);
+  max-width: calc(100cqi - 8px);
+  flex-wrap: wrap;
   gap: var(--space-xs);
   padding: var(--space-xs);
   border: 1px solid var(--color-border);
@@ -1313,4 +1467,26 @@
   color: var(--color-text-primary);
   -webkit-user-select: text;
   user-select: text;
+}
+
+/* ——— Profilul partenerului ——— */
+
+.partner-profile__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.partner-profile__compat {
+  height: 32px;
+  padding: 0 14px 0 12px;
+  font-size: 14px;
+  line-height: 30px;
+}
+
+.partner-profile__write {
+  flex: 1 1 auto;
+  min-width: 0;
 }
