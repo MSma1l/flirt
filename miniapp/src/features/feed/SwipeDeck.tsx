@@ -23,7 +23,15 @@
  * într-o zonă străină (`onPointerDown`, mai jos).
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
@@ -42,6 +50,7 @@ import { chatPath } from '@/features/chat/chatRoutes';
 import { ACTIVITY_UNREAD_KEY } from '@/features/notifications/activityApi';
 import { CHATS_PATH } from '@/features/onboarding/paths';
 import { StoriesStrip } from '@/features/stories/StoriesStrip';
+import { variantUrl } from '@/lib/media';
 import { haptic } from '@/telegram/bridge';
 
 import { MatchOverlay } from './MatchOverlay';
@@ -60,6 +69,84 @@ interface Offset {
 }
 
 const ORIGIN: Offset = { x: 0, y: 0 };
+
+/**
+ * Cât durează zborul cardului (= tranziția `.deck__card--settling` din
+ * `feed.css`). După atât, cardul care pleacă e scos din DOM chiar dacă
+ * `transitionend` nu vine (fila în fundal, mișcare redusă).
+ */
+const FLY_MS = 220;
+
+/** `transform`-ul cardului pentru un decalaj dat: translație + înclinare. */
+function transformFor({ x, y }: Offset): string {
+  const rotation = Math.max(-8, Math.min(8, (x / 300) * 8));
+  return `translate(${x}px, ${y}px) rotate(${rotation}deg)`;
+}
+
+/**
+ * Stilul inițial al cardului curent. E o constantă: React îl aplică o singură
+ * dată, la montare, și nu mai atinge niciodată `transform`-ul scris din gest.
+ */
+const CURRENT_CARD_STYLE: CSSProperties = { transform: transformFor(ORIGIN) };
+
+/** Opacitatea ștampilelor, ca variabile CSS pe card (vezi `.cue--*`). */
+function cueVars({ x, y }: Offset): Record<string, string> {
+  return {
+    '--cue-like': String(cueOpacity(x, SWIPE_THRESHOLD_X)),
+    '--cue-nope': String(cueOpacity(-x, SWIPE_THRESHOLD_X)),
+    '--cue-super': String(cueOpacity(-y, SWIPE_THRESHOLD_Y)),
+    '--cue-undo': String(cueOpacity(y, SWIPE_THRESHOLD_Y)),
+  };
+}
+
+/**
+ * Mută cardul DIRECT în DOM. În timpul gestului nu trece nimic prin starea
+ * React: o re-randare a deck-ului la fiecare `pointermove` (60-120 pe secundă)
+ * era exact „vâscozitatea" de la swipe.
+ */
+function paintCard(element: HTMLElement, offset: Offset): void {
+  element.style.transform = transformFor(offset);
+  for (const [name, value] of Object.entries(cueVars(offset))) {
+    element.style.setProperty(name, value);
+  }
+}
+
+const nextFrame: (callback: () => void) => number =
+  typeof requestAnimationFrame === 'function'
+    ? (callback) => requestAnimationFrame(callback)
+    : (callback) => window.setTimeout(callback, 16);
+const cancelFrame: (id: number) => void =
+  typeof cancelAnimationFrame === 'function'
+    ? (id) => cancelAnimationFrame(id)
+    : (id) => window.clearTimeout(id);
+
+/**
+ * Preîncarcă o poză în cache-ul browserului. Varianta WebP poate lipsi (poze
+ * vechi, fără variante): atunci preîncărcăm originalul, exact ce va cere
+ * `<Photo>` după fallback.
+ */
+function preloadImage(url: string, original: string): void {
+  if (typeof Image === 'undefined') return;
+  const image = new Image();
+  image.decoding = 'async';
+  if (url !== original) {
+    image.onerror = () => {
+      const fallback = new Image();
+      fallback.decoding = 'async';
+      fallback.src = original;
+    };
+  }
+  image.src = url;
+}
+
+/** Cardul tocmai trimis: zboară PESTE cel următor (deja afișat), apoi dispare. */
+interface LeavingCard {
+  id: number;
+  card: FeedCard;
+  photoIndex: number;
+  interests: readonly string[];
+  offset: Offset;
+}
 
 /** Cheia cache-ului cu lista de ankete (invalidată și din Setări, Profil, blocări). */
 const FEED_QUERY_KEY = ['feed'] as const;
@@ -183,10 +270,20 @@ export function SwipeDeck() {
   });
 
   const [index, setIndex] = useState(0);
+  /** O anulare e în curs: gesturile așteaptă. Swipe-urile NU mai blochează. */
   const [busy, setBusy] = useState(false);
-  const [offset, setOffset] = useState<Offset>(ORIGIN);
-  const [settling, setSettling] = useState(false);
+  /**
+   * Swipe-uri CONFIRMATE de server în sesiunea asta. Oglinda din ref e citită
+   * după un `await` (anularea așteaptă coada), unde starea din closure e veche.
+   */
   const [swipeCount, setSwipeCount] = useState(0);
+  const swipesRef = useRef(0);
+  const setSwipes = useCallback((value: number) => {
+    swipesRef.current = value;
+    setSwipeCount(value);
+  }, []);
+  /** Cardurile care tocmai au plecat și încă zboară peste cel curent. */
+  const [leaving, setLeaving] = useState<LeavingCard[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   /** Refuz de autorizare: NU o eroare de reîncercat, ci ceva de rezolvat. */
   const [block, setBlock] = useState<SwipeBlock | null>(null);
@@ -197,6 +294,31 @@ export function SwipeDeck() {
   const dragStart = useRef<{ x: number; y: number; pointerId: number } | null>(null);
   /** Degetul a depășit pragul de gest? Dacă NU, ridicarea lui e o atingere. */
   const movedRef = useRef(false);
+  /** Elementul cardului CURENT, mutat direct în DOM în timpul gestului. */
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  /** Cadrul de animație programat și ultimul decalaj încă nedesenat. */
+  const frameRef = useRef<number | null>(null);
+  const pendingOffsetRef = useRef<Offset | null>(null);
+
+  /**
+   * Coada swipe-urilor trimise: cardul următor apare IMEDIAT, iar cererile
+   * pleacă pe rând, în fundal. `pendingRef` = id-urile încă neconfirmate, în
+   * ordine; `epochRef` crește la un eșec, ca swipe-urile puse în coadă DUPĂ
+   * cel eșuat să nu mai plece (cardurile lor revin odată cu el).
+   */
+  const queueRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingRef = useRef<string[]>([]);
+  const epochRef = useRef(0);
+  const leavingIdRef = useRef(0);
+  const timersRef = useRef(new Set<number>());
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      for (const id of timers) window.clearTimeout(id);
+      timers.clear();
+      if (frameRef.current !== null) cancelFrame(frameRef.current);
+    };
+  }, []);
 
   const cards = data ?? [];
   const current = cards[index];
@@ -224,6 +346,36 @@ export function SwipeDeck() {
 
   // Catalogul se cere doar dacă are ce traduce: un feed gol nu face cereri.
   const interestLabels = useInterestLabels((current?.topInterests.length ?? 0) > 0);
+  // Props STABILE pentru `ProfileCardView` (memoizat): fără ele, orice
+  // re-randare a deck-ului ar re-randa și cardul.
+  const interests = useMemo(
+    () => (current ? interestLabels(current.topInterests) : []),
+    [current, interestLabels],
+  );
+  const prevPhoto = useCallback(() => showPhoto(-1), [showPhoto]);
+  const nextPhoto = useCallback(() => showPhoto(1), [showPhoto]);
+
+  /**
+   * PREÎNCĂRCARE: prima poză a următoarelor două carduri și a doua poză a
+   * cardului curent, în varianta pe care o va cere cardul (800, plus 256
+   * pentru fundalul încețoșat). Când userul ajunge acolo, poza e deja în cache.
+   */
+  const preloadedRef = useRef(new Set<string>());
+  useEffect(() => {
+    const wanted: Array<[string, 256 | 800]> = [];
+    const second = current?.photos[1];
+    if (second) wanted.push([second, 800]);
+    for (const card of [cards[index + 1], cards[index + 2]]) {
+      const first = card?.photos[0];
+      if (first) wanted.push([first, 800], [first, 256]);
+    }
+    for (const [original, size] of wanted) {
+      const url = variantUrl(original, size) ?? original;
+      if (preloadedRef.current.has(url)) continue;
+      preloadedRef.current.add(url);
+      preloadImage(url, original);
+    }
+  }, [cards, current, index]);
   const hintId = useId();
   const [hintSeen, setHintSeen] = useState(readHintSeen);
   const dismissHint = useCallback(() => {
@@ -275,7 +427,6 @@ export function SwipeDeck() {
 
     if (next === index) return;
     setIndex(next);
-    setOffset(ORIGIN);
   }, [data, index]);
 
   /**
@@ -309,6 +460,18 @@ export function SwipeDeck() {
       loadingMoreRef.current = true;
       setMore({ status: 'loading', list: base });
       try {
+        // Swipe-urile optimiste de dinainte de `from` trebuie să fie CONFIRMATE
+        // înainte de cerere — exact presupunerea lui `nextBatch`. Altfel serverul
+        // le-ar putea trimite din nou și n-am ști dacă e o dublură sau o trecere
+        // nouă. Lotul e cerut cu 2 carduri înainte, deci așteptarea nu se vede.
+        const epoch = epochRef.current;
+        await queueRef.current;
+        if (epoch !== epochRef.current) {
+          // Un swipe a eșuat și cardul a revenit: poziția s-a schimbat, deci
+          // cererea se reia de la noua poziție (efectul de mai jos).
+          setMore({ status: 'idle' });
+          return;
+        }
         const page = await fetchFeed();
         const known = queryClient.getQueryData<FeedCard[]>(FEED_QUERY_KEY) ?? base;
         // Lista a fost înlocuită între timp (reîncărcare): poziția nu mai e a ei,
@@ -337,41 +500,133 @@ export function SwipeDeck() {
     void loadMore(index);
   }, [data, isError, remaining, moreStatus, loadMore, index]);
 
-  const resetCard = useCallback(() => {
-    setSettling(true);
-    setOffset(ORIGIN);
+  // ——— Mișcarea cardului, direct în DOM ———
+
+  /** Renunță la cadrul programat (gestul s-a terminat sau a fost înlocuit). */
+  const dropFrame = useCallback(() => {
+    if (frameRef.current !== null) cancelFrame(frameRef.current);
+    frameRef.current = null;
+    pendingOffsetRef.current = null;
   }, []);
 
-  const performSwipe = useCallback(async (card: FeedCard, action: SwipeAction) => {
-    setBusy(true);
-    setActionError(null);
-    try {
-      const result = await swipe(card.userId, action);
-      if (result.matched) {
-        setMatch({ card, chatId: result.chatId ?? null });
-        // Conversația există deja pe server (creată odată cu match-ul): lista de
-        // mesaje și centrul de activitate se resincronizează, nu așteaptă poll-ul.
-        void queryClient.invalidateQueries({ queryKey: ['chats'] });
-        void queryClient.invalidateQueries({ queryKey: ACTIVITY_UNREAD_KEY });
-      }
-      setSwipeCount((c) => c + 1);
-      setIndex((i) => i + 1);
-    } catch (error) {
-      // Un refuz de autorizare NU e o eroare de reîncercat: reîncercarea dă exact
-      // acelaşi răspuns. Utilizatorului îi lipseşte ceva — testul de umor, o poză,
-      // profilul — şi trebuie dus acolo, cu buton. Fără asta rămâne blocat cu un
-      // mesaj generic, exact ce s-a întâmplat în producţie.
-      const refuz = clasificaRefuzul(error);
-      if (refuz) setBlock(refuz);
-      // Rețea sau server picat: NU avansăm indexul — rămânem pe același card,
-      // ca utilizatorul să poată reîncerca exact aceeași alegere.
-      else setActionError(t('feed.sendFailed'));
-    } finally {
-      setSettling(false);
-      setOffset(ORIGIN);
-      setBusy(false);
+  /**
+   * Desenează decalajul: primul `pointermove` dintr-un cadru se aplică imediat,
+   * restul se adună și se desenează o singură dată, în cadrul următor.
+   */
+  const moveCard = useCallback((offset: Offset) => {
+    const element = cardRef.current;
+    if (!element) return;
+    if (frameRef.current !== null) {
+      pendingOffsetRef.current = offset;
+      return;
     }
-  }, [queryClient, t]);
+    paintCard(element, offset);
+    frameRef.current = nextFrame(() => {
+      frameRef.current = null;
+      const pending = pendingOffsetRef.current;
+      pendingOffsetRef.current = null;
+      if (pending && cardRef.current) paintCard(cardRef.current, pending);
+    });
+  }, []);
+
+  /** În timpul gestului sticla (`backdrop-filter`) e oprită, vezi `feed.css`. */
+  const setDragging = useCallback((dragging: boolean) => {
+    rootRef.current?.classList.toggle('is-dragging', dragging);
+  }, []);
+
+  const resetCard = useCallback(() => {
+    dropFrame();
+    setDragging(false);
+    const element = cardRef.current;
+    if (!element) return;
+    element.classList.add('deck__card--settling');
+    paintCard(element, ORIGIN);
+  }, [dropFrame, setDragging]);
+
+  // ——— Swipe optimist ———
+
+  /** Scoate din DOM cardul care a terminat de zburat. */
+  const removeLeaving = useCallback((id: number) => {
+    setLeaving((list) =>
+      list.some((item) => item.id === id) ? list.filter((item) => item.id !== id) : list,
+    );
+  }, []);
+
+  /**
+   * Fără tranziție (mișcare redusă: `transition: none`) cardul ajunge instant
+   * în afara ecranului și n-ar mai primi niciodată `transitionend`: îl scoatem
+   * imediat, nu după rezerva de timp.
+   */
+  const deckRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const deck = deckRef.current;
+    if (!deck || leaving.length === 0) return;
+    for (const element of deck.querySelectorAll<HTMLElement>('[data-leaving-id]')) {
+      const duration = Number.parseFloat(getComputedStyle(element).transitionDuration);
+      if (!(duration > 0)) removeLeaving(Number(element.dataset.leavingId));
+    }
+  }, [leaving, removeLeaving]);
+
+  /**
+   * Swipe-ul a eșuat: cardul REVINE pe ecran (împreună cu cele swipe-uite după
+   * el, ale căror cereri nici n-au mai plecat), ca userul să poată reîncerca.
+   */
+  const rollBack = useCallback(
+    (card: FeedCard, at: number, dropped: readonly string[]) => {
+      const list = queryClient.getQueryData<FeedCard[]>(FEED_QUERY_KEY) ?? [];
+      const back = list[at]?.userId === card.userId ? at : list.findIndex((c) => c.userId === card.userId);
+      if (back !== -1) setIndex(back);
+      const gone = new Set([card.userId, ...dropped]);
+      setLeaving((items) => items.filter((item) => !gone.has(item.card.userId)));
+    },
+    [queryClient],
+  );
+
+  /**
+   * Trimite swipe-ul ÎN FUNDAL. Cardul următor e deja pe ecran; cererile pleacă
+   * pe rând (coada păstrează ordinea pentru undo și pentru server). La match se
+   * deschide fereastra când vine răspunsul; la refuz/eroare cardul revine.
+   */
+  const performSwipe = useCallback(
+    (card: FeedCard, action: SwipeAction, at: number) => {
+      setActionError(null);
+      pendingRef.current.push(card.userId);
+      const epoch = epochRef.current;
+      const run = async () => {
+        try {
+          // Un swipe de dinainte a eșuat: cardul ăsta a revenit odată cu el.
+          if (epoch !== epochRef.current) return;
+          const result = await swipe(card.userId, action);
+          if (result.matched) {
+            setMatch({ card, chatId: result.chatId ?? null });
+            // Conversația există deja pe server (creată odată cu match-ul): lista de
+            // mesaje și centrul de activitate se resincronizează, nu așteaptă poll-ul.
+            void queryClient.invalidateQueries({ queryKey: ['chats'] });
+            void queryClient.invalidateQueries({ queryKey: ACTIVITY_UNREAD_KEY });
+          }
+          setSwipes(swipesRef.current + 1);
+        } catch (error) {
+          epochRef.current += 1;
+          const dropped = pendingRef.current.slice(pendingRef.current.indexOf(card.userId) + 1);
+          rollBack(card, at, dropped);
+          // Un refuz de autorizare NU e o eroare de reîncercat: reîncercarea dă exact
+          // acelaşi răspuns. Utilizatorului îi lipseşte ceva — testul de umor, o poză,
+          // profilul — şi trebuie dus acolo, cu buton. Fără asta rămâne blocat cu un
+          // mesaj generic, exact ce s-a întâmplat în producţie.
+          const refuz = clasificaRefuzul(error);
+          if (refuz) setBlock(refuz);
+          // Rețea sau server picat: cardul a revenit — utilizatorul poate reîncerca
+          // exact aceeași alegere.
+          else setActionError(t('feed.sendFailed'));
+        } finally {
+          const i = pendingRef.current.indexOf(card.userId);
+          if (i !== -1) pendingRef.current.splice(i, 1);
+        }
+      };
+      queueRef.current = queueRef.current.then(run);
+    },
+    [queryClient, rollBack, setSwipes, t],
+  );
 
   const closeMatch = useCallback(() => setMatch(null), []);
   const writeToMatch = useCallback(() => {
@@ -381,15 +636,19 @@ export function SwipeDeck() {
   }, [match, navigate]);
 
   const onUndo = useCallback(async () => {
-    if (busy || swipeCount === 0) return;
+    if (busy || (swipesRef.current === 0 && pendingRef.current.length === 0)) return;
     setBusy(true);
     setActionError(null);
     try {
+      // Swipe-urile optimiste încă pe drum se confirmă ÎNTÂI: undo anulează
+      // ultimul swipe înregistrat de server, nu o cerere care încă n-a ajuns.
+      await queueRef.current;
+      // Ultimul swipe a eșuat și cardul a revenit deja: nu e nimic de anulat.
+      if (swipesRef.current === 0) return;
       const result = await undoSwipe();
       if (result.undone) {
-        setSwipeCount((c) => Math.max(0, c - 1));
+        setSwipes(Math.max(0, swipesRef.current - 1));
         setIndex((i) => Math.max(0, i - 1));
-        setOffset(ORIGIN);
       } else {
         // REFUZ, nu eșec: `POST /feed/undo` răspunde 200 cu `undone: false`
         // (`backend/app/services/feed_service.py::undo_last_swipe`) când nu
@@ -402,14 +661,14 @@ export function SwipeDeck() {
         setActionError(t('feed.undoNothing'));
         // Serverul e sursa de adevăr: dacă el nu are ce anula, nici noi nu mai
         // arătăm butonul de undo.
-        setSwipeCount(0);
+        setSwipes(0);
       }
     } catch {
       setActionError(t('feed.undoFailed'));
     } finally {
       setBusy(false);
     }
-  }, [busy, swipeCount, t]);
+  }, [busy, setSwipes, t]);
 
   /**
    * Punctul UNIC în care o direcție devine acțiune — degetul și butoanele de
@@ -422,7 +681,8 @@ export function SwipeDeck() {
         void onUndo();
         return;
       }
-      if (!current || busy) {
+      // Același card de două ori (atingeri rapide, înainte de re-randare)? Nu.
+      if (!current || busy || pendingRef.current.includes(current.userId)) {
         resetCard();
         return;
       }
@@ -430,19 +690,49 @@ export function SwipeDeck() {
       haptic('light');
       // Primul swipe reușit e dovada că gestul a fost înțeles.
       if (!hintSeen) dismissHint();
+      dropFrame();
+      setDragging(false);
 
-      // Confirmare vizuală: cardul pleacă în direcția gestului, apoi se trimite
-      // cererea. `setSettling` pornește tranziția CSS.
-      setSettling(true);
-      if (direction === 'right') setOffset({ x: FLING, y: 0 });
-      else if (direction === 'left') setOffset({ x: -FLING, y: 0 });
-      else setOffset({ x: 0, y: -FLING });
+      // Confirmare vizuală: cardul pleacă în direcția gestului (copia lui zboară
+      // peste cardul următor, care e afișat IMEDIAT), iar cererea pleacă în fundal.
+      const fling: Offset =
+        direction === 'right'
+          ? { x: FLING, y: 0 }
+          : direction === 'left'
+            ? { x: -FLING, y: 0 }
+            : { x: 0, y: -FLING };
+      leavingIdRef.current += 1;
+      const id = leavingIdRef.current;
+      setLeaving((items) => [
+        ...items.filter((item) => item.card.userId !== current.userId),
+        { id, card: current, photoIndex, interests, offset: fling },
+      ]);
+      const timer = window.setTimeout(() => {
+        timersRef.current.delete(timer);
+        removeLeaving(id);
+      }, FLY_MS + 80);
+      timersRef.current.add(timer);
+      setIndex(index + 1);
 
       const action: SwipeAction =
         direction === 'right' ? 'like' : direction === 'left' ? 'dislike' : 'super_like';
-      void performSwipe(current, action);
+      performSwipe(current, action, index);
     },
-    [busy, current, dismissHint, hintSeen, onUndo, performSwipe, resetCard],
+    [
+      busy,
+      current,
+      dismissHint,
+      dropFrame,
+      hintSeen,
+      index,
+      interests,
+      onUndo,
+      performSwipe,
+      photoIndex,
+      removeLeaving,
+      resetCard,
+      setDragging,
+    ],
   );
 
   // ——— Gesturi cu evenimente de pointer ———
@@ -461,7 +751,9 @@ export function SwipeDeck() {
       pointerId: event.pointerId,
     };
     movedRef.current = false;
-    setSettling(false);
+    // Degetul ține cardul: fără tranziție, altfel cardul ar rămâne în urma lui.
+    dropFrame();
+    event.currentTarget.classList.remove('deck__card--settling');
     // Capturarea pointerului ține gestul legat de card chiar dacă degetul iese
     // din el — fără asta, un swipe rapid „scapă" și cardul rămâne agățat.
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -473,8 +765,9 @@ export function SwipeDeck() {
     const dx = event.clientX - start.x;
     const dy = event.clientY - start.y;
     if (Math.abs(dx) < GESTURE_SLOP && Math.abs(dy) < GESTURE_SLOP) return;
+    if (!movedRef.current) setDragging(true);
     movedRef.current = true;
-    setOffset({ x: dx, y: dy });
+    moveCard({ x: dx, y: dy });
   };
 
   const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -679,7 +972,16 @@ export function SwipeDeck() {
     );
   }
 
-  const rotation = Math.max(-8, Math.min(8, (offset.x / 300) * 8));
+  // Ștampilele direcțiilor: opacitatea vine din variabilele CSS ale cardului,
+  // scrise direct în DOM în timpul gestului (`paintCard`).
+  const cues = (
+    <>
+      <span className="cue cue--like">{t('feed.cue.like')}</span>
+      <span className="cue cue--nope">{t('feed.cue.nope')}</span>
+      <span className="cue cue--super">{t('feed.cue.super')}</span>
+      <span className="cue cue--undo">{t('feed.cue.undo')}</span>
+    </>
+  );
 
   return (
     <div className="feed" ref={rootRef} data-testid="feed-screen">
@@ -691,54 +993,58 @@ export function SwipeDeck() {
         <StoriesStrip />
       </div>
 
-      <div className="deck">
+      <div className="deck" ref={deckRef}>
+        {/* Cheia e id-ul userului ȘI la cardul curent, ȘI la cel care pleacă:
+            React păstrează ACELAȘI element când cardul trece în zbor, deci
+            pozele lui nu se reîncarcă, iar zborul pornește exact de unde l-a
+            lăsat degetul. Cardul următor apare dedesubt, imediat. */}
         <div
-          className={settling ? 'deck__card deck__card--settling' : 'deck__card'}
+          key={current.userId}
+          ref={cardRef}
+          className="deck__card"
           data-testid="deck-card"
           data-gesture-zone="deck"
-          style={{
-            transform: `translate(${offset.x}px, ${offset.y}px) rotate(${rotation}deg)`,
-          }}
+          style={CURRENT_CARD_STYLE}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
           onPointerCancel={onPointerCancel}
         >
           <ProfileCardView
-            key={current.userId}
             card={current}
             photoIndex={photoIndex}
-            interests={interestLabels(current.topInterests)}
-            onPrevPhoto={() => showPhoto(-1)}
-            onNextPhoto={() => showPhoto(1)}
+            interests={interests}
+            onPrevPhoto={prevPhoto}
+            onNextPhoto={nextPhoto}
             describedBy={hintId}
+            priority
           />
-
-          <span
-            className="cue cue--like"
-            style={{ opacity: cueOpacity(offset.x, SWIPE_THRESHOLD_X) }}
-          >
-            {t('feed.cue.like')}
-          </span>
-          <span
-            className="cue cue--nope"
-            style={{ opacity: cueOpacity(-offset.x, SWIPE_THRESHOLD_X) }}
-          >
-            {t('feed.cue.nope')}
-          </span>
-          <span
-            className="cue cue--super"
-            style={{ opacity: cueOpacity(-offset.y, SWIPE_THRESHOLD_Y) }}
-          >
-            {t('feed.cue.super')}
-          </span>
-          <span
-            className="cue cue--undo"
-            style={{ opacity: cueOpacity(offset.y, SWIPE_THRESHOLD_Y) }}
-          >
-            {t('feed.cue.undo')}
-          </span>
+          {cues}
         </div>
+
+        {leaving
+          .filter((item) => item.card.userId !== current.userId)
+          .map((item) => (
+            <div
+              key={item.card.userId}
+              className="deck__card deck__card--settling deck__card--leaving"
+              data-testid="deck-card-leaving"
+              data-leaving-id={item.id}
+              aria-hidden="true"
+              style={{ transform: transformFor(item.offset), ...cueVars(item.offset) } as CSSProperties}
+              onTransitionEnd={(event) => {
+                if (event.target === event.currentTarget) removeLeaving(item.id);
+              }}
+            >
+              <ProfileCardView
+                card={item.card}
+                photoIndex={item.photoIndex}
+                interests={item.interests}
+                priority
+              />
+              {cues}
+            </div>
+          ))}
       </div>
 
       {/* Descrierea gesturilor rămâne MEREU pentru cititoarele de ecran. */}

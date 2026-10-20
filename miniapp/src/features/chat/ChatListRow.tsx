@@ -15,6 +15,7 @@ import { Link } from 'react-router';
 import { compatColor, compatLabel } from '@mobile/features/feed/compat';
 import type { ChatSummary } from '@mobile/features/chat/types';
 
+import { Photo } from '@/components/Photo';
 import { cssVarColors } from '@/theme/tokens';
 
 import type { ChatSummaryEx } from './chatApi';
@@ -88,7 +89,7 @@ function ChatListRowBase({ chat }: Props) {
       <Link className="chat-row" to={chatPath(chat.chatId)} data-testid="chat-row">
         <span className="chat-row__avatar" aria-hidden="true">
           {chat.otherPhotoUrl ? (
-            <img src={chat.otherPhotoUrl} alt="" loading="lazy" referrerPolicy="no-referrer" />
+            <Photo src={chat.otherPhotoUrl} size={256} alt="" referrerPolicy="no-referrer" />
           ) : (
             initial(chat.otherName)
           )}

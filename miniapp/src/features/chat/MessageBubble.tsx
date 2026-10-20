@@ -21,6 +21,8 @@
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Photo } from '@/components/Photo';
+
 import { ChatIcon } from './ChatIcons';
 import type { ChatMessageEx, MessageKind } from './chatApi';
 import { formatDuration } from './chatMedia';
@@ -168,7 +170,8 @@ function MessageBubbleBase({
           disabled={!!pending}
           onClick={() => setViewerOpen(true)}
         >
-          <img src={attachment.url || undefined} alt={t('screens:chat.media.photo')} loading="lazy" decoding="async" />
+          {/* În bulă: varianta de 480px. Ecranul întreg (`MediaViewer`) rămâne pe original. */}
+          <Photo src={attachment.url || undefined} size={480} alt={t('screens:chat.media.photo')} />
         </button>
       );
     } else if (kind === 'video') {

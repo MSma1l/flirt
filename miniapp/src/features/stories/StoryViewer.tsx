@@ -68,6 +68,17 @@ export function StoryViewer({ group, onClose }: Props) {
     if (current) markStorySeen(current);
   }, [current]);
 
+  // Povestea URMĂTOARE se descarcă de acum, cât userul o privește pe asta:
+  // la atingere apare imediat, nu după încă o așteptare pe rețea.
+  const upcoming = groupStories[safeIndex + 1];
+  const upcomingUrl = upcoming && upcoming.mediaType !== 'video' ? upcoming.mediaUrl : null;
+  useEffect(() => {
+    if (!upcomingUrl || typeof Image === 'undefined') return;
+    const image = new Image();
+    image.decoding = 'async';
+    image.src = upcomingUrl;
+  }, [upcomingUrl]);
+
   const goPrev = useCallback(() => {
     setIndex((i) => Math.max(0, i - 1));
   }, []);
@@ -176,6 +187,7 @@ export function StoryViewer({ group, onClose }: Props) {
             data-testid="story-media"
             src={current.mediaUrl}
             alt={current.caption ?? group.name}
+            decoding="async"
           />
         )}
         {current.caption ? <p className="st-media__caption">{current.caption}</p> : null}

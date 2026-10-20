@@ -16,6 +16,7 @@ import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
+import { Photo } from '@/components/Photo';
 import { haptic } from '@/telegram/bridge';
 import { useTelegramMainButton } from '@/telegram/useTelegram';
 
@@ -161,7 +162,7 @@ export function PhotosScreen() {
       <div className="photo-grid">
         {current.map((url) => (
           <div className="photo-tile" key={url}>
-            <img className="photo-tile__image" src={url} alt="" />
+            <Photo className="photo-tile__image" src={url} size={256} alt="" />
             <button
               type="button"
               className="photo-tile__remove"

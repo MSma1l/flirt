@@ -15,6 +15,8 @@
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Photo } from '@/components/Photo';
+
 import { coverImageStyle } from './coverFraming';
 import { CalendarIcon, PinIcon, UsersIcon } from './EventIcons';
 import { formatEventDate, kindColorVar, kindLabel } from './eventFormat';
@@ -40,14 +42,16 @@ function EventCardBase({ event }: EventCardProps) {
       */}
       <div className="ev-card__cover" style={{ background: kindColorVar(event.kind) }}>
         {event.coverUrl ? (
-          <img
+          <Photo
             className="ev-card__cover-img"
             src={event.coverUrl}
+            /* Varianta de 800px: destul pentru lățimea cardului, chiar mărită
+               de zoom-ul încadrării; originalul e doar rezerva. */
+            size={800}
             /* Coperta e decorativă: informația utilă (titlu, dată, loc) e scrisă
                dedesubt în text, deci un `alt` gol evită o repetiție la cititorul
                de ecran. */
             alt=""
-            loading="lazy"
             /* Încadrarea aleasă de admin (punct focal + zoom), aceeași ca pe
                pagina evenimentului și în previzualizarea din panou. */
             style={coverImageStyle(event)}

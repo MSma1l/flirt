@@ -24,6 +24,7 @@ import { useLocation, useNavigate, useParams } from 'react-router';
 import { compatColor } from '@mobile/features/feed/compat';
 import { DEFAULT_LANGUAGE, normalizeLanguage } from '@mobile/i18n/config';
 
+import { Photo } from '@/components/Photo';
 import { StatusScreen } from '@/components/StatusScreen';
 import {
   FlagIcon,
@@ -112,14 +113,15 @@ function Gallery({ profile }: { profile: PartnerProfile }) {
       >
         {photos.length > 0 ? (
           photos.map((url, i) => (
-            <img
+            <Photo
               key={`${url}-${i}`}
               className={`pf-hero__img${i === active ? ' pf-hero__img--active' : ''}`}
               data-testid="partner-photo"
               src={url}
+              size={800}
               alt={i === 0 ? t('photos.a11y.mainPhoto') : t('photos.a11y.photo', { number: i + 1 })}
               aria-hidden={i === active ? undefined : true}
-              loading={i === 0 ? 'eager' : 'lazy'}
+              priority={i === 0}
               referrerPolicy="no-referrer"
               draggable={false}
             />

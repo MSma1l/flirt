@@ -46,7 +46,12 @@ export function MediaViewer({ kind, src, onClose }: Props) {
         <ChatIcon name="close" size={24} />
       </button>
       {kind === 'image' ? (
-        <img className="media-viewer__content" src={src} alt={t('chat.media.photo')} />
+        <img
+          className="media-viewer__content"
+          src={src}
+          alt={t('chat.media.photo')}
+          decoding="async"
+        />
       ) : (
         <video className="media-viewer__content" src={src} controls autoPlay playsInline />
       )}

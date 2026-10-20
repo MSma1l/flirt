@@ -297,6 +297,72 @@ describe('match', () => {
   });
 });
 
+describe('swipe optimist', () => {
+  /** Un răspuns de server pe care testul îl eliberează când vrea. */
+  function pendingSwipe() {
+    let settle: { resolve: (v: { matched: boolean }) => void; reject: (e: unknown) => void } = {
+      resolve: () => {},
+      reject: () => {},
+    };
+    vi.mocked(swipe).mockImplementationOnce(
+      () =>
+        new Promise((resolve, reject) => {
+          settle = { resolve, reject };
+        }),
+    );
+    return () => settle;
+  }
+
+  it('cardul următor apare IMEDIAT, fără să aștepte serverul', async () => {
+    const settle = pendingSwipe();
+    const card = await renderDeck();
+
+    drag(card, 200, 0);
+
+    // Serverul încă n-a răspuns, dar Bogdan e deja pe ecran.
+    expect(await screen.findByText('Bogdan, 29')).toBeInTheDocument();
+    await waitFor(() => expect(swipe).toHaveBeenCalledWith('u1', 'like'));
+    settle().resolve({ matched: false });
+  });
+
+  it('la eroare cardul REVINE, cu mesajul de reîncercare', async () => {
+    const settle = pendingSwipe();
+    const card = await renderDeck();
+
+    drag(card, 200, 0);
+    expect(await screen.findByText('Bogdan, 29')).toBeInTheDocument();
+    await waitFor(() => expect(swipe).toHaveBeenCalledOnce());
+    settle().reject(new Error('offline'));
+
+    expect(await screen.findByTestId('deck-action-error')).toBeInTheDocument();
+    expect(await screen.findByText('Ana, 24')).toBeInTheDocument();
+  });
+
+  it('match-ul se deschide când vine răspunsul, cu cardul următor deja afișat', async () => {
+    const settle = pendingSwipe();
+    const card = await renderDeck();
+
+    drag(card, 200, 0);
+    expect(await screen.findByText('Bogdan, 29')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await waitFor(() => expect(swipe).toHaveBeenCalledOnce());
+    settle().resolve({ matched: true });
+
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Aveți match!');
+  });
+
+  it('același card nu e trimis de două ori la gesturi rapide', async () => {
+    pendingSwipe();
+    const card = await renderDeck();
+
+    drag(card, 200, 0);
+    drag(card, 200, 0);
+
+    await waitFor(() => expect(swipe).toHaveBeenCalledOnce());
+    expect(swipe).toHaveBeenCalledWith('u1', 'like');
+  });
+});
+
 describe('interesele de pe card', () => {
   it('arată etichetele TRADUSE, nu cheile brute de la server', async () => {
     await renderDeck();
