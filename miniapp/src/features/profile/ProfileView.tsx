@@ -11,6 +11,7 @@ import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
+import { Photo } from '@/components/Photo';
 import { VERIFICATION_PATH } from '@/features/verification/verificationRoutes';
 
 import {
@@ -159,15 +160,16 @@ export function ProfileView({
         >
           {photos.length > 0 ? (
             photos.map((url, i) => (
-              <img
+              <Photo
                 key={url}
                 className={`pf-hero__img${i === active ? ' pf-hero__img--active' : ''}`}
                 src={url}
+                size={800}
                 alt={
                   i === 0 ? t('photos.a11y.mainPhoto') : t('photos.a11y.photo', { number: i + 1 })
                 }
                 aria-hidden={i === active ? undefined : true}
-                loading={i === 0 ? 'eager' : 'lazy'}
+                priority={i === 0}
                 draggable={false}
               />
             ))

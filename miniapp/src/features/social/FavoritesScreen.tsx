@@ -23,6 +23,8 @@ import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-q
 import { useState, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Photo } from '@/components/Photo';
+
 import { ConfirmModal } from './ConfirmModal';
 import {
   addFavorite,
@@ -42,7 +44,7 @@ function Avatar({ item }: { item: FavoriteItem }) {
   if (photo) {
     // `alt` gol: numele e deja scris alături, iar un cititor de ecran care
     // repetă „Ana" de două ori pe același rând e zgomot, nu accesibilitate.
-    return <img className="so-row__avatar" src={photo} alt="" loading="lazy" />;
+    return <Photo className="so-row__avatar" src={photo} size={256} alt="" />;
   }
   const initial = item.name.trim().charAt(0).toUpperCase() || '?';
   return (

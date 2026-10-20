@@ -41,6 +41,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router';
 
+import { Photo } from '@/components/Photo';
 import { formatAmount, TicketPriceBlock, useRefreshLoyalty, useTicketQuote } from '@/features/loyalty';
 import { OrderStepper } from '@/features/tickets/OrderStepper';
 import { ClockIcon, LockIcon, TicketIcon } from '@/features/tickets/TicketIcons';
@@ -366,9 +367,11 @@ export function EventScreen() {
         data-testid="event-hero"
       >
         {event.coverUrl ? (
-          <img
+          <Photo
             className="ev-hero__img"
             src={event.coverUrl}
+            size={800}
+            priority
             /* Decorativ: titlul și detaliile sunt scrise dedesubt. */
             alt=""
             style={coverImageStyle(event)}

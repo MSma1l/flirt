@@ -16,6 +16,8 @@
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Photo } from '@/components/Photo';
+
 import { ConfirmDialog } from './ConfirmDialog';
 import { PHOTO_LIMITS } from './photoResize';
 
@@ -80,9 +82,10 @@ export function PhotoManager({
       <div className="pf-photo-grid">
         {tiles.map((tile, index) => (
           <div className="pf-photo-tile" key={tile.key} data-testid={`photo-tile-${index}`}>
-            <img
+            <Photo
               className="pf-photo-tile__img"
               src={tile.url}
+              size={256}
               alt={
                 index === 0
                   ? t('photos.a11y.mainPhoto')

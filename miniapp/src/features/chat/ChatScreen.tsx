@@ -34,6 +34,7 @@ import { compatColor, compatLabel } from '@mobile/features/feed/compat';
 import { hasHtml } from '@mobile/utils/validation';
 
 import { useAuthStore } from '@/auth/authStore';
+import { Photo } from '@/components/Photo';
 import { AiAssistBar } from '@/features/ai';
 import { cssVarColors } from '@/theme/tokens';
 
@@ -567,7 +568,13 @@ export function ChatScreen() {
           onClick={openProfile}
         >
           {summary?.otherPhotoUrl ? (
-            <img src={summary.otherPhotoUrl} alt="" referrerPolicy="no-referrer" />
+            <Photo
+              src={summary.otherPhotoUrl}
+              size={256}
+              priority
+              alt=""
+              referrerPolicy="no-referrer"
+            />
           ) : (
             headerName.trim().charAt(0).toUpperCase() || '?'
           )}

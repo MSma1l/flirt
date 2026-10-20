@@ -13,6 +13,7 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import { Icon } from '@/components/icons';
+import { Photo } from '@/components/Photo';
 import { fetchMyProfile } from '@/features/profile/profileApi';
 import { haptic } from '@/telegram/bridge';
 
@@ -30,7 +31,7 @@ function Portrait({ src, name, side }: { src?: string | null; name: string; side
   return (
     <span className={`match-overlay__portrait match-overlay__portrait--${side}`}>
       {src ? (
-        <img src={src} alt="" draggable={false} />
+        <Photo src={src} size={256} priority alt="" draggable={false} />
       ) : (
         <span className="match-overlay__initial">{name.trim().charAt(0).toUpperCase() || '?'}</span>
       )}
