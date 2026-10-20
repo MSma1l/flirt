@@ -1,4 +1,5 @@
 """Logica de business pentru anketă/profil: referință, seed catalog, upsert."""
+import asyncio
 from datetime import date
 from urllib.parse import urlparse
 
@@ -19,6 +20,12 @@ from app.schemas.profile import (
 )
 from app.services import account_service, geo
 from app.services.face_verify import get_face_verifier
+from app.services.image_variants import (
+    InvalidImage,
+    ProcessedImage,
+    process_image,
+    save_with_variants,
+)
 from app.services.storage import (
     allowed_schemes,
     build_photo_key,
@@ -286,10 +293,14 @@ async def add_photo(
     content: bytes,
     content_type: str,
     url: str | None = None,
+    processed: ProcessedImage | None = None,
 ) -> list[str]:
     """Adaugă o poză (prin upload sau URL direct în stub) și întoarce lista.
 
-    Respectă `settings.max_photos` → 422 la depășire.
+    Respectă `settings.max_photos` → 422 la depășire. La upload, poza se
+    salvează PROCESATĂ (`image_variants`): original JPEG ≤1600px fără metadate
+    + variantele `_256.webp` / `_800.webp`. Endpoint-ul trimite `processed`
+    (deja calculat pentru moderare); altfel îl calculăm aici din `content`.
     """
     profile = await _get_profile_or_404(db, user)
     photos = list(profile.photos or [])
@@ -305,9 +316,18 @@ async def add_photo(
         # RO: URL direct (mod stub) — deja validat de endpoint (allowlist + prefix).
         saved_url = url
     else:
-        # RO: cheie sigură server-side (uuid + ext), fără `filename` brut de la user.
-        key = build_photo_key(profile.id, content_type)
-        saved_url = await storage.save(key, content, content_type)
+        if processed is None:
+            try:
+                processed = await asyncio.to_thread(process_image, content)
+            except InvalidImage as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Conținutul încărcat nu este o imagine validă.",
+                ) from exc
+        # RO: cheie sigură server-side (uuid + .jpg — originalul e mereu JPEG
+        # după procesare), fără `filename` brut de la user.
+        key = build_photo_key(profile.id, "image/jpeg")
+        saved_url = await save_with_variants(storage, key, processed)
 
     photos.append(saved_url)
     profile.photos = photos  # reasignare → SQLAlchemy detectează modificarea JSON

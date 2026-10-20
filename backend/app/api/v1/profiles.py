@@ -1,4 +1,5 @@
 """Rute anketă/profil — sub prefixul /api/v1/profiles."""
+import asyncio
 import io
 import logging
 import uuid
@@ -21,6 +22,7 @@ from app.schemas.profile import (
     ReferenceOut,
 )
 from app.services import activity_service, legal_service, profile_service
+from app.services.image_variants import InvalidImage, process_image
 from app.services.photo_moderation import get_photo_moderator
 from app.services.storage import key_from_own_url
 
@@ -205,18 +207,27 @@ async def add_photo(request: Request, db: DbDep, user: UserDep) -> list[str]:
             )
         content = await upload.read()
         # Validare securitate: dimensiune, tip declarat, magic-bytes; tip forțat.
-        safe_content_type = _validate_image_upload(
-            content, upload.content_type or ""
-        )
+        _validate_image_upload(content, upload.content_type or "")
+        # Curățare + micșorare (EXIF/GPS out, ≤1600px JPEG) + variante WebP
+        # 256/800. CPU-bound → firul de lucru, nu event loop-ul.
+        try:
+            processed = await asyncio.to_thread(process_image, content)
+        except InvalidImage as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Conținutul încărcat nu este o imagine validă.",
+            ) from exc
         # Moderare NSFW ÎNAINTE de storage: o poză respinsă nu are voie să atingă
-        # niciodată discul/bucket-ul (Apple Guideline 1.2).
-        await _moderate_photo(content, safe_content_type, user)
+        # niciodată discul/bucket-ul (Apple Guideline 1.2). Rulează pe poza
+        # procesată (providerul o mai micșorează la ≤1024px înainte de trimitere).
+        await _moderate_photo(processed.original, "image/jpeg", user)
         return await profile_service.add_photo(
             db,
             user,
             filename="photo",  # RO: `filename` brut ignorat — cheia vine din uuid.
-            content=content,
-            content_type=safe_content_type,
+            content=processed.original,
+            content_type="image/jpeg",
+            processed=processed,
         )
 
     # RO: altfel — body JSON cu URL direct (mod stub). URL-ul trebuie să fie în

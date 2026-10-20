@@ -375,8 +375,12 @@ async def test_clean_story_photo_is_stored(client, monkeypatch):
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["media_type"] == "image"
-    assert len(storage.saved) == 1
-    assert storage.saved[0][1] == _PNG_1X1
+    # Varianta `_256.webp` întâi, originalul (JPEG procesat) ultimul.
+    keys = [k for k, _ in storage.saved]
+    assert len(keys) == 2
+    assert keys[0].endswith("_256.webp") and keys[1].endswith(".jpg")
+    assert storage.saved[1][1][:3] == b"\xff\xd8\xff"
+    assert resp.json()["media_url"] == f"https://cdn.flirt.local/{keys[1]}"
 
 
 @pytest.mark.asyncio
@@ -401,7 +405,7 @@ async def test_story_moderation_provider_down_is_fail_open(client, monkeypatch, 
             headers=headers,
         )
     assert resp.status_code == 200, resp.text  # NU 500, NU 422
-    assert len(storage.saved) == 1             # poza s-a salvat
+    assert storage.saved[-1][0].endswith(".jpg")  # poza (+ varianta) s-a salvat
     assert "REVIEW UMAN" in caplog.text        # dar e marcată pentru om
 
 
@@ -587,4 +591,4 @@ async def test_story_scena_obisnuita_marcata_minor_nu_e_respinsa(client, monkeyp
         headers=headers,
     )
     assert resp.status_code == 200, resp.text
-    assert len(storage.saved) == 1
+    assert len(storage.saved) == 2  # varianta `_256.webp` + originalul

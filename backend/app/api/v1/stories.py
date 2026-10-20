@@ -3,6 +3,7 @@
 `/mine` e declarat înaintea rutelor parametrizate. Poveștile expiră la 24h și
 sunt vizibile autorului + utilizatorilor cu care are Match.
 """
+import asyncio
 import io
 import logging
 import uuid
@@ -28,6 +29,7 @@ from app.schemas.story import (
     UserStories,
 )
 from app.services import story_service
+from app.services.image_variants import InvalidImage, process_image, save_with_variants
 from app.services.pagination import MAX_CURSOR_LENGTH, STORIES_MAX_LIMIT
 from app.services.photo_moderation import get_photo_moderator
 from app.services.storage import get_storage
@@ -51,6 +53,11 @@ _STORY_MEDIA_EXT: dict[str, str] = {
     "image/png": "png",
     "image/webp": "webp",
 }
+
+# Pozele de story: ecran întreg pe telefon → 1440px ajung; `_256` pentru inelul
+# de story / previzualizări.
+STORY_MAX_SIDE = 1440
+STORY_VARIANTS: tuple[int, ...] = (256,)
 
 # RO: format-imagine (Pillow/imghdr) → tip-conținut canonic (forțat server-side).
 _IMAGE_FORMAT_TO_CT = {"jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
@@ -222,14 +229,26 @@ async def upload_story_media(request: Request, user: UserDep) -> StoryMediaOut:
             detail="Lipsește câmpul 'file' (multipart).",
         )
     content = await upload.read()
-    safe_ct = _validate_story_photo(content, upload.content_type or "")
+    _validate_story_photo(content, upload.content_type or "")
+
+    # Curățare (EXIF/GPS) + micșorare la 1440px JPEG + varianta `_256.webp`.
+    # CPU-bound → firul de lucru, nu event loop-ul.
+    try:
+        processed = await asyncio.to_thread(
+            process_image, content, max_side=STORY_MAX_SIDE, variants=STORY_VARIANTS
+        )
+    except InvalidImage as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Conținutul încărcat nu este o imagine validă.",
+        ) from exc
 
     # RO: moderarea rulează ÎNAINTE de storage — o poză respinsă nu se salvează deloc.
-    await _moderate_story_photo(content, safe_ct, user)
+    await _moderate_story_photo(processed.original, "image/jpeg", user)
 
     storage = get_storage()
-    key = _story_media_key(user.id, safe_ct)
-    media_url = await storage.save(key, content, safe_ct)
+    key = _story_media_key(user.id, "image/jpeg")  # originalul e mereu JPEG acum
+    media_url = await save_with_variants(storage, key, processed)
     return StoryMediaOut(media_url=media_url, media_type="image")
 
 

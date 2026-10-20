@@ -217,9 +217,13 @@ async def test_allowed_photo_is_stored(client, monkeypatch):
         headers=headers,
     )
     assert r.status_code == 200, r.text
-    assert len(storage.saved) == 1
-    assert storage.saved[0][1] == _PNG_1X1
-    assert len(r.json()) == 1
+    # Variantele `_256` / `_800` întâi, originalul (JPEG procesat) ultimul.
+    keys = [k for k, _ in storage.saved]
+    assert len(keys) == 3
+    assert keys[0].endswith("_256.webp") and keys[1].endswith("_800.webp")
+    assert keys[2].endswith(".jpg")
+    assert storage.saved[2][1][:3] == b"\xff\xd8\xff"
+    assert r.json() == [f"https://cdn.flirt.local/{keys[2]}"]
 
 
 # --- FAIL-OPEN: providerul crapă → uploadul REUȘEȘTE --------------------------
@@ -249,7 +253,7 @@ async def test_provider_exception_is_fail_open(client, monkeypatch, caplog):
             headers=headers,
         )
     assert r.status_code == 200, r.text          # NU 500, NU 422
-    assert len(storage.saved) == 1               # poza s-a salvat
+    assert storage.saved[-1][0].endswith(".jpg")  # poza (+ variantele) s-a salvat
     assert "REVIEW UMAN" in caplog.text          # dar e marcată pentru om
 
 
