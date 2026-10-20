@@ -6,6 +6,7 @@
   },
   "app": {
     "connecting": "Te conectăm…",
+    "loading": "Se încarcă…",
     "greeting": "Salut, {{name}}!",
     "connectingBody": "Durează o clipă — verificăm datele primite de la Telegram."
   },

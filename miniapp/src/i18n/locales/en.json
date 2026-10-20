@@ -6,6 +6,7 @@
   },
   "app": {
     "connecting": "Connecting…",
+    "loading": "Loading…",
     "greeting": "Hi, {{name}}!",
     "connectingBody": "This takes a second — we're checking your Telegram sign-in."
   },

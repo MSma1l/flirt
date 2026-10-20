@@ -6,6 +6,7 @@
   },
   "app": {
     "connecting": "Подключаем…",
+    "loading": "Загрузка…",
     "greeting": "Привет, {{name}}!",
     "connectingBody": "Это займёт секунду — проверяем данные от Telegram."
   },
