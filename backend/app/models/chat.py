@@ -1,7 +1,7 @@
 """Modele pentru chat: un dialog per match + mesajele lui (TZ secț. 5)."""
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -37,13 +37,20 @@ class Message(Base):
     __tablename__ = "messages"
     __table_args__ = (
         # Listarea paginată a conversației + ultimul mesaj din fiecare chat
-        # (`ORDER BY created_at DESC` / window function în `GET /chats`).
+        # (`ORDER BY created_at DESC` / `LATERAL ... LIMIT 1` în `GET /chats`).
         # Fără el, fiecare deschidere de chat scanează toate mesajele chat-ului.
         Index("ix_messages_chat_created", "chat_id", "created_at"),
         # Numărul de necitite: `WHERE chat_id = ? AND sender_id <> ? AND
-        # is_read = false` — predicatul exact al badge-ului din lista de chat-uri,
-        # cel mai *polled* query al aplicației. `sender_id` nu era indexat DELOC.
-        Index("ix_messages_chat_sender_unread", "chat_id", "sender_id", "is_read"),
+        # is_read = false` — badge-ul din lista de chat-uri (cel mai *polled*
+        # query), `mark_read` și notificarea Telegram. Index PARȚIAL: conține doar
+        # mesajele necitite (puține), nu tot istoricul. A înlocuit indexul complet
+        # `ix_messages_chat_sender_unread` (chat_id, sender_id, is_read).
+        Index(
+            "ix_messages_unread_chat_sender",
+            "chat_id",
+            "sender_id",
+            postgresql_where=text("is_read = false"),
+        ),
     )
 
     chat_id: Mapped[uuid.UUID] = mapped_column(
