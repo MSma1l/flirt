@@ -253,6 +253,34 @@ def _distance_between(a: Profile, b: Profile) -> float | None:
     return geo.haversine_km(float(a.lat), float(a.lng), float(b.lat), float(b.lng))
 
 
+# Distanța AFIȘATĂ altui user e GRUPATĂ pe intervale, nu exactă: cu valoarea
+# rotunjită la 1 km, cineva care își mută orașul/poziția și citește distanța de
+# 3 ori poate triangula unde stă celălalt. Regula (valoarea rămâne un `int` în
+# km — aplicația mobilă publicată o citește ca număr, forma API-ului NU se
+# schimbă):
+#   * d < 2 km        → 2   (afișat „~2 km"; nu dezvăluim „sub 1 km")
+#   * 2 ≤ d ≤ 10 km   → rotunjit la 1 km, minim 2
+#   * d > 10 km       → rotunjit la cel mai apropiat multiplu de 5 km, minim 10
+# Rotunjirea e „half-up" (2.5 → 3), nu bancară. Distanța EXACTĂ rămâne internă
+# (raza de căutare, scorul de compatibilitate).
+PUBLIC_DISTANCE_MIN_KM = 2
+PUBLIC_DISTANCE_FINE_MAX_KM = 10
+PUBLIC_DISTANCE_COARSE_STEP_KM = 5
+
+
+def public_distance_km(distance_km: float | None) -> int | None:
+    """Distanța exactă (km) → valoarea grupată afișată în feed (vezi regula)."""
+    if distance_km is None:
+        return None
+    d = max(0.0, float(distance_km))
+    if d < PUBLIC_DISTANCE_MIN_KM:
+        return PUBLIC_DISTANCE_MIN_KM
+    if d <= PUBLIC_DISTANCE_FINE_MAX_KM:
+        return max(PUBLIC_DISTANCE_MIN_KM, int(d + 0.5))
+    step = PUBLIC_DISTANCE_COARSE_STEP_KM
+    return max(PUBLIC_DISTANCE_FINE_MAX_KM, int(d / step + 0.5) * step)
+
+
 # --- Feed în TREPTE + TRECERI (cicluri) -------------------------------------
 # Context: cu puține profiluri reale, userii epuizau repede feed-ul strict și
 # vedeau „Nu mai sunt ankete". Decizie de produs („Tot, în trepte"): arătăm
@@ -494,8 +522,9 @@ def _make_card(
         age=_calc_age(p.birth_date),
         gender=p.gender,
         city=p.city,
-        # Distanța reală (TZ 7), din coordonatele persistate. Fără rețea.
-        distance_km=None if distance_km is None else round(distance_km),
+        # Distanța (TZ 7), din coordonatele persistate, GRUPATĂ pe intervale
+        # (anti-triangulare, vezi `public_distance_km`). Fără rețea.
+        distance_km=public_distance_km(distance_km),
         about=p.about,
         top_interests=sorted(p_interests)[:MAX_TOP_INTERESTS],
         languages=list(p.languages or []),

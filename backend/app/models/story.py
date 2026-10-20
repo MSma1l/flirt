@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -18,6 +18,12 @@ class Story(Base):
     """
 
     __tablename__ = "stories"
+    __table_args__ = (
+        # Poveștile active ale unor useri: `WHERE user_id IN (...) AND
+        # expires_at > now()` (bara de stories, „ale mele") — un singur range scan
+        # per user în loc de toate poveștile lui, inclusiv cele expirate.
+        Index("ix_stories_user_expires", "user_id", "expires_at"),
+    )
 
     # Autorul poveștii; indexat pentru lookup rapid pe user.
     user_id: Mapped[uuid.UUID] = mapped_column(

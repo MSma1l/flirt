@@ -13,6 +13,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -89,6 +90,9 @@ class Favorite(Base):
     __tablename__ = "favorites"
     __table_args__ = (
         UniqueConstraint("user_id", "target_user_id", name="uq_favorite_pair"),
+        # Lista paginată de favorite: `WHERE user_id = ? ORDER BY created_at
+        # DESC, id DESC LIMIT n` — citește doar pagina, fără sortare.
+        Index("ix_favorites_user_created", "user_id", "created_at"),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -105,6 +109,9 @@ class Block(Base):
     __tablename__ = "blocks"
     __table_args__ = (
         UniqueConstraint("blocker_id", "blocked_id", name="uq_block_pair"),
+        # Black list-ul paginat: `WHERE blocker_id = ? ORDER BY created_at DESC,
+        # id DESC LIMIT n`.
+        Index("ix_blocks_blocker_created", "blocker_id", "created_at"),
     )
 
     blocker_id: Mapped[uuid.UUID] = mapped_column(

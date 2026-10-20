@@ -22,7 +22,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -60,6 +60,11 @@ class TicketOrder(Base):
     """O comandă de bilet online la un eveniment, plătită prin transfer bancar."""
 
     __tablename__ = "ticket_orders"
+    __table_args__ = (
+        # „Cererile mele" / comanda activă a userului: `WHERE user_id = ? ...
+        # ORDER BY created_at DESC` — fără sortare în memorie.
+        Index("ix_ticket_orders_user_created", "user_id", "created_at"),
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False

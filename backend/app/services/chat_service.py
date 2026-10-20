@@ -6,7 +6,7 @@ import uuid
 from datetime import date
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, func, or_, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Block
@@ -130,36 +130,37 @@ async def _last_messages_by_chat(
 ) -> dict[uuid.UUID, tuple[str, object, str]]:
     """Ultimul mesaj (body, created_at, kind) din FIECARE chat al userului — O(1) query.
 
-    Window function `ROW_NUMBER() OVER (PARTITION BY chat_id ORDER BY created_at
-    DESC, id DESC)`, filtrată la rândul 1. Înlocuiește un `SELECT ... LIMIT 1`
-    per chat (N+1). Suportată de Postgres și de SQLite ≥ 3.25.
+    `LATERAL (SELECT ... WHERE chat_id = c.id ORDER BY created_at DESC, id DESC
+    LIMIT 1)` per chat: Postgres coboară în indexul `ix_messages_chat_created`
+    (chat_id, created_at) și citește UN rând per chat. Varianta anterioară
+    (`ROW_NUMBER() OVER (PARTITION BY chat_id)`) numerota TOATE mesajele din
+    toate chat-urile userului la fiecare polling (12s în Mini App) — cost
+    proporțional cu istoricul, nu cu numărul de chat-uri.
+
+    Chat-urile fără mesaje lipsesc din dict (JOIN interior) → apelantul pune
+    `None`. Cheia de sortare (created_at DESC, id DESC) e aceeași ca înainte.
     """
-    rank = (
-        func.row_number()
-        .over(
-            partition_by=Message.chat_id,
-            order_by=(Message.created_at.desc(), Message.id.desc()),
-        )
-        .label("rank")
-    )
-    ranked = (
+    last_msg = (
         select(
-            Message.chat_id.label("chat_id"),
             Message.body.label("body"),
             Message.created_at.label("created_at"),
             Message.kind.label("kind"),
-            rank,
         )
-        # JOIN pe chat (nu `IN (:id1, …, :idN)`) — numărul de parametri legați nu
-        # crește cu numărul de chat-uri (limita de 999 variabile pe SQLite).
-        .join(Chat, Chat.id == Message.chat_id)
-        .where(or_(Chat.user_a_id == user.id, Chat.user_b_id == user.id))
-        .subquery()
+        .where(Message.chat_id == Chat.id)
+        .order_by(Message.created_at.desc(), Message.id.desc())
+        .limit(1)
+        .correlate(Chat)
+        .lateral("last_msg")
     )
     result = await db.execute(
         select(
-            ranked.c.chat_id, ranked.c.body, ranked.c.created_at, ranked.c.kind
-        ).where(ranked.c.rank == 1)
+            Chat.id.label("chat_id"),
+            last_msg.c.body,
+            last_msg.c.created_at,
+            last_msg.c.kind,
+        )
+        .join(last_msg, true())
+        .where(or_(Chat.user_a_id == user.id, Chat.user_b_id == user.id))
     )
     return {
         row.chat_id: (row.body, row.created_at, row.kind) for row in result.all()
@@ -171,7 +172,10 @@ async def _unread_counts_by_chat(
 ) -> dict[uuid.UUID, int]:
     """Numărul de necitite în FIECARE chat al userului — O(1) query (GROUP BY).
 
-    Înlocuiește un `SELECT COUNT(*)` per chat (N+1). Chat-urile fără necitite
+    Înlocuiește un `SELECT COUNT(*)` per chat (N+1). Citește DOAR mesajele
+    necitite, prin indexul parțial `ix_messages_unread_chat_sender`
+    (chat_id, sender_id) WHERE is_read = false — mesajele citite (marea
+    majoritate) nici nu sunt în index. Chat-urile fără necitite
     lipsesc din dict → apelantul folosește 0 ca default.
     """
     result = await db.execute(
