@@ -26,7 +26,9 @@ modelului sau al rezervei locale) respinge poza (422 în endpoint).
 """
 from __future__ import annotations
 
+import asyncio
 import base64
+import io
 import json
 import logging
 from dataclasses import dataclass
@@ -61,6 +63,57 @@ _SKIN_CR_MIN, _SKIN_CR_MAX = 133, 173
 # decoderul întoarce direct o versiune mică) — neglijabil pe serverul nostru strâns
 # la RAM. Raportul de piele pe o miniatură e practic același ca pe imaginea mare.
 _LOCAL_MAX_SIDE = 64
+
+# --- Imaginea trimisă providerelor de rețea ---------------------------------
+# Modelul vision nu vede mai mult de ~1-1.5 MP oricum; trimiteam base64 din
+# fișiere de până la 8 MB (latență + cost de upload, pe un server strâns). Peste
+# pragurile astea micșorăm la ≤1024px JPEG q80 înainte de apel.
+MODERATION_MAX_SIDE = 1024
+MODERATION_JPEG_QUALITY = 80
+# O imagine deja mică (latură ≤1024 și ≤ pragul ăsta) pleacă neschimbată.
+_MODERATION_PASSTHROUGH_BYTES = 1024 * 1024
+
+
+def downscale_for_moderation(image: bytes, media_type: str) -> tuple[bytes, str]:
+    """(bytes, media_type) de trimis providerului: ≤1024px JPEG q80.
+
+    Sincron (Pillow) — se cheamă prin `prepare_for_provider` / `to_thread`. La
+    orice eroare de decodare întoarce intrarea neschimbată: verdictul (sau
+    fail-open-ul) rămâne treaba providerului, nu a acestui pas de optimizare.
+    """
+    from PIL import Image, ImageOps
+
+    try:
+        with Image.open(io.BytesIO(image)) as img:
+            width, height = img.size
+            if (
+                max(width, height) <= MODERATION_MAX_SIDE
+                and len(image) <= _MODERATION_PASSTHROUGH_BYTES
+            ):
+                return image, media_type
+            # JPEG: decoderul întoarce direct o versiune redusă (RAM/CPU mic).
+            img.draft("RGB", (MODERATION_MAX_SIDE, MODERATION_MAX_SIDE))
+            img.load()
+            small = ImageOps.exif_transpose(img)
+            if small.mode in ("RGBA", "LA", "P"):
+                small = small.convert("RGBA")
+                background = Image.new("RGB", small.size, (255, 255, 255))
+                background.paste(small, mask=small.getchannel("A"))
+                small = background
+            elif small.mode != "RGB":
+                small = small.convert("RGB")
+            small.thumbnail((MODERATION_MAX_SIDE, MODERATION_MAX_SIDE), Image.Resampling.LANCZOS)
+            out = io.BytesIO()
+            small.save(out, format="JPEG", quality=MODERATION_JPEG_QUALITY, optimize=True)
+            return out.getvalue(), "image/jpeg"
+    except Exception:  # noqa: BLE001 — optimizare best-effort, nu poartă de validare
+        return image, media_type
+
+
+async def prepare_for_provider(image: bytes, media_type: str) -> tuple[bytes, str]:
+    """`downscale_for_moderation` în firul de lucru (nu blochează event loop-ul)."""
+    return await asyncio.to_thread(downscale_for_moderation, image, media_type)
+
 
 # RO: prompt-ul e în ENGLEZĂ (modelul e antrenat mai bine așa) și e EXPLICIT că e o
 # aplicație de dating: fără contextul ăsta modelul respinge poze de plajă perfect
@@ -235,6 +288,7 @@ class AnthropicPhotoModerator:
         """Cere modelului un verdict; FAIL-OPEN la orice eroare de rețea/API."""
         import anthropic  # RO: import LAZY — doar când folosim providerul.
 
+        image, media_type = await prepare_for_provider(image, media_type)
         data = base64.standard_b64encode(image).decode("utf-8")
         try:
             response = await self._client().messages.create(
@@ -311,6 +365,7 @@ class OpenRouterPhotoModerator:
 
     async def check(self, image: bytes, media_type: str) -> ModerationVerdict:
         """Cere modelului un verdict; FAIL-OPEN la orice eroare (inclusiv 429)."""
+        image, media_type = await prepare_for_provider(image, media_type)
         result = await ai.complete_vision(
             _PROMPT,
             image,
@@ -372,10 +427,14 @@ class RekognitionPhotoModerator:
 
     async def check(self, image: bytes, media_type: str) -> ModerationVerdict:
         """Cere Rekognition etichetele de moderare; FAIL-OPEN la orice eroare."""
+        image, _media_type = await prepare_for_provider(image, media_type)
         try:
-            response = self._client().detect_moderation_labels(
-                Image={"Bytes": image},
-                MinConfidence=settings.nsfw_confidence_threshold,
+            # boto3 e sincron (HTTP blocant) → firul de lucru.
+            response = await asyncio.to_thread(
+                lambda: self._client().detect_moderation_labels(
+                    Image={"Bytes": image},
+                    MinConfidence=settings.nsfw_confidence_threshold,
+                )
             )
         except Exception:  # noqa: BLE001 — boto3 ridică zeci de tipuri; FAIL-OPEN.
             logger.exception("photo_moderation: eroare Rekognition — FAIL-OPEN.")
@@ -427,7 +486,7 @@ class LocalPhotoModerator:
     async def check(self, image: bytes, media_type: str) -> ModerationVerdict:
         """Verdict pe raportul de ton de piele; la orice eroare de decodare NU decide."""
         try:
-            ratio = self._skin_ratio(image)
+            ratio = await asyncio.to_thread(self._skin_ratio, image)
         except Exception:  # noqa: BLE001 — bytes invalizi/format nesuportat: NU decidem.
             logger.warning(
                 "photo_moderation local: imagine nedecodabilă — nu decid, las fail-open."
@@ -458,8 +517,6 @@ class LocalPhotoModerator:
         rezerva. Numărarea e la nivel de C (point + multiply + histogram), fără buclă
         Python pe pixeli, deci rămâne ieftină.
         """
-        import io
-
         from PIL import Image, ImageChops  # RO: import LAZY — doar în calea de rezervă.
 
         with Image.open(io.BytesIO(image)) as img:

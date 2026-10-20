@@ -232,8 +232,10 @@ async def _call_save(storage, key: str, content: bytes, content_type: str):
     return result
 
 
-async def save_with_variants(storage, key: str, processed: ProcessedImage) -> None:
+async def save_with_variants(storage, key: str, processed: ProcessedImage):
     """Salvează originalul la `key` (image/jpeg) și variantele la `variant_key`.
+
+    Întoarce ce întoarce `storage.save` pentru original (URL-ul public).
 
     Variantele se scriu ÎNAINTE de original: dacă o scriere pică la jumătate,
     nu rămâne un original publicat fără miniaturi (frontend-ul are oricum
@@ -241,4 +243,4 @@ async def save_with_variants(storage, key: str, processed: ProcessedImage) -> No
     """
     for size, data in sorted(processed.variants.items()):
         await _call_save(storage, variant_key(key, size), data, "image/webp")
-    await _call_save(storage, key, processed.original, "image/jpeg")
+    return await _call_save(storage, key, processed.original, "image/jpeg")

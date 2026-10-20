@@ -4,6 +4,7 @@ Provider-ul se alege din `settings.storage_provider`:
 - 'stub' (implicit): nu scrie pe disc/rețea, întoarce un URL determinist.
 - 's3': stochează în AWS S3 prin boto3 (import LAZY, doar când e folosit).
 """
+import asyncio
 from typing import Protocol
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -206,11 +207,14 @@ class S3Storage:
         `ContentType` e forțat dintr-o listă sigură de apelant (nu din header-ul
         de upload direct). Cheia nu conține `filename` brut de la user.
         """
-        self._client().put_object(
-            Bucket=settings.s3_bucket,
-            Key=key.lstrip("/"),
-            Body=content,
-            ContentType=content_type,
+        # boto3 e sincron (HTTP blocant) → firul de lucru, nu event loop-ul.
+        await asyncio.to_thread(
+            lambda: self._client().put_object(
+                Bucket=settings.s3_bucket,
+                Key=key.lstrip("/"),
+                Body=content,
+                ContentType=content_type,
+            )
         )
         return self._public_url(key.lstrip("/"))
 
@@ -230,6 +234,11 @@ class S3Storage:
             key = rel if rel and rel.startswith("stories/") else None
         if not key:
             return None
+        await asyncio.to_thread(self._delete_sync, key)
+        return None
+
+    def _delete_sync(self, key: str) -> None:
+        """Ștergerea propriu-zisă (boto3 sincron) — rulată în `to_thread`."""
         client = self._client()
         client.delete_object(Bucket=settings.s3_bucket, Key=key)
         # Variantele WebP (dacă lipsesc, S3 întoarce tot 204 — fără eroare).
@@ -238,14 +247,17 @@ class S3Storage:
                 client.delete_object(Bucket=settings.s3_bucket, Key=vkey)
             except Exception:  # noqa: BLE001 — o variantă rămasă nu blochează ștergerea
                 pass
-        return None
 
     async def read(self, url: str) -> tuple[bytes, str] | None:
         key = _relative_key(url)
         if not key:
             return None
-        obj = self._client().get_object(Bucket=settings.s3_bucket, Key=key)
-        return obj["Body"].read(), obj.get("ContentType", "application/octet-stream")
+
+        def _read_sync() -> tuple[bytes, str]:
+            obj = self._client().get_object(Bucket=settings.s3_bucket, Key=key)
+            return obj["Body"].read(), obj.get("ContentType", "application/octet-stream")
+
+        return await asyncio.to_thread(_read_sync)
 
 
 class LocalStorage:
@@ -274,11 +286,19 @@ class LocalStorage:
         return target
 
     async def save(self, key: str, content: bytes, content_type: str) -> str:
-        """Scrie fișierul pe disc și întoarce URL-ul public (servit la /media)."""
-        target = self._path_for_key(key)
+        """Scrie fișierul pe disc și întoarce URL-ul public (servit la /media).
+
+        Scrierea (sincronă) rulează în `to_thread`, ca un fișier de câțiva MB pe
+        un disc lent să nu blocheze event loop-ul pentru toate cererile.
+        """
+        target = self._path_for_key(key)  # anti path traversal: rapid, rămâne aici
+        await asyncio.to_thread(self._write_sync, target, content)
+        return f"{settings.storage_base_url.rstrip('/')}/{key.lstrip('/')}"
+
+    @staticmethod
+    def _write_sync(target, content: bytes) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
-        return f"{settings.storage_base_url.rstrip('/')}/{key.lstrip('/')}"
 
     async def delete(self, url: str) -> None:
         """Șterge fișierul (și variantele lui WebP) dacă URL-ul e al nostru și
@@ -290,6 +310,11 @@ class LocalStorage:
             target = self._path_for_key(key)
         except ValueError:
             return None
+        await asyncio.to_thread(self._delete_sync, target, key)
+        return None
+
+    def _delete_sync(self, target, key: str) -> None:
+        """Ștergerea pe disc (sincronă) — rulată în `to_thread`."""
         if target.is_file():
             target.unlink()
         for vkey in variant_keys_for(key):
@@ -298,7 +323,6 @@ class LocalStorage:
             except ValueError:
                 continue
             vpath.unlink(missing_ok=True)
-        return None
 
     async def read(self, url: str) -> tuple[bytes, str] | None:
         key = _relative_key(url)
@@ -308,11 +332,16 @@ class LocalStorage:
             target = self._path_for_key(key)
         except ValueError:
             return None
-        if not target.is_file():
-            return None
         ext = target.suffix.lower()
         content_type = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}.get(ext, "application/octet-stream")
-        return target.read_bytes(), content_type
+
+        def _read_sync() -> bytes | None:
+            return target.read_bytes() if target.is_file() else None
+
+        data = await asyncio.to_thread(_read_sync)
+        if data is None:
+            return None
+        return data, content_type
 
 
 def get_storage() -> Storage:

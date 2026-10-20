@@ -51,6 +51,7 @@ import httpx
 from app.db import session as db_session
 from app.models.user import User
 from app.services import telegram_bot
+from app.services.image_variants import process_image, variant_key
 from app.services.storage import get_storage, key_within_namespace
 
 logger = logging.getLogger("app.telegram.avatar")
@@ -65,6 +66,8 @@ DOWNLOAD_TIMEOUT = 8.0
 # Plafon de pixeli la decodare (anti decompression bomb) și latura avatarului.
 MAX_SOURCE_PIXELS = 40_000_000
 AVATAR_MAX_SIDE = 640
+# Miniatura WebP salvată lângă copie (avatarele apar la 32–64px în liste).
+AVATAR_VARIANT = 256
 # Cât de des întrebăm Bot API când initData nu are `photo_url`.
 BOT_API_RECHECK = timedelta(hours=12)
 MAX_PENDING_TASKS = 200
@@ -236,12 +239,26 @@ async def fetch_avatar_bytes(url: str) -> bytes | None:
         return None
     if not raw:
         return None
-    return _normalize_image(raw)
+    # Decodare + re-encodare Pillow (CPU-bound) → firul de lucru.
+    return await asyncio.to_thread(_normalize_image, raw)
 
 
 async def _store(user_id: uuid.UUID, content: bytes) -> str:
     key = f"{_KEY_PREFIX}{user_id}/{uuid.uuid4().hex}.jpg"
-    return await get_storage().save(key, content, "image/jpeg")
+    storage = get_storage()
+    # Varianta `_256.webp` (best-effort: fără ea, frontend-ul cade pe original).
+    try:
+        processed = await asyncio.to_thread(
+            process_image, content, max_side=AVATAR_MAX_SIDE, variants=(AVATAR_VARIANT,)
+        )
+        await storage.save(
+            variant_key(key, AVATAR_VARIANT),
+            processed.variants[AVATAR_VARIANT],
+            "image/webp",
+        )
+    except Exception:  # noqa: BLE001 — miniatura nu blochează avatarul
+        logger.info("telegram avatar: varianta %spx nu a putut fi salvată", AVATAR_VARIANT)
+    return await storage.save(key, content, "image/jpeg")
 
 
 # --------------------------------------------------------------------------- #

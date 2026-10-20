@@ -7,8 +7,11 @@ declarat de client (spoofabil):
 - audio   → kind 'voice' (webm/opus, ogg/opus, mp4/m4a, aac, mpeg)
 Orice altceva → 415.
 
-Pozele sunt RE-ENCODATE cu Pillow fără EXIF/XMP (fără GPS, model telefon etc.),
-cu orientarea EXIF aplicată în pixeli înainte. Video-ul NU se transcodează.
+Pozele statice (jpeg/png/webp) trec prin `image_variants.process_image`: fără
+EXIF/XMP (fără GPS, model telefon etc.), orientarea aplicată în pixeli, micșorate
+la ≤1600px, JPEG q82 + varianta `_480.webp` pentru bula din chat. GIF-ul și
+WebP-ul animat sunt doar curățate (re-encodarea le-ar strica animația).
+Video-ul NU se transcodează.
 
 MESAJELE VOCALE SE TRANSCODEAZĂ în AAC/M4A (`ensure_playable_voice`), dacă
 ffmpeg există: fiecare platformă înregistrează în alt format (Android/desktop
@@ -30,11 +33,18 @@ import shutil
 import struct
 import tempfile
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from fastapi import HTTPException
 
 from app.core.config import settings
+from app.services.image_variants import (
+    MAX_PIXELS as _VARIANTS_MAX_PIXELS,
+    InvalidImage,
+    ProcessedImage,
+    process_image,
+    variant_key,
+)
 
 logger = logging.getLogger("app.chat.media")
 
@@ -70,6 +80,10 @@ _MIME_EXT: dict[str, str] = {
 # Plafon de pixeli (anti decompression bomb), peste orice cameră de telefon uzuală.
 _MAX_IMAGE_PIXELS = 60_000_000
 
+# Pozele din chat: ecran întreg pe telefon → 1600px ajung; `_480` pentru bulă.
+CHAT_IMAGE_MAX_SIDE = 1600
+CHAT_IMAGE_VARIANTS: tuple[int, ...] = (480,)
+
 UNSUPPORTED_DETAIL = (
     "Tip de fișier nepermis. Se acceptă: imagini (jpeg, png, webp, gif), "
     "video (mp4, mov, webm) și mesaje vocale (webm, ogg, m4a, aac, mp3)."
@@ -86,6 +100,8 @@ class ChatMedia:
     duration_ms: int | None = None
     width: int | None = None
     height: int | None = None
+    # Variante WebP (latura → bytes), salvate lângă original (`variant_key`).
+    variants: dict[int, bytes] = field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------- #
@@ -264,6 +280,73 @@ def _strip_image(content: bytes, mime: str) -> tuple[bytes, int, int]:
         )
 
 
+def process_upload_image(
+    content: bytes, *, max_side: int, variants: tuple[int, ...]
+) -> ProcessedImage:
+    """`process_image` cu erorile HTTP ale uploadurilor: 413 (prea mulți pixeli /
+    bombă de decompresie), 422 (corupt). Sincron, CPU-bound → `to_thread`.
+    """
+    from PIL import Image
+
+    try:
+        with Image.open(io.BytesIO(content)) as img:
+            width, height = img.size  # doar antetul — fără decodare
+    except Image.DecompressionBombError:
+        raise HTTPException(status_code=413, detail="Imaginea are dimensiuni prea mari.")
+    except Exception:
+        raise HTTPException(
+            status_code=422, detail="Imaginea încărcată este coruptă sau invalidă."
+        )
+    if width * height > min(_MAX_IMAGE_PIXELS, _VARIANTS_MAX_PIXELS):
+        raise HTTPException(status_code=413, detail="Imaginea are dimensiuni prea mari.")
+    try:
+        return process_image(content, max_side=max_side, variants=variants)
+    except InvalidImage:
+        raise HTTPException(
+            status_code=422, detail="Imaginea încărcată este coruptă sau invalidă."
+        )
+
+
+def _is_animated(content: bytes) -> bool:
+    from PIL import Image
+
+    try:
+        with Image.open(io.BytesIO(content)) as img:
+            return bool(getattr(img, "is_animated", False))
+    except Exception:  # noqa: BLE001 — fișier stricat: decide `process_upload_image`
+        return False
+
+
+def _clean_chat_image(content: bytes, mime: str) -> ChatMedia:
+    """Poza din chat curățată: GIF / WebP animat neschimbate ca format, restul
+    procesate (≤1600px JPEG + `_480.webp`)."""
+    if mime == "image/gif" or (mime == "image/webp" and _is_animated(content)):
+        clean, width, height = _strip_image(content, mime)
+        return ChatMedia(kind="image", mime=mime, content=clean, width=width, height=height)
+    processed = process_upload_image(
+        content, max_side=CHAT_IMAGE_MAX_SIDE, variants=CHAT_IMAGE_VARIANTS
+    )
+    return ChatMedia(
+        kind="image",
+        mime="image/jpeg",
+        content=processed.original,
+        width=processed.width,
+        height=processed.height,
+        variants=processed.variants,
+    )
+
+
+async def save_chat_media(storage, key: str, media: ChatMedia) -> str:
+    """Salvează variantele (dacă există), apoi originalul; întoarce URL-ul lui.
+
+    Variantele întâi: odată ce URL-ul originalului ajunge la destinatar,
+    miniatura lui e deja pe disc (frontend-ul are oricum fallback la original).
+    """
+    for size, data in sorted(media.variants.items()):
+        await storage.save(variant_key(key, size), data, "image/webp")
+    return await storage.save(key, media.content, media.mime)
+
+
 # --------------------------------------------------------------------------- #
 # Punctul de intrare
 # --------------------------------------------------------------------------- #
@@ -287,7 +370,11 @@ def max_attachment_bytes() -> int:
 
 
 def validate_attachment(content: bytes, duration_ms: int | None) -> ChatMedia:
-    """Validează un atașament → `ChatMedia`. Ridică 422 / 413 / 415."""
+    """Validează un atașament → `ChatMedia`. Ridică 422 / 413 / 415.
+
+    Sincron și, pentru poze, CPU-bound — din cod async se cheamă prin
+    `asyncio.to_thread`.
+    """
     if not content:
         raise HTTPException(
             status_code=422, detail="Fișier gol."
@@ -297,10 +384,7 @@ def validate_attachment(content: bytes, duration_ms: int | None) -> ChatMedia:
     if image_mime is not None:
         if len(content) > settings.chat_image_max_bytes:
             raise _too_large("Imaginea este", settings.chat_image_max_bytes)
-        clean, width, height = _strip_image(content, image_mime)
-        return ChatMedia(
-            kind="image", mime=image_mime, content=clean, width=width, height=height
-        )
+        return _clean_chat_image(content, image_mime)
 
     av = _sniff_av(content)
     if av is None:

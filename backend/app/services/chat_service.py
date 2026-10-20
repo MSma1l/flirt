@@ -16,7 +16,7 @@ from app.models.profile import Profile
 from app.models.swipe import Match
 from app.models.user import User
 from app.schemas.chat import ChatSummary, MessageOut, MessagePage, PartnerProfileOut
-from app.services.chat_media import ChatMedia, build_attachment_key
+from app.services.chat_media import ChatMedia, build_attachment_key, save_chat_media
 from app.services.telegram_avatar import avatar_url_for
 from app.services.compatibility import compute_compatibility
 from app.services.contact_masker import mask_contacts
@@ -509,7 +509,7 @@ async def send_attachment(
 
     storage = get_storage()
     key = build_attachment_key(chat.id, media.mime)
-    url = await storage.save(key, media.content, media.mime)
+    url = await save_chat_media(storage, key, media)  # + varianta `_480.webp`
 
     message = Message(
         chat_id=chat.id,
