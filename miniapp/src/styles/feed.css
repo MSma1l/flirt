@@ -142,6 +142,45 @@
   transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+/* Cardul trimis zboară PESTE cel următor (afișat deja) și nu mai primește
+   atingeri: gestul următor e al cardului de dedesubt. */
+.deck__card--leaving {
+  pointer-events: none;
+}
+
+/* ——— Fără sticlă în mișcare ————————————————————————————————————
+   `backdrop-filter` recalculează blur-ul a tot ce e dedesubt la FIECARE cadru
+   în care dedesubtul se mișcă — exact ce face cardul în timpul gestului și al
+   zborului. Atunci sticla devine un fundal semi-opac simplu; la repaus revine. */
+.feed.is-dragging .feed__top::before {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: rgba(8, 8, 12, 0.6);
+}
+
+.feed.is-dragging .compat-badge,
+.deck__card--leaving .compat-badge {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: rgba(10, 10, 14, 0.6);
+}
+
+.feed.is-dragging .profile-card__tier,
+.feed.is-dragging .profile-card__chip,
+.deck__card--leaving .profile-card__tier,
+.deck__card--leaving .profile-card__chip {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: rgba(20, 20, 26, 0.5);
+}
+
+.feed.is-dragging .feed__coach,
+.feed.is-dragging .feed__toast {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: rgba(10, 10, 14, 0.8);
+}
+
 /* ——— Cardul: poza pe tot ecranul ——————————————————————————————— */
 
 .profile-card {
@@ -437,10 +476,12 @@
 /* ——— Ștampilele direcțiilor ———————————————————————————————————— */
 
 /* Opacitatea vine din JS, proporțional cu distanța parcursă de deget —
-   utilizatorul vede ce urmează să se întâmple ÎNAINTE să ridice degetul. */
+   utilizatorul vede ce urmează să se întâmple ÎNAINTE să ridice degetul.
+   JS scrie doar variabilele `--cue-*` pe card (fără re-randare React). */
 .cue {
   position: absolute;
   z-index: 2;
+  opacity: 0;
   padding: 6px 14px;
   border: 3px solid currentColor;
   border-radius: 10px;
@@ -459,6 +500,7 @@
   left: var(--space-xl);
   color: var(--color-success);
   transform: rotate(-14deg);
+  opacity: var(--cue-like, 0);
 }
 
 .cue--nope {
@@ -466,6 +508,7 @@
   right: var(--space-xl);
   color: var(--color-danger);
   transform: rotate(14deg);
+  opacity: var(--cue-nope, 0);
 }
 
 .cue--super {
@@ -474,6 +517,7 @@
   transform: translate(-50%, -50%) rotate(-6deg);
   color: var(--color-accent);
   white-space: nowrap;
+  opacity: var(--cue-super, 0);
 }
 
 .cue--undo {
@@ -482,6 +526,7 @@
   transform: translateX(-50%);
   color: #fff;
   white-space: nowrap;
+  opacity: var(--cue-undo, 0);
 }
 
 /* ——— Indiciul de gesturi, o singură dată ——————————————————————— */

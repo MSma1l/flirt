@@ -22,10 +22,12 @@
  * Lipsesc butoanele de favorit / raportare / blocare — depind de feature-uri
  * (`social`, `moderation`) care nu sunt încă portate în Mini App.
  */
-import { useState, type MouseEvent } from 'react';
+import { memo, useState, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { FeedCard } from '@mobile/features/feed/types';
+
+import { Photo } from '@/components/Photo';
 
 import { CompatBadge } from './CompatBadge';
 
@@ -45,6 +47,8 @@ interface Props {
   onNextPhoto?: () => void;
   /** Id-ul elementului care descrie gesturile (pentru `aria-describedby`). */
   describedBy?: string;
+  /** Cardul vizibil acum: pozele se cer imediat, cu prioritate mare. */
+  priority?: boolean;
 }
 
 /**
@@ -67,13 +71,22 @@ function keyboardOnly(action: (() => void) | undefined) {
   };
 }
 
-export function ProfileCardView({
+/** Fără interese: o referință stabilă, ca `memo` să nu vadă o listă „nouă". */
+const NO_INTERESTS: readonly string[] = [];
+
+/**
+ * Memoizat: deck-ul se re-randează (stare de match, lot nou, undo) fără ca
+ * propriile props ale cardului să se schimbe — atunci cardul nu se mai
+ * re-randează deloc. În timpul gestului deck-ul nu se re-randează oricum.
+ */
+export const ProfileCardView = memo(function ProfileCardView({
   card,
   photoIndex = 0,
-  interests = [],
+  interests = NO_INTERESTS,
   onPrevPhoto,
   onNextPhoto,
   describedBy,
+  priority = false,
 }: Props) {
   const { t } = useTranslation(['miniapp', 'screens']);
   const total = card.photos.length;
@@ -89,14 +102,23 @@ export function ProfileCardView({
       <div className="profile-card__media" aria-hidden="true">
         {photo ? (
           <>
-            <img className="profile-card__backdrop" src={photo} alt="" draggable={false} />
-            <img
+            {/* Fundalul e încețoșat oricum: varianta de 256px arată la fel și
+                costă de zeci de ori mai puțin de descărcat și decodat. */}
+            <Photo
+              className="profile-card__backdrop"
+              src={photo}
+              size={256}
+              priority={priority}
+              draggable={false}
+            />
+            <Photo
               key={photo}
               className="profile-card__photo"
               data-testid="profile-card-photo"
               data-lowres={lowRes[photo] ? 'true' : undefined}
               src={photo}
-              alt=""
+              size={800}
+              priority={priority}
               draggable={false}
               onLoad={(event) => {
                 const width = event.currentTarget.naturalWidth;
@@ -187,4 +209,4 @@ export function ProfileCardView({
       </div>
     </article>
   );
-}
+});
