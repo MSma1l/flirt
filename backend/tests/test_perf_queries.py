@@ -11,7 +11,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import event, func, select
+from sqlalchemy import event, func, or_, select
 
 from app.core.security import hash_password
 from app.models.account import Favorite
@@ -210,6 +210,133 @@ async def test_list_chats_creates_missing_chat_for_legacy_match(db_session):
     await chat_service.list_chats(db_session, me)
     total = await db_session.execute(select(func.count()).select_from(Chat))
     assert total.scalar_one() == 1
+
+
+# --- 1b. Ultimul mesaj prin LATERAL — același rezultat ca vechiul ROW_NUMBER --
+
+
+async def _last_messages_reference(db, user: User) -> dict:
+    """Implementarea ANTERIOARĂ (window function), păstrată ca oracol de test."""
+    rank = (
+        func.row_number()
+        .over(
+            partition_by=Message.chat_id,
+            order_by=(Message.created_at.desc(), Message.id.desc()),
+        )
+        .label("rank")
+    )
+    ranked = (
+        select(
+            Message.chat_id.label("chat_id"),
+            Message.body.label("body"),
+            Message.created_at.label("created_at"),
+            Message.kind.label("kind"),
+            rank,
+        )
+        .join(Chat, Chat.id == Message.chat_id)
+        .where(or_(Chat.user_a_id == user.id, Chat.user_b_id == user.id))
+        .subquery()
+    )
+    rows = await db.execute(
+        select(
+            ranked.c.chat_id, ranked.c.body, ranked.c.created_at, ranked.c.kind
+        ).where(ranked.c.rank == 1)
+    )
+    return {r.chat_id: (r.body, r.created_at, r.kind) for r in rows.all()}
+
+
+@pytest.mark.asyncio
+async def test_last_message_lateral_matches_window_function(db_session):
+    """LATERAL ... LIMIT 1 dă EXACT ce dădea ROW_NUMBER(): body, created_at, kind.
+
+    Cazuri: chat fără mesaje (lipsește din dict), egalitate pe `created_at`
+    (departajată de `id DESC`), ultimul mesaj non-text (kind), mesaj propriu mai
+    nou, chat-urile ALTOR useri (nu apar).
+    """
+    me = await _make_user(db_session, "lat-me@example.com")
+    await _make_profile(db_session, me, "Me")
+    peers = []
+    for i in range(4):
+        peer = await _make_user(db_session, f"lat-p{i}@example.com")
+        await _make_profile(db_session, peer, f"P{i}")
+        peers.append(peer)
+
+    chat_many = await _make_chat(db_session, me, peers[0], messages=5, spaced=True)
+    chat_empty = await _make_chat(db_session, me, peers[1], messages=0)
+    chat_tie = await _make_chat(db_session, me, peers[2], messages=0)
+    # Chat între doi ALȚI useri — nu trebuie să apară în rezultatul meu.
+    stranger = await _make_user(db_session, "lat-stranger@example.com")
+    foreign = await _make_chat(db_session, peers[3], stranger, messages=2, spaced=True)
+
+    # Egalitate pe created_at: 3 mesaje cu ACELAȘI moment, kind diferit.
+    same_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+    for kind in ("text", "image", "voice"):
+        m = Message(
+            chat_id=chat_tie.id,
+            sender_id=peers[2].id,
+            body=f"tie-{kind}",
+            was_masked=False,
+            is_read=False,
+            kind=kind,
+        )
+        m.created_at = same_at
+        db_session.add(m)
+    # În chat_many: ultimul e un mesaj PROPRIU, de tip video.
+    mine = Message(
+        chat_id=chat_many.id,
+        sender_id=me.id,
+        body="",
+        was_masked=False,
+        is_read=False,
+        kind="video",
+    )
+    mine.created_at = datetime.now(timezone.utc) + timedelta(minutes=1)
+    db_session.add(mine)
+    await db_session.commit()
+
+    expected = await _last_messages_reference(db_session, me)
+    actual = await chat_service._last_messages_by_chat(db_session, me)
+    assert actual == expected
+    assert chat_empty.id not in actual
+    assert foreign.id not in actual
+    assert actual[chat_many.id][0] == "" and actual[chat_many.id][2] == "video"
+    assert set(actual) == {chat_many.id, chat_tie.id}
+
+    # list_chats: ultimul mesaj + ORDINEA (cel mai recent primul, chat-ul gol la
+    # coadă) — exact ca înainte.
+    summaries = await chat_service.list_chats(db_session, me)
+    assert [s.chat_id for s in summaries] == [chat_tie.id, chat_many.id, chat_empty.id]
+    by_id = {s.chat_id: s for s in summaries}
+    tie_body, _, tie_kind = expected[chat_tie.id]
+    assert by_id[chat_tie.id].last_message == tie_body
+    assert by_id[chat_tie.id].last_message_kind == tie_kind
+    assert by_id[chat_tie.id].unread_count == 3
+    assert by_id[chat_many.id].last_message_kind == "video"
+    assert by_id[chat_many.id].unread_count == 5
+    assert by_id[chat_empty.id].last_message is None
+    assert by_id[chat_empty.id].last_message_at is None
+    assert by_id[chat_empty.id].last_message_kind is None
+    assert by_id[chat_empty.id].unread_count == 0
+
+
+@pytest.mark.asyncio
+async def test_list_chats_uses_lateral_not_window_function(db_session, engine):
+    """GET /chats: ultimul mesaj vine dintr-un LATERAL ... LIMIT 1 (un rând per
+    chat), nu din ROW_NUMBER() peste tot istoricul; totalul rămâne 6 query-uri."""
+    me = await _make_user(db_session, "lat2-me@example.com")
+    await _make_profile(db_session, me, "Me")
+    await _add_chats(db_session, me, count=3, offset=100)
+
+    with QueryCounter(engine) as counter:
+        chats = await chat_service.list_chats(db_session, me)
+    assert len(chats) == 3
+    sql = [s.lower() for s in counter.statements]
+    assert not any("row_number" in s for s in sql), counter.statements
+    lateral = [s for s in sql if "lateral" in s]
+    assert len(lateral) == 1, counter.statements
+    assert "limit" in lateral[0]
+    # match-uri, chat-uri, profiluri, interese, ultimul mesaj, necitite.
+    assert len(counter) == 6, counter.statements
 
 
 # =============================================================================
