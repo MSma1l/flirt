@@ -291,7 +291,8 @@ async def test_event_cover_upload_then_use_in_event(client, db_session):
     assert body["media_type"] == "image"
     url = body["url"]
     base = settings.storage_base_url.rstrip("/")
-    assert url.startswith(f"{base}/events/") and url.endswith(".png")
+    # Originalul e mereu JPEG după procesare (PNG-ul urcat devine `.jpg`).
+    assert url.startswith(f"{base}/events/") and url.endswith(".jpg")
 
     r = await client.post(
         f"{API}/admin/events", json=_event_payload(cover_url=url), headers=admin

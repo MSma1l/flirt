@@ -10,8 +10,10 @@ diferă (ce tipuri se acceptă, sub ce prefix se salvează, ce acțiune se audit
 - coperte de eveniment (`events/`): DOAR imagini (un video → 415).
 
 Nu reinventăm validarea: refolosim detecția din `chat_media` (magic bytes, nu
-Content-Type-ul declarat de client, care e spoofabil) și curățarea pozelor
-(re-encodare fără EXIF/GPS). Limite:
+Content-Type-ul declarat de client, care e spoofabil) și pipeline-ul de poze
+(`image_variants.process_image`: fără EXIF/GPS, ≤1600px, JPEG q82). Copertele
+de eveniment primesc și varianta `_800.webp` (cardurile din listă); creativele
+reclamelor doar originalul curățat. Limite:
 - imagini: jpeg / png / webp (fără gif), `max_upload_bytes`;
 - video: mp4 / mov / webm, `story_video_max_bytes` (nginx permite 55 MB);
 - audio (mesaje vocale în chat) NU e un creativ valid → 415.
@@ -21,6 +23,7 @@ decidă după cod, nu după text.
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
 from dataclasses import dataclass
 
@@ -34,12 +37,17 @@ from app.services.admin_service import audit, request_ip
 
 # RO: importul înregistrează și tipurile `.webm` / `.mov` în `mimetypes`, ca
 # StaticFiles (STORAGE_PROVIDER=local) să servească video-ul cu tipul corect.
-from app.services.chat_media import _MIME_EXT, _sniff_av, _sniff_image, _strip_image
+from app.services.chat_media import _MIME_EXT, _sniff_av, _sniff_image, process_upload_image
+from app.services.image_variants import ProcessedImage, save_with_variants
 from app.services.storage import get_storage
 
 # Prefixe dedicate în storage (publice: creativele și copertele se arată tuturor).
 AD_MEDIA_PREFIX = "ads/"
 EVENT_COVER_PREFIX = "events/"
+
+IMAGE_MAX_SIDE = 1600
+# Variantele WebP pe prefix (copertele apar ca miniaturi în lista de evenimente).
+_PREFIX_VARIANTS: dict[str, tuple[int, ...]] = {EVENT_COVER_PREFIX: (800,)}
 
 IMAGE_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
 VIDEO_TYPES = frozenset({"video/mp4", "video/quicktime", "video/webm"})
@@ -58,6 +66,8 @@ class AdminMedia:
     media_type: str  # 'image' | 'video'
     mime: str
     content: bytes
+    # Poza procesată (original JPEG + variante WebP); None pentru video.
+    processed: ProcessedImage | None = None
 
 
 @dataclass
@@ -106,8 +116,14 @@ def max_read_bytes(allow_video: bool) -> int:
     return max(settings.max_upload_bytes, settings.story_video_max_bytes)
 
 
-def validate_admin_media(content: bytes, *, allow_video: bool) -> AdminMedia:
-    """Validează un fișier → `AdminMedia`. Ridică 422 (gol/corupt), 413, 415."""
+def validate_admin_media(
+    content: bytes, *, allow_video: bool, variants: tuple[int, ...] = ()
+) -> AdminMedia:
+    """Validează un fișier → `AdminMedia`. Ridică 422 (gol/corupt), 413, 415.
+
+    Pozele ies JPEG ≤1600px fără metadate (+ `variants` WebP). Sincron și
+    CPU-bound — din cod async se cheamă prin `asyncio.to_thread`.
+    """
     if not content:
         raise _invalid("Fișier gol.")
 
@@ -118,16 +134,23 @@ def validate_admin_media(content: bytes, *, allow_video: bool) -> AdminMedia:
         if len(content) > settings.max_upload_bytes:
             raise _too_large(settings.max_upload_bytes, "Imaginea este")
         try:
-            clean, _w, _h = _strip_image(content, image_mime)
+            processed = process_upload_image(
+                content, max_side=IMAGE_MAX_SIDE, variants=variants
+            )
         except HTTPException as exc:
-            # `_strip_image` ridică 413 (bombă de decompresie / prea mulți pixeli)
-            # sau 422 (imagine coruptă) fără cod — îi punem codul contractului.
+            # `process_upload_image` ridică 413 (bombă de decompresie / prea mulți
+            # pixeli) sau 422 (imagine coruptă) fără cod — îi punem codul contractului.
             if exc.status_code == 413:
                 raise CodedHTTPException(
                     status_code=413, detail=str(exc.detail), code=ErrorCode.FILE_TOO_LARGE
                 ) from exc
             raise _invalid(str(exc.detail)) from exc
-        return AdminMedia(media_type="image", mime=image_mime, content=clean)
+        return AdminMedia(
+            media_type="image",
+            mime="image/jpeg",
+            content=processed.original,
+            processed=processed,
+        )
 
     if not allow_video:
         # Orice nu e imagine permisă (inclusiv un video valid) → 415.
@@ -184,10 +207,17 @@ async def handle_admin_upload(
     if len(content) > limit:
         raise _too_large(limit)
 
-    media = validate_admin_media(content, allow_video=allow_video)
-    url = await get_storage().save(
-        build_media_key(prefix, media.mime), media.content, media.mime
+    media = await asyncio.to_thread(
+        validate_admin_media,
+        content,
+        allow_video=allow_video,
+        variants=_PREFIX_VARIANTS.get(prefix, ()),
     )
+    key = build_media_key(prefix, media.mime)
+    if media.processed is not None:
+        url = await save_with_variants(get_storage(), key, media.processed)
+    else:
+        url = await get_storage().save(key, media.content, media.mime)
 
     audit(
         db,

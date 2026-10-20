@@ -1,4 +1,5 @@
 """Rute de chat — montate sub /api/v1/chats (TZ secț. 5). Toate protejate."""
+import asyncio
 import uuid
 from typing import Annotated
 
@@ -170,7 +171,8 @@ async def send_attachment(
             detail=f"Fișier prea mare (maxim {limit // (1024 * 1024)} MB).",
         )
 
-    media = validate_attachment(content, duration_ms)
+    # Pozele se decodează/re-encodează (Pillow, CPU-bound) → firul de lucru.
+    media = await asyncio.to_thread(validate_attachment, content, duration_ms)
     # Vocalele WebM/Ogg/Opus → AAC/M4A, ca să se poată asculta și pe iOS.
     media = await ensure_playable_voice(media)
     return await chat_service.send_attachment(db, user, chat, media, caption)
