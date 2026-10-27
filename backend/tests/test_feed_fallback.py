@@ -1,18 +1,24 @@
-"""Feed în TREPTE + TRECERI: arătăm profiluri ORICUM, în ordine, fără repetări.
+"""Feed în TREPTE + TRECERI: profiluri potrivite, în ordine, fără repetări.
 
-Ordinea: strict → relaxed (fără vârstă/rază/inactivitate) → other_gender, în
-fiecare treaptă compatibilitate DESCRESCĂTOR. TRECERI: un dislike exclude până
-la sfârșitul trecerii curente; când toți au fost văzuți, feed-ul o ia de la
-capăt (dislike-urile revin ca `second_chance`, like-urile / match-urile nu).
-Gate-urile DURE (profil complet, 18+, poze, self, block, ban, ascuns, șters,
-like/match deja dat) se aplică în TOATE treptele. Testele apelează serviciul
-direct (fixturi în DB), ca în `test_feed_service_unit.py`.
+Ordinea: strict → relaxed (în afara razei sau inactiv), în fiecare treaptă
+scorul de ranking DESCRESCĂTOR. Genul și vârsta sunt filtre DURE și RECIPROCE
+(vezi `test_feed_ranking.py`) — nu mai există treapta `other_gender`. TRECERI:
+un dislike exclude până la sfârșitul trecerii curente; când toți au fost văzuți,
+feed-ul o ia de la capăt (dislike-urile revin ca `second_chance`, like-urile /
+match-urile nu). Gate-urile DURE (profil complet, 18+, poze, self, block, ban,
+ascuns, șters, like/match deja dat) se aplică în TOATE treptele. Testele
+apelează serviciul direct (fixturi în DB), ca în `test_feed_service_unit.py`.
+
+Pauza de reciclare (`feed_recycle_cooldown_hours`) e OPRITĂ aici, ca testele de
+mecanică a trecerilor să nu depindă de ceas; e testată separat, în
+`test_feed_ranking.py`.
 """
 from __future__ import annotations
 
 import base64
 from datetime import date, datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy import event, func, select, update
 
 from app.core.config import settings
@@ -33,6 +39,12 @@ FAR = (44.43, 26.10)
 # --------------------------------------------------------------------------- #
 # Fixturi
 # --------------------------------------------------------------------------- #
+@pytest.fixture(autouse=True)
+def _no_recycle_cooldown(monkeypatch):
+    """Reciclare imediată: testele de aici verifică mecanica trecerilor."""
+    monkeypatch.setattr(settings, "feed_recycle_cooldown_hours", 0)
+
+
 async def _user(db, email: str) -> User:
     user = User(email=email, password_hash=hash_password("Str0ng-Passw0rd!"))
     db.add(user)
@@ -145,6 +157,7 @@ async def test_strict_only_when_page_is_full(db_session):
 async def test_relaxed_fills_when_strict_is_short(db_session):
     me = await _me(db_session)
     strict = await _person(db_session, "strict@example.com")
+    # În afara intervalului MEU de vârstă: filtru dur, nu treaptă.
     old = await _person(db_session, "old@example.com", age=45)
     far = await _person(db_session, "far@example.com", where=FAR)
     # Inactiv de mult: exclus din strict, dar acceptat în relaxed.
@@ -161,11 +174,11 @@ async def test_relaxed_fills_when_strict_is_short(db_session):
     # Strict-ul vine ÎNTÂI, cu default-urile neschimbate.
     assert ids[0] == strict.id
     assert cards[0].fallback_tier is None and cards[0].outside_filters is False
-    # Vârsta/raza în afara preferințelor ⇒ relaxed + marcate.
-    for u in (old, far):
-        card = next(c for c in cards if c.user_id == u.id)
-        assert card.fallback_tier == "relaxed"
-        assert card.outside_filters is True
+    assert old.id not in ids
+    # Raza în afara preferințelor ⇒ relaxed + marcat.
+    card = next(c for c in cards if c.user_id == far.id)
+    assert card.fallback_tier == "relaxed"
+    assert card.outside_filters is True
     # Inactivul e în preferințe (vârstă/rază/gen) ⇒ relaxed, dar NU „în afara".
     idle_card = next(c for c in cards if c.user_id == idle.id)
     assert idle_card.fallback_tier == "relaxed"
@@ -173,35 +186,19 @@ async def test_relaxed_fills_when_strict_is_short(db_session):
     assert len(ids) == len(set(ids)), "Fără duplicate între trepte."
 
 
-async def test_other_gender_is_last_and_flagged(db_session):
+async def test_other_gender_and_out_of_age_are_never_shown(db_session):
+    """Regresie: după epuizarea strict-ului, feed-ul arăta bărbați unui bărbat
+    care caută femei (`other_gender`) și oameni din afara vârstei căutate."""
     me = await _me(db_session)
-    man = await _person(db_session, "man@example.com", gender="male")
-    old = await _person(db_session, "old@example.com", age=45)
+    await _person(db_session, "man@example.com", gender="male")
+    await _person(db_session, "old@example.com", age=45)
     disliked = await _person(db_session, "dis@example.com")
     await F.swipe(db_session, me, disliked.id, "dislike")
-    await _age_swipe(db_session, me, disliked, hours=25)
 
     cards = await _feed(db_session, me)
-    # Dislike-ul din trecerea curentă NU revine (oricât de vechi ar fi): abia o
-    # trecere nouă îl readuce.
-    assert _ids(cards) == [old.id, man.id]
-    assert [c.fallback_tier for c in cards] == ["relaxed", "other_gender"]
-    assert cards[-1].outside_filters is True
-
-
-async def test_other_gender_excludes_liked_and_disliked_in_pass(db_session):
-    me = await _me(db_session)
-    liked = await _person(db_session, "liked@example.com", gender="male")
-    disliked = await _person(db_session, "dis@example.com", gender="male")
-    fresh = await _person(db_session, "fresh@example.com", gender="male")
-    await F.swipe(db_session, me, liked.id, "like")
-    await F.swipe(db_session, me, disliked.id, "dislike")
-    await _age_swipe(db_session, me, liked, hours=72)
-    await _age_swipe(db_session, me, disliked, hours=25)
-
-    cards = await _feed(db_session, me)
-    assert _ids(cards) == [fresh.id]
-    assert cards[0].fallback_tier == "other_gender"
+    # Doar refuzata (într-o trecere nouă) — niciodată alt gen / altă vârstă.
+    assert _ids(cards) == [disliked.id]
+    assert cards[0].fallback_tier == "second_chance"
 
 
 async def test_no_other_gender_tier_without_gender_preference(db_session):
@@ -224,7 +221,9 @@ async def _ranked_people(db) -> list[User]:
     return [best, mid, low]
 
 
-async def test_order_is_compatibility_desc(db_session):
+async def test_order_follows_compatibility_when_other_signals_are_equal(db_session):
+    """Cu apropiere/activitate/calitate egale, ordinea urmează compatibilitatea
+    (jitter-ul per privitor e mai mic decât o diferență reală de potrivire)."""
     me = await _me(db_session)
     people = await _ranked_people(db_session)
     cards = await _feed(db_session, me)
@@ -235,26 +234,26 @@ async def test_order_is_compatibility_desc(db_session):
 
 async def test_cursor_pages_have_no_duplicates_across_tiers(db_session):
     me = await _me(db_session)
-    for i in range(4):
+    for i in range(5):
         await _person(db_session, f"s{i}@example.com")
-    await _person(db_session, "old@example.com", age=45)
-    await _person(db_session, "far@example.com", where=FAR)
-    await _person(db_session, "man@example.com", gender="male")
+    await _person(db_session, "far1@example.com", where=FAR)
+    await _person(db_session, "far2@example.com", where=FAR)
 
+    full = _ids(await _feed(db_session, me))
     seen: list = []
-    keys: list = []
+    tiers: list = []
     cursor = None
     for _ in range(10):
         page = await F.get_feed(db_session, me, limit=3, cursor=cursor)
         for c in page.items:
             seen.append(c.user_id)
-            tier = {None: 0, "relaxed": 1, "other_gender": 2}[c.fallback_tier]
-            keys.append((tier, -c.compatibility, str(c.user_id)))
+            tiers.append({None: 0, "relaxed": 1}[c.fallback_tier])
         cursor = page.next_cursor
         if cursor is None:
             break
     assert len(seen) == 7 and len(set(seen)) == 7
-    assert keys == sorted(keys), "Treaptă, apoi compatibilitate descrescător."
+    assert seen == full, "Paginile pe cursor = exact lista completă, în ordine."
+    assert tiers == sorted(tiers), "Treapta strictă înaintea celei relaxate."
 
 
 async def _feed_statements(db, engine, me: User, limit: int) -> tuple[list, list[str]]:
@@ -279,8 +278,8 @@ async def test_all_tiers_come_from_at_most_two_retrieval_queries(db_session, eng
     """
     me = await _me(db_session)
     await _person(db_session, "s@example.com")
-    await _person(db_session, "old@example.com", age=45)
-    await _person(db_session, "man@example.com", gender="male")
+    await _person(db_session, "far1@example.com", where=FAR)
+    await _person(db_session, "far2@example.com", where=FAR)
 
     cards, statements = await _feed_statements(db_session, engine, me, limit=50)
     assert len(cards) == 3
@@ -310,8 +309,11 @@ async def test_legacy_cursor_is_still_accepted(db_session):
         .decode()
         .rstrip("=")
     )
+    # Formatul vechi se decodează fără 422 (cheia lui era pe procent, nu pe
+    # scorul de ranking, deci poziția nu mai e semnificativă — doar acceptat).
     page = await F.get_feed(db_session, me, limit=5, cursor=legacy)
-    assert _ids(page.items) == [u.id for u in people[1:]]
+    assert isinstance(page.items, list)
+    assert set(_ids(page.items)) <= {u.id for u in people}
 
 
 # --------------------------------------------------------------------------- #
@@ -406,8 +408,8 @@ async def test_hard_gates_hold_in_every_tier(db_session):
     me = await _me(db_session)
     now = datetime.now(timezone.utc)
     gated: list[User] = []
-    # Fiecare gate, pe AMBELE genuri (female = strict/relaxed,
-    # male = other_gender) — niciunul nu are voie să apară.
+    # Fiecare gate, pe AMBELE genuri (female = căutat; male = alt gen, exclus
+    # oricum de potrivirea reciprocă) — niciunul nu are voie să apară.
     for gender in ("female", "male"):
         blocked_by_me = await _person(db_session, f"bme-{gender}@example.com", gender=gender)
         blocks_me = await _person(db_session, f"bby-{gender}@example.com", gender=gender)
@@ -443,8 +445,7 @@ async def test_hard_gates_hold_in_every_tier(db_session):
             )
         )
     await db_session.commit()
-    # Și câte un profil NE-swipe-uit cu aceleași gate-uri (pentru relaxed /
-    # other_gender ne-swipe-uit).
+    # Și câte un profil NE-swipe-uit cu aceleași gate-uri.
     fresh_minor = await _person(db_session, "fmin@example.com", age=17)
     fresh_banned = await _person(db_session, "fban@example.com", gender="male")
     await db_session.execute(
@@ -472,11 +473,14 @@ async def test_my_own_gates_still_apply(db_session):
 async def test_empty_only_when_truly_nobody(db_session):
     me = await _me(db_session)
     assert await _feed(db_session, me) == []
-    # Un singur profil „imposibil" (alt gen, altă vârstă, departe) — tot apare.
-    other = await _person(db_session, "x@example.com", gender="male", age=60, where=FAR)
+    # Un profil „imposibil" (alt gen, altă vârstă) NU apare: genul și vârsta
+    # sunt filtre dure. Unul potrivit dar departe apare, în `relaxed`.
+    await _person(db_session, "x@example.com", gender="male", age=60, where=FAR)
+    assert await _feed(db_session, me) == []
+    far = await _person(db_session, "far@example.com", where=FAR)
     cards = await _feed(db_session, me)
-    assert _ids(cards) == [other.id]
-    assert cards[0].fallback_tier == "other_gender" and cards[0].outside_filters
+    assert _ids(cards) == [far.id]
+    assert cards[0].fallback_tier == "relaxed" and cards[0].outside_filters
 
 
 # --------------------------------------------------------------------------- #
@@ -614,7 +618,8 @@ async def test_progress_no_repeats_within_a_pass(db_session):
         ids = set(_ids(page.items))
         if ids & (liked | disliked):
             # Trecere NOUĂ: abia după ce TOȚI au fost văzuți, și doar dislike-urile.
-            assert len(liked | disliked) == 5
+            # s, far, dis (bărbatul și cea de 45 de ani nu apar deloc).
+            assert len(liked | disliked) == 3
             assert not ids & liked
             break
         for card in page.items:

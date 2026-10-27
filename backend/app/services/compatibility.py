@@ -8,6 +8,7 @@ config / remote-config mai târziu, fără release (TZ 4.6).
 """
 from __future__ import annotations
 
+import hashlib
 import math
 from datetime import datetime, timezone
 
@@ -184,6 +185,114 @@ def behavior_score(
     if verified:
         score = score + BEHAVIOR_VERIFIED_BONUS * (1.0 - score)
     return _clamp01(score)
+
+
+# --- Ranking-ul feed-ului (ordinea cartelelor, NU procentul afișat) ----------
+# Procentul de compatibilitate rămâne cifra din badge. ORDINEA din feed combină
+# însă mai multe semnale, ca feed-ul să nu fie o listă identică pentru toată
+# lumea, ordonată doar după un procent rotunjit (care dădea zeci de egalități,
+# rupte apoi după user_id — aceeași ordine la toți):
+#   - compatibilitatea (semnalul principal);
+#   - apropierea (distanță reală; orașul comun când distanța nu e cunoscută);
+#   - activitatea recentă (conturile vii înaintea celor adormite);
+#   - calitatea profilului (verificat, mai multe poze, descriere);
+#   - cine mi-a dat deja like (match probabil — un impuls, nu primul loc garantat);
+#   - un jitter mic, DETERMINIST per (privitor, candidat, trecere): rupe
+#     egalitățile diferit pentru fiecare privitor, dar ordinea rămâne stabilă
+#     între cereri (paginarea pe cursor nu se strică).
+# Suma ponderilor = 1.0. Jitter-ul (0.03) e sub ~7 puncte de compatibilitate,
+# deci nu poate întoarce o diferență reală de potrivire.
+RANK_W_COMPAT = 0.45
+RANK_W_PROXIMITY = 0.15
+RANK_W_ACTIVITY = 0.20
+RANK_W_QUALITY = 0.05
+RANK_W_LIKED_ME = 0.12
+RANK_W_JITTER = 0.03
+RANK_SCALE = 10_000          # scorul de ranking e un întreg 0..RANK_SCALE (cursor)
+
+# Apropiere: scade liniar până la 0 la această distanță.
+RANK_PROXIMITY_DECAY_KM = 100.0
+RANK_PROXIMITY_SAME_CITY = 1.0     # distanță necunoscută, același oraș
+RANK_PROXIMITY_UNKNOWN = 0.3       # distanță necunoscută, alt oraș
+# Activitate: pe ZILE întregi (stabil în cursul zilei ⇒ cursorul nu „sare").
+RANK_ACTIVITY_DECAY_DAYS = 14
+RANK_ACTIVITY_UNKNOWN = 0.3        # `last_active_at` NULL (rând legacy)
+RANK_QUALITY_MIN_PHOTOS = 3
+
+
+def _same_city(a: str | None, b: str | None) -> bool:
+    """Același oraș (comparat fără majuscule/spații la capete)."""
+    if not a or not b:
+        return False
+    return a.strip().casefold() == b.strip().casefold()
+
+
+def proximity_score(
+    distance_km: float | None, my_city: str | None, their_city: str | None
+) -> float:
+    """Apropierea în [0, 1]: distanța reală, altfel orașul comun."""
+    if distance_km is not None:
+        return _clamp01(1.0 - max(0.0, float(distance_km)) / RANK_PROXIMITY_DECAY_KM)
+    if _same_city(my_city, their_city):
+        return RANK_PROXIMITY_SAME_CITY
+    return RANK_PROXIMITY_UNKNOWN
+
+
+def activity_score(last_active_at: datetime | None, now: datetime | None = None) -> float:
+    """Recența activității în [0, 1], pe zile întregi: activ azi ⇒ 1.0."""
+    if last_active_at is None:
+        return RANK_ACTIVITY_UNKNOWN
+    now = now or datetime.now(timezone.utc)
+    la = last_active_at
+    if la.tzinfo is None:
+        la = la.replace(tzinfo=timezone.utc)
+    days = max(0, int((now - la).total_seconds() // 86400))
+    return _clamp01(1.0 - days / RANK_ACTIVITY_DECAY_DAYS)
+
+
+def quality_score(profile: Profile) -> float:
+    """Calitatea profilului în [0, 1]: verificat, poze multe, descriere."""
+    score = 0.0
+    if getattr(profile, "verified", False):
+        score += 0.5
+    if len(profile.photos or []) >= RANK_QUALITY_MIN_PHOTOS:
+        score += 0.25
+    if (profile.about or "").strip():
+        score += 0.25
+    return _clamp01(score)
+
+
+def viewer_jitter(viewer_id, candidate_id, salt: str = "") -> float:
+    """Valoare pseudo-aleatoare în [0, 1), DETERMINISTĂ pentru tripletul dat.
+
+    `salt` = începutul trecerii curente: la fiecare trecere nouă ordinea
+    egalităților se reamestecă, dar în cadrul unei treceri e aceeași la fiecare
+    cerere (fără duplicate / salturi între pagini).
+    """
+    raw = f"{viewer_id}|{candidate_id}|{salt}".encode()
+    digest = hashlib.blake2b(raw, digest_size=8).digest()
+    return int.from_bytes(digest, "big") / float(1 << 64)
+
+
+def feed_rank_score(
+    compatibility: int,
+    *,
+    proximity: float,
+    activity: float,
+    quality: float,
+    liked_me: bool,
+    jitter: float,
+) -> int:
+    """Scorul de ORDONARE din feed, întreg în [0, RANK_SCALE] (vezi ponderile)."""
+    value = (
+        RANK_W_COMPAT * _clamp01(compatibility / 100.0)
+        + RANK_W_PROXIMITY * _clamp01(proximity)
+        + RANK_W_ACTIVITY * _clamp01(activity)
+        + RANK_W_QUALITY * _clamp01(quality)
+        + RANK_W_LIKED_ME * (1.0 if liked_me else 0.0)
+        + RANK_W_JITTER * _clamp01(jitter)
+    )
+    return max(0, min(RANK_SCALE, round(value * RANK_SCALE)))
 
 
 def compute_compatibility(
