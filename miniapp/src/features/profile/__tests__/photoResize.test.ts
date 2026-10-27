@@ -17,12 +17,12 @@ import {
 describe('resizeTarget', () => {
   it('nu mărește niciodată o poză deja mică', () => {
     expect(resizeTarget(800, 600)).toBeNull();
-    expect(resizeTarget(1920, 1080)).toBeNull();
+    expect(resizeTarget(1600, 1200)).toBeNull();
   });
 
   it('aduce latura mare la limită și păstrează proporția', () => {
-    expect(resizeTarget(4000, 3000)).toEqual({ width: 1920, height: 1440 });
-    expect(resizeTarget(3000, 4000)).toEqual({ width: 1440, height: 1920 });
+    expect(resizeTarget(4000, 3000)).toEqual({ width: 1600, height: 1200 });
+    expect(resizeTarget(3000, 4000)).toEqual({ width: 1200, height: 1600 });
   });
 
   it('tratează dimensiunile absurde ca „nimic de făcut"', () => {

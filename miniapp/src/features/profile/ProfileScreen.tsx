@@ -18,7 +18,7 @@
  * backend-ul le persistă în `UserSettings`, iar ecranul lor e Setări.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 
@@ -116,6 +116,17 @@ export function ProfileScreen() {
   const [photosError, setPhotosError] = useState<string | null>(null);
   const [photosBusy, setPhotosBusy] = useState(false);
   const [pending, setPending] = useState<{ url: string; progress: number } | null>(null);
+  // URL de pe server → previzualizarea locală (`blob:`) a pozei tocmai urcate.
+  const [localPreviews, setLocalPreviews] = useState<Record<string, string>>({});
+  // Toate `blob:`-urile păstrate, ca să le eliberăm la ieșirea din ecran.
+  const localPreviewsRef = useRef(new Set<string>());
+  useEffect(() => {
+    const created = localPreviewsRef.current;
+    return () => {
+      for (const url of created) URL.revokeObjectURL(url);
+      created.clear();
+    };
+  }, []);
 
   // Pre-completează formularul și pozele când sosește profilul. Un cont fără
   // anketă (`null`, adică 404 de la server) deschide direct editarea: n-are ce
@@ -173,27 +184,49 @@ export function ProfileScreen() {
     }
     setPhotosError(null);
 
+    // Celula apare IMEDIAT, cu fișierul ales, încă dinainte de recompresie:
+    // decodarea + re-encodarea unei poze de 12 MP durează pe telefon o secundă
+    // sau două, iar până acum ecranul nu arăta nimic în timpul ăsta. (HEIC, pe
+    // care browserul nu-l afișează, rămâne doar cu fundalul și procentul.)
+    const instantUrl = URL.createObjectURL(file);
+    setPending({ url: instantUrl, progress: 0 });
+    setPhotosBusy(true);
+
     // Redimensionare + recompresie ÎNAINTE de rețea: o poză de telefon are 5–12
-    // MB, peste limita backend-ului (8 MB), și ar fi respinsă cu 413.
+    // MB; urcată întreagă ar dura zeci de secunde pe rețea mobilă (și peste 8 MB
+    // backend-ul o respinge cu 413).
     const prepared = await preparePhoto(file);
+    URL.revokeObjectURL(instantUrl);
     if (!prepared.ok) {
+      setPending(null);
+      setPhotosBusy(false);
       setPhotosError(prepared.message);
       return;
     }
 
+    // De aici previzualizarea e poza recomprimată (≤1600px): mai ușor de ținut.
     setPending({ url: prepared.previewUrl, progress: 0 });
-    setPhotosBusy(true);
+    let keepPreview = false;
     try {
+      const before = new Set(photos);
       const urls = await uploadPhoto(prepared.blob, prepared.fileName, {
         onProgress: (ratio) => setPending((p) => (p ? { ...p, progress: ratio } : p)),
       });
+      // Poza nouă e afișată de pe server (varianta de 256px), dar până sosește
+      // ea, celula păstrează dedesubt previzualizarea locală — fără clipire.
+      const added = urls.find((url) => !before.has(url));
+      if (added) {
+        keepPreview = true;
+        localPreviewsRef.current.add(prepared.previewUrl);
+        setLocalPreviews((prev) => ({ ...prev, [added]: prepared.previewUrl }));
+      }
       setPhotos(urls);
       void queryClient.invalidateQueries({ queryKey: ['my-profile'] });
     } catch (error) {
       setPhotosError(photoErrorText(error));
     } finally {
       // `blob:` rămâne alocat până îl revocăm explicit.
-      URL.revokeObjectURL(prepared.previewUrl);
+      if (!keepPreview) URL.revokeObjectURL(prepared.previewUrl);
       setPending(null);
       setPhotosBusy(false);
     }
@@ -236,10 +269,10 @@ export function ProfileScreen() {
 
   const tiles = useMemo<PhotoTile[]>(
     () => [
-      ...photos.map((url) => ({ key: url, url })),
+      ...photos.map((url) => ({ key: url, url, previewUrl: localPreviews[url] })),
       ...(pending ? [{ key: pending.url, url: pending.url, uploading: true, progress: pending.progress }] : []),
     ],
-    [photos, pending],
+    [photos, pending, localPreviews],
   );
 
   /* ------------------------------ Stările ------------------------------ */

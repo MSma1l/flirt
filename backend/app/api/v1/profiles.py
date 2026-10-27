@@ -1,5 +1,6 @@
 """Rute anketă/profil — sub prefixul /api/v1/profiles."""
 import asyncio
+import contextlib
 import io
 import logging
 import uuid
@@ -21,7 +22,7 @@ from app.schemas.profile import (
     ProfileOut,
     ReferenceOut,
 )
-from app.services import activity_service, legal_service, profile_service
+from app.services import activity_service, legal_service, photo_moderation, profile_service
 from app.services.image_variants import InvalidImage, process_image
 from app.services.photo_moderation import get_photo_moderator
 from app.services.storage import key_from_own_url
@@ -126,16 +127,31 @@ _MODERATION_MESSAGE_DEFAULT = (
     "Alege altă fotografie."
 )
 
+# RO: plafonul moderării pe calea de UPLOAD (secunde). Providerul de rețea are
+# propriul timeout de 30s (`ai._HTTP_TIMEOUT`), gândit pentru răspunsuri lungi; un
+# user care încarcă o poză nu poate aștepta atât („pozele se încarcă greu"). Peste
+# plafon tratăm exact ca pe o pană a providerului: rezerva LOCALĂ, apoi FAIL-OPEN
+# cu review uman — aceeași politică, doar fără coada de 30s.
+UPLOAD_MODERATION_TIMEOUT_S = 12.0
+
 
 async def _moderate_photo(content: bytes, content_type: str, user: User) -> None:
     """Moderare NSFW ÎNAINTE de salvarea în storage (Apple Guideline 1.2).
 
     Ridică 422 cu un mesaj clar în română dacă providerul respinge EXPLICIT poza.
-    Dacă providerul cade, `check` întoarce deja FAIL-OPEN (allowed=True,
-    needs_review=True): logăm pentru review uman și lăsăm poza să treacă — o pană
-    externă nu are voie să blocheze uploadul.
+    Dacă providerul cade (sau depășește `UPLOAD_MODERATION_TIMEOUT_S`), verdictul
+    e FAIL-OPEN (allowed=True, needs_review=True): logăm pentru review uman și
+    lăsăm poza să treacă — o pană externă nu are voie să blocheze uploadul.
     """
-    verdict = await get_photo_moderator().check(content, content_type)
+    try:
+        verdict = await asyncio.wait_for(
+            get_photo_moderator().check(content, content_type),
+            timeout=UPLOAD_MODERATION_TIMEOUT_S,
+        )
+    except asyncio.TimeoutError:
+        verdict = await photo_moderation._local_fallback(
+            content, content_type, "upload_timeout"
+        )
 
     if verdict.needs_review:
         # RO: nu putem crea un raport automat în coada de moderare: `Report` cere un
@@ -207,20 +223,29 @@ async def add_photo(request: Request, db: DbDep, user: UserDep) -> list[str]:
             )
         content = await upload.read()
         # Validare securitate: dimensiune, tip declarat, magic-bytes; tip forțat.
-        _validate_image_upload(content, upload.content_type or "")
-        # Curățare + micșorare (EXIF/GPS out, ≤1600px JPEG) + variante WebP
-        # 256/800. CPU-bound → firul de lucru, nu event loop-ul.
+        detected_type = _validate_image_upload(content, upload.content_type or "")
+        # Moderarea NSFW (apel de rețea — secunde) și procesarea (CPU — sute de
+        # ms) rulează ÎN PARALEL: înainte erau una după alta și timpii se adunau
+        # în fiecare upload. Moderarea primește poza brută (deja validată pe
+        # magic-bytes); providerul o micșorează oricum la ≤1024px.
+        moderation = asyncio.create_task(_moderate_photo(content, detected_type, user))
         try:
+            # Curățare + micșorare (EXIF/GPS out, ≤1600px JPEG) + variante WebP
+            # 256/800. CPU-bound → firul de lucru, nu event loop-ul.
             processed = await asyncio.to_thread(process_image, content)
-        except InvalidImage as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Conținutul încărcat nu este o imagine validă.",
-            ) from exc
-        # Moderare NSFW ÎNAINTE de storage: o poză respinsă nu are voie să atingă
-        # niciodată discul/bucket-ul (Apple Guideline 1.2). Rulează pe poza
-        # procesată (providerul o mai micșorează la ≤1024px înainte de trimitere).
-        await _moderate_photo(processed.original, "image/jpeg", user)
+        except BaseException as exc:
+            moderation.cancel()
+            with contextlib.suppress(BaseException):
+                await moderation
+            if isinstance(exc, InvalidImage):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Conținutul încărcat nu este o imagine validă.",
+                ) from exc
+            raise
+        # Verdictul se AȘTEAPTĂ înainte de storage: o poză respinsă nu are voie să
+        # atingă niciodată discul/bucket-ul (Apple Guideline 1.2) — 422 de aici.
+        await moderation
         return await profile_service.add_photo(
             db,
             user,

@@ -5,9 +5,15 @@
  * De ce e obligatoriu: o poză făcută cu un telefon modern are 5–12 MB, iar
  * backend-ul respinge orice depășește `max_upload_bytes` (8 MB) cu 413. Pe mobil
  * treaba asta o face `mobile/src/features/photos/photoPicker.ts` prin
- * `expo-image-manipulator`; aici replicăm EXACT același algoritm — max 1920px pe
- * latura mare, JPEG, iar dacă tot nu intră în limită scădem calitatea până la
+ * `expo-image-manipulator`; aici replicăm același algoritm — latura mare
+ * plafonată, JPEG, iar dacă tot nu intră în limită scădem calitatea până la
  * pragul minim și abia atunci renunțăm, cu mesaj clar.
+ *
+ * Plafonul e 1600px / q0.82, EXACT cât păstrează backendul
+ * (`image_variants.DEFAULT_MAX_SIDE`, `JPEG_QUALITY`): orice pixel peste 1600
+ * era urcat degeaba pe rețeaua mobilă și aruncat apoi de server. Față de vechiul
+ * 1920px/q0.8, fișierul urcat e cu ~25-30% mai mic, iar serverul nu mai are de
+ * micșorat nimic.
  *
  * Modulul mobil NU se poate importa: `photoPicker.ts` trage `expo-file-system`,
  * `expo-image-manipulator`, `expo-image-picker` și `react-native`, iar
@@ -28,15 +34,15 @@ function tr(key: string, params?: Record<string, string | number>): string {
  * `allowed_image_types=image/jpeg,image/png,image/webp`).
  *
  * `maxDimension`, `compressQuality` și pragurile de recompresie sunt EXCLUSIV
- * client-side (aceleași valori ca `mobile/src/config.ts` → `photos`).
+ * client-side, aliniate la ce păstrează backendul după procesare.
  */
 export const PHOTO_LIMITS = {
   min: 2,
   max: 9,
   maxUploadBytes: 8_388_608,
   allowedTypes: ['image/jpeg', 'image/png', 'image/webp'] as readonly string[],
-  maxDimension: 1920,
-  compressQuality: 0.8,
+  maxDimension: 1600,
+  compressQuality: 0.82,
   minCompressQuality: 0.4,
   compressQualityStep: 0.1,
 } as const;
@@ -185,6 +191,10 @@ export async function preparePhoto(file: File): Promise<PreparedPhoto> {
   canvas.height = target.height;
   const ctx = canvas.getContext('2d');
   if (!ctx) return { ok: false, message: imageDecodeFailedMessage() };
+  // Micșorare de ~2.5× (4032 → 1600): fără interpolarea bună, detaliile fine
+  // (păr, text) ies zimțate.
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(img, 0, 0, target.width, target.height);
 
   let quality: number = PHOTO_LIMITS.compressQuality;
