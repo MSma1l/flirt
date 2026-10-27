@@ -54,8 +54,14 @@ vi.mock('../photosApi', async (importOriginal) => {
   };
 });
 
+vi.mock('../photoResize', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../photoResize')>();
+  return { ...actual, preparePhoto: vi.fn() };
+});
+
 const { fetchMyProfile, fetchReference, saveProfile } = await import('../profileApi');
-const { deletePhoto, reorderPhotos } = await import('../photosApi');
+const { deletePhoto, reorderPhotos, uploadPhoto } = await import('../photosApi');
+const { preparePhoto } = await import('../photoResize');
 
 const REFERENCE: Reference = {
   genders: [
@@ -136,7 +142,8 @@ describe('încărcare și vizualizare', () => {
     expect(screen.getByText('Relație serioasă')).toBeInTheDocument();
     expect(screen.getByText('Îmi plac drumețiile.')).toBeInTheDocument();
     // Pozele profilului, în ordine.
-    expect(screen.getByTestId('profile-gallery').querySelectorAll('img')).toHaveLength(2);
+    // (Fără locțiitorul încețoșat `.pf-hero__backdrop`, care e decorativ.)
+    expect(screen.getByTestId('profile-gallery').querySelectorAll('img.pf-hero__img')).toHaveLength(2);
   });
 
   it('arată badge-ul de verificare doar când serverul a confirmat-o', async () => {
@@ -397,5 +404,59 @@ describe('gestionarea pozelor', () => {
       const first = screen.getByTestId('photo-tile-0').querySelector('img');
       expect(first).toHaveAttribute('src', PHOTOS[1]);
     });
+  });
+});
+
+describe('urcarea unei poze', () => {
+  const originalCreate = URL.createObjectURL;
+  const originalRevoke = URL.revokeObjectURL;
+
+  beforeEach(() => {
+    // jsdom nu implementează `blob:`; ne interesează doar CE URL ajunge pe ecran.
+    URL.createObjectURL = vi.fn(() => 'blob:instant');
+    URL.revokeObjectURL = vi.fn();
+    return () => {
+      URL.createObjectURL = originalCreate;
+      URL.revokeObjectURL = originalRevoke;
+    };
+  });
+
+  it('arată celula imediat, apoi păstrează previzualizarea sub poza de pe server', async () => {
+    let finishPrepare: (value: Awaited<ReturnType<typeof preparePhoto>>) => void = () => {};
+    vi.mocked(preparePhoto).mockReturnValue(
+      new Promise((resolve) => {
+        finishPrepare = resolve;
+      }),
+    );
+    const added = 'https://cdn.test/c.jpg';
+    vi.mocked(uploadPhoto).mockResolvedValue([...PHOTOS, added]);
+
+    await renderProfile();
+    await userEvent.click(screen.getByTestId('start-edit'));
+    const file = new File([new Uint8Array([1, 2, 3])], 'poza.jpg', { type: 'image/jpeg' });
+    await userEvent.upload(screen.getByTestId('photo-input'), file);
+
+    // Încă din timpul recompresiei, celula nouă e acolo, cu fișierul ales.
+    const pendingTile = await screen.findByTestId('photo-tile-2');
+    expect(pendingTile.querySelector('img')).toHaveAttribute('src', 'blob:instant');
+    expect(pendingTile).toHaveTextContent('0%');
+
+    finishPrepare({
+      ok: true,
+      blob: new Blob([new Uint8Array([1])], { type: 'image/jpeg' }),
+      fileName: 'photo.jpg',
+      previewUrl: 'blob:prepared',
+    });
+
+    await waitFor(() => expect(uploadPhoto).toHaveBeenCalled());
+    await waitFor(() => {
+      const tile = screen.getByTestId('photo-tile-2');
+      expect(tile.querySelector('img')).toHaveAttribute('src', added);
+      expect(tile).toHaveClass('pf-photo-tile--preview');
+      expect(tile.style.backgroundImage).toContain('blob:prepared');
+    });
+    // Previzualizarea folosită sub poza nouă NU e eliberată prematur.
+    expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('blob:prepared');
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:instant');
   });
 });

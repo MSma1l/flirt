@@ -23,6 +23,18 @@
   flex-direction: column;
   gap: var(--space-lg);
   padding-bottom: var(--space-xxl);
+  /* Ecranul derulează DOAR vertical (feedback testeri: „pagina de editare se
+     trage stânga-dreapta"). `min-width: 0` + `max-width: 100%` țin coloana în
+     lățimea cadrului chiar dacă un copil cere mai mult; `overflow-x: clip`
+     taie surplusul fără să creeze un al doilea container de derulare (scroll-ul
+     vertical rămâne al cadrului); `touch-action: pan-y` spune WebView-ului că
+     aici un gest orizontal nu e scroll. Galeria din vizualizare își tratează
+     singură swipe-ul orizontal prin pointer events (are deja `pan-y`). */
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+  touch-action: pan-y;
+  overflow-wrap: anywhere;
 }
 
 .profile-screen__header {
@@ -59,6 +71,12 @@
 .pf-chip {
   display: inline-flex;
   align-items: center;
+  /* Un chip nu are voie să fie mai lat decât rândul: o etichetă lungă (ex. un
+     interes fără spații) se rupe pe mai multe rânduri. */
+  max-width: 100%;
+  min-width: 0;
+  text-align: start;
+  overflow-wrap: anywhere;
   padding: var(--space-sm) var(--space-lg);
   border-radius: var(--radius-pill);
   border: 1.5px solid var(--color-border);
@@ -117,6 +135,29 @@
   line-height: 22px;
 }
 
+/* `<input type="date">` pe iOS (WebView-ul Telegram) are o lățime intrinsecă
+   proprie și IGNORĂ `width: 100%` cât timp păstrează aspectul nativ: câmpul
+   ieșea din ecran și trăgea toată pagina lateral. Fără aspect nativ, câmpul se
+   comportă ca orice input; selectorul de dată se deschide la fel la atingere.
+   `@supports (-webkit-touch-callout)` = doar WebKit-ul de iOS: pe Android
+   aspectul nativ (cu iconița de calendar) rămâne neatins. */
+.pf-field__input[type='date'] {
+  display: block;
+  max-width: 100%;
+  min-height: 48px;
+}
+
+@supports (-webkit-touch-callout: none) {
+  .pf-field__input[type='date'] {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+}
+
+.pf-field__input[type='date']::-webkit-date-and-time-value {
+  text-align: start;
+}
+
 .pf-field__input:focus {
   outline: 2px solid var(--color-accent);
   outline-offset: 1px;
@@ -140,6 +181,7 @@
 
 .profile-form__actions .button {
   flex: 1;
+  min-width: 0;
 }
 
 /* ------------------------------ Grila de poze ---------------------------- */
@@ -175,6 +217,13 @@
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+/* Poza tocmai urcată: previzualizarea locală (blob:) stă dedesubt până când
+   varianta de pe server se încarcă și o acoperă — fără clipire în gol. */
+.pf-photo-tile--preview {
+  background-size: cover;
+  background-position: center;
 }
 
 .pf-photo-tile__badge {
@@ -393,6 +442,22 @@
   letter-spacing: -0.02em;
   color: rgba(255, 255, 255, 0.92);
   text-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+}
+
+/* Locțiitorul pozei mari: varianta de 256px (~10 KB, sosește aproape instant),
+   încețoșată, stă sub poza de 800px cât timp aceasta se descarcă. */
+.pf-hero__backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
+  display: block;
+  filter: blur(14px);
+  transform: scale(1.1);
+  pointer-events: none;
+  -webkit-user-drag: none;
 }
 
 /* Barele de sus, ca la stories: câte una pe poză, cea activă plină. */

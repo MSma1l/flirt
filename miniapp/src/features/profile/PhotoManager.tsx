@@ -28,6 +28,11 @@ export interface PhotoTile {
   uploading?: boolean;
   /** Progresul uploadului, între 0 și 1. */
   progress?: number;
+  /**
+   * Previzualizarea locală (`blob:`) a unei poze tocmai urcate. Stă sub poza de
+   * pe server până se încarcă aceasta, ca celula să nu rămână goală o clipă.
+   */
+  previewUrl?: string;
 }
 
 interface Props {
@@ -81,11 +86,18 @@ export function PhotoManager({
 
       <div className="pf-photo-grid">
         {tiles.map((tile, index) => (
-          <div className="pf-photo-tile" key={tile.key} data-testid={`photo-tile-${index}`}>
+          <div
+            className={`pf-photo-tile${tile.previewUrl ? ' pf-photo-tile--preview' : ''}`}
+            key={tile.key}
+            data-testid={`photo-tile-${index}`}
+            style={tile.previewUrl ? { backgroundImage: `url("${tile.previewUrl}")` } : undefined}
+          >
             <Photo
               className="pf-photo-tile__img"
               src={tile.url}
               size={256}
+              // Celula în urcare arată un `blob:` local — e deja în memorie.
+              priority={tile.uploading}
               alt={
                 index === 0
                   ? t('photos.a11y.mainPhoto')

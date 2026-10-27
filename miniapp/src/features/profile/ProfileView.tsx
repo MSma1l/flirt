@@ -158,6 +158,18 @@ export function ProfileView({
             swipeStart.current = null;
           }}
         >
+          {/* Locțiitor încețoșat: varianta de 256px a pozei active sosește mult
+              înaintea celei de 800px, deci ecranul nu stă gol cât se descarcă. */}
+          {photos[active] ? (
+            <Photo
+              className="pf-hero__backdrop"
+              src={photos[active]}
+              size={256}
+              priority
+              aria-hidden
+              draggable={false}
+            />
+          ) : null}
           {photos.length > 0 ? (
             photos.map((url, i) => (
               <Photo

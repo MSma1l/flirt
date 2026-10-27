@@ -257,6 +257,39 @@ async def test_provider_exception_is_fail_open(client, monkeypatch, caplog):
     assert "REVIEW UMAN" in caplog.text          # dar e marcată pentru om
 
 
+@pytest.mark.asyncio
+async def test_slow_provider_is_capped_on_upload(client, monkeypatch, caplog):
+    """Un provider care nu răspunde în plafonul de upload NU ține userul pe loc.
+
+    Peste `UPLOAD_MODERATION_TIMEOUT_S` intră rezerva locală + FAIL-OPEN cu review
+    uman, exact ca la o pană a providerului.
+    """
+    import asyncio as _asyncio
+
+    from app.api.v1 import profiles
+
+    class _Slow:
+        async def check(self, image, media_type):
+            await _asyncio.sleep(5)
+            return ModerationVerdict(allowed=False, reason="nudity")
+
+    storage = _SpyStorage()
+    _patch_moderator(monkeypatch, _Slow())
+    _patch_storage(monkeypatch, storage)
+    monkeypatch.setattr(profiles, "UPLOAD_MODERATION_TIMEOUT_S", 0.05)
+
+    headers = await _make_user(client, "mod-slow@example.com")
+    with caplog.at_level("WARNING"):
+        r = await client.post(
+            f"{API}/profiles/photos",
+            files={"file": ("x.png", _PNG_1X1, "image/png")},
+            headers=headers,
+        )
+    assert r.status_code == 200, r.text
+    assert storage.saved[-1][0].endswith(".jpg")
+    assert "REVIEW UMAN" in caplog.text
+
+
 # --- Providerul Anthropic (client MOCK-uit — fără rețea, fără cheie) ----------
 class _FakeBlock:
     def __init__(self, text: str) -> None:

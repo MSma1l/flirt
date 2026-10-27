@@ -12,6 +12,14 @@
   /* Singura zonă care derulează. `body` are scroll blocat, ca un gest pe deck
      să nu miște pagina sub card. */
   overflow-y: auto;
+  /* Explicit: cu `overflow-y: auto`, `overflow-x` (lăsat `visible`) devine și el
+     `auto` după specificația CSS — orice copil cu 1px mai lat decât ecranul (un
+     `<input type="date">` pe iOS, un chip cu un cuvânt lung) transforma toată
+     zona într-o pagină care se trage stânga-dreapta. Derulatoarele orizontale
+     INTENȚIONATE (bara de povești, caruselele) au propriul `overflow-x: auto`
+     și nu sunt afectate. */
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
   -webkit-overflow-scrolling: touch;
 }
 
