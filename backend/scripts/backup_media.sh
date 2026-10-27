@@ -33,6 +33,9 @@
 #     alpine sh -c 'tar xzf /b/media-AAAALLZZ-HHMMSS.tar.gz -C /'
 # TESTEAZĂ restore-ul periodic: o arhivă nerestaurată vreodată NU e backup.
 set -eu
+# Arhivele conțin pozele/selfie-urile utilizatorilor: create DOAR pentru
+# proprietar (0600/0700), nu world-readable pe host.
+umask 077
 
 MEDIA_DIR="${MEDIA_DIR:-/data/media}"
 MEDIA_BACKUP_DIR="${MEDIA_BACKUP_DIR:-/backups/media}"

@@ -59,3 +59,8 @@ backend/htmlcov/
 # Override-ul local (expune API-ul pe :8000 în HTTP clar) NU are voie să ajungă
 # pe server: compose îl încarcă automat. Copiază din `.example` doar local.
 backend/docker-compose.override.yml
+# Dump-uri ale bazei de date și arhive de media (date personale!). Implicitul
+# BACKUP_HOST_DIR e acum /opt/flirt-backups, în afara repo-ului; un .env vechi cu
+# `./backups` scrie încă aici — de aceea folderul e ignorat în întregime.
+backend/backups/
+*.sql.gz
