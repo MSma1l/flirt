@@ -31,6 +31,7 @@ from app.schemas.story import (
     UserStoriesPage,
 )
 from app.services import chat_service, retention_service, tg_notify
+from app.services.contact_masker import mask_contacts
 
 # Aceleași reguli de vizibilitate ca centrul de activitate (o singură definiție).
 from app.services.activity_service import _not_blocked, _not_hidden
@@ -127,7 +128,8 @@ async def create_story(db: AsyncSession, user: User, data: StoryIn) -> StoryOut:
         user_id=user.id,
         media_url=data.media_url,
         media_type=data.media_type,
-        caption=data.caption,
+        # Ca la „despre" din profil: contactele nu ies din aplicație prin story.
+        caption=mask_contacts(data.caption)[0] if data.caption else data.caption,
         expires_at=datetime.now(timezone.utc)
         + timedelta(hours=settings.story_ttl_hours),
     )

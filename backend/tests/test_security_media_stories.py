@@ -267,3 +267,16 @@ async def test_gdpr_purge_job_runs_story_cleanup(monkeypatch):
     monkeypatch.setattr(module, "purge_orphan_story_media", lambda db: fake("orphans"))
     await module.run_once()
     assert calls == ["accounts", "proofs", "stories", "orphans"]
+
+
+@pytest.mark.asyncio
+async def test_story_caption_masks_contacts(db_session):
+    """Textul story-ului e mascat ca „despre" din profil: fără telefon / handle."""
+    me = await _user(db_session, "caption@example.com")
+    out = await S.create_story(
+        db_session,
+        me,
+        StoryIn(media_url=_own_url(me.id), caption="scrie-mi 069123456 sau @numele_meu"),
+    )
+    assert "069123456" not in out.caption
+    assert "@numele_meu" not in out.caption
