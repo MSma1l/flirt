@@ -28,15 +28,31 @@ import asyncio
 import inspect
 import io
 import posixpath
-import warnings
 from dataclasses import dataclass, field
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 # Plafon explicit de pixeli (≈ 50 MP). Peste el refuzăm înainte de decodare —
-# antetul dă dimensiunile fără să alocăm bitmap-ul. Mai strict decât plafonul
-# global Pillow (89 MP avertisment / 178 MP eroare), pe care îl tratăm oricum.
+# antetul dă dimensiunile fără să alocăm bitmap-ul. Toate căile care decodează
+# o imagine venită de la client (upload, moderare, chat) verifică ACEST plafon.
 MAX_PIXELS = 50_000_000
+
+# Plafonul GLOBAL Pillow, setat O SINGURĂ DATĂ, la importul modulului (îl importă
+# toate căile de imagini: upload profil/story/chat, moderare, storage). Pillow
+# avertizează peste el și ridică `DecompressionBombError` peste DUBLUL lui, chiar
+# din `Image.open` — plasa pentru orice cod care uită verificarea explicită de
+# mai sus. Implicit e ~89 MP (eroare abia la ~179 MP). Înainte, aici se folosea
+# `warnings.catch_warnings()` ca să transforme avertismentul în eroare — dar acel
+# context manager modifică starea GLOBALĂ a modulului `warnings` și NU e sigur
+# între fire (`process_image` rulează în `asyncio.to_thread`, în paralel).
+PILLOW_MAX_IMAGE_PIXELS = 60_000_000
+Image.MAX_IMAGE_PIXELS = PILLOW_MAX_IMAGE_PIXELS
+
+# Formatele acceptate la decodare. `Image.open` fără `formats` încearcă TOATE
+# pluginurile Pillow (zeci de formate exotice, cu istoric de CVE-uri); noi primim
+# doar fotografii. „JPEG" acoperă și MPO (JPEG-ul „multi-picture" al unor
+# camere — Pillow îl deschide prin fabrica JPEG); GIF — avatare/coperți vechi.
+IMAGE_FORMATS: tuple[str, ...] = ("JPEG", "PNG", "WEBP", "GIF")
 
 DEFAULT_MAX_SIDE = 1600
 DEFAULT_VARIANTS: tuple[int, ...] = (256, 800)
@@ -86,21 +102,21 @@ def _open_checked(content: bytes) -> Image.Image:
     if not content:
         raise InvalidImage("Fișier gol.")
     try:
-        with warnings.catch_warnings():
-            # Avertismentul Pillow de „bombă" devine eroare (nu doar log).
-            warnings.simplefilter("error", Image.DecompressionBombWarning)
-            img = Image.open(io.BytesIO(content))
-            width, height = img.size
-            if width <= 0 or height <= 0:
-                raise InvalidImage("Dimensiuni invalide.")
-            if width * height > MAX_PIXELS:
-                raise InvalidImage(
-                    f"Imagine prea mare ({width}x{height} px, maxim {MAX_PIXELS} px)."
-                )
-            img.load()  # decodarea propriu-zisă — aici apar erorile de fișier corupt
+        # Plafonul global (`Image.MAX_IMAGE_PIXELS`) ridică deja peste 2× limită;
+        # verificarea explicită de mai jos (`MAX_PIXELS`) e cea strictă — făcută pe
+        # antet, ÎNAINTE de `load()`, deci fără a aloca bitmap-ul.
+        img = Image.open(io.BytesIO(content), formats=IMAGE_FORMATS)
+        width, height = img.size
+        if width <= 0 or height <= 0:
+            raise InvalidImage("Dimensiuni invalide.")
+        if width * height > MAX_PIXELS:
+            raise InvalidImage(
+                f"Imagine prea mare ({width}x{height} px, maxim {MAX_PIXELS} px)."
+            )
+        img.load()  # decodarea propriu-zisă — aici apar erorile de fișier corupt
     except InvalidImage:
         raise
-    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+    except Image.DecompressionBombError as exc:
         raise InvalidImage("Imagine prea mare (decompression bomb).") from exc
     except (UnidentifiedImageError, OSError, SyntaxError, ValueError, EOFError) as exc:
         raise InvalidImage("Fișierul nu este o imagine validă.") from exc

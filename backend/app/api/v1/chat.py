@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.validators import safe_str
 
 from app.core.deps import get_current_user
+from app.core.ratelimit import enforce_user_quota
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.chat import (
@@ -41,6 +42,12 @@ UserDep = Annotated[User, Depends(get_current_user)]
 _CAPTION = TypeAdapter(safe_str(MESSAGE_MAX_LENGTH))
 # Plafonul duratei declarate (ms) — sanitizare, nu limită de produs (1 oră).
 _DURATION_MS_MAX = 3_600_000
+
+# Cota de atașamente per CONT (nu per IP), verificată ÎNAINTE de a citi fișierul:
+# fiecare atașament costă disc + CPU (re-encodare poze, ffmpeg pe vocale/video).
+# 60/oră = un vocal/o poză pe minut, susținut o oră întreagă — larg peste o
+# conversație reală, dar oprește umplerea discului dintr-un script.
+CHAT_ATTACHMENTS_PER_HOUR = 60
 
 
 def _parse_caption(raw: object) -> str:
@@ -160,6 +167,10 @@ async def send_attachment(
     """
     # Autorizare ÎNAINTE de a accepta bytes: străin → 404, blocat → 403.
     chat = await chat_service.get_writable_chat(db, user, chat_id)
+    # Cota per cont, tot înainte de a parsa/citi fișierul.
+    await enforce_user_quota(
+        "chat_attachment", user.id, CHAT_ATTACHMENTS_PER_HOUR, 3600
+    )
 
     if not request.headers.get("content-type", "").startswith("multipart/form-data"):
         raise HTTPException(

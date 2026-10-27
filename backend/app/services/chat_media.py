@@ -9,8 +9,9 @@ Orice altceva → 415.
 
 Pozele statice (jpeg/png/webp) trec prin `image_variants.process_image`: fără
 EXIF/XMP (fără GPS, model telefon etc.), orientarea aplicată în pixeli, micșorate
-la ≤1600px, JPEG q82 + varianta `_480.webp` pentru bula din chat. GIF-ul și
-WebP-ul animat sunt doar curățate (re-encodarea le-ar strica animația).
+la ≤1600px, JPEG q82 + varianta `_480.webp` pentru bula din chat. GIF-ul e doar
+validat; WebP-ul animat e plafonat (cadre / pixeli, din antete) și curățat de
+metadate la nivel de container — NU se re-encodează (vezi `clean_animated_webp`).
 Video-ul NU se transcodează.
 
 MESAJELE VOCALE SE TRANSCODEAZĂ în M4A/AAC nefragmentat (`ensure_playable_voice`),
@@ -33,12 +34,14 @@ import shutil
 import struct
 import tempfile
 import uuid
+import weakref
 from dataclasses import dataclass, field
 
 from fastapi import HTTPException
 
 from app.core.config import settings
 from app.services.image_variants import (
+    IMAGE_FORMATS as _IMAGE_FORMATS,
     MAX_PIXELS as _VARIANTS_MAX_PIXELS,
     InvalidImage,
     ProcessedImage,
@@ -225,7 +228,7 @@ def _strip_image(content: bytes, mime: str) -> tuple[bytes, int, int]:
     from PIL import Image, ImageOps
 
     try:
-        with Image.open(io.BytesIO(content)) as img:
+        with Image.open(io.BytesIO(content), formats=_IMAGE_FORMATS) as img:
             width, height = img.size
             if width * height > _MAX_IMAGE_PIXELS:
                 raise HTTPException(
@@ -236,13 +239,7 @@ def _strip_image(content: bytes, mime: str) -> tuple[bytes, int, int]:
                 img.verify()
                 return content, width, height
 
-            animated = getattr(img, "is_animated", False)
             out = io.BytesIO()
-            if mime == "image/webp" and animated:
-                # WebP animat: păstrăm cadrele, aruncăm EXIF/XMP.
-                img.save(out, format="WEBP", save_all=True, exif=b"", xmp=b"")
-                return out.getvalue(), width, height
-
             img.load()
             # Orientarea EXIF aplicată în pixeli, ca poza să nu apară rotită
             # după ce scoatem EXIF-ul.
@@ -289,7 +286,7 @@ def process_upload_image(
     from PIL import Image
 
     try:
-        with Image.open(io.BytesIO(content)) as img:
+        with Image.open(io.BytesIO(content), formats=_IMAGE_FORMATS) as img:
             width, height = img.size  # doar antetul — fără decodare
     except Image.DecompressionBombError:
         raise HTTPException(status_code=413, detail="Imaginea are dimensiuni prea mari.")
@@ -307,20 +304,130 @@ def process_upload_image(
         )
 
 
-def _is_animated(content: bytes) -> bool:
+# --------------------------------------------------------------------------- #
+# WebP animat: curățat la nivel de OCTEȚI, fără decodare / re-encodare
+# --------------------------------------------------------------------------- #
+#
+# DE CE nu mai re-encodăm cu Pillow (`save_all=True`): costul re-encodării e
+# lățime × înălțime × cadre, iar toate trei sunt declarate de fișier, nu de
+# mărimea lui. Un WebP de ~3 KB poate declara un canvas mare și sute de cadre
+# identice (fiecare ANMF de câțiva octeți) → secunde-ore de CPU pe un worker.
+# Acum: plafonăm cadrele și pixelii DIN ANTETE (parsare RIFF, O(mărimea
+# fișierului)), apoi scoatem chunk-urile de metadate (EXIF/XMP — aici ar sta
+# GPS-ul) direct din container. Pixelii rămân exact cum i-a trimis clientul.
+
+MAX_ANIMATED_FRAMES = 100
+# Canvas-ul unui cadru: 4096×2048 — peste orice sticker / GIF convertit real.
+MAX_ANIMATED_CANVAS_PIXELS = 8_388_608
+# Totalul de pixeli decodați pentru TOATE cadrele (ce plătește fiecare client).
+MAX_ANIMATED_TOTAL_PIXELS = 200_000_000
+# Orice fișier legitim are câteva chunk-uri în plus față de cadre.
+_MAX_WEBP_CHUNKS = MAX_ANIMATED_FRAMES + 16
+# Chunk-urile păstrate într-un WebP animat; restul (EXIF, XMP, necunoscute) pleacă.
+_WEBP_ANIMATED_KEEP = {b"VP8X", b"ICCP", b"ANIM", b"ANMF"}
+_VP8X_FLAG_EXIF = 0x08
+_VP8X_FLAG_XMP = 0x04
+_VP8X_FLAG_ANIMATION = 0x02
+
+
+def _image_too_large() -> HTTPException:
+    return HTTPException(status_code=413, detail="Imaginea are dimensiuni prea mari.")
+
+
+def _image_corrupt() -> HTTPException:
+    return HTTPException(
+        status_code=422, detail="Imaginea încărcată este coruptă sau invalidă."
+    )
+
+
+def _webp_chunks(content: bytes) -> list[tuple[bytes, int, int]]:
+    """Chunk-urile de pe primul nivel ale unui RIFF/WEBP: (fourcc, început, mărime).
+
+    Strict: un chunk care depășește fișierul / RIFF-ul → 422; prea multe → 413.
+    """
+    if len(content) < 12 or content[:4] != b"RIFF" or content[8:12] != b"WEBP":
+        raise _image_corrupt()
+    end = min(len(content), 8 + int.from_bytes(content[4:8], "little"))
+    chunks: list[tuple[bytes, int, int]] = []
+    pos = 12
+    while pos + 8 <= end:
+        fourcc = content[pos : pos + 4]
+        size = int.from_bytes(content[pos + 4 : pos + 8], "little")
+        start = pos + 8
+        if start + size > end:
+            raise _image_corrupt()
+        chunks.append((fourcc, start, size))
+        if len(chunks) > _MAX_WEBP_CHUNKS:
+            raise _image_too_large()
+        pos = start + size + (size & 1)  # chunk-urile sunt aliniate la 2 octeți
+    return chunks
+
+
+def _is_animated_webp(content: bytes) -> bool:
+    """WebP cu flag-ul de animație în VP8X (fără Pillow, fără decodare)."""
+    if len(content) < 21 or content[12:16] != b"VP8X":
+        return False
+    return bool(content[20] & _VP8X_FLAG_ANIMATION)
+
+
+def clean_animated_webp(content: bytes) -> tuple[bytes, int, int]:
+    """WebP animat validat + fără metadate → (bytes, lățime, înălțime).
+
+    Ridică 413 peste plafoanele de cadre / pixeli, 422 dacă structura e invalidă.
+    Nu decodează niciun cadru: costul e liniar în mărimea fișierului.
+    """
+    chunks = _webp_chunks(content)
+    if not chunks or chunks[0][0] != b"VP8X" or chunks[0][2] < 10:
+        raise _image_corrupt()
+    _, vp8x, _ = chunks[0]
+    width = 1 + int.from_bytes(content[vp8x + 4 : vp8x + 7], "little")
+    height = 1 + int.from_bytes(content[vp8x + 7 : vp8x + 10], "little")
+    frames = sum(1 for fourcc, _, _ in chunks if fourcc == b"ANMF")
+    if frames == 0:
+        raise _image_corrupt()
+    canvas = width * height
+    if (
+        frames > MAX_ANIMATED_FRAMES
+        or canvas > MAX_ANIMATED_CANVAS_PIXELS
+        or canvas * frames > MAX_ANIMATED_TOTAL_PIXELS
+    ):
+        raise _image_too_large()
+
+    out = bytearray()
+    for fourcc, start, size in chunks:
+        if fourcc not in _WEBP_ANIMATED_KEEP:
+            continue
+        payload = bytearray(content[start : start + size])
+        if fourcc == b"VP8X":
+            payload[0] &= ~(_VP8X_FLAG_EXIF | _VP8X_FLAG_XMP) & 0xFF
+        out += fourcc + size.to_bytes(4, "little") + payload
+        if size & 1:
+            out += b"\x00"
+    clean = b"RIFF" + (4 + len(out)).to_bytes(4, "little") + b"WEBP" + bytes(out)
+
+    # Validare de format cu Pillow DUPĂ plafoane: antetul + primul cadru (canvas
+    # ≤ 8 MP, deci decodarea e mărginită). Restul cadrelor nu se decodează.
     from PIL import Image
 
     try:
-        with Image.open(io.BytesIO(content)) as img:
-            return bool(getattr(img, "is_animated", False))
-    except Exception:  # noqa: BLE001 — fișier stricat: decide `process_upload_image`
-        return False
+        with Image.open(io.BytesIO(clean), formats=("WEBP",)) as img:
+            if img.size != (width, height):
+                raise _image_corrupt()
+            img.load()
+    except HTTPException:
+        raise
+    except Exception:
+        raise _image_corrupt() from None
+    return clean, width, height
 
 
 def _clean_chat_image(content: bytes, mime: str) -> ChatMedia:
     """Poza din chat curățată: GIF / WebP animat neschimbate ca format, restul
     procesate (≤1600px JPEG + `_480.webp`)."""
-    if mime == "image/gif" or (mime == "image/webp" and _is_animated(content)):
+    if mime == "image/webp" and _is_animated_webp(content):
+        clean, width, height = clean_animated_webp(content)
+        return ChatMedia(kind="image", mime=mime, content=clean, width=width, height=height)
+    if mime == "image/gif":
         clean, width, height = _strip_image(content, mime)
         return ChatMedia(kind="image", mime=mime, content=clean, width=width, height=height)
     processed = process_upload_image(
@@ -444,6 +551,121 @@ def _ffmpeg_path() -> str | None:
     return shutil.which("ffmpeg")
 
 
+# --------------------------------------------------------------------------- #
+# Limitele de resurse ale ffmpeg (fișierul vine de la client)
+# --------------------------------------------------------------------------- #
+
+# Câte transcodări simultan PER WORKER (gunicorn are 4): un val de vocale/video
+# nu are voie să ocupe toate nucleele serverului. Cererile în plus așteaptă.
+MAX_CONCURRENT_TRANSCODES = 2
+_transcode_slots: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = (
+    weakref.WeakKeyDictionary()
+)
+
+# Demuxerele pe care ffmpeg le poate deschide (inclusiv cele imbricate) și
+# decodoarele permise: DOAR ce înregistrează telefoanele/browserele. Restul celor
+# câteva sute de decodoare din ffmpeg (suprafață de atac cu istoric de CVE-uri)
+# nu pot fi atinse de un fișier venit de la client.
+FFMPEG_FORMAT_WHITELIST = "matroska,webm,ogg,mov,mp4,m4a,aac,mp3"
+FFMPEG_AUDIO_DECODERS = "aac,opus,libopus,vorbis,libvorbis,mp3,mp3float"
+FFMPEG_VIDEO_DECODERS = (
+    FFMPEG_AUDIO_DECODERS
+    + ",h264,hevc,vp8,vp9,libvpx,libvpx-vp9,av1,libdav1d,libaom-av1,mpeg4"
+)
+
+# Plafoane de kernel pe procesul ffmpeg (Linux; aplicate după pornire, cu
+# `prlimit` — `preexec_fn` nu e sigur într-un proces cu fire de execuție).
+# CPU: peste timeout-ul de ceas (decodarea e pe un fir; x264 la „кружок" pe două,
+# deci timpul de CPU poate fi ~2× cel real) — plasă, nu limita principală.
+# Memorie virtuală: x264 la 480p + decodorul + bibliotecile încap larg în 1 GiB.
+FFMPEG_MAX_ADDRESS_SPACE = 1024 * 1024 * 1024
+# Toleranța la verificarea duratei vocalului convertit (prima ramă AAC etc.).
+_VOICE_DURATION_SLACK_MS = 500
+
+
+def _transcode_semaphore() -> asyncio.Semaphore:
+    """Semaforul transcodărilor pentru bucla curentă (unul per worker în prod)."""
+    loop = asyncio.get_running_loop()
+    sem = _transcode_slots.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(MAX_CONCURRENT_TRANSCODES)
+        _transcode_slots[loop] = sem
+    return sem
+
+
+def ffmpeg_input_args(src_path: str, demuxer: str, decoders: str) -> list[str]:
+    """Opțiunile de INTRARE comune: doar fișiere locale, demuxer forțat, doar
+    formatele / decodoarele din listele albe, decodare pe un singur fir."""
+    return [
+        "-protocol_whitelist", "file",
+        "-format_whitelist", FFMPEG_FORMAT_WHITELIST,
+        "-codec_whitelist", decoders,
+        "-threads", "1",
+        "-f", demuxer, "-i", src_path,
+    ]
+
+
+def _limit_child(pid: int, cpu_seconds: int) -> None:
+    """RLIMIT_CPU + RLIMIT_AS pe procesul ffmpeg (doar Linux; best-effort)."""
+    try:
+        import resource
+
+        prlimit = getattr(resource, "prlimit", None)
+        if prlimit is None:
+            return
+        prlimit(pid, resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 5))
+        prlimit(
+            pid,
+            resource.RLIMIT_AS,
+            (FFMPEG_MAX_ADDRESS_SPACE, FFMPEG_MAX_ADDRESS_SPACE),
+        )
+    except (OSError, ValueError):  # procesul s-a terminat deja / nepermis
+        pass
+
+
+async def _run_ffmpeg_limited(args: list[str], timeout_s: int, label: str) -> bool:
+    """Rulează ffmpeg cu toate plafoanele: semafor per worker, timeout de ceas,
+    RLIMIT_CPU / RLIMIT_AS. True dacă a reușit."""
+    sem = _transcode_semaphore()
+    try:
+        await asyncio.wait_for(sem.acquire(), timeout_s)
+    except asyncio.TimeoutError:
+        logger.warning("%s: coada de transcodare plină (%ss)", label, timeout_s)
+        return False
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _limit_child(proc.pid, 2 * timeout_s + 10)
+        try:
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout_s)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            logger.warning("%s: ffmpeg a depășit %ss", label, timeout_s)
+            return False
+        except BaseException:
+            # Cererea anulată (client deconectat): nu lăsăm ffmpeg să ruleze orfan.
+            if proc.returncode is None:
+                proc.kill()
+                await proc.wait()
+            raise
+    finally:
+        sem.release()
+    if proc.returncode != 0:
+        logger.warning(
+            "%s: ffmpeg a eșuat (%s): %s",
+            label,
+            proc.returncode,
+            (stderr or b"").decode("utf-8", "replace")[:300],
+        )
+        return False
+    return True
+
+
 def is_universal_voice(content: bytes) -> bool:
     """True dacă vocalul e deja în forma canonică redabilă PESTE TOT: un M4A
     obișnuit (ISO-BMFF cu pistă AAC `mp4a`), NEFRAGMENTAT.
@@ -505,12 +727,18 @@ def needs_voice_transcode(media: ChatMedia) -> bool:
     return not is_universal_voice(media.content)
 
 
-async def _run_ffmpeg(ffmpeg: str, src_path: str, demuxer: str, dst_path: str) -> bool:
-    proc = await asyncio.create_subprocess_exec(
-        ffmpeg,
+def voice_ffmpeg_args(src_path: str, demuxer: str, dst_path: str) -> list[str]:
+    """Argumentele ffmpeg pentru vocal → M4A/AAC mono 44.1 kHz, `moov` la început.
+
+    `-t` = limita de produs + 1 s: un vocal mai lung decât permite produsul nu se
+    transcodează la nesfârșit; ieșirea trunchiată e apoi RESPINSĂ (413) în
+    `ensure_playable_voice` (durata reală o depășește pe cea permisă).
+    """
+    max_s = settings.chat_voice_max_duration_ms / 1000 + 1
+    return [
         "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-        "-protocol_whitelist", "file",
-        "-f", demuxer, "-i", src_path,
+        *ffmpeg_input_args(src_path, demuxer, FFMPEG_AUDIO_DECODERS),
+        "-t", f"{max_s:g}",
         "-vn", "-sn", "-dn", "-map_metadata", "-1",
         # `aresample=async=1`: înregistrările din browser au uneori goluri de
         # timestamp (WebM fără durată/cues) — le umplem, ca sunetul să nu sară.
@@ -520,25 +748,15 @@ async def _run_ffmpeg(ffmpeg: str, src_path: str, demuxer: str, dst_path: str) -
         # fără să descarce tot fișierul (iOS cere asta pe rețele lente).
         "-movflags", "+faststart",
         "-f", "ipod", dst_path,
-        stdin=asyncio.subprocess.DEVNULL,
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.PIPE,
+    ]
+
+
+async def _run_ffmpeg(ffmpeg: str, src_path: str, demuxer: str, dst_path: str) -> bool:
+    return await _run_ffmpeg_limited(
+        [ffmpeg, *voice_ffmpeg_args(src_path, demuxer, dst_path)],
+        _TRANSCODE_TIMEOUT_S,
+        "chat voice",
     )
-    try:
-        _, stderr = await asyncio.wait_for(proc.communicate(), _TRANSCODE_TIMEOUT_S)
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
-        logger.warning("chat voice: ffmpeg a depășit %ss", _TRANSCODE_TIMEOUT_S)
-        return False
-    if proc.returncode != 0:
-        logger.warning(
-            "chat voice: ffmpeg a eșuat (%s): %s",
-            proc.returncode,
-            (stderr or b"").decode("utf-8", "replace")[:300],
-        )
-        return False
-    return True
 
 
 async def ensure_playable_voice(media: ChatMedia) -> ChatMedia:
@@ -580,7 +798,19 @@ async def ensure_playable_voice(media: ChatMedia) -> ChatMedia:
     if len(converted) > settings.chat_voice_max_bytes:
         logger.error("chat voice: m4a convertit peste limită; se păstrează originalul")
         return media
-    duration = _mp4_duration_ms(converted) or media.duration_ms
+    real = _mp4_duration_ms(converted)
+    if (
+        real is not None
+        and real > settings.chat_voice_max_duration_ms + _VOICE_DURATION_SLACK_MS
+    ):
+        # `-t` a tăiat ieșirea la limită + 1 s → intrarea era mai lungă decât
+        # permite produsul (durata declarată de client a mințit).
+        minutes = settings.chat_voice_max_duration_ms // 60_000
+        raise HTTPException(
+            status_code=413,
+            detail=f"Mesajul vocal este prea lung (maxim {minutes} minute).",
+        )
+    duration = real or media.duration_ms
     return ChatMedia(
         kind="voice", mime="audio/mp4", content=converted, duration_ms=duration
     )
@@ -647,8 +877,7 @@ def video_note_ffmpeg_args(src_path: str, demuxer: str, dst_path: str) -> list[s
     max_s = (VIDEO_NOTE_MAX_DURATION_MS + _VIDEO_NOTE_DURATION_SLACK_MS) / 1000
     return [
         "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-        "-protocol_whitelist", "file",
-        "-f", demuxer, "-i", src_path,
+        *ffmpeg_input_args(src_path, demuxer, FFMPEG_VIDEO_DECODERS),
         "-t", f"{max_s:g}",
         "-map", "0:v:0", "-map", "0:a:0?",
         "-sn", "-dn", "-map_metadata", "-1",
@@ -664,28 +893,11 @@ def video_note_ffmpeg_args(src_path: str, demuxer: str, dst_path: str) -> list[s
 async def _run_ffmpeg_video_note(
     ffmpeg: str, src_path: str, demuxer: str, dst_path: str
 ) -> bool:
-    proc = await asyncio.create_subprocess_exec(
-        ffmpeg,
-        *video_note_ffmpeg_args(src_path, demuxer, dst_path),
-        stdin=asyncio.subprocess.DEVNULL,
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.PIPE,
+    return await _run_ffmpeg_limited(
+        [ffmpeg, *video_note_ffmpeg_args(src_path, demuxer, dst_path)],
+        _VIDEO_NOTE_TIMEOUT_S,
+        "chat video note",
     )
-    try:
-        _, stderr = await asyncio.wait_for(proc.communicate(), _VIDEO_NOTE_TIMEOUT_S)
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
-        logger.warning("chat video note: ffmpeg a depășit %ss", _VIDEO_NOTE_TIMEOUT_S)
-        return False
-    if proc.returncode != 0:
-        logger.warning(
-            "chat video note: ffmpeg a eșuat (%s): %s",
-            proc.returncode,
-            (stderr or b"").decode("utf-8", "replace")[:300],
-        )
-        return False
-    return True
 
 
 async def ensure_playable_video_note(media: ChatMedia) -> ChatMedia:

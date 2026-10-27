@@ -523,11 +523,12 @@ async def test_story_media_url_non_https_rejected(client):
 
 @pytest.mark.asyncio
 async def test_story_https_media_url_ok(client):
-    """Un media_url https valid trece (regresie)."""
-    headers, _ = await _make_user(client, "a@example.com", "A")
+    """Un media_url https valid (poză proprie din storage-ul nostru) trece."""
+    headers, uid = await _make_user(client, "a@example.com", "A")
+    own = f"https://cdn.flirt.local/stories/{uid}/{uuid.uuid4().hex}.jpg"
     resp = await client.post(
         f"{API}/stories/",
-        json={"media_url": "https://cdn/x.jpg", "caption": "salut"},
+        json={"media_url": own, "caption": "salut"},
         headers=headers,
     )
     assert resp.status_code == 201, resp.text
