@@ -17,7 +17,10 @@ pornește 4 workeri gunicorn — un task în lifespan ar rula de 4 ori în paral
 Aici avem o singură instanță, deci o singură purjare.
 
 La fiecare trecere rulează și retenția dovezilor de plată
-(`retention_service.purge_expired_payment_proofs`).
+(`retention_service.purge_expired_payment_proofs`) și curățarea poveștilor
+expirate — rând + fișier (`story_service.purge_expired_stories`) — plus a
+pozelor de story orfane, fără rând, mai vechi de o oră
+(`story_service.purge_orphan_story_media`, doar pe storage-ul `local`).
 
 Idempotent: după purjare cererea de ștergere e consumată, deci re-rularea (sau o
 rulare dublă accidentală) nu strică nimic.
@@ -37,6 +40,10 @@ from app.core.logging import configure_logging  # noqa: E402
 from app.db.session import AsyncSessionLocal, engine  # noqa: E402
 from app.services.account_service import purge_expired_accounts  # noqa: E402
 from app.services.retention_service import purge_expired_payment_proofs  # noqa: E402
+from app.services.story_service import (  # noqa: E402
+    purge_expired_stories,
+    purge_orphan_story_media,
+)
 
 DEFAULT_INTERVAL_SECONDS = 3600
 
@@ -62,6 +69,19 @@ async def run_once() -> int:
         proofs = await purge_expired_payment_proofs(db)
     if proofs:
         log.info("retenție: dovezi de plată șterse", extra={"payment_proofs": proofs})
+    # Poveștile expirate (24h) + fișierele lor; apoi pozele de story orfane. Tot
+    # în sesiuni separate: o eroare aici nu anulează pașii de mai sus.
+    try:
+        async with AsyncSessionLocal() as db:
+            stories = await purge_expired_stories(db)
+            orphans = await purge_orphan_story_media(db)
+        if stories or orphans:
+            log.info(
+                "retenție: povești expirate șterse",
+                extra={"expired_stories": stories, "orphan_story_files": orphans},
+            )
+    except Exception:
+        log.exception("retenție: curățarea poveștilor a eșuat; reîncerc la ciclul următor")
     return purged
 
 

@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
+from app.core.config import settings
 from app.models.story import Story
 from app.services.photo_moderation import ModerationVerdict
 from tests.conftest import upload_photo
@@ -60,6 +61,12 @@ def _anketa(name: str) -> dict:
     }
 
 
+def _story_url(uid) -> str:
+    """Un `media_url` valid: poză de story din storage-ul propriu, a lui `uid`
+    (exact forma întoarsă de `POST /stories/media`)."""
+    return f"{settings.storage_base_url}/stories/{uid}/{uuid.uuid4().hex}.jpg"
+
+
 async def _make_user(client, email: str, name: str) -> tuple[dict, str]:
     headers = await _register(client, email)
     resp = await client.put(f"{API}/profiles/me", json=_anketa(name), headers=headers)
@@ -92,7 +99,7 @@ async def test_create_and_list_mine(client):
 
     resp = await client.post(
         f"{API}/stories/",
-        json={"media_url": "https://cdn/x.jpg", "caption": "Salut"},
+        json={"media_url": _story_url(uid), "caption": "Salut"},
         headers=headers,
     )
     assert resp.status_code == 201, resp.text
@@ -117,7 +124,7 @@ async def test_match_sees_story_nonmatch_does_not(client):
 
     await client.post(
         f"{API}/stories/",
-        json={"media_url": "https://cdn/a.jpg"},
+        json={"media_url": _story_url(a_id)},
         headers=a_headers,
     )
 
@@ -131,11 +138,11 @@ async def test_match_sees_story_nonmatch_does_not(client):
 @pytest.mark.asyncio
 async def test_delete_own_and_forbidden_other(client):
     """Ștergi propria poveste; a altcuiva → 403/404."""
-    a_headers, _ = await _make_user(client, "a@example.com", "A")
+    a_headers, a_id = await _make_user(client, "a@example.com", "A")
     b_headers, _ = await _make_user(client, "b@example.com", "B")
 
     created = await client.post(
-        f"{API}/stories/", json={"media_url": "https://cdn/a.jpg"}, headers=a_headers
+        f"{API}/stories/", json={"media_url": _story_url(a_id)}, headers=a_headers
     )
     story_id = created.json()["id"]
 
@@ -291,11 +298,11 @@ async def test_create_story_from_uploaded_photo(client):
 @pytest.mark.asyncio
 async def test_create_story_defaults_to_image(client):
     """Fără media_type explicit, povestea rămâne 'image' (compatibilitate)."""
-    headers, _ = await _make_user(client, "a@example.com", "A")
+    headers, uid = await _make_user(client, "a@example.com", "A")
 
     created = await client.post(
         f"{API}/stories/",
-        json={"media_url": "https://cdn/x.jpg"},
+        json={"media_url": _story_url(uid)},
         headers=headers,
     )
     assert created.status_code == 201, created.text
@@ -443,7 +450,7 @@ async def test_reply_to_story_lands_in_match_chat(client):
     await _match(client, a_headers, a_id, b_headers, b_id)
 
     created = await client.post(
-        f"{API}/stories/", json={"media_url": "https://cdn/a.jpg"}, headers=a_headers
+        f"{API}/stories/", json={"media_url": _story_url(a_id)}, headers=a_headers
     )
     story_id = created.json()["id"]
 
@@ -474,7 +481,7 @@ async def test_reply_with_emoji_reaction(client):
     await _match(client, a_headers, a_id, b_headers, b_id)
 
     created = await client.post(
-        f"{API}/stories/", json={"media_url": "https://cdn/a.jpg"}, headers=a_headers
+        f"{API}/stories/", json={"media_url": _story_url(a_id)}, headers=a_headers
     )
     resp = await client.post(
         f"{API}/stories/{created.json()['id']}/reply",
@@ -488,11 +495,11 @@ async def test_reply_with_emoji_reaction(client):
 @pytest.mark.asyncio
 async def test_reply_to_story_of_nonmatch_is_404(client):
     """Un ne-match nu vede povestea → nici nu poate răspunde (fără divulgare)."""
-    a_headers, _ = await _make_user(client, "a@example.com", "A")
+    a_headers, a_id = await _make_user(client, "a@example.com", "A")
     c_headers, _ = await _make_user(client, "c@example.com", "C")
 
     created = await client.post(
-        f"{API}/stories/", json={"media_url": "https://cdn/a.jpg"}, headers=a_headers
+        f"{API}/stories/", json={"media_url": _story_url(a_id)}, headers=a_headers
     )
     resp = await client.post(
         f"{API}/stories/{created.json()['id']}/reply",
@@ -505,10 +512,10 @@ async def test_reply_to_story_of_nonmatch_is_404(client):
 @pytest.mark.asyncio
 async def test_reply_to_own_story_is_rejected(client):
     """Nu-ți răspunzi propriei povești (nu există chat cu tine însuți)."""
-    a_headers, _ = await _make_user(client, "a@example.com", "A")
+    a_headers, a_id = await _make_user(client, "a@example.com", "A")
 
     created = await client.post(
-        f"{API}/stories/", json={"media_url": "https://cdn/a.jpg"}, headers=a_headers
+        f"{API}/stories/", json={"media_url": _story_url(a_id)}, headers=a_headers
     )
     resp = await client.post(
         f"{API}/stories/{created.json()['id']}/reply",
@@ -547,7 +554,7 @@ async def test_reply_body_is_validated(client):
     await _match(client, a_headers, a_id, b_headers, b_id)
 
     created = await client.post(
-        f"{API}/stories/", json={"media_url": "https://cdn/a.jpg"}, headers=a_headers
+        f"{API}/stories/", json={"media_url": _story_url(a_id)}, headers=a_headers
     )
     story_id = created.json()["id"]
 

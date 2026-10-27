@@ -320,3 +320,34 @@ def rate_limit(bucket: str, limit_attr: str, window_seconds: float):
             )
 
     return dependency
+
+
+# --------------------------------------------------------------------------- #
+# Cote per UTILIZATOR (nu per IP) — upload-uri de media
+# --------------------------------------------------------------------------- #
+
+
+async def enforce_user_quota(
+    bucket: str, user_id, limit: int, window_seconds: float
+) -> None:
+    """Plafon per `user_id` + `bucket` (ex. 30 upload-uri / oră). 429 la depășire.
+
+    De ce per user și nu per IP: upload-urile de media costă (disc/S3, apel PLĂTIT
+    de moderare NSFW, CPU de re-encodare/ffmpeg), iar un cont autentificat le poate
+    trimite din oricâte IP-uri (proxy-uri, rețea mobilă). Cheia e id-ul contului,
+    pe care clientul nu-l poate varia. Se cheamă ÎNAINTE de a citi fișierul.
+
+    Același store ca restul limitării (Redis partajat, fallback in-memory) și
+    aceleași comutatoare (`rate_limit_enabled`, dezactivat sub pytest până la
+    `enable_for_tests()`).
+    """
+    if not _active():
+        return
+    if not await check(f"user:{bucket}:{user_id}", limit, window_seconds):
+        window = max(1, int(window_seconds))
+        retry_after = window - (int(time.time()) % window)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Prea multe încărcări. Încearcă din nou mai târziu.",
+            headers={"Retry-After": str(retry_after)},
+        )

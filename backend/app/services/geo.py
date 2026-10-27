@@ -219,7 +219,7 @@ class MapboxGeocoder:
         # Interogarea intră în path-ul URL; o encodăm ca segment sigur.
         from urllib.parse import quote
 
-        url = f"{MAPBOX_GEOCODE_URL}/{quote(query)}.json"
+        url = f"{MAPBOX_GEOCODE_URL}/{quote(query, safe='')}.json"
         params = {"access_token": self._api_key}
         try:
             async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_S) as http:

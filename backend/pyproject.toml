@@ -35,7 +35,7 @@ dependencies = [
     # în YCbCr. Wheel ușor (~4 MB), fără dependențe native grele; decodarea la 64px
     # (cu `draft()` pe JPEG) ține RAM/CPU neglijabile — se încadrează în bugetul
     # strâns de RAM al serverului. Vezi `services/photo_moderation.py`.
-    "Pillow>=10.0",
+    "Pillow>=10.3",
 ]
 
 [project.optional-dependencies]

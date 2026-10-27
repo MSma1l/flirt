@@ -5,11 +5,16 @@ are Match. Cele expirate sunt mereu filtrate.
 """
 from __future__ import annotations
 
+import logging
+import os
+import re
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import and_, case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -25,7 +30,10 @@ from app.schemas.story import (
     UserStories,
     UserStoriesPage,
 )
-from app.services import chat_service, tg_notify
+from app.services import chat_service, retention_service, tg_notify
+
+# Aceleași reguli de vizibilitate ca centrul de activitate (o singură definiție).
+from app.services.activity_service import _not_blocked, _not_hidden
 from app.services.pagination import (
     STORIES_MAX_LIMIT,
     STORIES_PAGE_LIMIT,
@@ -33,6 +41,23 @@ from app.services.pagination import (
     decode_cursor,
     encode_cursor,
 )
+from app.services.storage import LocalStorage, _relative_key, variant_keys_for
+
+
+log = logging.getLogger("app.stories")
+
+# Cheia unei poze de story, EXACT cum o generează upload-ul
+# (`stories.py::_story_media_key`): `stories/{user_id}/{uuid hex}.{ext}`. Fără
+# `..`, fără sufix de variantă, fără sub-directoare.
+_STORY_KEY_RE = re.compile(
+    r"^stories/(?P<uid>[0-9a-f-]{36})/[0-9a-f]{32}\.(?:jpg|jpeg|png|webp)$"
+)
+
+# Fișierele din `stories/` fără rând în DB mai vechi de atât sunt orfane (upload
+# reușit, dar story-ul n-a mai fost publicat). Ora acoperă larg fluxul normal:
+# upload → POST /stories/ vine în câteva secunde.
+ORPHAN_STORY_MEDIA_MIN_AGE_S = 3600
+_PURGE_BATCH = 500
 
 
 # Contextul cu care pleacă un răspuns la story în chat. Fără el, destinatarul ar
@@ -52,6 +77,26 @@ def _to_story_out(story: Story) -> StoryOut:
     )
 
 
+def own_story_media_key(url: str, user_id: uuid.UUID) -> str | None:
+    """Cheia de storage dacă `url` e o poză de story a LUI `user_id`; altfel None.
+
+    Același tipar ca pozele de profil (`storage.key_from_own_url`): host + schemă
+    din storage-ul propriu (`allowed_hosts()` / `allowed_schemes()`), apoi cheia
+    trebuie să fie sub `stories/{user_id}/` și să arate exact ca una generată de
+    upload. Fără query / fragment / credențiale în URL.
+    """
+    parsed = urlparse(url)
+    if parsed.query or parsed.fragment or parsed.username or parsed.password:
+        return None
+    key = _relative_key(url)
+    if key is None:
+        return None
+    match = _STORY_KEY_RE.match(key)
+    if match is None or match.group("uid") != str(user_id):
+        return None
+    return key
+
+
 async def create_story(db: AsyncSession, user: User, data: StoryIn) -> StoryOut:
     """Creează o poveste FOTO care expiră peste 24h; video → 422.
 
@@ -66,6 +111,15 @@ async def create_story(db: AsyncSession, user: User, data: StoryIn) -> StoryOut:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Story-urile acceptă doar fotografii.",
+        )
+    # `media_url` DOAR din storage-ul nostru, sub `stories/{user.id}/` — adică
+    # exact ce a întors `POST /stories/media` (care trece prin moderarea NSFW).
+    # Un URL arbitrar ar ocoli moderarea și ar face browserul FIECĂRUI match să
+    # ceară o resursă de pe serverul atacatorului (scurgere de IP / tracking).
+    if own_story_media_key(data.media_url, user.id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="media_url trebuie să fie o poză încărcată prin /stories/media.",
         )
 
     # Durata de viață a poveștii vine din config (TZ secț. 11), fără hardcodare.
@@ -87,16 +141,26 @@ async def create_story(db: AsyncSession, user: User, data: StoryIn) -> StoryOut:
 
 
 async def _match_user_ids(db: AsyncSession, user: User) -> set[uuid.UUID]:
-    """Id-urile utilizatorilor cu care userul curent are Match."""
+    """Id-urile match-urilor ale căror povești userul curent are voie să le vadă.
+
+    Un match nu e suficient: excludem blocările (ORICARE direcție — cine a blocat
+    pe cineva nu-i mai vede poveștile și nici nu i le mai arată), conturile
+    banate / șterse și profilurile ascunse — aceleași reguli ca la activitate.
+    """
+    other = case((Match.user_a_id == user.id, Match.user_b_id), else_=Match.user_a_id)
     result = await db.execute(
-        select(Match).where(
-            or_(Match.user_a_id == user.id, Match.user_b_id == user.id)
+        select(other)
+        .select_from(Match)
+        .join(User, User.id == other)
+        .where(
+            or_(Match.user_a_id == user.id, Match.user_b_id == user.id),
+            User.deleted_at.is_(None),
+            User.banned_at.is_(None),
+            _not_blocked(user.id, other),
+            _not_hidden(other),
         )
     )
-    ids: set[uuid.UUID] = set()
-    for m in result.scalars().all():
-        ids.add(m.user_b_id if m.user_a_id == user.id else m.user_a_id)
-    return ids
+    return {uid for (uid,) in result.all()}
 
 
 async def list_active_grouped(
@@ -241,8 +305,14 @@ async def delete_story(db: AsyncSession, user: User, story_id: uuid.UUID) -> Non
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Not your story"
         )
+    media_url = story.media_url
     await db.delete(story)
     await db.commit()
+    # Fișierul (+ variantele `_256.webp`) pleacă odată cu rândul — altfel o poveste
+    # „ștearsă" rămânea publică pe disc/S3 la nesfârșit (GDPR art. 17). DUPĂ commit:
+    # dacă ștergerea fișierului pică, rândul e deja șters, iar fișierul orfan îl
+    # prinde măturarea periodică (`purge_orphan_story_media`).
+    await retention_service.delete_files(await _unreferenced(db, [media_url]))
 
 
 async def reply_to_story(
@@ -308,3 +378,107 @@ async def _display_names(
         select(Profile.user_id, Profile.name).where(Profile.user_id.in_(user_ids))
     )
     return {uid: name for uid, name in result.all()}
+
+
+# --- Purjarea periodică (serviciul `purge`, `scripts/gdpr_purge.py`) ----------
+
+
+async def _unreferenced(db: AsyncSession, urls: list[str]) -> list[str]:
+    """URL-urile pe care NICIO poveste rămasă nu le mai folosește.
+
+    Același upload poate fi publicat de două ori (reîncercare din client); fără
+    verificarea asta, ștergerea/expirarea primei povești ar lăsa-o pe a doua fără
+    poză.
+    """
+    if not urls:
+        return []
+    still_used = set(
+        (
+            await db.execute(
+                select(Story.media_url).where(Story.media_url.in_(set(urls)))
+            )
+        ).scalars()
+    )
+    return [u for u in dict.fromkeys(urls) if u not in still_used]
+
+
+async def purge_expired_stories(db: AsyncSession) -> int:
+    """Șterge poveștile EXPIRATE: rândul + fișierul (+ variantele). Întoarce câte.
+
+    Poveștile expiră la 24h, dar până acum rămâneau în DB și pe disc pentru
+    totdeauna. În loturi, ca o restanță mare să nu țină o tranzacție uriașă.
+    Rândul se șterge întâi (commit), apoi fișierele — dacă o ștergere de fișier
+    pică, îl prinde `purge_orphan_story_media` la o trecere următoare.
+    """
+    now = datetime.now(timezone.utc)
+    total = 0
+    while True:
+        rows = (
+            await db.execute(
+                select(Story.id, Story.media_url)
+                .where(Story.expires_at <= now)
+                .order_by(Story.expires_at)
+                .limit(_PURGE_BATCH)
+            )
+        ).all()
+        if not rows:
+            break
+        await db.execute(delete(Story).where(Story.id.in_([r.id for r in rows])))
+        await db.commit()
+        await retention_service.delete_files(
+            await _unreferenced(db, [r.media_url for r in rows])
+        )
+        total += len(rows)
+        if len(rows) < _PURGE_BATCH:
+            break
+    return total
+
+
+async def purge_orphan_story_media(
+    db: AsyncSession, min_age_s: int = ORPHAN_STORY_MEDIA_MIN_AGE_S
+) -> int:
+    """Șterge fișierele din `stories/` fără rând `Story`, mai vechi de `min_age_s`.
+
+    Cazul: poza a trecut de `POST /stories/media` (salvată), dar story-ul n-a mai
+    fost publicat — sau ștergerea fișierului la `delete_story` a eșuat. Ieftin
+    DOAR pe providerul `local` (producția): listăm directorul de pe disc. Pe S3 /
+    stub nu facem nimic (listarea bucketului ar costa cereri; vezi raportul).
+    """
+    if settings.storage_provider != "local":
+        return 0
+    root = LocalStorage()._root() / "stories"
+    if not root.is_dir():
+        return 0
+
+    referenced: set[str] = set()
+    result = await db.execute(select(Story.media_url))
+    for (url,) in result.all():
+        # Cheia din PATH, nu prin `_relative_key`: dacă `storage_base_url` s-a
+        # schimbat între timp (alt domeniu), URL-urile vechi n-ar mai fi
+        # recunoscute ca „ale noastre" și fișierele unor povești ACTIVE ar fi
+        # tratate drept orfane. Aici greșeala trebuie să fie spre păstrare.
+        path = urlparse(url or "").path
+        idx = path.find("/stories/")
+        if idx == -1:
+            continue
+        key = path[idx + 1 :]
+        referenced.add(key)
+        referenced.update(variant_keys_for(key))
+
+    cutoff = time.time() - min_age_s
+    removed = 0
+    base = root.parent
+    for dirpath, _dirnames, filenames in os.walk(root):
+        for name in filenames:
+            path = os.path.join(dirpath, name)
+            key = os.path.relpath(path, base).replace(os.sep, "/")
+            if key in referenced:
+                continue
+            try:
+                if os.path.getmtime(path) > cutoff:
+                    continue  # upload recent: story-ul poate fi încă în curs
+                os.unlink(path)
+                removed += 1
+            except OSError:
+                log.warning("stories: fișier orfan imposibil de șters: %s", key)
+    return removed

@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 from sqlalchemy import event, func, or_, select
 
+from app.core.config import settings
 from app.core.security import hash_password
 from app.models.account import Favorite
 from app.models.chat import Chat, Message
@@ -24,6 +25,11 @@ from app.models.user import User
 from app.schemas.story import StoryIn
 from app.services import account_service, chat_service, event_service, story_service
 from tests.conftest import upload_photo
+
+
+def _story_url(uid) -> str:
+    """`media_url` valid: poză de story din storage-ul propriu, a lui `uid`."""
+    return f"{settings.storage_base_url}/stories/{uid}/{uuid.uuid4().hex}.jpg"
 
 API = "/api/v1"
 _ADULT_YEAR = date.today().year - 25
@@ -545,7 +551,7 @@ async def test_stories_mine_pagination_no_duplicates(db_session):
     await _make_profile(db_session, user, "S")
     for i in range(12):
         await story_service.create_story(
-            db_session, user, StoryIn(media_url=f"https://cdn/{i}.jpg")
+            db_session, user, StoryIn(media_url=_story_url(user.id))
         )
 
     seen: list[uuid.UUID] = []
@@ -568,7 +574,7 @@ async def test_stories_grouped_pagination_no_duplicate_users(db_session):
     me = await _make_user(db_session, "g0@example.com")
     await _make_profile(db_session, me, "Me")
     await story_service.create_story(
-        db_session, me, StoryIn(media_url="https://cdn/me.jpg")
+        db_session, me, StoryIn(media_url=_story_url(me.id))
     )
 
     for i in range(5):
@@ -579,7 +585,7 @@ async def test_stories_grouped_pagination_no_duplicate_users(db_session):
         await db_session.commit()
         for j in range(2):
             await story_service.create_story(
-                db_session, peer, StoryIn(media_url=f"https://cdn/{i}-{j}.jpg")
+                db_session, peer, StoryIn(media_url=_story_url(peer.id))
             )
 
     seen: list[uuid.UUID] = []

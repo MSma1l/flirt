@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 from fastapi import HTTPException
 
+from app.core.config import settings
 from app.core.security import hash_password
 from app.models.profile import Profile
 from app.models.story import Story
@@ -14,6 +15,11 @@ from app.schemas.story import StoryIn
 from app.services import story_service as S
 
 _ADULT_YEAR = date.today().year - 25
+
+
+def _story_url(uid) -> str:
+    """`media_url` valid: poză de story din storage-ul propriu, a lui `uid`."""
+    return f"{settings.storage_base_url}/stories/{uid}/{uuid.uuid4().hex}.jpg"
 
 
 async def _make_user(db, email) -> User:
@@ -45,7 +51,7 @@ async def _make_match(db, a: User, b: User) -> None:
 async def test_create_and_list_mine(db_session):
     user = await _make_user(db_session, "st1@example.com")
     out = await S.create_story(
-        db_session, user, StoryIn(media_url="https://cdn/x.jpg", caption="Salut")
+        db_session, user, StoryIn(media_url=_story_url(user.id), caption="Salut")
     )
     assert out.caption == "Salut"
     assert out.expires_at > out.created_at
@@ -80,9 +86,9 @@ async def test_grouped_shows_self_and_match_only(db_session):
     await _make_profile(db_session, c, "C")
     await _make_match(db_session, a, b)
 
-    await S.create_story(db_session, a, StoryIn(media_url="https://cdn/a.jpg"))
-    await S.create_story(db_session, b, StoryIn(media_url="https://cdn/b.jpg"))
-    await S.create_story(db_session, c, StoryIn(media_url="https://cdn/c.jpg"))
+    await S.create_story(db_session, a, StoryIn(media_url=_story_url(a.id)))
+    await S.create_story(db_session, b, StoryIn(media_url=_story_url(b.id)))
+    await S.create_story(db_session, c, StoryIn(media_url=_story_url(c.id)))
 
     grouped = (await S.list_active_grouped(db_session, a)).items
     seen = {g.user_id for g in grouped}
@@ -98,7 +104,7 @@ async def test_grouped_shows_self_and_match_only(db_session):
 @pytest.mark.asyncio
 async def test_delete_own_story(db_session):
     user = await _make_user(db_session, "st3@example.com")
-    out = await S.create_story(db_session, user, StoryIn(media_url="https://cdn/x.jpg"))
+    out = await S.create_story(db_session, user, StoryIn(media_url=_story_url(user.id)))
     await S.delete_story(db_session, user, out.id)
     assert (await S.list_mine(db_session, user)).items == []
 
@@ -115,7 +121,7 @@ async def test_delete_missing_story_404(db_session):
 async def test_delete_others_story_403(db_session):
     a = await _make_user(db_session, "st5a@example.com")
     b = await _make_user(db_session, "st5b@example.com")
-    out = await S.create_story(db_session, a, StoryIn(media_url="https://cdn/a.jpg"))
+    out = await S.create_story(db_session, a, StoryIn(media_url=_story_url(a.id)))
     with pytest.raises(HTTPException) as exc:
         await S.delete_story(db_session, b, out.id)
     assert exc.value.status_code == 403

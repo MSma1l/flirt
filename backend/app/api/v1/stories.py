@@ -15,9 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 # RO: mesajele de respingere NSFW au o singură sursă de adevăr (`profiles`) — un
 # story respins și o poză de profil respinsă trebuie să sune identic pentru user.
-from app.api.v1.profiles import _MODERATION_MESSAGE_DEFAULT, _MODERATION_MESSAGES
+from app.api.v1.profiles import (
+    _MODERATION_MESSAGE_DEFAULT,
+    _MODERATION_MESSAGES,
+    read_upload_capped,
+)
 from app.core.config import settings
 from app.core.deps import get_current_user
+from app.core.ratelimit import enforce_user_quota
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.story import (
@@ -29,7 +34,12 @@ from app.schemas.story import (
     UserStories,
 )
 from app.services import story_service
-from app.services.image_variants import InvalidImage, process_image, save_with_variants
+from app.services.image_variants import (
+    MAX_PIXELS,
+    InvalidImage,
+    process_image,
+    save_with_variants,
+)
 from app.services.pagination import MAX_CURSOR_LENGTH, STORIES_MAX_LIMIT
 from app.services.photo_moderation import get_photo_moderator
 from app.services.storage import get_storage
@@ -60,7 +70,18 @@ STORY_MAX_SIDE = 1440
 STORY_VARIANTS: tuple[int, ...] = (256,)
 
 # RO: format-imagine (Pillow/imghdr) → tip-conținut canonic (forțat server-side).
-_IMAGE_FORMAT_TO_CT = {"jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
+_IMAGE_FORMAT_TO_CT = {
+    "jpeg": "image/jpeg",
+    "mpo": "image/jpeg",  # JPEG multi-picture (unele camere) — tot un JPEG
+    "png": "image/png",
+    "webp": "image/webp",
+}
+# Formatele pe care Pillow are voie să le încerce (fără pluginurile exotice).
+_STORY_IMAGE_FORMATS = ("JPEG", "PNG", "WEBP")  # „JPEG" acoperă și MPO
+
+# Cota de upload de poze de story per CONT (nu per IP), verificată ÎNAINTE de a
+# citi fișierul și de a chema moderarea NSFW (apel plătit).
+STORY_UPLOADS_PER_HOUR = 20
 
 
 def _detect_image_ct(content: bytes) -> str | None:
@@ -75,15 +96,25 @@ def _detect_image_ct(content: bytes) -> str | None:
         Image = None
     if Image is not None:
         try:
-            with Image.open(io.BytesIO(content)) as img:
+            with Image.open(io.BytesIO(content), formats=_STORY_IMAGE_FORMATS) as img:
                 fmt = (img.format or "").lower()
+                width, height = img.size  # doar antetul — fără decodare
+        except Image.DecompressionBombError:
+            raise _too_many_pixels() from None
         except Exception:
             return None
+        # Anti decompression bomb: refuzat înainte de procesare și moderare.
+        if width * height > MAX_PIXELS:
+            raise _too_many_pixels()
     else:
         import imghdr  # fallback stdlib
 
         fmt = imghdr.what(None, h=content)
     return _IMAGE_FORMAT_TO_CT.get(fmt or "")
+
+
+def _too_many_pixels() -> HTTPException:
+    return HTTPException(status_code=413, detail="Imaginea are dimensiuni prea mari.")
 
 
 def _is_video_content(content: bytes) -> bool:
@@ -221,6 +252,8 @@ async def upload_story_media(request: Request, user: UserDep) -> StoryMediaOut:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Se așteaptă multipart/form-data cu câmpul 'file'.",
         )
+    # Cota per cont ÎNAINTE de a citi fișierul / a chema moderarea plătită.
+    await enforce_user_quota("story_media", user.id, STORY_UPLOADS_PER_HOUR, 3600)
     form = await request.form()
     upload = form.get("file")
     if upload is None or not hasattr(upload, "read"):
@@ -228,7 +261,8 @@ async def upload_story_media(request: Request, user: UserDep) -> StoryMediaOut:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Lipsește câmpul 'file' (multipart).",
         )
-    content = await upload.read()
+    # Plafon de citire: nimic peste limita pozelor nu ajunge în RAM.
+    content = await read_upload_capped(upload, settings.max_upload_bytes)
     _validate_story_photo(content, upload.content_type or "")
 
     # Curățare (EXIF/GPS) + micșorare la 1440px JPEG + varianta `_256.webp`.

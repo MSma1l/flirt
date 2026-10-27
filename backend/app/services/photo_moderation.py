@@ -37,6 +37,11 @@ from typing import Protocol
 from app.core.config import settings
 from app.services import ai
 
+# RO: importul setează și plafonul GLOBAL Pillow (`Image.MAX_IMAGE_PIXELS`) — vezi
+# `image_variants`. Plafonul explicit + formatele permise sunt aceleași ca la upload.
+from app.services.image_variants import IMAGE_FORMATS as _IMAGE_FORMATS
+from app.services.image_variants import MAX_PIXELS as _MAX_PIXELS
+
 logger = logging.getLogger("app.photo_moderation")
 
 # Categoriile pe care le raportăm în sus (`ModerationVerdict.reason`).
@@ -84,8 +89,14 @@ def downscale_for_moderation(image: bytes, media_type: str) -> tuple[bytes, str]
     from PIL import Image, ImageOps
 
     try:
-        with Image.open(io.BytesIO(image)) as img:
+        with Image.open(io.BytesIO(image), formats=_IMAGE_FORMATS) as img:
             width, height = img.size
+            # Anti decompression bomb: dimensiunile vin din ANTET, înainte de
+            # `load()`. Peste plafon NU decodăm (un PNG de câțiva KB poate declara
+            # 50k×50k px = GB de RAM) — întoarcem intrarea, iar verdictul rămâne
+            # treaba providerului (upload-ul o respinge oricum înainte).
+            if width * height > _MAX_PIXELS:
+                return image, media_type
             if (
                 max(width, height) <= MODERATION_MAX_SIDE
                 and len(image) <= _MODERATION_PASSTHROUGH_BYTES
@@ -519,7 +530,12 @@ class LocalPhotoModerator:
         """
         from PIL import Image, ImageChops  # RO: import LAZY — doar în calea de rezervă.
 
-        with Image.open(io.BytesIO(image)) as img:
+        with Image.open(io.BytesIO(image), formats=_IMAGE_FORMATS) as img:
+            # Anti decompression bomb: verificat pe ANTET, înainte de decodare —
+            # `convert()` de mai jos decodează cadrul întreg pe PNG/WebP.
+            width, height = img.size
+            if width * height > _MAX_PIXELS:
+                raise ValueError("imagine prea mare pentru decodare")
             # `draft()`: pentru JPEG cere decoderului direct o versiune mică — nu mai
             # decodează cadrul la rezoluție integrală (esențial pt RAM/CPU). No-op pe
             # PNG/WebP, dar acolo `thumbnail` reduce oricum imediat după.
