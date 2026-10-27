@@ -13,13 +13,13 @@ la ≤1600px, JPEG q82 + varianta `_480.webp` pentru bula din chat. GIF-ul și
 WebP-ul animat sunt doar curățate (re-encodarea le-ar strica animația).
 Video-ul NU se transcodează.
 
-MESAJELE VOCALE SE TRANSCODEAZĂ în AAC/M4A (`ensure_playable_voice`), dacă
-ffmpeg există: fiecare platformă înregistrează în alt format (Android/desktop
-Chrome → WebM/Opus, Firefox → Ogg/Opus, Chrome recent → MP4/Opus, iOS →
-MP4/AAC), iar WebView-ul Telegram de pe iOS NU redă WebM/Ogg/Opus — exact
-defectul „vocalul se trimite, dar celălalt nu-l poate asculta". AAC în MP4 se
-redă peste tot (iOS, Android, desktop). Fără ffmpeg (ex. mediu de dev), fișierul
-rămâne neschimbat — degradare, nu eroare.
+MESAJELE VOCALE SE TRANSCODEAZĂ în M4A/AAC nefragmentat (`ensure_playable_voice`),
+dacă ffmpeg există: fiecare platformă înregistrează în alt format (Android/desktop
+Chrome → WebM/Opus sau MP4 fragmentat, Firefox → Ogg/Opus, iOS → MP4 fragmentat
+cu AAC), iar WebView-ul Telegram de pe iOS NU redă WebM/Ogg/Opus — exact
+defectul „vocalul se trimite, dar celălalt nu-l poate asculta". Un M4A obișnuit
+(AAC, `moov` la început) se redă peste tot (iOS, Android, desktop). Fără ffmpeg
+(ex. mediu de dev), fișierul rămâne neschimbat — degradare, nu eroare.
 """
 from __future__ import annotations
 
@@ -430,7 +430,13 @@ def build_attachment_key(chat_id: uuid.UUID, mime: str) -> str:
 
 # Demuxerul ffmpeg FORȚAT pentru fiecare format deja validat prin magic bytes —
 # ffmpeg nu mai ghicește singur formatul unui fișier venit de la client.
-_FFMPEG_DEMUXER = {"audio/webm": "matroska", "audio/ogg": "ogg", "audio/mp4": "mov"}
+_FFMPEG_DEMUXER = {
+    "audio/webm": "matroska",
+    "audio/ogg": "ogg",
+    "audio/mp4": "mov",
+    "audio/aac": "aac",
+    "audio/mpeg": "mp3",
+}
 _TRANSCODE_TIMEOUT_S = 60
 
 
@@ -438,20 +444,65 @@ def _ffmpeg_path() -> str | None:
     return shutil.which("ffmpeg")
 
 
-def needs_voice_transcode(media: ChatMedia) -> bool:
-    """True dacă vocalul NU e deja AAC (redabil pe iOS fără conversie).
+def is_universal_voice(content: bytes) -> bool:
+    """True dacă vocalul e deja în forma canonică redabilă PESTE TOT: un M4A
+    obișnuit (ISO-BMFF cu pistă AAC `mp4a`), NEFRAGMENTAT.
 
-    WebM / Ogg (Opus/Vorbis) → da. MP4 → doar dacă nu conține o pistă AAC
-    (`mp4a`): Chrome recent înregistrează MP4 cu Opus, pe care iOS vechi nu-l
-    redă. AAC brut (ADTS) și MP3 se redau peste tot → nu.
+    Fragmentat (`moof`) = ieșirea brută a `MediaRecorder` (Chrome cu
+    `audio/mp4;codecs=mp4a.40.2`, Safari pe iOS): `moov` fără tabele de
+    eșantioane, durata 0, datele în fragmente. Unele playere (WebView-ul iOS la
+    descărcare progresivă) nu-l pot reda sau nu-i pot afla durata — înainte
+    trecea netranscodat doar pentru că avea AAC.
+    """
+    boxes = _top_level_boxes(content)
+    if not boxes or boxes[0][0] != b"ftyp":
+        return False
+    types = [kind for kind, _, _ in boxes]
+    if b"moof" in types or b"moov" not in types:
+        return False
+    _, start, end = next(box for box in boxes if box[0] == b"moov")
+    return b"mp4a" in content[start:end]
+
+
+def _top_level_boxes(content: bytes) -> list[tuple[bytes, int, int]]:
+    """Box-urile de pe primul nivel ISO-BMFF: (tip, început, sfârșit).
+
+    Se opresc la primul box invalid (fișier trunchiat / nu e MP4) — lista
+    parțială e suficientă pentru deciziile de mai sus.
+    """
+    boxes: list[tuple[bytes, int, int]] = []
+    pos, total = 0, len(content)
+    while pos + 8 <= total and len(boxes) < 64:
+        size = struct.unpack(">I", content[pos : pos + 4])[0]
+        kind = content[pos + 4 : pos + 8]
+        header = 8
+        if size == 1:
+            if pos + 16 > total:
+                break
+            size = struct.unpack(">Q", content[pos + 8 : pos + 16])[0]
+            header = 16
+        elif size == 0:
+            size = total - pos
+        if size < header:
+            break
+        boxes.append((kind, pos, min(pos + size, total)))
+        pos += size
+    return boxes
+
+
+def needs_voice_transcode(media: ChatMedia) -> bool:
+    """True dacă vocalul NU e deja un M4A/AAC nefragmentat (`is_universal_voice`).
+
+    Se convertesc: WebM / Ogg (Opus/Vorbis — iOS nu le redă), MP4 cu Opus
+    (Chrome), MP4 fragmentat din `MediaRecorder` (chiar și cu AAC), AAC brut
+    (ADTS — `.aac` nu are un tip MIME sigur pe toate serverele/playerele).
+    MP3 se redă peste tot → rămâne neschimbat.
     """
     if media.kind != "voice":
         return False
-    if media.mime in ("audio/webm", "audio/ogg"):
-        return True
-    if media.mime == "audio/mp4":
-        return b"mp4a" not in media.content
-    return False
+    if media.mime == "audio/mpeg":
+        return False
+    return not is_universal_voice(media.content)
 
 
 async def _run_ffmpeg(ffmpeg: str, src_path: str, demuxer: str, dst_path: str) -> bool:
@@ -461,7 +512,12 @@ async def _run_ffmpeg(ffmpeg: str, src_path: str, demuxer: str, dst_path: str) -
         "-protocol_whitelist", "file",
         "-f", demuxer, "-i", src_path,
         "-vn", "-sn", "-dn", "-map_metadata", "-1",
+        # `aresample=async=1`: înregistrările din browser au uneori goluri de
+        # timestamp (WebM fără durată/cues) — le umplem, ca sunetul să nu sară.
+        "-af", "aresample=async=1",
         "-ac", "1", "-ar", "44100", "-c:a", "aac", "-b:a", "64k",
+        # `+faststart`: `moov` la început → redarea pornește din primii octeți,
+        # fără să descarce tot fișierul (iOS cere asta pe rețele lente).
         "-movflags", "+faststart",
         "-f", "ipod", dst_path,
         stdin=asyncio.subprocess.DEVNULL,
@@ -486,16 +542,23 @@ async def _run_ffmpeg(ffmpeg: str, src_path: str, demuxer: str, dst_path: str) -
 
 
 async def ensure_playable_voice(media: ChatMedia) -> ChatMedia:
-    """Vocalul convertit în AAC/M4A (redabil pe iOS + Android), dacă e nevoie.
+    """Vocalul convertit în M4A/AAC nefragmentat (redabil pe iOS + Android +
+    desktop), dacă nu e deja în forma asta.
 
     Best-effort: fără ffmpeg sau la o conversie eșuată întoarce fișierul
-    original (validat deja), cu un avertisment în log — trimiterea nu pică.
+    original (validat deja) — trimiterea nu pică; eroarea ajunge în log la
+    nivel ERROR (nu doar WARNING), ca un vocal posibil neredabil pe iOS să nu
+    mai treacă neobservat. Playerul din Mini App arată oricum o stare de eroare
+    cu reîncercare, nu un buton care „nu face nimic".
     """
     if not needs_voice_transcode(media):
         return media
+    demuxer = _FFMPEG_DEMUXER.get(media.mime)
+    if demuxer is None:
+        return media
     ffmpeg = _ffmpeg_path()
     if ffmpeg is None:
-        logger.warning("chat voice: ffmpeg lipsește → vocal %s netranscodat", media.mime)
+        logger.error("chat voice: ffmpeg lipsește → vocal %s netranscodat", media.mime)
         return media
 
     with tempfile.TemporaryDirectory(prefix="flirt-voice-") as tmp:
@@ -503,13 +566,19 @@ async def ensure_playable_voice(media: ChatMedia) -> ChatMedia:
         dst = os.path.join(tmp, "out.m4a")
         with open(src, "wb") as fh:
             fh.write(media.content)
-        ok = await _run_ffmpeg(ffmpeg, src, _FFMPEG_DEMUXER[media.mime], dst)
-        if not ok or not os.path.isfile(dst):
-            return media
-        with open(dst, "rb") as fh:
-            converted = fh.read()
+        ok = await _run_ffmpeg(ffmpeg, src, demuxer, dst)
+        converted = b""
+        if ok and os.path.isfile(dst):
+            with open(dst, "rb") as fh:
+                converted = fh.read()
 
-    if not converted or len(converted) > settings.chat_voice_max_bytes:
+    if not converted or not is_universal_voice(converted):
+        logger.error(
+            "chat voice: conversia %s → m4a a eșuat; se păstrează originalul", media.mime
+        )
+        return media
+    if len(converted) > settings.chat_voice_max_bytes:
+        logger.error("chat voice: m4a convertit peste limită; se păstrează originalul")
         return media
     duration = _mp4_duration_ms(converted) or media.duration_ms
     return ChatMedia(

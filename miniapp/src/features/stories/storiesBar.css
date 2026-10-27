@@ -258,6 +258,12 @@
 .st-camera__shutter { width: 78px; height: 78px; padding: 5px; border: 4px solid var(--color-text-primary); border-radius: 50%; background: transparent; }
 .st-camera__shutter span { display: block; width: 100%; height: 100%; border-radius: 50%; background: var(--color-text-primary); }
 .st-camera__shutter:disabled { opacity: 0.45; }
+/* Zoom: treptele 1× / 2× / 3× deasupra declanșatorului. Zoom-ul digital e un
+   `transform` inline pe `<video>` (vezi `cameraZoom.ts`); `overflow: hidden` de
+   pe `.st-camera` taie ce iese din ecran. */
+.st-camera__zoom { position: absolute; left: 50%; bottom: calc(max(var(--safe-bottom), var(--space-xl)) + 96px); transform: translateX(-50%); display: flex; gap: var(--space-sm, 8px); padding: 4px; border-radius: var(--radius-pill); background: rgba(0, 0, 0, 0.35); }
+.st-camera__zoom-btn { appearance: none; border: 0; border-radius: 50%; min-width: 40px; min-height: 40px; padding: 0 6px; background: transparent; color: #fff; font: inherit; font-size: 13px; font-weight: 600; }
+.st-camera__zoom-btn--active { background: rgba(255, 255, 255, 0.92); color: #000; }
 
 /* După captură rămânem în același overlay, fără revenire la un card mic. */
 .st-overlay .st-compose { flex: 1; }

@@ -98,6 +98,54 @@ def test_media_repeta_antetele_de_securitate(rendered):
         assert header in body, f"lipsește din /media/: {header}"
 
 
+def _media_types(body: str) -> dict[str, str]:
+    """Blocul `types { ... }` din /media/ → {extensie: tip MIME}."""
+    match = re.search(r"\btypes\s*\{([^}]*)\}", body)
+    assert match, "/media/ nu are un bloc `types` explicit"
+    out: dict[str, str] = {}
+    for line in match.group(1).split(";"):
+        parts = line.split("#", 1)[0].split()
+        if parts:
+            for ext in parts[1:]:
+                out[ext] = parts[0]
+    return out
+
+
+def test_media_are_tipurile_mime_corecte_pentru_audio(rendered):
+    """`mime.types` din nginx nu știe `.weba`/`.aac` (→ octet-stream, pe care
+    WebView-ul iOS nu-l redă) și dă `.m4a` ca `audio/x-m4a`."""
+    body = _match_location(_locations(_api_server(rendered)), MEDIA_URIS[0])[2]
+    types = _media_types(body)
+
+    assert types["m4a"] == "audio/mp4"
+    assert types["aac"] == "audio/aac"
+    assert types["mp3"] == "audio/mpeg"
+    assert types["ogg"] == "audio/ogg"
+    assert types["weba"] == "audio/webm"
+
+
+def test_media_tipurile_acopera_toate_extensiile_generate_de_server(rendered):
+    """`types` înlocuiește tabela întreagă în /media/: o extensie uitată ar fi
+    servită ca octet-stream (poze/video rupte)."""
+    from app.services.chat_media import _MIME_EXT
+    from app.services.image_variants import VARIANT_EXT
+
+    body = _match_location(_locations(_api_server(rendered)), MEDIA_URIS[0])[2]
+    types = _media_types(body)
+    for mime, ext in _MIME_EXT.items():
+        assert types.get(ext) == mime, f".{ext} trebuie servit ca {mime}"
+    for ext in ("jpg", "jpeg", "png", "webp", VARIANT_EXT):
+        assert ext in types, f".{ext} lipsește din /media/ types"
+    assert re.search(r"^\s*default_type application/octet-stream;", body, re.MULTILINE)
+
+
+def test_media_nu_dezactiveaza_byte_range(rendered):
+    """iOS redă audio/video DOAR cu cereri byte-range (206)."""
+    body = _match_location(_locations(_api_server(rendered)), MEDIA_URIS[0])[2]
+    assert not re.search(r"^\s*max_ranges\b", body, re.MULTILINE)
+    assert not re.search(r"^\s*gzip\s+on\b", body, re.MULTILINE)
+
+
 # --------------------------------------------------------------------------- #
 # 2. Dovezile de plată NU sunt publice
 # --------------------------------------------------------------------------- #
