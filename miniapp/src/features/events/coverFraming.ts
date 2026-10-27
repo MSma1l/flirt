@@ -10,7 +10,10 @@
  *
  * Aceeași formulă e folosită de previzualizarea din panoul de admin
  * (`admin/src/lib/coverFraming.ts`), iar proporțiile ramelor sunt identice
- * (`COVER_RATIO`) — ce vede adminul e ce vede utilizatorul.
+ * (`COVER_RATIO`) — ce vede adminul e ce vede utilizatorul. Echivalența (stil,
+ * normalizare, proporțiile din `events.css`) e verificată de
+ * `admin/src/lib/coverFraming.parity.test.ts`: schimbi aici → rulezi și testele
+ * panoului.
  */
 import type { CSSProperties } from 'react';
 

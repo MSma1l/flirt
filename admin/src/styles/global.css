@@ -1225,13 +1225,164 @@ a {
   min-width: 0;
 }
 
-.cover-framer__figure--hero {
-  flex: 1 1 260px;
-  max-width: 360px;
+/* Ambele rame la aceeași lățime, ca în miniapp (cardul și posterul umplu
+   lățimea ecranului). */
+.cover-framer__figure--hero,
+.cover-framer__figure--card {
+  flex: 1 1 240px;
+  max-width: 340px;
 }
 
-.cover-framer__figure--card {
-  flex: 0 1 200px;
+.cover-framer__subtitle,
+.cover-framer__switch-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.cover-framer__subtitle {
+  margin-top: var(--space-2);
+}
+
+/* Comutatorul „chenarul pentru: pagina / cardul". */
+.cover-framer__switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.cover-framer__switch-btn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.cover-framer__switch-btn.is-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: #fff;
+}
+
+/* Imaginea ÎNTREAGĂ, la proporția ei; chenarele stau peste ea în procente. */
+.cover-framer__select {
+  position: relative;
+  align-self: flex-start;
+  width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  isolation: isolate;
+  border-radius: var(--radius-input);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.cover-framer__select:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.cover-framer__select-img {
+  display: block;
+  max-width: 100%;
+  max-height: 340px;
+  width: auto;
+  height: auto;
+  pointer-events: none;
+}
+
+.cover-framer__sel {
+  position: absolute;
+  box-sizing: border-box;
+  cursor: move;
+}
+
+/* Ramă inactivă: punctată, DEASUPRA umbrei celei active, ca să rămână vizibilă.
+   Doar de privit: cele două chenare se suprapun aproape mereu (același punct
+   focal), iar clicul trebuie să ajungă la cel activ. Se comută din butoane. */
+.cover-framer__sel:not(.is-active) {
+  z-index: 1;
+  pointer-events: none;
+  border: 2px dashed rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+/* Ramă activă: contur plin; tot ce e în afara ei (nu se vede în aplicație) e întunecat. */
+.cover-framer__sel.is-active {
+  border: 2px solid #fff;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.45),
+    0 0 0 9999px rgba(0, 0, 0, 0.55);
+}
+
+.cover-framer__select--dragging,
+.cover-framer__select--dragging .cover-framer__sel {
+  cursor: grabbing;
+}
+
+.cover-framer__sel-label {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  max-width: calc(100% - 8px);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.cover-framer__sel.is-active .cover-framer__sel-label {
+  background: var(--color-accent);
+}
+
+/* Mânerele: pătrate de 14 px în colțuri, ÎNĂUNTRUL chenarului (la marginea imaginii nu le taie `overflow`). */
+.cover-framer__handle {
+  position: absolute;
+  z-index: 2;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: #fff;
+  border: 2px solid var(--color-accent);
+  box-sizing: border-box;
+}
+
+.cover-framer__handle--nw { left: -2px; top: -2px; cursor: nwse-resize; }
+.cover-framer__handle--se { right: -2px; bottom: -2px; cursor: nwse-resize; }
+.cover-framer__handle--ne { right: -2px; top: -2px; cursor: nesw-resize; }
+.cover-framer__handle--sw { left: -2px; bottom: -2px; cursor: nesw-resize; }
+
+.cover-framer__step {
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.cover-framer__step:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .cover-framer__frame {

@@ -100,11 +100,21 @@ export const eventsMessages = defineMessages({
       framing: {
         legend: 'Încadrarea posterului',
         hint:
-          'Trage imaginea ca să alegi ce se vede, iar cu zoom-ul o mărești. Exact așa ' +
-          'apare pe pagina evenimentului și pe cardul din listă.',
+          'Alege pe imaginea întreagă zona care se vede: trage chenarul ca să-l muți, ' +
+          'trage de colțuri ca să-l mărești sau micșorezi, ori dă clic unde vrei centrul. ' +
+          'Zona întunecată nu apare în aplicație. Zoom: slider, −/+, pinch sau Ctrl/⌘ + rotiță. ' +
+          'Dedesubt vezi exact cardul din listă și pagina evenimentului.',
         frameLabel:
           'Încadrarea posterului. Trage cu mouse-ul sau cu degetul; săgețile mută imaginea.',
+        cardFrameLabel:
+          'Încadrarea cardului din listă. Trage cu mouse-ul sau cu degetul; săgețile mută imaginea.',
+        selectLabel:
+          'Zona vizibilă pe imaginea întreagă. Trage chenarul sau colțurile; săgețile mută chenarul, +/− schimbă zoom-ul.',
+        selectFor: 'Chenarul pentru:',
+        previewsTitle: 'Cum se vede în aplicație',
         zoom: 'Zoom',
+        zoomIn: 'Mărește',
+        zoomOut: 'Micșorează',
         reset: 'Centrează',
         heroCaption: 'Pagina evenimentului',
         cardCaption: 'Cardul din listă',
@@ -328,11 +338,21 @@ export const eventsMessages = defineMessages({
       framing: {
         legend: 'Кадрирование афиши',
         hint:
-          'Перетащите изображение, чтобы выбрать видимую часть, и увеличьте его зумом. ' +
-          'Именно так оно будет выглядеть на странице события и в карточке списка.',
+          'Выберите на целом изображении видимую область: перетащите рамку, чтобы сдвинуть её, ' +
+          'тяните за углы, чтобы увеличить или уменьшить, или кликните туда, где нужен центр. ' +
+          'Затемнённая часть в приложении не видна. Зум: слайдер, −/+, щипок или Ctrl/⌘ + колесо. ' +
+          'Ниже — точно карточка в списке и страница события.',
         frameLabel:
           'Кадрирование афиши. Перетаскивайте мышью или пальцем; стрелки сдвигают изображение.',
+        cardFrameLabel:
+          'Кадрирование карточки списка. Перетаскивайте мышью или пальцем; стрелки сдвигают изображение.',
+        selectLabel:
+          'Видимая область на целом изображении. Тяните рамку или углы; стрелки сдвигают рамку, +/− меняют зум.',
+        selectFor: 'Рамка для:',
+        previewsTitle: 'Как это выглядит в приложении',
         zoom: 'Зум',
+        zoomIn: 'Увеличить',
+        zoomOut: 'Уменьшить',
         reset: 'По центру',
         heroCaption: 'Страница события',
         cardCaption: 'Карточка в списке',
