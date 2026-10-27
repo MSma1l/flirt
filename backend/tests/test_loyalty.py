@@ -200,11 +200,30 @@ async def test_tiers_come_from_db_and_change_without_deploy(client, db_session):
 # --------------------------------------------------------------------------- #
 # 2. Ștampile duplicate la același eveniment
 # --------------------------------------------------------------------------- #
+async def _admit_at_running_event(db, email: str, event_id) -> None:
+    """Dovada cerută de check-in: evenimentul e în desfășurare și userul a fost
+    admis de staff (intrare la ușă înregistrată)."""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from app.models.event import Event, EventDoorAdmission
+    from app.models.user import User
+
+    now = datetime.now(timezone.utc)
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one()
+    event = await db.get(Event, uuid.UUID(str(event_id)))
+    event.starts_at = now - timedelta(hours=1)
+    db.add(EventDoorAdmission(event_id=event.id, user_id=user.id, admitted_at=now))
+    await db.commit()
+
+
 async def test_second_checkin_same_event_does_not_add_a_stamp(client, db_session):
     """Două check-in-uri la ACELAȘI eveniment = o singură ștampilă, o singură dată
     numărată. Fără asta, cine intră și iese de zece ori ar ajunge Gold în aceeași seară."""
     headers = await _register(client, "dup@example.com")
     event = await _create_event(db_session)
+    await _admit_at_running_event(db_session, "dup@example.com", event.id)
 
     first = await client.post(f"{API}/events/{event.id}/checkin", headers=headers)
     second = await client.post(f"{API}/events/{event.id}/checkin", headers=headers)

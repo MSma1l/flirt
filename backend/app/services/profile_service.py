@@ -1,5 +1,7 @@
 """Logica de business pentru anketă/profil: referință, seed catalog, upsert."""
 import asyncio
+import hashlib
+import uuid
 from datetime import date
 from urllib.parse import urlparse
 
@@ -7,6 +9,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import user_ratelimit
 from app.core.config import settings
 from app.models.interest import Interest, ProfileInterest
 from app.models.profile import Profile
@@ -19,6 +22,7 @@ from app.schemas.profile import (
     ReferenceOut,
 )
 from app.services import account_service, geo
+from app.services.contact_masker import mask_contacts
 from app.services.face_verify import get_face_verifier
 from app.services.image_variants import (
     InvalidImage,
@@ -392,6 +396,46 @@ async def reorder_photos(db: AsyncSession, user, urls: list[str]) -> list[str]:
     return list(profile.photos or [])
 
 
+# --- Aproximarea locației (anti-triangulare) -----------------------------------
+# Coordonatele persistate NU sunt geocodarea exactă a străzii: le aliniem pe o
+# grilă de ~1 km (0.01°) și adăugăm un decalaj STABIL per user (derivat din id,
+# același la fiecare salvare). Fără asta, distanța afișată (chiar grupată) putea fi
+# triangulată până la adresa exactă de cineva care își mută poziția de câteva ori.
+# Grila limitează precizia oricărei triangulări la celula de ~1 km; decalajul
+# stabil „dezaliniază" grila între useri, fără să adauge zgomot nou la fiecare
+# salvare (zgomot nou = medie pe mai multe citiri = poziția reală).
+COORD_GRID_DEG = 0.01
+COORD_OFFSET_MAX_DEG = 0.003
+
+# Câte schimbări de locație (oraș/stradă) permitem per user pe zi
+# (`settings.rate_limit_location_changes_per_day`).
+LOCATION_CHANGES_PER_DAY_DEFAULT = 10
+DAY_SECONDS = 24 * 60 * 60
+
+
+def coarse_coords(
+    user_id: uuid.UUID | str, lat: float, lng: float
+) -> tuple[float, float]:
+    """Coordonatele geocodate → celula de ~1 km + decalaj stabil per user."""
+    digest = hashlib.sha256(f"flirt-geo-offset:{user_id}".encode()).digest()
+    u_lat = int.from_bytes(digest[:4], "big") / 0xFFFFFFFF
+    u_lng = int.from_bytes(digest[4:8], "big") / 0xFFFFFFFF
+    off_lat = (u_lat * 2 - 1) * COORD_OFFSET_MAX_DEG
+    off_lng = (u_lng * 2 - 1) * COORD_OFFSET_MAX_DEG
+    snapped_lat = round(float(lat) / COORD_GRID_DEG) * COORD_GRID_DEG
+    snapped_lng = round(float(lng) / COORD_GRID_DEG) * COORD_GRID_DEG
+    out_lat = max(-90.0, min(90.0, snapped_lat + off_lat))
+    out_lng = max(-180.0, min(180.0, snapped_lng + off_lng))
+    return round(out_lat, 5), round(out_lng, 5)
+
+
+def _location_key(city: str | None, street: str | None) -> tuple[str, str]:
+    return (
+        " ".join(str(city or "").split()).casefold(),
+        " ".join(str(street or "").split()).casefold(),
+    )
+
+
 async def upsert_anketa(db: AsyncSession, user, data: AnketaIn) -> ProfileOut:
     """Validează și creează/actualizează anketa, marcând-o drept completată.
 
@@ -446,6 +490,22 @@ async def upsert_anketa(db: AsyncSession, user, data: AnketaIn) -> ProfileOut:
     result = await db.execute(select(Profile).where(Profile.user_id == user.id))
     profile = result.scalar_one_or_none()
     own_profile_id = profile.id if profile is not None else None
+
+    # Schimbările de locație sunt limitate per user (implicit 10/zi): fiecare
+    # mutare e o „măsurătoare" nouă pentru o eventuală triangulare. Prima setare
+    # (profil nou) și salvările fără schimbare de oraș/stradă nu consumă din cotă.
+    if profile is not None and _location_key(profile.city, profile.street) != _location_key(
+        data.city, data.street
+    ):
+        await user_ratelimit.enforce(
+            "location-change",
+            user.id,
+            user_ratelimit.limit_from_settings(
+                "rate_limit_location_changes_per_day", LOCATION_CHANGES_PER_DAY_DEFAULT
+            ),
+            DAY_SECONDS,
+            detail="Ți-ai schimbat locația de prea multe ori azi. Încearcă mâine.",
+        )
     for photo_url in photos:
         # Schemă permisă (https în producție; +http în dev pentru storage local
         # pe LAN — vezi `allowed_schemes()`). Restul (host + prefix) e verificat
@@ -493,7 +553,10 @@ async def upsert_anketa(db: AsyncSession, user, data: AnketaIn) -> ProfileOut:
     profile.street = data.street
     profile.nationality = data.nationality
     profile.languages = languages
-    profile.about = data.about
+    # „Despre" e text public, citit de oricine vede cartela: aceeași mascare a
+    # contactelor ca în chat (TZ 5.5), aplicată LA SALVARE — altfel profilul era
+    # calea evidentă de a ocoli mascarea din mesaje.
+    profile.about = mask_contacts(data.about)[0] if data.about else data.about
     profile.dating_statuses = dating_statuses
     profile.photos = photos
     profile.completed = True
@@ -503,9 +566,14 @@ async def upsert_anketa(db: AsyncSession, user, data: AnketaIn) -> ProfileOut:
     # persistă pe profil: feed-ul filtrează pe rază în SQL și calculează distanța
     # reală DIN DB, fără niciun apel de rețea per candidat.
     # Oraș negeocodabil → lat/lng rămân None (distanță necunoscută = scor neutru).
+    # Persistăm coordonatele APROXIMATE (grilă ~1 km + decalaj stabil per user),
+    # nu geocodarea exactă a străzii — vezi `coarse_coords`.
     coords = await geo.geocode_cached(data.city, data.street)
-    profile.lat = coords[0] if coords else None
-    profile.lng = coords[1] if coords else None
+    if coords:
+        profile.lat, profile.lng = coarse_coords(user.id, coords[0], coords[1])
+    else:
+        profile.lat = None
+        profile.lng = None
 
     # Preferințele de căutare culese în anketă → `UserSettings` (aceeași sursă ca
     # `PUT /settings`). Fără commit propriu: intră în tranzacția anketei.

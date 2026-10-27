@@ -62,6 +62,24 @@ async def _make_user(client, email: str, name: str) -> tuple[dict, str]:
     return headers, await _me_id(client, headers)
 
 
+async def _make_credible(db, email: str, target_id) -> None:
+    """Raportor CREDIBIL pentru auto-ascundere: cont vechi de ≥ 3 zile, profil
+    completat și o interacțiune reală cu ținta (aici: un swipe pe ea)."""
+    import uuid as _uuid
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from app.models.swipe import Like
+    from app.models.user import User
+
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one()
+    user.created_at = datetime.now(timezone.utc) - timedelta(days=10)
+    user.profile_completed = True
+    db.add(Like(from_user_id=user.id, to_user_id=_uuid.UUID(str(target_id)), is_like=False))
+    await db.commit()
+
+
 # ---------------------------------------------------------------------------
 # BUG 1 (HIGH) — /subscriptions/purchase ignoră complet receipt-ul.
 # PurchaseIn are DOAR {plan}, iar ruta cheamă billing.purchase(db, user, data.plan)
@@ -106,18 +124,14 @@ async def test_app_store_purchase_with_valid_receipt_succeeds(client, monkeypatc
 
 
 # ---------------------------------------------------------------------------
-# BUG 2 (MEDIU-RIDICAT) — „auto-ban"-ul de la moderare NU banează contul.
-# _auto_ban setează doar UserSettings.profile_hidden=True; nu atinge User.banned_at.
-# Docstring-urile din model spun explicit că banned_at înseamnă „login refuzat +
-# token invalidat". Cum nu e setat, contul mass-raportat se poate loga în
-# continuare și își poate folosi token-ul existent (chat etc.).
+# BUG 2 — inițial: „auto-ban"-ul nu bana contul. Fixul a dus la extrema opusă:
+# trei conturi proaspete puteau bana DEFINITIV pe oricine (inclusiv un admin).
+# Decizia finală: la prag, profilul e doar ASCUNS în așteptarea review-ului uman;
+# banul (login refuzat, sesiuni revocate) rămâne o decizie a moderatorului.
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_autoban_actually_bans_the_account(client):
-    """La atingerea pragului, contul raportat trebuie să fie efectiv banat.
-
-    RED azi: banned_at rămâne NULL → login 200 și /me 200.
-    """
+async def test_autohide_hides_but_does_not_ban_the_account(client, db_session):
+    """La prag, contul raportat e ascuns din feed, dar NU banat / delogat."""
     threshold = settings.report_autoban_threshold
     target_headers, target_id = await _make_user(
         client, "target@example.com", "Target"
@@ -125,29 +139,42 @@ async def test_autoban_actually_bans_the_account(client):
 
     for i in range(threshold):
         rep_headers = await _register(client, f"reporter{i}@example.com")
+        await _make_credible(db_session, f"reporter{i}@example.com", target_id)
         resp = await client.post(
             f"{API}/reports/",
             json={"reported_user_id": target_id, "category": "offensive"},
             headers=rep_headers,
         )
         assert resp.status_code == 201, resp.text
-    # Pragul e atins: rapoartele sunt marcate auto_banned.
+    # Pragul e atins: rapoartele sunt marcate (acțiune automată aplicată).
     assert resp.json()["status"] == "auto_banned"
 
-    # 1) Token-ul existent al contului banat NU ar mai trebui să meargă.
+    # Token-ul existent merge în continuare, iar login-ul reușește.
     me = await client.get(f"{API}/auth/me", headers=target_headers)
-    assert me.status_code == 403, (
-        f"Contul auto-banat încă poate folosi token-ul (status {me.status_code})."
-    )
-
-    # 2) Nici login-ul cu parola nu ar mai trebui să reușească.
+    assert me.status_code == 200, me.text
     login = await client.post(
         f"{API}/auth/login",
         json={"email": "target@example.com", "password": _PASSWORD},
     )
-    assert login.status_code == 403, (
-        f"Contul auto-banat încă se poate loga (status {login.status_code})."
-    )
+    assert login.status_code == 200, login.text
+
+    # Dar profilul e ascuns în așteptarea review-ului.
+    from sqlalchemy import select
+
+    from app.models.account import UserSettings
+    from app.models.user import User
+
+    target = (
+        await db_session.execute(select(User).where(User.email == "target@example.com"))
+    ).scalar_one()
+    await db_session.refresh(target)
+    assert target.banned_at is None
+    us = (
+        await db_session.execute(
+            select(UserSettings).where(UserSettings.user_id == target.id)
+        )
+    ).scalar_one()
+    assert us.profile_hidden is True
 
 
 # ---------------------------------------------------------------------------

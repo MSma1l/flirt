@@ -23,19 +23,28 @@ _TLD = (
     r"com|net|org|io|me|ru|md|ua|ro|info|app|link|gg|tv"
 )
 
+# ANTI-ReDoS (toate tiparele de mai jos): cuantificatori MĂRGINIȚI și ancore
+# prin lookbehind. Un tipar ca `[A-Za-z0-9._%+\-]+@...` fără ancoră e încercat de
+# la FIECARE poziție a unui șir lung fără `@`, iar fiecare încercare scanează până
+# la capăt → O(n²): 8 000 de caractere „aaaa…" costau ~1 s de CPU, sincron, pe
+# event loop. Cu lookbehind-ul „nu începe în mijlocul unui token" + plafoanele
+# RFC (local ≤ 64, etichetă de domeniu ≤ 63), fiecare poziție costă O(1).
+_LOCAL_PART = r"(?<![A-Za-z0-9._%+\-])[A-Za-z0-9._%+\-]{1,64}"
+_DOMAIN_LABEL = r"[A-Za-z0-9\-]{1,63}"
+
 # 1) Email „clasic": nume@domeniu.tld
 EMAIL_RE = re.compile(
-    r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}",
+    _LOCAL_PART + r"@[A-Za-z0-9.\-]{1,253}\.[A-Za-z]{2,24}",
 )
 
 # 1b) Email OFUSCAT — tehnica clasică de ocolire (TZ 5.5): `@`/`.` scrise ca
 #     `(at)`/`[at]`/` at ` și `(dot)`/`[dot]`/` dot `. Cerem AMBELE separatoare
 #     (at ȘI dot) + un TLD din listă, ca varianta scrisă în litere (` at `/` dot `)
 #     să nu prindă fraze organice („ne vedem la mare"), ci doar adrese reale.
-_AT_SEP = r"(?:\s*(?:@|\(at\)|\[at\])\s*|\s+at\s+)"
-_DOT_SEP = r"(?:\s*(?:\.|\(dot\)|\[dot\])\s*|\s+dot\s+)"
+_AT_SEP = r"(?:\s{0,3}(?:@|\(at\)|\[at\])\s{0,3}|\s{1,3}at\s{1,3})"
+_DOT_SEP = r"(?:\s{0,3}(?:\.|\(dot\)|\[dot\])\s{0,3}|\s{1,3}dot\s{1,3})"
 OBFUSCATED_EMAIL_RE = re.compile(
-    r"[A-Za-z0-9._%+\-]+" + _AT_SEP + r"[A-Za-z0-9\-]+" + _DOT_SEP
+    _LOCAL_PART + _AT_SEP + _DOMAIN_LABEL + _DOT_SEP
     + r"(?:" + _TLD + r")\b",
     re.IGNORECASE,
 )
@@ -47,11 +56,15 @@ URL_RE = re.compile(
 )
 
 # 3) Domenii „bare" (fără schemă) pe TLD-uri uzuale + eventual o cale.
-#    `\s*` în jurul punctelor prinde și ofuscarea prin spații („gmail . com").
+#    Spațiile în jurul punctelor prind și ofuscarea („gmail . com"). Începem doar
+#    la marginea unui token (lookbehind) și plafonăm numărul de etichete (≤ 8) și
+#    lungimea lor — fără asta, `a.a.a.a…` sau `a-a-a-…` era pătratic.
+_SPACED_DOT = r"\s{0,3}\.\s{0,3}"
 BARE_DOMAIN_RE = re.compile(
-    r"\b[A-Za-z0-9\-]+(?:\s*\.\s*[A-Za-z0-9\-]+)*"
-    r"\s*\.\s*(?:" + _TLD + r")\b"
-    r"(?:\s*/[^\s]*)?",
+    r"(?<![\w\-])" + _DOMAIN_LABEL
+    + r"(?:" + _SPACED_DOT + _DOMAIN_LABEL + r"){0,7}"
+    + _SPACED_DOT + r"(?:" + _TLD + r")\b"
+    r"(?:\s{0,3}/[^\s]{0,200})?",
     re.IGNORECASE,
 )
 
@@ -65,8 +78,8 @@ BARE_DOMAIN_RE = re.compile(
 MESSENGER_STRONG_RE = re.compile(
     r"\b(?P<kw>telegram|instagram|whatsapp|viber|"
     r"телеграм|инстаграм|ватсап|вайбер)\b"
-    r"(?P<sep>[\s:\-—]*)"
-    r"(?P<nick>@?[\w.]{2,})",
+    r"(?P<sep>[\s:\-—]{0,5})"
+    r"(?P<nick>@?[\w.]{2,64})",
     re.IGNORECASE,
 )
 
@@ -74,19 +87,30 @@ MESSENGER_STRONG_RE = re.compile(
 #     cerem un nick care ori începe cu `@`, ori conține cifră/underscore.
 MESSENGER_WEAK_RE = re.compile(
     r"\b(?P<kw>tg|insta|инста|ig|wapp|wa)\b"
-    r"(?P<sep>[\s:\-—]*)"
-    r"(?P<nick>@[\w.]{2,}|[\w.]*[_\d][\w.]*)",
+    r"(?P<sep>[\s:\-—]{0,5})"
+    r"(?P<nick>@[\w.]{2,64}|[\w.]{0,64}[_\d][\w.]{0,64})",
     re.IGNORECASE,
 )
 
 # 5) Handle social generic: `@nume` (min 2 caractere după @).
 #    Negative lookbehind pe `\w` ca să nu prindem cozile de email deja mascate.
-HANDLE_RE = re.compile(r"(?<![\w@])@[A-Za-z0-9_.]{2,}")
+HANDLE_RE = re.compile(r"(?<![\w@])@[A-Za-z0-9_.]{2,64}")
 
 # 6) Telefon: secvență de cifre cu separatori uzuali; validată prin numărul
 #    de cifre în callback (evită să prindem numere scurte / ani / prețuri).
-PHONE_CANDIDATE_RE = re.compile(r"(?<!\w)\+?\d[\d\s\-().]{5,}\d(?!\w)")
+#    Separator acceptat și o SINGURĂ literă între două cifre (`069a123b45` —
+#    ocolirea „cifre despărțite de litere"); literele nu se numără ca cifre, deci
+#    textul normal („am 25 de ani", „COVID19") nu atinge pragul de 7 cifre.
+#    Lungime plafonată (anti-ReDoS): un șir lung de cifre e mascat pe bucăți.
+_PHONE_SEP = r"(?:[\d\s\-().]|(?<=\d)[^\W\d_](?=\d))"
+PHONE_CANDIDATE_RE = re.compile(
+    r"(?<!\w)\+?\d" + _PHONE_SEP + r"{5,40}\d(?!\w)"
+)
 MIN_PHONE_DIGITS = 7  # sub acest prag nu considerăm un număr de telefon
+
+# Plafon de lungime pentru textul mascat (defense-in-depth peste tiparele
+# liniare): schemele limitează deja mesajele / „despre" mult sub această valoare.
+MAX_MASK_INPUT_CHARS = 10_000
 
 
 def _mask_phone(match: re.Match[str]) -> str:
@@ -110,6 +134,9 @@ def mask_contacts(text: str) -> tuple[str, bool]:
     if not text:
         return text, False
 
+    # Defense-in-depth: niciun apelant nu are voie să trimită aici un text
+    # nemărginit (rulează sincron, pe event loop). Peste plafon tăiem.
+    text = text[:MAX_MASK_INPUT_CHARS]
     masked = text
     # Ordinea: cele mai specifice / cu context întâi.
     masked = EMAIL_RE.sub(MASK, masked)

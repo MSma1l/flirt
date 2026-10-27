@@ -13,7 +13,15 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models.event import Event, EventAttendance, FlirtPassportStamp
+from app.models.account import Ticket
+from app.models.event import (
+    Event,
+    EventAttendance,
+    EventDoorAdmission,
+    FlirtPassportStamp,
+    as_utc,
+)
+from app.models.ticket_order import STATUS_APPROVED, TicketOrder
 from app.models.user import User
 from app.schemas.event import (
     EventOut,
@@ -24,6 +32,7 @@ from app.schemas.event import (
 )
 from app.services import billing, ticket_tiers, user_codes
 from app.services.online_sales import is_online_sales_enabled
+from app.services.ticket_lifecycle import event_ends_at
 from app.services.pagination import (
     EVENTS_MAX_LIMIT,
     EVENTS_PAGE_LIMIT,
@@ -206,10 +215,98 @@ async def set_going(
 
 
 # --- Check-in / Flirt Passport ----------------------------------------------
+# Cu cât timp ÎNAINTE de start acceptăm check-in-ul (ușile se deschid mai devreme).
+CHECKIN_OPENS_BEFORE_START = timedelta(hours=2)
+
+CHECKIN_NO_PROOF_DETAIL = (
+    "Ștampila Flirt Passport se primește la intrare, când staff-ul îți scanează "
+    "biletul sau QR-ul Flirt Passport."
+)
+CHECKIN_OUTSIDE_WINDOW_DETAIL = "Check-in-ul e posibil doar cât timp evenimentul are loc."
+
+
+async def _has_admission_proof(
+    db: AsyncSession, user_id: uuid.UUID, event_id: uuid.UUID
+) -> bool:
+    """Userul a fost ADMIS de staff la eveniment (bilet online scanat, intrare cash
+    la ușă sau bilet Flirt Party scanat la ACEST eveniment)?"""
+    order = await db.scalar(
+        select(TicketOrder.id).where(
+            TicketOrder.user_id == user_id,
+            TicketOrder.event_id == event_id,
+            TicketOrder.status == STATUS_APPROVED,
+            TicketOrder.admitted_at.is_not(None),
+        ).limit(1)
+    )
+    if order is not None:
+        return True
+    door = await db.scalar(
+        select(EventDoorAdmission.id).where(
+            EventDoorAdmission.user_id == user_id,
+            EventDoorAdmission.event_id == event_id,
+        ).limit(1)
+    )
+    if door is not None:
+        return True
+    party = await db.scalar(
+        select(Ticket.id).where(
+            Ticket.user_id == user_id,
+            Ticket.admitted_event_id == event_id,
+            Ticket.admitted_at.is_not(None),
+        ).limit(1)
+    )
+    return party is not None
+
+
+def _event_running(event: Event, now: datetime | None = None) -> bool:
+    """Fereastra de check-in: de la `starts_at - CHECKIN_OPENS_BEFORE_START`
+    până la sfârșitul evenimentului (`ends_at`, altfel start + durata implicită)."""
+    now = now or datetime.now(timezone.utc)
+    opens = as_utc(event.starts_at) - CHECKIN_OPENS_BEFORE_START
+    return opens <= now < event_ends_at(event)
+
+
+async def self_checkin(
+    db: AsyncSession, user: User, event_id: uuid.UUID
+) -> PassportStampOut:
+    """Check-in cerut de USER (`POST /events/{id}/checkin`) — doar cu DOVADĂ.
+
+    Înainte, ruta dădea oricui o ștampilă pentru orice eveniment (trecut, viitor,
+    nepublicat), fără nicio dovadă de prezență — iar ștampilele urcă treapta de
+    fidelitate (reduceri la bilete + invitații). Acum ștampila cere:
+      * o ADMITERE înregistrată de staff la acest eveniment (bilet scanat /
+        intrare cash la ușă / bilet Flirt Party folosit aici) → altfel 403;
+      * evenimentul să fie în desfășurare (fereastra din `_event_running`) → altfel
+        409, chiar dacă ștampila există deja (nu e un oracol pentru alte evenimente).
+    Scanarea la intrare (`ticket_scan_service`) emite deja ștampila; ruta rămâne
+    doar o cale idempotentă de „reparare" dacă ștampila best-effort de la scanare
+    a eșuat.
+    """
+    event = await db.get(Event, event_id)
+    if event is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Event not found"
+        )
+    if not await _has_admission_proof(db, user.id, event.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=CHECKIN_NO_PROOF_DETAIL
+        )
+    if not _event_running(event):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=CHECKIN_OUTSIDE_WINDOW_DETAIL
+        )
+    return await checkin(db, user, event_id)
+
+
 async def checkin(
     db: AsyncSession, user: User, event_id: uuid.UUID
 ) -> PassportStampOut:
-    """Emite o ștampilă Flirt Passport (idempotent, TZ 8.4). 404 dacă lipsește."""
+    """Emite o ștampilă Flirt Passport (idempotent, TZ 8.4). 404 dacă lipsește.
+
+    INTERN, FĂRĂ verificări de dovadă: o apelează scanarea staff-ului
+    (`ticket_scan_service._stamp_passport`), după admiterea biletului. Ruta
+    publică folosește `self_checkin`, care cere admiterea + fereastra evenimentului.
+    """
     event = await db.get(Event, event_id)
     if event is None:
         raise HTTPException(

@@ -67,8 +67,26 @@ def _anketa(*, name: str, city: str) -> dict:
     }
 
 
+async def _admit_at_running_event(db, email: str, event_id) -> None:
+    """Evenimentul e în desfășurare și userul a fost admis la ușă de staff."""
+    import uuid
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from app.models.event import Event, EventDoorAdmission
+    from app.models.user import User
+
+    now = datetime.now(timezone.utc)
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one()
+    event = await db.get(Event, uuid.UUID(str(event_id)))
+    event.starts_at = now - timedelta(hours=1)
+    db.add(EventDoorAdmission(event_id=event.id, user_id=user.id, admitted_at=now))
+    await db.commit()
+
+
 @pytest.mark.asyncio
-async def test_full_user_journey(client):
+async def test_full_user_journey(client, db_session):
     """Parcurge tot fluxul unui utilizator, verificând fiecare pas al integrării."""
     # --- Pas 1: register a 2 useri ------------------------------------------
     a_headers = await _register(client, "alice@example.com")
@@ -202,6 +220,8 @@ async def test_full_user_journey(client):
     events = resp.json()
     assert events, "Seed-ul de evenimente trebuie să existe."
     event = events[0]
+    # Check-in-ul cere DOVADĂ: A a fost admis de staff la un eveniment în curs.
+    await _admit_at_running_event(db_session, "alice@example.com", event["id"])
 
     resp = await client.post(
         f"{API}/events/{event['id']}/checkin", headers=a_headers

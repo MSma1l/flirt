@@ -42,6 +42,11 @@ UserDep = Annotated[User, Depends(get_current_user)]
 # motivarea pragului Telegram din `core/config.py` — și suficient de strâns cât
 # să plafoneze factura. Poarta principală de cost rămâne `ai_enabled`, oprit
 # implicit pe fiecare cont.
+#
+# PESTE limita per IP: cota ZILNICĂ per user (`ai_assist._consume_daily_quota`,
+# `settings.ai_daily_quota_per_user`, implicit 30 apeluri reale/zi) și memorarea
+# scorului de chimie 24h per pereche — un cont nu mai poate arde bugetul AI
+# rotind IP-uri, iar redeschiderea aceluiași profil nu mai costă.
 _ai_rl = rate_limit("ai", "rate_limit_ai_per_min", 60)
 
 

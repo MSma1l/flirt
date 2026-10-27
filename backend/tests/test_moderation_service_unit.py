@@ -22,6 +22,22 @@ async def _make_user(db, email) -> User:
     return user
 
 
+async def _make_credible_reporter(db, email, target) -> User:
+    """Raportor CREDIBIL: cont vechi (≥ 3 zile), profil completat, interacțiune
+    reală cu ținta (o vizualizare de profil)."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.activity import ProfileView
+
+    user = await _make_user(db, email)
+    user.created_at = datetime.now(timezone.utc) - timedelta(days=10)
+    user.profile_completed = True
+    db.add(ProfileView(viewer_id=user.id, viewed_id=target.id, view_date=date.today()))
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
 @pytest.mark.asyncio
 async def test_cannot_report_self_422(db_session):
     user = await _make_user(db_session, "self@example.com")
@@ -71,7 +87,7 @@ async def test_autoban_hides_profile_at_threshold(db_session):
 
     # `threshold` raportori DISTINCȚI raportează același user.
     for i in range(threshold):
-        reporter = await _make_user(db_session, f"rep{i}@example.com")
+        reporter = await _make_credible_reporter(db_session, f"rep{i}@example.com", target)
         out = await M.create_report(
             db_session, reporter,
             ReportIn(reported_user_id=target.id, category="offensive"),
@@ -108,7 +124,7 @@ async def test_autoban_updates_existing_settings(db_session):
     await db_session.commit()
 
     for i in range(settings.report_autoban_threshold):
-        reporter = await _make_user(db_session, f"rr{i}@example.com")
+        reporter = await _make_credible_reporter(db_session, f"rr{i}@example.com", target)
         await M.create_report(
             db_session, reporter,
             ReportIn(reported_user_id=target.id, category="obscene"),

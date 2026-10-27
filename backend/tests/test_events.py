@@ -35,6 +35,24 @@ async def _register(client, email: str, password: str = "Str0ng-Passw0rd!") -> d
     return {"Authorization": f"Bearer {token}"}
 
 
+async def _admit_at_running_event(db, email: str, event_id) -> None:
+    """Dovada cerută de check-in: evenimentul e în desfășurare și userul a fost
+    admis de staff (intrare la ușă înregistrată)."""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from app.models.event import Event, EventDoorAdmission
+    from app.models.user import User
+
+    now = datetime.now(timezone.utc)
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one()
+    event = await db.get(Event, uuid.UUID(str(event_id)))
+    event.starts_at = now - timedelta(hours=1)
+    db.add(EventDoorAdmission(event_id=event.id, user_id=user.id, admitted_at=now))
+    await db.commit()
+
+
 @pytest.mark.asyncio
 async def test_list_events_seeded(client):
     """Lista de evenimente e ne-goală (seed) și i_am_going e False inițial."""
@@ -77,13 +95,14 @@ async def test_going_increments_attendee_count(client):
 
 
 @pytest.mark.asyncio
-async def test_checkin_stamps_passport_idempotent(client):
+async def test_checkin_stamps_passport_idempotent(client, db_session):
     """Check-in apare în /passport și nu duplică la a doua apelare."""
     headers = await _register(client, "e3@example.com")
 
     resp = await client.get(f"{API}/events/", headers=headers)
     event = resp.json()[0]
     event_id = event["id"]
+    await _admit_at_running_event(db_session, "e3@example.com", event_id)
 
     resp = await client.post(f"{API}/events/{event_id}/checkin", headers=headers)
     assert resp.status_code == 201, resp.text
