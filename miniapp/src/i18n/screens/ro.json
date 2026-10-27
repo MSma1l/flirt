@@ -49,7 +49,11 @@
       "tooLarge": "Poza rămâne prea mare ({{size}}) chiar și după micșorare, iar limita este {{limit}}. Alege altă poză."
     },
     "barLabel": "Poveștile prietenilor",
-    "unseenHint": "are povești nevăzute"
+    "unseenHint": "are povești nevăzute",
+    "camera": {
+      "zoom": "Zoom",
+      "zoomTo": "Zoom {{value}}×"
+    }
   },
   "subscription": {
     "notice": "Plata nu este disponibilă în Telegram deocamdată. Abonamentul poate fi cumpărat din aplicația mobilă FLIRT, iar aici vezi planurile și starea lui.",
@@ -483,7 +487,8 @@
       "unavailable": "Înregistrarea vocală nu e disponibilă pe acest dispozitiv.",
       "loading": "Se încarcă mesajul vocal…",
       "error": "Mesajul vocal nu poate fi redat pe acest dispozitiv.",
-      "retry": "Reîncearcă redarea"
+      "retry": "Reîncearcă redarea",
+      "networkError": "Mesajul vocal nu s-a putut încărca. Verifică conexiunea și reîncearcă."
     },
     "viewer": {
       "close": "Închide"

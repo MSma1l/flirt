@@ -45,18 +45,69 @@ interface Props {
  */
 type PlaybackState = 'idle' | 'loading' | 'error';
 
+/** De ce a eșuat redarea: formatul (dispozitivul nu-l poate decoda) sau rețeaua. */
+export type FailureKind = 'format' | 'network';
+
+/**
+ * Cât așteptăm după `play()` până declarăm redarea blocată. WebView-ul iOS poate
+ * rămâne „în așteptare" la nesfârșit (fără evenimentul `error`) pe un fișier pe
+ * care nu-l poate decoda sau pe o conexiune căzută — fără plafon, spinnerul se
+ * învârtea la nesfârșit și vocalul „nu se auzea".
+ */
+export const VOICE_STALL_MS = 20_000;
+
+/**
+ * `MediaError.code` 2 = rețea (reîncercarea poate ajuta); 3 (decodare), 4
+ * (format nesuportat) sau necunoscut → fișierul nu poate fi redat aici.
+ */
+export function failureKind(error: { code?: number } | null | undefined): FailureKind {
+  return error?.code === 2 ? 'network' : 'format';
+}
+
+interface AudioSessionLike {
+  type?: string;
+}
+
+/**
+ * iOS (Safari/WKWebView 16.4+): sesiunea audio a paginii pe „playback", ca
+ * vocalul să se audă și cu telefonul pe SILENȚIOS (comutatorul lateral). Cu
+ * sesiunea implicită, WebView-ul din Telegram poate reda mut — progresul
+ * înaintează, dar nu se aude nimic. În afara iOS API-ul lipsește → nu face nimic.
+ */
+export function preparePlaybackSession(nav: Navigator | undefined = globalThis.navigator): void {
+  const session = (nav as (Navigator & { audioSession?: AudioSessionLike }) | undefined)
+    ?.audioSession;
+  if (!session) return;
+  try {
+    if (session.type !== 'playback') session.type = 'playback';
+  } catch {
+    /* API parțial / blocat: redarea continuă oricum */
+  }
+}
+
 export function VoicePlayer({ id, src, durationMs, own }: Props) {
   const { t } = useTranslation('screens');
   const audioRef = useRef<HTMLAudioElement>(null);
+  const stallRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [playing, setPlaying] = useState(false);
   const [state, setState] = useState<PlaybackState>('idle');
+  const [failure, setFailure] = useState<FailureKind>('format');
   const [progress, setProgress] = useState(0);
   const [currentMs, setCurrentMs] = useState(0);
   const [mediaMs, setMediaMs] = useState<number | null>(null);
   const bars = useMemo(() => waveformBars(id), [id]);
 
+  const clearStall = () => {
+    if (stallRef.current) clearTimeout(stallRef.current);
+    stallRef.current = null;
+  };
+
+  // Demontare: niciun temporizator rămas în urmă.
+  useEffect(() => clearStall, []);
+
   // Fișier nou (ex. bula optimistă înlocuită de mesajul de pe server): de la zero.
   useEffect(() => {
+    clearStall();
     setState('idle');
     setPlaying(false);
     setProgress(0);
@@ -84,12 +135,17 @@ export function VoicePlayer({ id, src, durationMs, own }: Props) {
     };
     const onPause = () => setPlaying(false);
     const onPlay = () => setPlaying(true);
-    const onPlaying = () => setState('idle');
+    const onPlaying = () => {
+      clearStall();
+      setState('idle');
+    };
     const onWaiting = () => {
       if (!audio.paused) setState('loading');
     };
     const onError = () => {
+      clearStall();
       setPlaying(false);
+      setFailure(failureKind(audio.error));
       setState('error');
     };
     audio.addEventListener('timeupdate', onTime);
@@ -112,6 +168,13 @@ export function VoicePlayer({ id, src, durationMs, own }: Props) {
     };
   }, [totalMs]);
 
+  const fail = (kind: FailureKind) => {
+    clearStall();
+    setPlaying(false);
+    setFailure(kind);
+    setState('error');
+  };
+
   const toggle = () => {
     const audio = audioRef.current;
     if (!audio || !src) return;
@@ -120,27 +183,50 @@ export function VoicePlayer({ id, src, durationMs, own }: Props) {
       document.querySelectorAll('audio').forEach((other) => {
         if (other !== audio) other.pause();
       });
-      if (state === 'error') {
-        // Reîncercare: o eroare de rețea trecătoare nu blochează mesajul.
+      preparePlaybackSession();
+      if (state === 'error' || audio.error) {
+        // Reîncercare: `load()` resetează elementul — altfel iOS rămâne pe
+        // eroarea veche, iar o problemă de rețea trecătoare ar bloca mesajul.
         audio.load?.();
       }
       setState('loading');
+      clearStall();
+      // `play()` SINCRON în handlerul de click (fără `await` înainte): iOS
+      // pornește redarea doar direct dintr-un gest al utilizatorului.
       const played = audio.play?.();
+      stallRef.current = setTimeout(() => {
+        stallRef.current = null;
+        // Nimic redat după plafon: oprim încercarea și arătăm eroarea.
+        if (audio.paused || audio.currentTime === 0) {
+          audio.pause?.();
+          fail('network');
+        }
+      }, VOICE_STALL_MS);
       if (played && typeof played.then === 'function') {
         played.then(
-          () => setState('idle'),
+          () => {
+            clearStall();
+            setState('idle');
+          },
           (error: unknown) => {
-            setPlaying(false);
             // `AbortError` = redarea a fost întreruptă de o pauză (alt vocal
             // pornit); nu e o eroare a fișierului.
             const name = (error as { name?: string } | null)?.name;
-            setState(name === 'AbortError' ? 'idle' : 'error');
+            if (name === 'AbortError') {
+              clearStall();
+              setPlaying(false);
+              setState('idle');
+              return;
+            }
+            fail(name === 'NotSupportedError' ? 'format' : failureKind(audio.error));
           },
         );
       } else {
+        clearStall();
         setState('idle');
       }
     } else {
+      clearStall();
       audio.pause();
       setState('idle');
     }
@@ -173,6 +259,7 @@ export function VoicePlayer({ id, src, durationMs, own }: Props) {
       className={['voice', own ? 'voice--own' : '', failed ? 'voice--error' : ''].filter(Boolean).join(' ')}
       data-testid="voice-player"
       data-state={state}
+      data-failure={failed ? failure : undefined}
     >
       <button
         type="button"
@@ -197,7 +284,7 @@ export function VoicePlayer({ id, src, durationMs, own }: Props) {
         </div>
         {failed ? (
           <span className="voice__error" role="alert" data-testid="voice-play-error">
-            {t('chat.voice.error')}
+            {failure === 'network' ? t('chat.voice.networkError') : t('chat.voice.error')}
           </span>
         ) : (
           <span className="voice__time" data-testid="voice-time">
