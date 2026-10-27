@@ -54,3 +54,8 @@ mobile/assets/_backup_logo_vechi/
 # artefacte de test
 backend/.coverage
 backend/htmlcov/
+
+# === Docker / backup ===
+# Override-ul local (expune API-ul pe :8000 în HTTP clar) NU are voie să ajungă
+# pe server: compose îl încarcă automat. Copiază din `.example` doar local.
+backend/docker-compose.override.yml

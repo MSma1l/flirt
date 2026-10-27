@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import CurrentUser
+from app.core.deps import CurrentUser, require_capability
 from app.core.ratelimit import rate_limit
 from app.db.session import get_db
 from app.schemas.auth import (
@@ -42,6 +42,11 @@ _otp_verify_rl = rate_limit("otp_verify", "rate_limit_login_per_min", 60)
 # fiecare deschidere a Mini App-ului, iar mai mulți useri pot veni prin același
 # NAT de operator mobil (vezi `rate_limit_telegram_per_min` din config).
 _telegram_rl = rate_limit("telegram", "rate_limit_telegram_per_min", 60)
+
+
+# Metodele declarate indisponibile în `/capabilities` sunt închise în producție.
+_social_enabled = require_capability("social_login")
+_phone_enabled = require_capability("phone_login")
 
 
 @router.post(
@@ -78,7 +83,9 @@ def _phone_key(phone: str) -> str:
     return re.sub(r"\D", "", phone)
 
 
-@router.post("/google", response_model=TokenPair)
+@router.post(
+    "/google", response_model=TokenPair, dependencies=[Depends(_social_enabled)]
+)
 async def google_login(data: SocialLoginIn, db: DbSession) -> TokenPair:
     """Google Sign-In: validează id_token-ul și autentifică (get-or-create)."""
     claims = await auth_providers.verify_google(data.id_token)
@@ -87,7 +94,9 @@ async def google_login(data: SocialLoginIn, db: DbSession) -> TokenPair:
     return await auth_service.login_with_identity(db, email=email)
 
 
-@router.post("/apple", response_model=TokenPair)
+@router.post(
+    "/apple", response_model=TokenPair, dependencies=[Depends(_social_enabled)]
+)
 async def apple_login(data: SocialLoginIn, db: DbSession) -> TokenPair:
     """Apple Sign-In: validează id_token-ul și autentifică (get-or-create)."""
     claims = await auth_providers.verify_apple(data.id_token)
@@ -131,7 +140,7 @@ async def telegram_login(data: TelegramAuthIn, db: DbSession) -> TokenPair:
 @router.post(
     "/phone/request",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(_otp_request_rl)],
+    dependencies=[Depends(_phone_enabled), Depends(_otp_request_rl)],
 )
 async def phone_request(data: PhoneRequestIn) -> None:
     """Trimite un cod OTP către numărul de telefon (în stub, codul de test)."""
@@ -141,7 +150,7 @@ async def phone_request(data: PhoneRequestIn) -> None:
 @router.post(
     "/phone/verify",
     response_model=TokenPair,
-    dependencies=[Depends(_otp_verify_rl)],
+    dependencies=[Depends(_phone_enabled), Depends(_otp_verify_rl)],
 )
 async def phone_verify(data: PhoneVerifyIn, db: DbSession) -> TokenPair:
     """Verifică OTP-ul; la cod corect autentifică (get-or-create), altfel 401."""

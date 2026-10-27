@@ -106,3 +106,23 @@ async def require_admin(
 CurrentUser = Annotated[User, Depends(get_current_user)]
 # Alias pentru rutele de admin — folosește-l în TOATE rutele din api/v1/admin.
 CurrentAdmin = Annotated[User, Depends(require_admin)]
+
+
+def require_capability(name: str):
+    """Ruta e închisă (503) în producție cât timp funcția e declarată indisponibilă.
+
+    `/capabilities` spune clientului ce e oprit, dar rutele rămâneau montate și,
+    în modul `stub`, răspundeau: `stub:orice@x` la login social, codul fix
+    `000000` la OTP (preluarea oricărui cont `phone_*`), premium gratuit la
+    cumpărare. Garda de producție permite stub-ul tocmai pentru că funcția e
+    „indisponibilă"; dependența asta o face să fie cu adevărat indisponibilă.
+    """
+
+    async def _dep() -> None:
+        if settings.environment == "production" and not settings.capabilities.get(name):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="This feature is not available",
+            )
+
+    return _dep

@@ -1,4 +1,4 @@
-# FLIRT — локальный оверрайд. Положить в backend/docker-compose.override.yml
+# FLIRT — локальный оверрайд. Скопировать в backend/docker-compose.override.yml (gitignored)
 #
 # docker compose подхватывает этот файл АВТОМАТИЧЕСКИ рядом с docker-compose.yml.
 # Основной compose — продакшн-формы: наружу торчит только nginx (443, самоподписанный

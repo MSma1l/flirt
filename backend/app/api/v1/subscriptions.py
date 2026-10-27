@@ -8,7 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_capability
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.billing import (
@@ -37,7 +37,11 @@ async def my_subscription(db: DbDep, user: UserDep) -> SubscriptionOut | None:
     return await billing.get_subscription(db, user)
 
 
-@router.post("/purchase", response_model=SubscriptionOut)
+@router.post(
+    "/purchase",
+    response_model=SubscriptionOut,
+    dependencies=[Depends(require_capability("payments"))],
+)
 async def purchase(data: PurchaseIn, db: DbDep, user: UserDep) -> SubscriptionOut:
     """Cumpără/activează un plan (protejat)."""
     return await billing.purchase(db, user, data.plan, data.receipt)
