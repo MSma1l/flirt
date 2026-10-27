@@ -167,6 +167,10 @@ class Settings(BaseSettings):
     # Raza de căutare se aplică efectiv în feed (SQL bounding-box + haversine).
     # Poate fi oprită global (ex. piață mică, densitate slabă de useri).
     feed_radius_filter_enabled: bool = True
+    # Un profil refuzat (dislike) poate reveni într-o trecere NOUĂ a feed-ului
+    # abia după atâtea ore — altfel, într-un pool mic, cel refuzat acum câteva
+    # secunde reapărea imediat. 0 = fără pauză (reciclare imediată).
+    feed_recycle_cooldown_hours: int = 24
 
     # --- Activitate (users.last_active_at) -----------------------------------
     # Candidații inactivi de mai mult de N zile nu mai apar în feed (conturi
