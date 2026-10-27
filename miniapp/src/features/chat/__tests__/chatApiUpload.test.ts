@@ -78,6 +78,22 @@ describe('uploadAttachment', () => {
     const form = vi.mocked(api.post).mock.calls[0]![1] as FormData;
     expect(form.has('duration_ms')).toBe(false);
     expect(form.has('caption')).toBe(false);
+    expect(form.has('kind')).toBe(false);
+  });
+
+  it('mesajul video rotund trimite `kind=video_note` și se mapează ca atare', async () => {
+    vi.mocked(api.post).mockResolvedValue({
+      data: { ...RESPONSE, body: '', kind: 'video_note' },
+    } as never);
+    const msg = await uploadAttachment('c1', new Blob(['v'], { type: 'video/mp4' }), {
+      kind: 'video_note',
+      durationMs: 9000,
+      fileName: 'video-note.mp4',
+    });
+    const form = vi.mocked(api.post).mock.calls[0]![1] as FormData;
+    expect(form.get('kind')).toBe('video_note');
+    expect(form.get('duration_ms')).toBe('9000');
+    expect(msg.kind).toBe('video_note');
   });
 });
 

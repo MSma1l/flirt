@@ -733,6 +733,140 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ——— Mesajul video rotund („кружок") ——— */
+
+.bubble--media.bubble--video_note,
+.bubble--media.bubble--video_note.bubble--own {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.bubble--video_note::after {
+  display: none;
+}
+
+/* Ora + bifele stau PE cerc, jos în dreapta, într-o pastilă întunecată. */
+.bubble--video_note .bubble__meta,
+.bubble--own.bubble--video_note .bubble__meta {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  margin: 0;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+}
+
+.bubble--video_note .bubble__pending {
+  border-radius: 50%;
+}
+
+.video-note {
+  appearance: none;
+  position: relative;
+  display: block;
+  width: min(220px, 60vw);
+  aspect-ratio: 1;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--color-surface-hover);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  /* Bula e text selectabil; cercul e un buton de redare. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.video-note:disabled {
+  cursor: default;
+}
+
+.video-note__video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.video-note__ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+
+.video-note__ring-value {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.25s linear;
+}
+
+.video-note__play {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 3px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.video-note__badge {
+  position: absolute;
+  left: 50%;
+  top: 10px;
+  transform: translateX(-50%);
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.video-note__error {
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  bottom: 34px;
+  padding: 3px 8px;
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 11px;
+  line-height: 14px;
+  text-align: center;
+  white-space: normal;
+}
+
+/* Răspuns la o poveste: eticheta (tradusă) deasupra textului. */
+.bubble__story-reply {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 12.5px;
+  line-height: 17px;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
 .bubble__react-btn {
   appearance: none;
   flex: 0 0 auto;
@@ -1173,6 +1307,81 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Butonul cu două moduri (vocal / video): gestul de apăsare lungă e al nostru,
+   nu al WebView-ului (fără meniu contextual, selecție sau derulare). */
+.chat-send--hold {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.chat-composer__hint {
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* Previzualizarea camerei: un cerc deasupra composerului, ca în Telegram. */
+.video-note-rec {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  display: flex;
+  justify-content: center;
+  padding-bottom: var(--space-md, 12px);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.video-note-rec__circle {
+  position: relative;
+  width: min(240px, 64vw);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+}
+
+.video-note-rec__video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Oglindă, ca în orice aplicație cu camera frontală; fișierul rămâne normal. */
+  transform: scaleX(-1);
+}
+
+.video-note-rec__ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.video-note-rec__track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 3;
+}
+
+.video-note-rec__value {
+  fill: none;
+  stroke: var(--color-danger);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.2s linear;
 }
 
 /* ——— Panoul de emoji ——— */

@@ -62,11 +62,13 @@ import {
   revokeObjectUrl,
   uploadErrorReason,
   validateMedia,
+  validateVideoNote,
   type MediaErrorReason,
   type MediaKind,
 } from './chatMedia';
 import { CHAT_ID_PARAM, chatProfilePath } from './chatRoutes';
 import { usePollInterval } from './usePollInterval';
+import { videoExtension, type VideoNoteRecording } from './useVideoNoteRecorder';
 import { audioExtension, type VoiceRecording } from './useVoiceRecorder';
 
 import './chat.css';
@@ -261,6 +263,7 @@ export function ChatScreen() {
           fileName: item.fileName,
           ...(item.caption ? { caption: item.caption } : {}),
           ...(typeof item.durationMs === 'number' ? { durationMs: item.durationMs } : {}),
+          ...(item.kind === 'video_note' ? { kind: 'video_note' as const } : {}),
           onProgress: (fraction) => patchPending(item.localId, { progress: fraction }),
         });
         setPending((list) => list.filter((p) => p.localId !== item.localId));
@@ -301,7 +304,7 @@ export function ChatScreen() {
       setMediaError(check.reason);
       return;
     }
-    if (check.kind === 'voice') {
+    if (check.kind !== 'image' && check.kind !== 'video') {
       setMediaError('unsupported');
       return;
     }
@@ -332,6 +335,25 @@ export function ChatScreen() {
         kind: 'voice',
         blob: rec.blob,
         fileName: `voice-${Date.now()}.${audioExtension(rec.mime)}`,
+        caption: '',
+        durationMs: rec.durationMs,
+      });
+    },
+    [enqueue],
+  );
+
+  const onVideoNote = useCallback(
+    (rec: VideoNoteRecording) => {
+      setMediaError(null);
+      const check = validateVideoNote(rec.blob, rec.durationMs);
+      if (!check.ok) {
+        setMediaError(check.reason);
+        return;
+      }
+      enqueue({
+        kind: 'video_note',
+        blob: rec.blob,
+        fileName: `video-note-${Date.now()}.${videoExtension(rec.mime)}`,
         caption: '',
         durationMs: rec.durationMs,
       });
@@ -644,6 +666,7 @@ export function ChatScreen() {
         {...(composerErrorId ? { errorTestId: composerErrorId } : {})}
         onPickFile={onPickFile}
         onVoice={onVoice}
+        onVideoNote={onVideoNote}
       />
 
       {preview ? (

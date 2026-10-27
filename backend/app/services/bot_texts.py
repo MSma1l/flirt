@@ -479,9 +479,18 @@ _SOMEONE = {"ro": "Cineva", "ru": "Кто-то", "en": "Someone"}
 
 # Eticheta unui atașament în previzualizare (după `messages.kind`).
 _ATTACHMENT_LABELS: dict[str, dict[str, str]] = {
-    "ro": {"image": "📷 Foto", "video": "🎬 Video", "voice": "🎤 Mesaj vocal"},
-    "ru": {"image": "📷 Фото", "video": "🎬 Видео", "voice": "🎤 Голосовое сообщение"},
-    "en": {"image": "📷 Photo", "video": "🎬 Video", "voice": "🎤 Voice message"},
+    "ro": {
+        "image": "📷 Foto", "video": "🎬 Video", "voice": "🎤 Mesaj vocal",
+        "video_note": "📹 Mesaj video",
+    },
+    "ru": {
+        "image": "📷 Фото", "video": "🎬 Видео", "voice": "🎤 Голосовое сообщение",
+        "video_note": "📹 Видеосообщение",
+    },
+    "en": {
+        "image": "📷 Photo", "video": "🎬 Video", "voice": "🎤 Voice message",
+        "video_note": "📹 Video message",
+    },
 }
 _ATTACHMENT_FALLBACK = {"ro": "📎 Atașament", "ru": "📎 Вложение", "en": "📎 Attachment"}
 

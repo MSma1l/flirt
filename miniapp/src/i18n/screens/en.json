@@ -441,7 +441,8 @@
       "image": "📷 Photo",
       "video": "🎥 Video",
       "voice": "🎤 Voice message",
-      "attachment": "📎 Attachment"
+      "attachment": "📎 Attachment",
+      "video_note": "📹 Video message"
     },
     "preview": {
       "titlePhoto": "Send a photo",
@@ -466,7 +467,8 @@
       "tooLargeVoice": "The voice message is too long or too large (5 minutes max).",
       "unsupported": "This file type isn’t supported. Send a photo, a video or a voice message.",
       "empty": "The file is empty. Pick another one.",
-      "generic": "The attachment wasn’t sent. Try again."
+      "generic": "The attachment wasn’t sent. Try again.",
+      "tooLargeVideoNote": "The video message is too long or too large (60 seconds max)."
     },
     "voice": {
       "record": "Record a voice message",
@@ -495,6 +497,24 @@
       "write": "Send a message",
       "compatibility": "{{score}}% compatible",
       "aboutTitle": "About"
+    },
+    "videoNote": {
+      "record": "Record a video message",
+      "send": "Send video message",
+      "cancel": "Cancel video recording",
+      "recording": "Recording video…",
+      "hintVideo": "Hold to record a video message. Tap to switch to voice.",
+      "hintVoice": "Hold to record a voice message. Tap to switch to video.",
+      "play": "Play video message",
+      "pause": "Pause video message",
+      "error": "This video message can't be played on this device.",
+      "denied": "No camera access. Allow it in your phone settings to send video messages.",
+      "unavailable": "Video recording isn't available on this device."
+    },
+    "storyReply": {
+      "received": "↩️ Replied to your story",
+      "own": "↩️ You replied to a story",
+      "preview": "↩️ Story reply: {{text}}"
     }
   },
   "profileView": {

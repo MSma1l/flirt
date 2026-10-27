@@ -21,6 +21,8 @@ export const MEDIA_LIMITS = {
   videoBytes: 50 * MB,
   voiceBytes: 10 * MB,
   voiceMs: 5 * 60_000,
+  /** Mesajul video rotund („кружок"): 60 s, ca în Telegram. */
+  videoNoteMs: 60_000,
 } as const;
 
 /** Peste atât micșorăm poza în browser (economie de date și upload mai rapid). */
@@ -33,6 +35,7 @@ export type MediaErrorReason =
   | 'tooLargeImage'
   | 'tooLargeVideo'
   | 'tooLargeVoice'
+  | 'tooLargeVideoNote'
   | 'unsupported'
   | 'empty'
   | 'generic';
@@ -74,10 +77,23 @@ export function validateMedia(
   return { ok: true, kind };
 }
 
+/**
+ * Validarea unui mesaj video rotund înregistrat în aplicație: gol, mărime
+ * (aceeași ca la video) și durată (≤ 60 s, + o marjă pentru ceasul local).
+ */
+export function validateVideoNote(blob: Blob, durationMs: number): MediaCheck {
+  if (blob.size <= 0) return { ok: false, reason: 'empty' };
+  if (blob.size > MEDIA_LIMITS.videoBytes || durationMs > MEDIA_LIMITS.videoNoteMs + 2000) {
+    return { ok: false, reason: 'tooLargeVideoNote' };
+  }
+  return { ok: true, kind: 'video_note' };
+}
+
 /** Eroarea de la server → motivul afișabil. */
 export function uploadErrorReason(error: unknown, kind: MediaKind): MediaErrorReason {
   const status = isAxiosError(error) ? error.response?.status : undefined;
   if (status === 413) {
+    if (kind === 'video_note') return 'tooLargeVideoNote';
     return kind === 'video' ? 'tooLargeVideo' : kind === 'voice' ? 'tooLargeVoice' : 'tooLargeImage';
   }
   if (status === 415) return 'unsupported';

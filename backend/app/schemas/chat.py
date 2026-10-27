@@ -14,7 +14,8 @@ MESSAGE_MAX_LENGTH = 2000
 
 # Tipurile de mesaj. 'text' e implicitul — clienții vechi (aplicația nativă)
 # ignoră câmpul și văd exact aceleași mesaje ca înainte.
-MessageKind = Literal["text", "image", "video", "voice"]
+# 'video_note' (aditiv) = mesaj video rotund („кружок"), MP4 pătrat ≤ 60 s.
+MessageKind = Literal["text", "image", "video", "voice", "video_note"]
 
 
 class ChatSummary(BaseModel):

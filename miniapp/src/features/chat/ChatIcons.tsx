@@ -22,7 +22,8 @@ export type ChatIconName =
   | 'retry'
   | 'trash'
   | 'heart'
-  | 'alert';
+  | 'alert'
+  | 'video';
 
 const PATHS: Record<ChatIconName, ReactElement> = {
   flag: (
@@ -104,6 +105,13 @@ const PATHS: Record<ChatIconName, ReactElement> = {
     <>
       <circle cx="12" cy="12" r="9" />
       <path d="M12 7.5v5.5M12 16.5h.01" />
+    </>
+  ),
+  // Camera: modul „mesaj video rotund" al butonului de înregistrare.
+  video: (
+    <>
+      <rect x="2.5" y="6" width="13" height="12" rx="3" />
+      <path d="M15.5 10.5l6-3.5v10l-6-3.5" />
     </>
   ),
 };
