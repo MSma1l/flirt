@@ -20,6 +20,7 @@ import { cssVarColors } from '@/theme/tokens';
 
 import type { ChatSummaryEx } from './chatApi';
 import { chatPath, chatProfilePath } from './chatRoutes';
+import { splitStoryReply } from './storyReply';
 
 interface Props {
   chat: ChatSummary & Partial<Pick<ChatSummaryEx, 'lastMessageKind' | 'otherPhotoUrl'>>;
@@ -68,7 +69,12 @@ function ChatListRowBase({ chat }: Props) {
     const label = t(`screens:chat.listPreview.${kind}`);
     preview = chat.lastMessage ? `${label} · ${chat.lastMessage}` : label;
   } else if (chat.lastMessage) {
-    preview = chat.lastMessage;
+    // Răspuns la poveste: prefixul fix (românesc) de pe server → limba interfeței.
+    const storyReply = splitStoryReply(chat.lastMessage);
+    preview =
+      storyReply !== null
+        ? t('screens:chat.storyReply.preview', { text: storyReply })
+        : chat.lastMessage;
   } else if (chat.lastMessage === '' && chat.lastMessageAt) {
     preview = t('screens:chat.listPreview.attachment');
   } else {

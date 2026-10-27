@@ -22,6 +22,9 @@ from app.schemas.chat import (
 )
 from app.services import chat_service
 from app.services.chat_media import (
+    VIDEO_NOTE_KIND,
+    as_video_note,
+    ensure_playable_video_note,
     ensure_playable_voice,
     max_attachment_bytes,
     validate_attachment,
@@ -68,6 +71,18 @@ def _parse_duration(raw: object) -> int | None:
     if value < 0 or value > _DURATION_MS_MAX:
         raise HTTPException(status_code=422, detail="Câmpul 'duration_ms' este în afara limitelor.")
     return value
+
+
+def _parse_video_note(raw: object) -> bool:
+    """`kind` opțional: lipsă → tipul se deduce din conținut; "video_note" →
+    mesaj video rotund; orice altă valoare → 422."""
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return False
+    if isinstance(raw, str) and raw.strip() == VIDEO_NOTE_KIND:
+        return True
+    raise HTTPException(
+        status_code=422, detail=f"Câmpul 'kind' acceptă doar '{VIDEO_NOTE_KIND}'."
+    )
 
 
 @router.get("/", response_model=list[ChatSummary])
@@ -138,7 +153,8 @@ async def send_attachment(
     """Trimite o poză / un video / un mesaj vocal (multipart/form-data).
 
     Câmpuri: `file` (obligatoriu), `duration_ms` (opțional, voice/video),
-    `caption` (opțional; aceleași reguli + mascare ca un mesaj text).
+    `caption` (opțional; aceleași reguli + mascare ca un mesaj text),
+    `kind` (opțional, aditiv: doar "video_note" — mesaj video rotund ≤ 60 s).
     Tipul (`kind`) se deduce din conținutul real (magic bytes): 415 dacă nu e
     permis, 413 peste limite, 422 pentru fișier gol. Pozele pierd EXIF/GPS.
     """
@@ -156,6 +172,7 @@ async def send_attachment(
         raise HTTPException(status_code=422, detail="Lipsește câmpul 'file' (multipart).")
     caption = _parse_caption(form.get("caption"))
     duration_ms = _parse_duration(form.get("duration_ms"))
+    video_note = _parse_video_note(form.get("kind"))
 
     # Plafon de citire: nu încărcăm în RAM mai mult decât cea mai mare limită.
     limit = max_attachment_bytes()
@@ -173,8 +190,14 @@ async def send_attachment(
 
     # Pozele se decodează/re-encodează (Pillow, CPU-bound) → firul de lucru.
     media = await asyncio.to_thread(validate_attachment, content, duration_ms)
-    # Vocalele WebM/Ogg/Opus → AAC/M4A, ca să se poată asculta și pe iOS.
-    media = await ensure_playable_voice(media)
+    if video_note:
+        # „Кружок": doar video ≤ 60 s, convertit în MP4 H.264/AAC pătrat
+        # (redabil pe iOS și Android). Fără legendă, ca în Telegram.
+        media = await ensure_playable_video_note(as_video_note(media))
+        caption = ""
+    else:
+        # Vocalele WebM/Ogg/Opus → AAC/M4A, ca să se poată asculta și pe iOS.
+        media = await ensure_playable_voice(media)
     return await chat_service.send_attachment(db, user, chat, media, caption)
 
 

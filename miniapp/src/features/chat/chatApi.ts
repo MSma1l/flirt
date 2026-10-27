@@ -24,7 +24,8 @@
  *   POST   /chats/{chat_id}/attachments (multipart)  → MessageOut (201)
  *   GET    /chats/{chat_id}/partner                 → PartnerProfileOut
  *
- * MEDIA: `MessageOut` poartă `kind` ("text" | "image" | "video" | "voice") și
+ * MEDIA: `MessageOut` poartă `kind` ("text" | "image" | "video" | "voice" |
+ * "video_note") și
  * `attachment` ({url, mime, size_bytes, duration_ms, width, height} | null).
  * Mesajele vechi nu au aceste câmpuri → le tratăm ca text, fără atașament.
  */
@@ -36,8 +37,11 @@ import { api } from '@/api/client';
 
 export { markRead, reactToMessage, sendMessage } from '@mobile/features/chat/chatApi';
 
-/** Tipul unui mesaj. Lipsa câmpului (mesaje vechi) înseamnă text. */
-export type MessageKind = 'text' | 'image' | 'video' | 'voice';
+/**
+ * Tipul unui mesaj. Lipsa câmpului (mesaje vechi) înseamnă text.
+ * `video_note` = mesaj video rotund („кружок", ca în Telegram), MP4 pătrat ≤ 60 s.
+ */
+export type MessageKind = 'text' | 'image' | 'video' | 'voice' | 'video_note';
 
 /** Fișierul atașat unui mesaj media, în camelCase. */
 export interface MessageAttachment {
@@ -75,7 +79,7 @@ interface AttachmentResponse {
   height?: number | null;
 }
 
-const KINDS: readonly MessageKind[] = ['text', 'image', 'video', 'voice'];
+const KINDS: readonly MessageKind[] = ['text', 'image', 'video', 'voice', 'video_note'];
 
 function toKind(raw: unknown): MessageKind {
   return KINDS.includes(raw as MessageKind) ? (raw as MessageKind) : 'text';
@@ -210,6 +214,8 @@ export interface UploadOptions {
   signal?: AbortSignal;
   /** Numele fișierului din partea multipart (blob-urile n-au nume). */
   fileName?: string;
+  /** `video_note` → câmpul `kind`: serverul îl face mesaj video rotund (≤ 60 s). */
+  kind?: 'video_note';
 }
 
 /**
@@ -233,6 +239,7 @@ export async function uploadAttachment(
   }
   const caption = options.caption?.trim();
   if (caption) form.append('caption', caption);
+  if (options.kind === 'video_note') form.append('kind', 'video_note');
 
   const { data } = await api.post<ChatMessageResponse>(`/chats/${chatId}/attachments`, form, {
     // Uploadul unui video de 50 MB pe o rețea mobilă poate dura minute.

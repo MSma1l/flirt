@@ -68,7 +68,8 @@ class Message(Base):
     # Reacția la mesaj — un emoji simplu (❤️/😂/👍); None = fără reacție (TZ 5.2).
     reaction: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
-    # Tipul mesajului: 'text' | 'image' | 'video' | 'voice'. Rândurile vechi
+    # Tipul mesajului: 'text' | 'image' | 'video' | 'voice' | 'video_note'
+    # (mesaj video rotund; fără CHECK în DB, deci fără migrare). Rândurile vechi
     # primesc 'text' prin server_default (migrare sigură pe tabel populat).
     kind: Mapped[str] = mapped_column(
         String(16), default="text", server_default="text", nullable=False

@@ -445,7 +445,8 @@
       "image": "📷 Poză",
       "video": "🎥 Video",
       "voice": "🎤 Mesaj vocal",
-      "attachment": "📎 Atașament"
+      "attachment": "📎 Atașament",
+      "video_note": "📹 Mesaj video"
     },
     "preview": {
       "titlePhoto": "Trimite o poză",
@@ -470,7 +471,8 @@
       "tooLargeVoice": "Mesajul vocal e prea lung sau prea mare (maxim 5 minute).",
       "unsupported": "Tipul ăsta de fișier nu e acceptat. Trimite o poză, un video sau un mesaj vocal.",
       "empty": "Fișierul e gol. Alege altul.",
-      "generic": "Atașamentul nu a fost trimis. Reîncearcă."
+      "generic": "Atașamentul nu a fost trimis. Reîncearcă.",
+      "tooLargeVideoNote": "Mesajul video e prea lung sau prea mare (maximum 60 de secunde)."
     },
     "voice": {
       "record": "Înregistrează un mesaj vocal",
@@ -499,6 +501,24 @@
       "write": "Scrie un mesaj",
       "compatibility": "Compatibilitate {{score}}%",
       "aboutTitle": "Despre"
+    },
+    "videoNote": {
+      "record": "Înregistrează un mesaj video",
+      "send": "Trimite mesajul video",
+      "cancel": "Anulează înregistrarea video",
+      "recording": "Se înregistrează video…",
+      "hintVideo": "Ține apăsat pentru a înregistra un mesaj video. Atinge pentru a trece la vocal.",
+      "hintVoice": "Ține apăsat pentru a înregistra un mesaj vocal. Atinge pentru a trece la video.",
+      "play": "Redă mesajul video",
+      "pause": "Pune pe pauză mesajul video",
+      "error": "Mesajul video nu poate fi redat pe acest dispozitiv.",
+      "denied": "Nu există acces la cameră. Permite-l în setările telefonului ca să trimiți mesaje video.",
+      "unavailable": "Înregistrarea video nu este disponibilă pe acest dispozitiv."
+    },
+    "storyReply": {
+      "received": "↩️ A răspuns la povestea ta",
+      "own": "↩️ Ai răspuns la poveste",
+      "preview": "↩️ Răspuns la poveste: {{text}}"
     }
   },
   "profileView": {

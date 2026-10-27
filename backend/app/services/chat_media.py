@@ -515,3 +515,146 @@ async def ensure_playable_voice(media: ChatMedia) -> ChatMedia:
     return ChatMedia(
         kind="voice", mime="audio/mp4", content=converted, duration_ms=duration
     )
+
+
+# --------------------------------------------------------------------------- #
+# Mesaje video rotunde („кружки", ca în Telegram)
+# --------------------------------------------------------------------------- #
+
+# Tipul mesajului (coloana `messages.kind`, String(16), fără CHECK — nu cere
+# migrare). Clienții vechi (aplicația nativă) ignoră `kind` și văd un mesaj gol,
+# exact ca la un video obișnuit.
+VIDEO_NOTE_KIND = "video_note"
+# Plafonul de produs: 60 s, ca în Telegram (+ o marjă pentru ceasul clientului).
+VIDEO_NOTE_MAX_DURATION_MS = 60_000
+_VIDEO_NOTE_DURATION_SLACK_MS = 3_000
+# Latura pătratului final: 2× bula de ~240px de pe ecranele retina.
+VIDEO_NOTE_SIDE = 480
+_VIDEO_NOTE_TIMEOUT_S = 120
+# Demuxerul FORȚAT pentru fiecare format video deja validat prin magic bytes.
+_FFMPEG_VIDEO_DEMUXER = {
+    "video/webm": "matroska",
+    "video/mp4": "mov",
+    "video/quicktime": "mov",
+}
+
+
+def as_video_note(media: ChatMedia) -> ChatMedia:
+    """Marchează un video validat drept mesaj video rotund. Ridică 415 / 413.
+
+    Doar un fișier recunoscut ca video (magic bytes) poate deveni „кружок";
+    durata (reală din mp4 sau declarată) nu poate depăși 60 s.
+    """
+    if media.kind != "video":
+        raise HTTPException(
+            status_code=415,
+            detail="Mesajul video rotund trebuie să fie un video (mp4, mov, webm).",
+        )
+    limit = VIDEO_NOTE_MAX_DURATION_MS + _VIDEO_NOTE_DURATION_SLACK_MS
+    if media.duration_ms is not None and media.duration_ms > limit:
+        raise HTTPException(
+            status_code=413,
+            detail="Mesajul video este prea lung (maxim 60 de secunde).",
+        )
+    return ChatMedia(
+        kind=VIDEO_NOTE_KIND,
+        mime=media.mime,
+        content=media.content,
+        duration_ms=media.duration_ms,
+        width=media.width,
+        height=media.height,
+    )
+
+
+def video_note_ffmpeg_args(src_path: str, demuxer: str, dst_path: str) -> list[str]:
+    """Argumentele ffmpeg: decupaj pătrat central → 480×480, H.264 + AAC în MP4.
+
+    - `-t` plafonează durata și dacă clientul a mințit-o (WebM-ul din
+      MediaRecorder nu are durată în container);
+    - pista audio e opțională (`0:a:0?`) — camera fără microfon nu pică;
+    - `yuv420p` + profil `main` + `faststart`: redare imediată pe iOS și Android.
+    """
+    side = VIDEO_NOTE_SIDE
+    max_s = (VIDEO_NOTE_MAX_DURATION_MS + _VIDEO_NOTE_DURATION_SLACK_MS) / 1000
+    return [
+        "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+        "-protocol_whitelist", "file",
+        "-f", demuxer, "-i", src_path,
+        "-t", f"{max_s:g}",
+        "-map", "0:v:0", "-map", "0:a:0?",
+        "-sn", "-dn", "-map_metadata", "-1",
+        "-vf", f"crop='min(iw,ih)':'min(iw,ih)',scale={side}:{side},setsar=1",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
+        "-profile:v", "main", "-pix_fmt", "yuv420p", "-threads", "2",
+        "-c:a", "aac", "-b:a", "64k", "-ac", "1", "-ar", "44100",
+        "-movflags", "+faststart",
+        "-f", "mp4", dst_path,
+    ]
+
+
+async def _run_ffmpeg_video_note(
+    ffmpeg: str, src_path: str, demuxer: str, dst_path: str
+) -> bool:
+    proc = await asyncio.create_subprocess_exec(
+        ffmpeg,
+        *video_note_ffmpeg_args(src_path, demuxer, dst_path),
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        _, stderr = await asyncio.wait_for(proc.communicate(), _VIDEO_NOTE_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        logger.warning("chat video note: ffmpeg a depășit %ss", _VIDEO_NOTE_TIMEOUT_S)
+        return False
+    if proc.returncode != 0:
+        logger.warning(
+            "chat video note: ffmpeg a eșuat (%s): %s",
+            proc.returncode,
+            (stderr or b"").decode("utf-8", "replace")[:300],
+        )
+        return False
+    return True
+
+
+async def ensure_playable_video_note(media: ChatMedia) -> ChatMedia:
+    """Mesajul video rotund convertit în MP4 H.264/AAC, pătrat 480×480.
+
+    Fiecare platformă înregistrează altfel (iOS → MP4/H.264, Android/desktop →
+    WebM/VP8-VP9/Opus, pe care iOS NU-l redă). Best-effort, ca la vocale: fără
+    ffmpeg sau la o conversie eșuată rămâne fișierul original (validat deja).
+    """
+    if media.kind != VIDEO_NOTE_KIND:
+        return media
+    demuxer = _FFMPEG_VIDEO_DEMUXER.get(media.mime)
+    if demuxer is None:
+        return media
+    ffmpeg = _ffmpeg_path()
+    if ffmpeg is None:
+        logger.warning("chat video note: ffmpeg lipsește → %s netranscodat", media.mime)
+        return media
+
+    with tempfile.TemporaryDirectory(prefix="flirt-vnote-") as tmp:
+        src = os.path.join(tmp, "in.bin")
+        dst = os.path.join(tmp, "out.mp4")
+        with open(src, "wb") as fh:
+            fh.write(media.content)
+        ok = await _run_ffmpeg_video_note(ffmpeg, src, demuxer, dst)
+        if not ok or not os.path.isfile(dst):
+            return media
+        with open(dst, "rb") as fh:
+            converted = fh.read()
+
+    if not converted or len(converted) > settings.chat_video_max_bytes:
+        return media
+    duration = _mp4_duration_ms(converted) or media.duration_ms
+    return ChatMedia(
+        kind=VIDEO_NOTE_KIND,
+        mime="video/mp4",
+        content=converted,
+        duration_ms=duration,
+        width=VIDEO_NOTE_SIDE,
+        height=VIDEO_NOTE_SIDE,
+    )

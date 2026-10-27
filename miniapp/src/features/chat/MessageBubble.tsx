@@ -28,6 +28,8 @@ import type { ChatMessageEx, MessageKind } from './chatApi';
 import { formatDuration } from './chatMedia';
 import { emojiOnlyCount } from './emojiData';
 import { MediaViewer } from './MediaViewer';
+import { splitStoryReply } from './storyReply';
+import { VideoNotePlayer } from './VideoNotePlayer';
 import { VoicePlayer } from './VoicePlayer';
 
 /** Emoji-urile din picker — aceleași ca în aplicația nativă. */
@@ -101,7 +103,9 @@ function MessageBubbleBase({
   const kind: MessageKind = message.kind ?? 'text';
   const attachment = message.attachment ?? null;
   const isMedia = kind !== 'text' && !!attachment;
-  const emojiCount = !isMedia ? emojiOnlyCount(message.body) : 0;
+  // Răspuns la o poveste: textul fără prefixul fix (românesc) pus de server.
+  const storyReplyText = !isMedia ? splitStoryReply(message.body) : null;
+  const emojiCount = !isMedia && storyReplyText === null ? emojiOnlyCount(message.body) : 0;
   const isJumbo = emojiCount > 0 && emojiCount <= 3 && !message.wasMasked;
   const hasTail = position === 'single' || position === 'last';
   const reactable = !!onReact && !pending;
@@ -173,6 +177,14 @@ function MessageBubbleBase({
           {/* În bulă: varianta de 480px. Ecranul întreg (`MediaViewer`) rămâne pe original. */}
           <Photo src={attachment.url || undefined} size={480} alt={t('screens:chat.media.photo')} />
         </button>
+      );
+    } else if (kind === 'video_note') {
+      media = (
+        <VideoNotePlayer
+          src={attachment.url}
+          durationMs={attachment.durationMs}
+          disabled={!!pending}
+        />
       );
     } else if (kind === 'video') {
       media = (
@@ -291,7 +303,17 @@ function MessageBubbleBase({
           disabled={!reactable}
           onClick={() => reactable && setPickerOpen((open) => !open)}
         >
-          <span className="bubble__text">{message.body}</span>
+          {storyReplyText !== null ? (
+            <>
+              {/* Prefixul românesc de pe server → eticheta în limba interfeței. */}
+              <span className="bubble__story-reply" data-testid="story-reply-label">
+                {isOwn ? t('screens:chat.storyReply.own') : t('screens:chat.storyReply.received')}
+              </span>
+              <span className="bubble__text">{storyReplyText}</span>
+            </>
+          ) : (
+            <span className="bubble__text">{message.body}</span>
+          )}
           {meta}
         </button>
       )}
