@@ -359,7 +359,7 @@ async def test_admin_ticket_requests_list_is_limited(client, db_session):
     assert len(await T.list_requests(db_session)) == 3
 
     resp = await client.post(
-        f"{API}/auth/login", json={"email": admin.email, "password": PASSWORD}
+        f"{API}/admin/login", json={"email": admin.email, "password": PASSWORD}
     )
     assert resp.status_code == 200, resp.text
     headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}

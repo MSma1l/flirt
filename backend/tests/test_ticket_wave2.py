@@ -78,7 +78,9 @@ async def _request(db, user, event, qty=1):
 
 
 async def _login(client, user: User) -> dict:
-    resp = await client.post(f"{API}/auth/login", json={"email": user.email, "password": PASSWORD})
+    # Adminii intră doar prin panoul de administrare (`/auth/login` îi refuză).
+    path = "admin/login" if user.role == ROLE_ADMIN else "auth/login"
+    resp = await client.post(f"{API}/{path}", json={"email": user.email, "password": PASSWORD})
     assert resp.status_code == 200, resp.text
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
