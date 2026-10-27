@@ -35,6 +35,17 @@ FCM_PUSH_URL = "https://fcm.googleapis.com/fcm/send"
 _HTTP_TIMEOUT = 10.0
 
 
+def _mask_token(token: str) -> str:
+    """Tokenul de push pentru LOG-uri: doar ultimele 6 caractere.
+
+    Un token push întreg e o acreditare de livrare (cu el + cheia serverului se
+    pot trimite notificări pe dispozitivul userului) și un identificator stabil
+    al dispozitivului — nu are ce căuta în jurnale. Sufixul ajunge pentru
+    corelare cu rândul din `push_devices`.
+    """
+    return f"…{token[-6:]}" if len(token) > 6 else "…"
+
+
 class PushSender(Protocol):
     """Contractul minim de trimitere push folosit de servicii/endpoint-uri."""
 
@@ -81,7 +92,9 @@ class ExpoPush:
                     )
                     resp.raise_for_status()
                 except httpx.HTTPError as exc:  # RO: nu oprim restul token-urilor
-                    logger.warning("Expo push failed for token %r: %s", token, exc)
+                    logger.warning(
+                        "Expo push failed for token %s: %s", _mask_token(token), exc
+                    )
 
 
 class FcmPush:
@@ -110,7 +123,9 @@ class FcmPush:
                     )
                     resp.raise_for_status()
                 except httpx.HTTPError as exc:  # RO: nu oprim restul token-urilor
-                    logger.warning("FCM push failed for token %r: %s", token, exc)
+                    logger.warning(
+                        "FCM push failed for token %s: %s", _mask_token(token), exc
+                    )
 
 
 def get_push_sender() -> PushSender:

@@ -89,11 +89,30 @@ services:
     # ⚠️  FĂRĂ `ports:`. Un Redis expus pe internet e preluat în minute (nu are
     # autentificare implicită, iar comenzile CONFIG SET / MODULE LOAD duc direct la
     # execuție de cod pe server). Rămâne în rețeaua internă Docker.
-    command: ["redis-server", "--save", "60", "1"]
+    #
+    # PAROLĂ OPȚIONALĂ (apărare în adâncime: orice container compromis din rețeaua
+    # internă ar putea altfel citi/scrie liber rate-limit-urile și OTP-urile).
+    #   - REDIS_PASSWORD gol/nesetat → Redis pornește ca înainte, FĂRĂ parolă
+    #     (un deploy fără variabila nouă nu se rupe);
+    #   - REDIS_PASSWORD setat → `--requirepass`, iar REDIS_URL-ul implicit al
+    #     API-ului (mai jos) include automat parola.
+    # Parola trebuie să fie URL-safe (intră în REDIS_URL): `openssl rand -hex 32`.
+    # Dacă ai REDIS_URL explicit în .env, pune parola și acolo:
+    #   REDIS_URL=redis://:<parola>@redis:6379/0
+    # `$$` = variabila e expandată de shell-ul DIN container, nu de compose.
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - /bin/sh
+      - -c
+      - 'exec redis-server --save 60 1 $${REDIS_PASSWORD:+--requirepass "$$REDIS_PASSWORD"}'
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # Cu parolă: REDISCLI_AUTH (nu `-a`, care apare în lista de procese și
+      # printează un avertisment). Fără parolă NU exportăm variabila: un
+      # REDISCLI_AUTH gol ar trimite `AUTH ""` și ar pica verificarea.
+      test: ["CMD-SHELL", "if [ -n \"$${REDIS_PASSWORD:-}\" ]; then export REDISCLI_AUTH=\"$$REDIS_PASSWORD\"; fi; redis-cli ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -109,7 +128,20 @@ services:
       POSTGRES_PORT: 5432
       # Rate limiting PARTAJAT între workeri/instanțe (app/core/ratelimit.py) +
       # store OTP live. Fără Redis, limita e per proces × 4 workeri.
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      # Cu REDIS_PASSWORD setat (vezi serviciul `redis`), URL-ul implicit devine
+      # redis://:<parola>@redis:6379/0; fără el rămâne exact ca înainte.
+      REDIS_URL: ${REDIS_URL:-redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379/0}
+    # LIMITE DE RESURSE — plasă de siguranță, nu tuning. Un upload video (ffmpeg)
+    # sau o scurgere de memorie într-un worker nu are voie să înfometeze Postgres
+    # (care ține TOT produsul) și nginx pe același host. Dimensiunea serverului
+    # nu e fixată în repo, deci valorile sunt GENEROASE: 2 CPU / 1.5 GB acoperă
+    # confortabil workerii auto-calculați (entrypoint.sh citește limita cgroup:
+    # ~5 workeri × ~180 MB). Pe un server mai mare, ridică-le din .env:
+    #   API_CPUS=4  API_MEM_LIMIT=3g
+    # ⚠️  `cpus` nu poate depăși numărul de CPU-uri ale host-ului (Docker refuză
+    # pornirea): pe un VPS cu 1 vCPU pune API_CPUS=1.0.
+    cpus: ${API_CPUS:-2.0}
+    mem_limit: ${API_MEM_LIMIT:-1536m}
     depends_on:
       db:
         condition: service_healthy
@@ -236,7 +268,10 @@ services:
   # (${DOMAIN} + ${ADMIN_DOMAIN}), complet automat — vezi scripts/certbot_entrypoint.sh.
   # Nu există „comanda de emitere inițială" de rulat manual.
   certbot:
-    image: certbot/certbot:latest
+    # Versiune FIXĂ (nu `:latest`): un deploy nu are voie să tragă tăcut altă
+    # versiune de certbot (schimbări de CLI / regresii). v5.8.0 = `latest` la
+    # 2026-09-01. Actualizare = schimbi tag-ul aici, conștient.
+    image: certbot/certbot:v5.8.0
     restart: unless-stopped
     logging: *default-logging
     environment:
@@ -302,9 +337,15 @@ services:
       BACKUP_DIR: /backups
       BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    # BACKUP_HOST_DIR implicit = /opt/flirt-backups, ÎN AFARA checkout-ului git:
+    # un dump complet al bazei (date personale, conversații) în `backend/backups/`
+    # a ajuns deja o dată comis în repo. Dump-urile se scriu cu umask 077 (doar
+    # root le poate citi). COMPATIBILITATE: un .env care are deja
+    # `BACKUP_HOST_DIR=./backups` (ca în .env*.example) continuă exact ca înainte;
+    # `backend/backups/` e acum în .gitignore oricum.
     volumes:
       - ./scripts:/scripts:ro
-      - ${BACKUP_HOST_DIR:-./backups}:/backups
+      - ${BACKUP_HOST_DIR:-/opt/flirt-backups}:/backups
     depends_on:
       db:
         condition: service_healthy
@@ -329,7 +370,7 @@ services:
     volumes:
       - ./scripts:/scripts:ro
       - mediadata:/data/media:ro
-      - ${BACKUP_HOST_DIR:-./backups}:/backups
+      - ${BACKUP_HOST_DIR:-/opt/flirt-backups}:/backups
     command: ["/bin/sh", "/scripts/backup_media.sh", "--loop"]
 
 volumes:

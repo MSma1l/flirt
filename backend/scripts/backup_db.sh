@@ -17,6 +17,9 @@
 # Restore: `sh scripts/restore_db.sh <fișier.sql.gz>` — vezi docs/DEPLOYMENT.md.
 # TESTEAZĂ restore-ul periodic: un backup nerestaurat vreodată NU e backup.
 set -eu
+# Dump-ul = TOATĂ baza (date personale, conversații, hash-uri): fișierele se
+# creează DOAR pentru proprietar (0600/0700), nu world-readable pe host.
+umask 077
 
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
 BACKUP_INTERVAL_SECONDS="${BACKUP_INTERVAL_SECONDS:-86400}"

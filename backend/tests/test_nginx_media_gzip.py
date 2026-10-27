@@ -87,7 +87,8 @@ def test_media_are_zona_proprie_larga(rendered):
 def test_media_are_cache_lung_imuabil(rendered):
     body = _match_location(_locations(_api_server(rendered)), MEDIA_URIS[0])[2]
 
-    assert 'add_header Cache-Control "public, max-age=31536000, immutable" always;' in body
+    # FĂRĂ `always`: un 404 pe /media nu are voie să fie cachat un an.
+    assert 'add_header Cache-Control "public, max-age=31536000, immutable";' in body
     # `expires` ar adăuga un al doilea antet Cache-Control.
     assert not re.search(r"^\s*expires\b", body, re.MULTILINE)
 
@@ -168,10 +169,17 @@ def test_dovezile_de_plata_dau_404(rendered, uri):
 
 
 def test_nu_exista_location_regex_care_ar_putea_ocoli_blocarea(rendered):
-    """Un `location ~` ar fi evaluat ÎNAINTEA prefixelor și ar putea servi
-    `/media/ticket-proofs/...`. Parserul nostru (și regula de mai sus) presupun
-    că nu există niciunul în serverul API."""
-    assert not re.search(r"^\s*location\s+~", _api_server(rendered), re.MULTILINE)
+    """Un `location ~` câștigă în fața prefixelor și ar putea servi
+    `/media/ticket-proofs/...`. Singurul regex permis în serverul API e cel de
+    upload (corp 55m), ANCORAT pe `^/api/v1/` — nu poate potrivi niciodată o
+    cale `/media/...`, deci regula de mai sus rămâne valabilă."""
+    regexes = re.findall(
+        r"^\s*location\s+~\*?\s+(\S+)\s*\{", _api_server(rendered), re.MULTILINE
+    )
+    for pattern in regexes:
+        assert pattern.startswith("^/api/v1/"), f"regex neancorat pe /api/v1/: {pattern}"
+        for uri in ("/media/ticket-proofs/0f8fad5b/abc.jpg", "/media/photos/x.jpg"):
+            assert not re.search(pattern, uri), f"{pattern} potrivește {uri}"
 
 
 # --------------------------------------------------------------------------- #
