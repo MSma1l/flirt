@@ -99,4 +99,98 @@ describe('CoverFramer', () => {
       expect(img.style.transform).toBe('scale(1.5)');
     }
   });
+
+  it('pinch cu două degete pe ramă schimbă zoom-ul', () => {
+    render(<Harness />);
+    const frame = loadImage();
+    fireEvent.pointerDown(frame, { pointerId: 1, clientX: 100, clientY: 100, pointerType: 'touch' });
+    fireEvent.pointerDown(frame, { pointerId: 2, clientX: 200, clientY: 100, pointerType: 'touch' });
+    fireEvent.pointerMove(frame, { pointerId: 2, clientX: 300, clientY: 100, pointerType: 'touch' });
+    expect(screen.getByTestId('value')).toHaveTextContent('0.50 0.50 2.00');
+  });
+});
+
+describe('CoverFramer — selecția pe imaginea întreagă', () => {
+  /** Zona de selecție: imaginea 600×900 afișată la 200×300. */
+  function selectionArea(): HTMLElement {
+    loadImage();
+    const area = screen.getByTestId('cover-framer-select');
+    area.getBoundingClientRect = () =>
+      ({ width: 200, height: 300, top: 0, left: 0, right: 200, bottom: 300, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+    return area;
+  }
+
+  it('apare abia după ce imaginea s-a încărcat, cu chenarele ambelor rame', () => {
+    render(<Harness />);
+    expect(screen.queryByTestId('cover-framer-select')).not.toBeInTheDocument();
+    selectionArea();
+    // Portret 2:3 în rama 4:3: se vede toată lățimea și jumătate din înălțime, centrat.
+    const hero = screen.getByTestId('cover-framer-sel-hero');
+    expect(hero.style.width).toBe('100%');
+    expect(hero.style.height).toBe('50%');
+    expect(hero.style.top).toBe('25%');
+    expect(hero).toHaveClass('is-active');
+    expect(screen.getByTestId('cover-framer-sel-card').style.height).toBe('33.33%');
+  });
+
+  it('tragerea chenarului mută zona vizibilă', () => {
+    render(<Harness />);
+    const area = selectionArea();
+    const hero = screen.getByTestId('cover-framer-sel-hero');
+    fireEvent.pointerDown(hero, { pointerId: 1, clientX: 100, clientY: 150, button: 0, pointerType: 'mouse' });
+    fireEvent.pointerMove(area, { pointerId: 1, clientX: 100, clientY: 225, pointerType: 'mouse' });
+    fireEvent.pointerUp(area, { pointerId: 1, pointerType: 'mouse' });
+    // 75 px din 300 = 0.25 din imagine = toată rezerva în jos ⇒ partea de JOS (y = 1).
+    expect(screen.getByTestId('value')).toHaveTextContent('0.50 1.00 1.00');
+    expect(screen.getByTestId('cover-framer-sel-hero').style.top).toBe('50%');
+  });
+
+  it('colțul chenarului face zoom, cu colțul opus fix', () => {
+    render(<Harness />);
+    const area = selectionArea();
+    fireEvent.pointerDown(screen.getByTestId('cover-framer-handle-se'), {
+      pointerId: 1,
+      clientX: 200,
+      clientY: 225,
+      button: 0,
+      pointerType: 'mouse',
+    });
+    fireEvent.pointerMove(area, { pointerId: 1, clientX: 100, clientY: 150, pointerType: 'mouse' });
+    fireEvent.pointerUp(area, { pointerId: 1, pointerType: 'mouse' });
+    // Chenar pe jumătate ⇒ zoom 2; colțul NW rămâne în (0, 0.25).
+    expect(screen.getByTestId('value')).toHaveTextContent('0.00 0.33 2.00');
+    const hero = screen.getByTestId('cover-framer-sel-hero');
+    expect(hero.style.left).toBe('0%');
+    expect(hero.style.top).toBe('25%');
+    expect(hero.style.width).toBe('50%');
+  });
+
+  it('chenarul cardului: comutare, apoi clic în afara lui îl centrează acolo', () => {
+    render(<Harness />);
+    const area = selectionArea();
+    fireEvent.click(screen.getByRole('button', { name: 'Cardul din listă' }));
+    expect(screen.getByTestId('cover-framer-sel-card')).toHaveClass('is-active');
+    fireEvent.pointerDown(area, { pointerId: 1, clientX: 100, clientY: 30, button: 0, pointerType: 'mouse' });
+    fireEvent.pointerUp(area, { pointerId: 1, pointerType: 'mouse' });
+    // Sus de tot (chenarul nu poate ieși din imagine) ⇒ y = 0.
+    expect(screen.getByTestId('value')).toHaveTextContent('0.50 0.00 1.00');
+  });
+
+  it('Ctrl + rotiță face zoom; rotița simplă (fără focus) lasă pagina să se deruleze', () => {
+    render(<Harness />);
+    const area = selectionArea();
+    fireEvent.wheel(area, { deltaY: 100 });
+    expect(screen.getByTestId('value')).toHaveTextContent('0.50 0.50 1.00');
+    fireEvent.wheel(area, { deltaY: -100, ctrlKey: true });
+    expect(screen.getByTestId('value')).toHaveTextContent('0.50 0.50 1.22');
+  });
+
+  it('butoanele − / + schimbă zoom-ul', () => {
+    render(<Harness />);
+    selectionArea();
+    fireEvent.click(screen.getByRole('button', { name: 'Mărește' }));
+    expect(screen.getByTestId('value')).toHaveTextContent('0.50 0.50 1.10');
+    fireEvent.click(screen.getByRole('button', { name: 'Micșorează' }));
+    expect(screen.getByTestId('value')).toHaveTextContent('0.50 0.50 1.00');
+  });
 });
