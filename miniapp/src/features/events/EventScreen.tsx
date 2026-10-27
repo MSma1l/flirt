@@ -42,7 +42,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router';
 
 import { Photo } from '@/components/Photo';
-import { formatAmount, TicketPriceBlock, useRefreshLoyalty, useTicketQuote } from '@/features/loyalty';
+import { formatAmount, TicketPriceBlock, useTicketQuote } from '@/features/loyalty';
 import { OrderStepper } from '@/features/tickets/OrderStepper';
 import { ClockIcon, LockIcon, TicketIcon } from '@/features/tickets/TicketIcons';
 import { hasEventStarted, orderStage, STAGE_RANK } from '@/features/tickets/orderStage';
@@ -56,7 +56,6 @@ import { EventMap } from './EventMap';
 import { formatEventDate, formatEventDateParts, kindColorVar, kindLabel } from './eventFormat';
 import { EVENT_ID_PARAM } from './eventRoutes';
 import {
-  checkin,
   createTicketOrder,
   fetchEvent,
   fetchMyTicketOrders,
@@ -82,7 +81,6 @@ export function EventScreen() {
   // întoarce o listă și ar strica ecranul în tăcere.
   const eventId = params[EVENT_ID_PARAM] ?? '';
 
-  const [stampMessage, setStampMessage] = useState<string | null>(null);
   /** Serverul a refuzat comanda: vânzarea s-a închis / epuizat / oprit între timp. */
   const [refusal, setRefusal] = useState<SalesBlock | null>(null);
   /** Tipul de bilet ales de om (doar când evenimentul are mai multe). */
@@ -106,7 +104,6 @@ export function EventScreen() {
   const selectedTier = resolveTier(data?.ticketTiers, tierChoice);
   const chosenTierId = needsTierChoice(data?.ticketTiers) ? (selectedTier?.id ?? null) : null;
   const { data: quote } = useTicketQuote(eventId, data?.ticketPrice != null, chosenTierId);
-  const refreshLoyalty = useRefreshLoyalty();
 
   /**
    * Comanda de bilet cea mai relevantă pentru acest eveniment: un utilizator
@@ -166,16 +163,6 @@ export function EventScreen() {
       // Și lista: numărul de participanți și indicatorul „Mergi" de pe card se
       // schimbă odată cu detaliul.
       void queryClient.invalidateQueries({ queryKey: ['events'] });
-    },
-  });
-
-  const checkinMutation = useMutation({
-    mutationFn: () => checkin(eventId),
-    onSuccess: () => {
-      setStampMessage(t('detail.stamp'));
-      // O ștampilă nouă poate urca treapta, iar treapta schimbă prețul: nu doar
-      // passportul se învechește, ci și cotațiile deja aduse.
-      refreshLoyalty();
     },
   });
 
@@ -487,25 +474,11 @@ export function EventScreen() {
         {goingMutation.isError ? (
           <p className="error-text ev-detail__error">{t('detail.goingError')}</p>
         ) : null}
-
-        <button
-          type="button"
-          className="button button--ghost ev-detail__action"
-          data-testid="checkin-btn"
-          disabled={checkinMutation.isPending}
-          onClick={() => checkinMutation.mutate()}
-        >
-          {t('detail.checkin')}
-        </button>
-        {checkinMutation.isError ? (
-          <p className="error-text ev-detail__error">{t('detail.checkinError')}</p>
-        ) : null}
-
-        {stampMessage ? (
-          <p className="ev-detail__stamp" data-testid="checkin-stamp">
-            {stampMessage}
-          </p>
-        ) : null}
+        {/*
+          Fără buton de check-in: ștampila Flirt Passport se emite la intrare,
+          când staff-ul scanează biletul sau QR-ul Flirt Passport. Serverul nu
+          mai acordă ștampile fără dovada admiterii.
+        */}
       </div>
     </div>
   );

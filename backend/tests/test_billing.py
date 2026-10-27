@@ -1,4 +1,6 @@
 """Teste monetizare (TZ 9) + push (TZ 6.3) — SQLite in-memory, provider stub."""
+import uuid
+
 import pytest
 
 API = "/api/v1"
@@ -167,8 +169,26 @@ async def test_non_card_plan_has_null_entries(client):
     assert body["entries_remaining"] is None
 
 
+async def _admit_at_running_event(db, email: str, event_id) -> None:
+    """Dovada cerută de check-in: evenimentul e în desfășurare și userul a fost
+    admis de staff (intrare la ușă înregistrată)."""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from app.models.event import Event, EventDoorAdmission
+    from app.models.user import User
+
+    now = datetime.now(timezone.utc)
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one()
+    event = await db.get(Event, uuid.UUID(str(event_id)))
+    event.starts_at = now - timedelta(hours=1)
+    db.add(EventDoorAdmission(event_id=event.id, user_id=user.id, admitted_at=now))
+    await db.commit()
+
+
 @pytest.mark.asyncio
-async def test_checkin_consumes_card_entry(client):
+async def test_checkin_consumes_card_entry(client, db_session):
     """Check-in la un eveniment decrementează intrările cardului (5 → 4)."""
     headers = await _register(client, "consume@example.com")
     await client.post(
@@ -178,6 +198,7 @@ async def test_checkin_consumes_card_entry(client):
     events = await client.get(f"{API}/events/", headers=headers)
     assert events.status_code == 200, events.text
     event_id = events.json()[0]["id"]
+    await _admit_at_running_event(db_session, "consume@example.com", event_id)
 
     resp = await client.post(f"{API}/events/{event_id}/checkin", headers=headers)
     assert resp.status_code == 201, resp.text
@@ -194,13 +215,14 @@ async def test_checkin_consumes_card_entry(client):
 
 
 @pytest.mark.asyncio
-async def test_checkin_without_card_does_not_crash(client):
+async def test_checkin_without_card_does_not_crash(client, db_session):
     """Check-in fără card activ funcționează normal (cardul e un bonus, nu condiție)."""
     headers = await _register(client, "nocard@example.com")
 
     events = await client.get(f"{API}/events/", headers=headers)
     assert events.status_code == 200, events.text
     event_id = events.json()[0]["id"]
+    await _admit_at_running_event(db_session, "nocard@example.com", event_id)
 
     resp = await client.post(f"{API}/events/{event_id}/checkin", headers=headers)
     assert resp.status_code == 201, resp.text

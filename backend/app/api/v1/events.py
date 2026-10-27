@@ -79,5 +79,10 @@ async def set_going(
 async def checkin(
     event_id: uuid.UUID, db: DbDep, user: UserDep
 ) -> PassportStampOut:
-    """Check-in la eveniment → ștampilă Flirt Passport idempotentă (protejat)."""
-    return await event_service.checkin(db, user, event_id)
+    """Check-in la eveniment → ștampilă Flirt Passport idempotentă (protejat).
+
+    Doar cu dovadă: userul trebuie să fi fost ADMIS de staff la acest eveniment
+    (403 altfel), iar evenimentul să fie în desfășurare (409 altfel). Ștampila se
+    emite oricum automat la scanarea de la intrare.
+    """
+    return await event_service.self_checkin(db, user, event_id)

@@ -22,18 +22,22 @@ from app.services.feed_service import public_distance_km
         (1.4, 2),
         (1.99, 2),
         (2.0, 2),
-        (2.49, 2),
-        (2.5, 3),
-        (3.4, 3),
-        (7.6, 8),
+        (2.5, 2),
+        (2.99, 2),
+        (3.0, 5),
+        (3.4, 5),
+        (7.4, 5),
+        (7.6, 10),
         (9.6, 10),
         (10.0, 10),
-        (10.4, 10),
         (12.4, 10),
         (12.5, 15),
         (17.4, 15),
         (17.6, 20),
-        (243.0, 245),
+        (50.0, 50),
+        (54.0, 50),
+        (55.0, 60),
+        (243.0, 240),
         (-1.0, 2),
     ],
 )
@@ -42,8 +46,9 @@ def test_public_distance_km_buckets(exact, shown):
 
 
 def test_public_distance_hides_small_moves():
-    """Sub 2 km toate pozitiile arata la fel; peste 10 km pasul e de 5 km."""
-    assert {public_distance_km(d / 10) for d in range(0, 20)} == {2}
+    """Sub 3 km toate pozitiile arata la fel; intre 3 si 50 km pasul e de 5 km."""
+    assert {public_distance_km(d / 10) for d in range(0, 30)} == {2}
+    assert {public_distance_km(d / 10) for d in range(30, 75)} == {5}
     assert {public_distance_km(d / 10) for d in range(125, 175)} == {15}
     assert all(isinstance(public_distance_km(d / 7), int) for d in range(0, 2000))
 

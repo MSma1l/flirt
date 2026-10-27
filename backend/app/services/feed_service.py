@@ -43,6 +43,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from app.core import user_ratelimit
 from app.core.config import settings
 from app.core.errors import CodedHTTPException, ErrorCode
 from app.models.account import Block, UserSettings
@@ -78,6 +79,8 @@ logger = logging.getLogger("app.feed")
 
 # --- Reguli de business (din config, nu hardcodate în mijlocul logicii) ------
 MAX_TOP_INTERESTS = 3   # câte interese afișăm pe cartelă (TZ 4.1)
+# Fereastra în care o pereche primește cel mult O notificare de match (vezi `swipe`).
+MATCH_NOTIFY_THROTTLE_SECONDS = 24 * 60 * 60
 
 
 def _calc_age(birth_date: date, today: date | None = None) -> int:
@@ -269,18 +272,23 @@ def _distance_between(a: Profile, b: Profile) -> float | None:
 
 
 # Distanța AFIȘATĂ altui user e GRUPATĂ pe intervale, nu exactă: cu valoarea
-# rotunjită la 1 km, cineva care își mută orașul/poziția și citește distanța de
-# 3 ori poate triangula unde stă celălalt. Regula (valoarea rămâne un `int` în
-# km — aplicația mobilă publicată o citește ca număr, forma API-ului NU se
-# schimbă):
-#   * d < 2 km        → 2   (afișat „~2 km"; nu dezvăluim „sub 1 km")
-#   * 2 ≤ d ≤ 10 km   → rotunjit la 1 km, minim 2
-#   * d > 10 km       → rotunjit la cel mai apropiat multiplu de 5 km, minim 10
-# Rotunjirea e „half-up" (2.5 → 3), nu bancară. Distanța EXACTĂ rămâne internă
-# (raza de căutare, scorul de compatibilitate).
+# rotunjită fin, cineva care își mută orașul/poziția și citește distanța de 3 ori
+# poate triangula unde stă celălalt. Pe lângă grupare, coordonatele PERSISTATE
+# sunt deja aproximate (grilă de ~1 km + decalaj stabil per user, vezi
+# `profile_service.coarse_coords`). Regula (valoarea
+# rămâne un `int` în km — aplicația mobilă publicată o citește ca număr, forma
+# API-ului NU se schimbă):
+#   * d < 3 km         → 2   (afișat „~2 km"; nu dezvăluim „sub 1 km")
+#   * 3 ≤ d < 7.5 km   → 5
+#   * 7.5 ≤ d ≤ 50 km  → rotunjit la cel mai apropiat multiplu de 5 km, minim 10
+#   * d > 50 km        → rotunjit la cel mai apropiat multiplu de 10 km
+# Rotunjirea e „half-up", nu bancară. Distanța EXACTĂ rămâne internă (raza de
+# căutare, scorul de compatibilitate).
 PUBLIC_DISTANCE_MIN_KM = 2
-PUBLIC_DISTANCE_FINE_MAX_KM = 10
-PUBLIC_DISTANCE_COARSE_STEP_KM = 5
+PUBLIC_DISTANCE_NEAR_MAX_KM = 3
+PUBLIC_DISTANCE_FINE_STEP_KM = 5
+PUBLIC_DISTANCE_FINE_MAX_KM = 50
+PUBLIC_DISTANCE_COARSE_STEP_KM = 10
 
 
 def public_distance_km(distance_km: float | None) -> int | None:
@@ -288,10 +296,11 @@ def public_distance_km(distance_km: float | None) -> int | None:
     if distance_km is None:
         return None
     d = max(0.0, float(distance_km))
-    if d < PUBLIC_DISTANCE_MIN_KM:
+    if d < PUBLIC_DISTANCE_NEAR_MAX_KM:
         return PUBLIC_DISTANCE_MIN_KM
     if d <= PUBLIC_DISTANCE_FINE_MAX_KM:
-        return max(PUBLIC_DISTANCE_MIN_KM, int(d + 0.5))
+        step = PUBLIC_DISTANCE_FINE_STEP_KM
+        return max(step, int(d / step + 0.5) * step)
     step = PUBLIC_DISTANCE_COARSE_STEP_KM
     return max(PUBLIC_DISTANCE_FINE_MAX_KM, int(d / step + 0.5) * step)
 
@@ -1030,6 +1039,22 @@ async def _enforce_daily_swipe_limit(db: AsyncSession, user: User) -> None:
     if ent.premium:
         return
 
+    # Serializăm swipe-urile NOI ale ACELUIAȘI user: fără lock, N cereri paralele
+    # numărau toate aceeași valoare (sub limită) și inserau toate — limita zilnică
+    # era ocolită cu un simplu `Promise.all`. Lock-ul pe rândul userului ține până
+    # la commit-ul swipe-ului, deci a doua cerere numără DUPĂ ce prima a inserat
+    # (READ COMMITTED vede rândul comis).
+    #
+    # `FOR NO KEY UPDATE` (`key_share=True`), NU `FOR UPDATE`: tranzacția a inserat
+    # deja rânduri cu FK spre `users` (vizualizarea de profil), care iau
+    # `FOR KEY SHARE` pe același rând. Cu `FOR UPDATE`, două cereri paralele își
+    # „urcau" fiecare lock-ul peste KEY SHARE-ul celeilalte → deadlock.
+    # `NO KEY UPDATE` nu intră în conflict cu KEY SHARE, dar se exclude reciproc
+    # cu el însuși — exact serializarea de care avem nevoie.
+    await db.execute(
+        select(User.id).where(User.id == user.id).with_for_update(key_share=True)
+    )
+
     since = datetime.now(timezone.utc) - timedelta(hours=24)
     count_result = await db.execute(
         select(func.count())
@@ -1184,14 +1209,20 @@ async def swipe(
     # Notificarea de match pleacă DUPĂ commit — vezi `_notify_match` pentru de ce.
     # Doar către CELĂLALT user: cel care tocmai a dat swipe vede match-ul direct
     # în răspunsul HTTP (`matched: True`), deci n-are ce să-l anunțe.
-    await _notify_match(db, target_user_id)
-    if match_created:
-        tg_notify.notify_match(
-            actor_id=user.id,
-            recipient_id=target_user_id,
-            chat_id=chat.id,
-            first_message=first_message,
-        )
+    # THROTTLE per pereche: bucla like → match → undo → like recrea match-ul și
+    # retrimitea notificările la nesfârșit (spam de push/Telegram către țintă).
+    # Cel mult o notificare de match per pereche în `MATCH_NOTIFY_THROTTLE_SECONDS`.
+    if await user_ratelimit.once_per(
+        f"match-notify:{a_id}:{b_id}", MATCH_NOTIFY_THROTTLE_SECONDS
+    ):
+        await _notify_match(db, target_user_id)
+        if match_created:
+            tg_notify.notify_match(
+                actor_id=user.id,
+                recipient_id=target_user_id,
+                chat_id=chat.id,
+                first_message=first_message,
+            )
 
     return SwipeResult(matched=True, match_id=match.id, chat_id=chat.id)
 

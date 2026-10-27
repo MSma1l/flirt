@@ -9,6 +9,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import and_, func, or_, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import user_ratelimit
 from app.models.account import Block
 from app.models.chat import Chat, Message
 from app.models.interest import Interest, ProfileInterest
@@ -20,6 +21,9 @@ from app.services.chat_media import ChatMedia, build_attachment_key, save_chat_m
 from app.services.telegram_avatar import avatar_url_for
 from app.services.compatibility import compute_compatibility
 from app.services.contact_masker import mask_contacts
+
+# Plafonul implicit de mesaje text per user per minut (vezi `send_message`).
+MESSAGES_PER_MINUTE_DEFAULT = 60
 from app.services.pagination import (
     MESSAGES_MAX_LIMIT,
     MESSAGES_PAGE_LIMIT,
@@ -447,6 +451,19 @@ async def send_message(
     chat = await _get_participant_chat(db, user, chat_id)
     # Breșă CHAT-BLOCK: un user blocat (oricare direcție) nu poate scrie.
     await _ensure_not_blocked(db, user.id, _other_id(chat, user.id))
+    # Anti-spam: plafon de mesaje PER USER (toate conversațiile la un loc),
+    # implicit 60/minut (`settings.rate_limit_messages_per_min`). Un om nu scrie
+    # mai mult de un mesaj pe secundă susținut; un script care inundă pe toată
+    # lumea, da. Verificat DUPĂ autorizare, ca un 404/403 să nu consume din cotă.
+    await user_ratelimit.enforce(
+        "chat-msg",
+        user.id,
+        user_ratelimit.limit_from_settings(
+            "rate_limit_messages_per_min", MESSAGES_PER_MINUTE_DEFAULT
+        ),
+        60,
+        detail="Trimiți mesaje prea repede. Așteaptă puțin și încearcă din nou.",
+    )
 
     masked_body, was_masked = mask_contacts(body)
     message = Message(

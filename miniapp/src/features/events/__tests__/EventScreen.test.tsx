@@ -285,33 +285,12 @@ describe('participare', () => {
 });
 
 describe('check-in', () => {
-  it('reușita arată mesajul de ștampilă Flirt Passport', async () => {
-    vi.mocked(checkin).mockResolvedValue({
-      eventId: 'e1',
-      eventTitle: 'Flirt Party Chișinău',
-      city: 'Chișinău',
-      stampedAt: '2026-07-04T20:10:00.000Z',
-    });
+  it('nu mai oferă check-in din aplicație: ștampila vine la scanarea de la intrare', async () => {
     renderDetail();
 
-    fireEvent.click(await screen.findByTestId('checkin-btn'));
-
-    expect(await screen.findByTestId('checkin-stamp')).toHaveTextContent(
-      'Ai primit o ștampilă Flirt Passport',
-    );
-  });
-
-  it('eșecul scrie mesajul în pagină, fără ștampilă și fără ecran gol', async () => {
-    vi.mocked(checkin).mockRejectedValue(new Error('403'));
-    renderDetail();
-
-    fireEvent.click(await screen.findByTestId('checkin-btn'));
-
-    expect(
-      await screen.findByText('Nu am putut face check-in-ul. Reîncearcă.'),
-    ).toBeInTheDocument();
-    expect(screen.queryByTestId('checkin-stamp')).not.toBeInTheDocument();
-    expect(screen.getByText('Flirt Party Chișinău')).toBeInTheDocument();
+    expect(await screen.findByText('Flirt Party Chișinău')).toBeInTheDocument();
+    expect(screen.queryByTestId('checkin-btn')).not.toBeInTheDocument();
+    expect(checkin).not.toHaveBeenCalled();
   });
 });
 

@@ -31,6 +31,7 @@ apartenență/vizibilitate (404/403), ambele venite din servicii existente.
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 import threading
@@ -41,6 +42,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import user_ratelimit
 from app.core.config import settings
 from app.models.profile import Profile
 from app.models.user import User
@@ -86,6 +88,23 @@ HINT_CACHE_PREFIX = "ai:hint:"
 # comportamentul care ne interesează — userul apasă butonul de mai multe ori la
 # rând, fără să scrie nimic între timp.
 HINT_CACHE_TTL_SECONDS = 300
+# Scorul de chimie (cu explicația AI) e memorat 24h PER PERECHE DIRECȚIONATĂ
+# (eu → el: explicația e scrisă în limba mea). Fără memorare, fiecare deschidere
+# a profilului = un apel plătit; aceeași pereche nu se schimbă de la o oră la alta.
+CHEMISTRY_CACHE_PREFIX = "ai:chem:"
+CHEMISTRY_CACHE_TTL_SECONDS = 24 * 60 * 60
+
+# Cota ZILNICĂ de apeluri AI plătite per user (`settings.ai_daily_quota_per_user`).
+# Limita per IP din `api/v1/ai.py` nu ajunge: un singur cont scriptat din IP-uri
+# diferite (sau sute de useri legitimi după același NAT) o ocolește / o lovește
+# greșit. Se consumă DOAR la un apel real către furnizor — răspunsurile servite
+# din cache sunt gratuite.
+AI_DAILY_QUOTA_DEFAULT = 30
+AI_QUOTA_WINDOW_SECONDS = 24 * 60 * 60
+AI_QUOTA_EXCEEDED_DETAIL = (
+    "Ai atins limita zilnică pentru funcțiile AI. Încearcă din nou mâine."
+)
+
 # Separatorul dintre sugestii în valoarea memorată (o singură cheie, un singur
 # round-trip). Mesajele trec prin validatorii de schemă, care taie caracterele
 # de control, deci `\n` nu poate apărea în interiorul unei sugestii.
@@ -171,6 +190,62 @@ async def _cache_set(key: str, suggestions: list[str]) -> None:
             extra={"error_type": type(exc).__name__},
         )
         reset_redis()
+
+
+async def _chem_cache_get(key: str) -> dict | None:
+    """Rezultatul de chimie memorat (`{"score", "explanation"}`), sau `None`."""
+    try:
+        redis = await _get_redis()
+        if redis is None:
+            return None
+        raw = await redis.get(key)
+    except Exception as exc:  # noqa: BLE001 — cache-ul nu are voie să strice ruta
+        logger.warning(
+            "ai_assist: cache chimie indisponibil la citire",
+            extra={"error_type": type(exc).__name__},
+        )
+        reset_redis()
+        return None
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("explanation"), str):
+        return None
+    return data
+
+
+async def _chem_cache_set(key: str, score: int, explanation: str) -> None:
+    try:
+        redis = await _get_redis()
+        if redis is None:
+            return
+        await redis.set(
+            key,
+            json.dumps({"score": score, "explanation": explanation}),
+            ex=CHEMISTRY_CACHE_TTL_SECONDS,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "ai_assist: cache chimie indisponibil la scriere",
+            extra={"error_type": type(exc).__name__},
+        )
+        reset_redis()
+
+
+async def _consume_daily_quota(user: User) -> None:
+    """429 dacă userul și-a consumat cota zilnică de apeluri AI plătite."""
+    await user_ratelimit.enforce(
+        "ai-daily",
+        user.id,
+        user_ratelimit.limit_from_settings(
+            "ai_daily_quota_per_user", AI_DAILY_QUOTA_DEFAULT
+        ),
+        AI_QUOTA_WINDOW_SECONDS,
+        detail=AI_QUOTA_EXCEEDED_DETAIL,
+    )
 
 
 # --- Porți de acces ----------------------------------------------------------
@@ -264,7 +339,9 @@ def _render_history(messages, me_id: uuid.UUID) -> str:
     lines = []
     for m in messages:
         who = "ME" if m.sender_id == me_id else "THEM"
-        body, _ = mask_contacts(str(m.body or ""))
+        # Tăiem ÎNAINTE de mascare: mascarea rulează sincron, deci nu-i dăm
+        # mai mult text decât trimitem efectiv furnizorului.
+        body, _ = mask_contacts(str(m.body or "")[:HINT_MESSAGE_MAX_CHARS])
         body = body.strip()[:HINT_MESSAGE_MAX_CHARS]
         if body:
             lines.append(f"{who}: {body}")
@@ -289,7 +366,7 @@ def _parse_suggestions(text: str) -> list[str]:
         line = _BULLET_RE.sub("", raw_line).strip().strip('"').strip("«»").strip()
         if not line:
             continue
-        line, _ = mask_contacts(line)
+        line, _ = mask_contacts(line[: HINT_SUGGESTION_MAX_CHARS * 2])
         line = line.strip()[:HINT_SUGGESTION_MAX_CHARS]
         key = line.casefold()
         if not line or key in seen:
@@ -366,7 +443,10 @@ async def chat_hint(
     if cached:
         return ChatHintOut(available=True, suggestions=cached, cached=True)
 
-    # 5. Apelul. Context minim: doar ultimele mesaje, fără nume și fără id-uri.
+    # 5. Cota zilnică per user (doar apelurile reale, nu cele din cache).
+    await _consume_daily_quota(user)
+
+    # 6. Apelul. Context minim: doar ultimele mesaje, fără nume și fără id-uri.
     history = _render_history(page.items, user.id)
     prompt = _HINT_PROMPT_HEADER.format(count=HINT_MAX_SUGGESTIONS)
     prompt += "\n\n" + (history if history else _HINT_PROMPT_EMPTY)
@@ -490,6 +570,22 @@ async def chemistry(
         )
     await require_ai_enabled(db, user)
 
+    # 5. Memorare 24h per pereche (eu → el). Poarta de vizibilitate și cea
+    #    `ai_enabled` rulează MEREU înainte: un block/ascundere ulterioară nu
+    #    poate fi ocolită printr-un rezultat memorat.
+    cache_key = f"{CHEMISTRY_CACHE_PREFIX}{user.id}:{other_user_id}"
+    cached = await _chem_cache_get(cache_key)
+    if cached is not None:
+        return ChemistryOut(
+            user_id=other_user_id,
+            score=score,
+            available=True,
+            explanation=cached["explanation"],
+        )
+
+    # 6. Cota zilnică per user (doar apelurile reale către furnizor).
+    await _consume_daily_quota(user)
+
     common_interests = sorted(my_interests & other_interests)
     common_languages = sorted(
         {str(x) for x in (my_profile.languages or []) if x}
@@ -523,7 +619,11 @@ async def chemistry(
         )
 
     # Aceeași mască defensivă ca la sugestii + plafon de lungime.
-    explanation, _ = mask_contacts(" ".join((result.text or "").split()))
+    explanation, _ = mask_contacts(
+        " ".join((result.text or "")[: CHEMISTRY_EXPLANATION_MAX_CHARS * 4].split())[
+            : CHEMISTRY_EXPLANATION_MAX_CHARS * 2
+        ]
+    )
     explanation = explanation.strip()[:CHEMISTRY_EXPLANATION_MAX_CHARS]
     if not explanation:
         return ChemistryOut(
@@ -533,6 +633,7 @@ async def chemistry(
             reason=REASON_EMPTY,
         )
 
+    await _chem_cache_set(cache_key, score, explanation)
     return ChemistryOut(
         user_id=other_user_id,
         score=score,

@@ -394,12 +394,73 @@ async def _validate_social_target(
         )
 
 
+def _blocked_either_way(user_id: uuid.UUID, other_col):
+    """Predicat SQL: există un Block între `user_id` și coloana `other_col`, în
+    ORICE direcție (ca în feed / swipe)."""
+    return (
+        select(Block.id)
+        .where(
+            or_(
+                and_(Block.blocker_id == user_id, Block.blocked_id == other_col),
+                and_(Block.blocker_id == other_col, Block.blocked_id == user_id),
+            )
+        )
+        .exists()
+    )
+
+
+def _hidden_profile(user_col):
+    """Predicat SQL: profilul userului din `user_col` e ascuns (`profile_hidden`)."""
+    return (
+        select(UserSettings.id)
+        .where(UserSettings.user_id == user_col, UserSettings.profile_hidden.is_(True))
+        .exists()
+    )
+
+
+async def _ensure_visible_social_target(
+    db: AsyncSession, user: User, target_user_id: uuid.UUID
+) -> None:
+    """Porțile de vizibilitate ale swipe-ului, pentru favorite.
+
+    Block în orice direcție → 403 (ca `_authorize_swipe`, I1); țintă banată /
+    ștearsă / cu profil ascuns → 404 neutru (I2/I4). Porțile de ONBOARDING ale
+    swipe-ului (profilul propriu complet, poze, testul de umor) nu se aplică:
+    ele nu protejează ținta, doar condiționează accesul la feed.
+    """
+    if await db.scalar(select(_blocked_either_way(user.id, target_user_id))):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Interacțiune blocată."
+        )
+    unavailable = await db.scalar(
+        select(User.id).where(
+            User.id == target_user_id,
+            or_(
+                User.banned_at.is_not(None),
+                User.deleted_at.is_not(None),
+                _hidden_profile(User.id),
+            ),
+        )
+    )
+    if unavailable is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Utilizator indisponibil."
+        )
+
+
 # --- Favorite ----------------------------------------------------------------
 async def add_favorite(
     db: AsyncSession, user: User, target_user_id: uuid.UUID
 ) -> None:
-    """Adaugă un favorit (idempotent — nu dublează perechea)."""
+    """Adaugă un favorit (idempotent — nu dublează perechea).
+
+    Aceleași porți de VIZIBILITATE ca la swipe (`feed_service._authorize_swipe`):
+    block în orice direcție → 403; țintă ascunsă / banată / ștearsă → 404 neutru.
+    Fără ele, favoritele erau o cale de a „urmări" un profil care te-a blocat sau
+    pe care moderarea l-a scos din circulație.
+    """
     await _validate_social_target(db, user, target_user_id)
+    await _ensure_visible_social_target(db, user, target_user_id)
     result = await db.execute(
         select(Favorite).where(
             Favorite.user_id == user.id,
@@ -441,7 +502,20 @@ async def list_favorites(
     """
     limit = clamp_limit(limit, SOCIAL_PAGE_LIMIT, SOCIAL_MAX_LIMIT)
 
-    stmt = select(Favorite).where(Favorite.user_id == user.id)
+    # Vizibilitate ca în feed: block în ORICE direcție, cont banat / șters sau
+    # profil ascuns ⇒ favoritul nu se mai afișează (nume, vârstă, oraș, poze).
+    # Filtrat în SQL, înainte de LIMIT, ca paginarea să rămână corectă.
+    stmt = (
+        select(Favorite)
+        .join(User, User.id == Favorite.target_user_id)
+        .where(
+            Favorite.user_id == user.id,
+            User.banned_at.is_(None),
+            User.deleted_at.is_(None),
+            ~_hidden_profile(Favorite.target_user_id),
+            ~_blocked_either_way(user.id, Favorite.target_user_id),
+        )
+    )
     if cursor:
         anchor_id = decode_cursor(cursor)
         # Momentul rândului-ancoră, citit DB-side (vezi pagination.py).
@@ -703,7 +777,14 @@ async def list_likes_pending(
 async def add_block(
     db: AsyncSession, user: User, target_user_id: uuid.UUID
 ) -> None:
-    """Blochează un user (idempotent)."""
+    """Blochează un user (idempotent).
+
+    Blocul șterge favoritele în AMBELE direcții (nu doar le ascunde): după
+    deblocare nu are sens ca relația „favorit" să reapară de la sine. Match-ul și
+    chat-ul NU se șterg — semantica existentă a blocului e „conversație
+    read-only" (`chat_service._ensure_not_blocked` refuză scrierea), istoricul
+    rămâne pentru raportare/moderare și revine la deblocare.
+    """
     await _validate_social_target(db, user, target_user_id)
     result = await db.execute(
         select(Block).where(
@@ -713,7 +794,21 @@ async def add_block(
     )
     if result.scalar_one_or_none() is None:
         db.add(Block(blocker_id=user.id, blocked_id=target_user_id))
-        await db.commit()
+    await db.execute(
+        delete(Favorite).where(
+            or_(
+                and_(
+                    Favorite.user_id == user.id,
+                    Favorite.target_user_id == target_user_id,
+                ),
+                and_(
+                    Favorite.user_id == target_user_id,
+                    Favorite.target_user_id == user.id,
+                ),
+            )
+        )
+    )
+    await db.commit()
 
 
 async def remove_block(

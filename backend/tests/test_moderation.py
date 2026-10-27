@@ -59,6 +59,24 @@ async def _make_user(client, email: str, name: str) -> tuple[dict, str]:
     return headers, await _me_id(client, headers)
 
 
+async def _make_credible(db, email: str, target_id) -> None:
+    """Raportor CREDIBIL pentru auto-ascundere: cont vechi de ≥ 3 zile, profil
+    completat și o interacțiune reală cu ținta (aici: un swipe pe ea)."""
+    import uuid as _uuid
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from app.models.swipe import Like
+    from app.models.user import User
+
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one()
+    user.created_at = datetime.now(timezone.utc) - timedelta(days=10)
+    user.profile_completed = True
+    db.add(Like(from_user_id=user.id, to_user_id=_uuid.UUID(str(target_id)), is_like=False))
+    await db.commit()
+
+
 @pytest.mark.asyncio
 async def test_valid_report_created(client):
     """Un raport valid întoarce 201 și status 'open'."""
@@ -115,7 +133,7 @@ async def test_duplicate_report_is_idempotent(client):
 
 
 @pytest.mark.asyncio
-async def test_autoban_hides_reported_from_feed(client):
+async def test_autoban_hides_reported_from_feed(client, db_session):
     """La `report_autoban_threshold` raportori distincți, userul e ascuns din feed."""
     threshold = settings.report_autoban_threshold
 
@@ -131,6 +149,7 @@ async def test_autoban_hides_reported_from_feed(client):
     last_status = None
     for i in range(threshold):
         rep_headers = await _register(client, f"reporter{i}@example.com")
+        await _make_credible(db_session, f"reporter{i}@example.com", target_id)
         resp = await client.post(
             f"{API}/reports/",
             json={"reported_user_id": target_id, "category": "offensive"},
