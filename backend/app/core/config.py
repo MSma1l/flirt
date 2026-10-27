@@ -133,6 +133,20 @@ class Settings(BaseSettings):
     # Fereastra de inactivitate: 7 zile fără refresh → userul se reloghează.
     # Cât timp refreshul e valid, accessul (15 min) se reînnoiește tăcut.
     refresh_token_expire_days: int = 7
+    # Sesiunea panoului de admin: refresh-ul unui cont cu rol de admin trăiește
+    # cel mult atâtea ore și NU se prelungește prin rotație (plafon absolut de la
+    # login). Un token de admin furat e mult mai valoros, deci fereastra e mică.
+    admin_refresh_token_expire_hours: int = 12
+    # `iss` / `aud` pe toate token-urile emise (validate la decodare). Audiențe
+    # distincte pentru conturile de admin și cele obișnuite.
+    jwt_issuer: str = "flirt-api"
+    jwt_audience_app: str = "flirt-app"
+    jwt_audience_admin: str = "flirt-admin"
+    # Tranziție: token-urile emise ÎNAINTE de introducerea `iss`/`aud` (fără
+    # niciunul dintre ele) sunt acceptate doar până la această dată (ISO, UTC).
+    # Gol = nu se mai acceptă deloc. Data e peste durata maximă a unui refresh
+    # (7 zile), deci nimeni nu e delogat forțat la deploy.
+    jwt_legacy_tokens_accepted_until: str = "2026-11-10T00:00:00+00:00"
 
     # CORS
     cors_origins: str = "http://localhost:19006,http://localhost:8081"
@@ -476,6 +490,16 @@ class Settings(BaseSettings):
     # un cont de admin spart = tot produsul spart, iar numărul de admini e mic,
     # deci un prag mic nu deranjează pe nimeni legitim.
     rate_limit_admin_login_per_min: int = 3
+    # Blocare PER CONT (nu per IP) după eșecuri de parolă consecutive — se aplică
+    # și pe `/auth/login`, și pe `/admin/login`, cu același contor (cheie =
+    # emailul normalizat). Oprește brute-force-ul distribuit pe multe IP-uri.
+    account_lockout_max_failures: int = 5
+    account_lockout_minutes: int = 15
+    # Login social (Google/Apple) și rotația refresh-ului, per IP / minut.
+    # Refresh-ul e generos: fiecare client îl face o dată la ~15 min, iar mulți
+    # useri pot ieși prin același NAT de operator mobil.
+    rate_limit_social_login_per_min: int = 10
+    rate_limit_refresh_per_min: int = 60
     # Scanările de bilete la intrare (`POST /admin/tickets/scan`), per IP / minut.
     # Generos: tot staff-ul de la ușă poate ieși prin același Wi-Fi (același IP),
     # iar scannerul continuu trimite câte o cerere per cod nou. Oprește doar

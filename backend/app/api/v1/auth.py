@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.deps import CurrentUser, require_capability
 from app.core.ratelimit import rate_limit
 from app.db.session import get_db
+from app.models.user import ROLE_ADMIN
 from app.schemas.auth import (
     LoginIn,
     LogoutIn,
@@ -42,6 +43,11 @@ _otp_verify_rl = rate_limit("otp_verify", "rate_limit_login_per_min", 60)
 # fiecare deschidere a Mini App-ului, iar mai mulți useri pot veni prin același
 # NAT de operator mobil (vezi `rate_limit_telegram_per_min` din config).
 _telegram_rl = rate_limit("telegram", "rate_limit_telegram_per_min", 60)
+# Google/Apple: verificarea id_token-ului cere chei JWKS de la provider și
+# creează conturi — fără plafon, un singur IP putea genera muncă și rânduri
+# nelimitat. Refresh: plafon generos (vezi config), oprește abuzul în buclă.
+_social_rl = rate_limit("social_login", "rate_limit_social_login_per_min", 60)
+_refresh_rl = rate_limit("refresh", "rate_limit_refresh_per_min", 60)
 
 
 # Metodele declarate indisponibile în `/capabilities` sunt închise în producție.
@@ -62,11 +68,19 @@ async def register(data: RegisterIn, db: DbSession) -> TokenPair:
 
 @router.post("/login", response_model=TokenPair, dependencies=[Depends(_login_rl)])
 async def login(data: LoginIn, db: DbSession) -> TokenPair:
-    """Autentifică userul; 401 la credențiale greșite."""
-    return await auth_service.authenticate(db, email=data.email, password=data.password)
+    """Autentifică userul; 401 la credențiale greșite.
+
+    Conturile de admin sunt refuzate aici (403): panoul se loghează exclusiv
+    prin `/admin/login` (rate limit strict + jurnal de audit).
+    """
+    return await auth_service.authenticate(
+        db, email=data.email, password=data.password, forbid_role=ROLE_ADMIN
+    )
 
 
-@router.post("/refresh", response_model=TokenPair)
+@router.post(
+    "/refresh", response_model=TokenPair, dependencies=[Depends(_refresh_rl)]
+)
 async def refresh(data: RefreshIn, db: DbSession) -> TokenPair:
     """Rotește refresh token-ul (cu reuse detection)."""
     return await auth_service.rotate_refresh(db, refresh_token=data.refresh_token)
@@ -84,7 +98,9 @@ def _phone_key(phone: str) -> str:
 
 
 @router.post(
-    "/google", response_model=TokenPair, dependencies=[Depends(_social_enabled)]
+    "/google",
+    response_model=TokenPair,
+    dependencies=[Depends(_social_enabled), Depends(_social_rl)],
 )
 async def google_login(data: SocialLoginIn, db: DbSession) -> TokenPair:
     """Google Sign-In: validează id_token-ul și autentifică (get-or-create)."""
@@ -95,7 +111,9 @@ async def google_login(data: SocialLoginIn, db: DbSession) -> TokenPair:
 
 
 @router.post(
-    "/apple", response_model=TokenPair, dependencies=[Depends(_social_enabled)]
+    "/apple",
+    response_model=TokenPair,
+    dependencies=[Depends(_social_enabled), Depends(_social_rl)],
 )
 async def apple_login(data: SocialLoginIn, db: DbSession) -> TokenPair:
     """Apple Sign-In: validează id_token-ul și autentifică (get-or-create)."""

@@ -1030,6 +1030,15 @@ async def purge_user_data(db: AsyncSession, user_id: uuid.UUID) -> None:
         user.telegram_photo_url = None
         user.telegram_photo_source = None
         user.telegram_photo_checked_at = None
+        # Identitatea Telegram și codurile personale. `telegram_user_id` e un
+        # identificator direct al persoanei; lăsat pe rândul purjat, login-ul din
+        # Mini App ar fi regăsit contul șters (persoana nu-și mai putea face cont
+        # nou). `payment_code` / `passport_token` o leagă de plăți / bilete.
+        user.telegram_user_id = None
+        user.telegram_linked_at = None
+        user.telegram_language = None
+        user.payment_code = None
+        user.passport_token = None
         # Marcaj de purjare verificat de `get_current_user` la FIECARE cerere.
         # Fără el, access token-ul stateless emis înainte de ștergere rămânea
         # valabil ~15 min: contul „șters" continua să facă cereri autentificate

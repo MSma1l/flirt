@@ -18,6 +18,12 @@ DE CE O RUTĂ SEPARATĂ DE `/auth/login`, dacă tot userul și tot tabelul sunt 
    (vezi docstring-ul lui `authenticate`) — un login de admin respins nu lasă în
    urmă o sesiune de refresh valabilă 7 zile.
 
+4. BLOCARE PER CONT + SESIUNE SCURTĂ. Pe lângă plafonul per IP, contul se
+   blochează după `account_lockout_max_failures` eșecuri (contor comun cu
+   `/auth/login`, cheiat pe email), iar refresh-ul unui admin expiră la
+   `admin_refresh_token_expire_hours` (12h) de la login, fără prelungire prin
+   rotație. Un admin NU se poate loga prin `/auth/login` (403).
+
 Verificarea rolului se face DUPĂ parolă, deliberat: un 403 înaintea validării
 parolei ar fi un oracol de enumerare („acest email e admin"), oferit gratuit
 oricui, fără nicio credențială.
@@ -55,7 +61,8 @@ async def admin_login(data: LoginIn, request: Request, db: DbDep) -> TokenPair:
 
     401 = credențiale greșite (identic pentru „email inexistent" și „parolă
     greșită" — fără oracol). 403 = credențiale corecte, dar contul nu e admin
-    (sau e banat). 429 = prea multe încercări de la același IP.
+    (sau e banat). 429 = prea multe încercări de la același IP sau cont blocat
+    temporar după eșecuri repetate.
     """
     pair = await auth_service.authenticate(
         db,
