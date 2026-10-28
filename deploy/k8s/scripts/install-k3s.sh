@@ -34,6 +34,7 @@ CERT_MANAGER_VERSION="${CERT_MANAGER_VERSION:-v1.21.3}"
 K3S_CONFIG=/etc/rancher/k3s/config.yaml
 HOST_DIR="$REPO_ROOT/deploy/k8s/host"
 BACKUP_HOST_DIR="${BACKUP_HOST_DIR:-/opt/flirt-backups}"
+ARCHIVE_DIR="${ARCHIVE_DIR:-/opt/flirt-arhiva-compose}"
 BACKUP_UID="${BACKUP_UID:-1000}"
 BACKUP_GID="${BACKUP_GID:-1000}"
 # Rotația după mărime a log-urilor de containere (kubelet). Limita în TIMP o
@@ -382,8 +383,11 @@ install_log_retention() {
 
 # CronJob-urile backup-db / backup-media rulează ca uid/gid 1000 și scriu/șterg în
 # /opt/flirt-backups doar `<POSTGRES_DB>-*.sql.gz` (+ `.partial`) la rădăcină și
-# `media/media-*.tar.gz` (+ `.partial`). Doar acestea trec la 1000;
-# `arhiva-compose/` (arhiva de la cutover) rămâne root, 0700.
+# `media/media-*.tar.gz` (+ `.partial`). Doar acestea trec la 1000.
+# Arhiva sistemului compose (cutover 28.10.2026) stă ÎN AFARA acestui director,
+# în $ARCHIVE_DIR (root, 0700): un subdirector root-only aici face `find`-ul de
+# retenție din joburi (busybox) să eșueze cu „Permission denied”, iar uid 1000
+# l-ar putea redenumi. O mutăm automat dacă o găsim în locul vechi.
 prepare_backup_dir() {
     local d="$BACKUP_HOST_DIR" db n
     [ -L "$d" ] && die "$d e symlink — refuz chown"
@@ -398,10 +402,15 @@ prepare_backup_dir() {
     chown -R -h "$BACKUP_UID:$BACKUP_GID" "$d/media"
     chmod 0750 "$d/media"
     if [ -d "$d/arhiva-compose" ] && [ ! -L "$d/arhiva-compose" ]; then
-        chown root:root "$d/arhiva-compose"
-        chmod 0700 "$d/arhiva-compose"
+        [ -e "$ARCHIVE_DIR" ] && die "$d/arhiva-compose și $ARCHIVE_DIR există amândouă — unește-le manual"
+        mv "$d/arhiva-compose" "$ARCHIVE_DIR"
+        log "arhiva compose mutată: $d/arhiva-compose → $ARCHIVE_DIR"
     fi
-    log "backup-uri: $d → $BACKUP_UID:$BACKUP_GID 0750 ($n dump-uri trecute la $BACKUP_UID, media/ recursiv; arhiva-compose/ rămâne root 0700)"
+    if [ -d "$ARCHIVE_DIR" ] && [ ! -L "$ARCHIVE_DIR" ]; then
+        chown -R root:root "$ARCHIVE_DIR"
+        chmod 0700 "$ARCHIVE_DIR"
+    fi
+    log "backup-uri: $d → $BACKUP_UID:$BACKUP_GID 0750 ($n dump-uri trecute la $BACKUP_UID, media/ recursiv; arhiva: $ARCHIVE_DIR root 0700)"
 }
 
 # backup-media (uid 1000, fără capabilități) arhivează volumul `media`: un fișier

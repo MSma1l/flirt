@@ -64,7 +64,7 @@ deploy/k8s/scripts/install-k3s.sh host-hardening   # idempotent; re-rulează dup
   active (un container tăcut de peste termen rămâne cu logul gol). Se aplică cu o zi de
   marjă, deci nimic nu depășește termenul între două rulări.
 - `/opt/flirt-backups` → `1000:1000`, `0750` (CronJob-urile de backup rulează non-root),
-  la fel dump-urile `*.sql.gz` și `media/`; `arhiva-compose/` rămâne `root`, `0700`.
+  la fel dump-urile `*.sql.gz` și `media/`; arhiva sistemului compose stă separat, în `/opt/flirt-arhiva-compose` (`root`, `0700`).
 - Volumul `media` (`/var/lib/rancher/k3s/storage/*_flirt_media`) → tot `1000:1000`
   (un fișier root `0600` ar face `backup-media`, non-root, să eșueze).
 
