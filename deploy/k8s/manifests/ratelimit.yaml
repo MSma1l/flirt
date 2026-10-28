@@ -1,0 +1,120 @@
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║  LIMITAREA DE CERERI PER IP LA MARGINE — în Traefik, EXACTĂ.               ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+# DE CE AICI ȘI NU (DOAR) ÎN NGINX: zonele `limit_req_zone` din nginx stau în
+# memoria FIECĂRUI pod `web`. Cu HPA la 2–4 replici, un IP primea efectiv de
+# 2–4× bugetul gândit. Traefik-ul din k3s rulează într-o SINGURĂ replică
+# (kube-system), deci contorul de aici e unul singur → limita e exactă oricâte
+# replici `web` ar exista. nginx își păstrează zonele ca strat 2 (per pod,
+# defense in depth) — vezi comentariul din images/web/nginx.conf.template.
+#
+# PRAGURILE = cele ale nginx-ului cu UN SINGUR pod (intenția de proiectare,
+# motivarea: istoricul git al fostului backend/nginx/nginx.conf):
+#
+#   zonă nginx      rate     burst (nodelay) │ Middleware   average/period  burst
+#   flirt_general   20r/s    40              │ rl-general   20 / 1s         41
+#   flirt_media     100r/s   200             │ rl-media     100 / 1s        201
+#   flirt_tg_auth   60r/m    30              │ rl-tg-auth   60 / 1m         31
+#   flirt_session   120r/m   120             │ rl-session   120 / 1m        121
+#   flirt_auth      5r/m     10              │ rl-auth      5 / 1m          11
+#
+# BURST +1: `limit_req burst=N nodelay` acceptă N+1 cereri lipite (cea curentă
+# + N în exces); `burst` din Traefik e dimensiunea găleții de jetoane, deci
+# N+1 cereri lipite. Același număr de cereri acceptate dintr-o rafală.
+#
+# CHEIA = IP-ul REAL al clientului: `ipStrategy.depth: 0` (= nicio adâncime
+# setată) → Traefik folosește RemoteAddr al conexiunii TCP, NU X-Forwarded-For.
+# RemoteAddr e IP-ul real pentru că Service-ul Traefik are
+# externalTrafficPolicy: Local (cluster/traefik-config.yaml, fără SNAT de
+# kube-proxy). Un X-Forwarded-For trimis de client NU contează deloc aici
+# (altfel oricine și-ar alege cheia și ar ocoli limita).
+#
+# ⚠️  Starea unui Middleware e PER RUTER Traefik (fiecare Ingress host+path /
+#     fiecare rută IngressRoute își construiește propriul lanț). De aceea rutele
+#     care în nginx împart o zonă stau în ACEEAȘI rută (ex. /auth/me + /auth/refresh
+#     în ingress.yaml). Diferență asumată: `flirt_general` din nginx era o găleată
+#     comună pentru toate trei host-urile; aici fiecare host are găleata lui.
+#
+# Răspunsul la depășire: 429 text/plain generat de Traefik (cu Retry-After),
+# fără antete CORS — exact ca 429-ul generat de nginx până acum. Frontend-urile
+# se uită doar la status.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rl-general
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  rateLimit:
+    average: 20
+    period: 1s
+    burst: 41
+    sourceCriterion:
+      ipStrategy:
+        depth: 0
+---
+# /media/ pe host-ul API: un feed încarcă zeci de poze dintr-o dată.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rl-media
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  rateLimit:
+    average: 100
+    period: 1s
+    burst: 201
+    sourceCriterion:
+      ipStrategy:
+        depth: 0
+---
+# POST /api/v1/auth/telegram: refăcută la FIECARE deschidere a Mini App-ului
+# (CGNAT: mulți abonați pe același IP).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rl-tg-auth
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  rateLimit:
+    average: 60
+    period: 1m
+    burst: 31
+    sourceCriterion:
+      ipStrategy:
+        depth: 0
+---
+# /api/v1/auth/me + /api/v1/auth/refresh: bătăile de inimă ale unei sesiuni.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rl-session
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  rateLimit:
+    average: 120
+    period: 1m
+    burst: 121
+    sourceCriterion:
+      ipStrategy:
+        depth: 0
+---
+# Restul /api/v1/auth/ (login cu parolă, register, OTP, Google/Apple): strict,
+# anti brute-force. NU se relaxează (vezi tests/test_nginx_ratelimit_zones.py).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rl-auth
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  rateLimit:
+    average: 5
+    period: 1m
+    burst: 11
+    sourceCriterion:
+      ipStrategy:
+        depth: 0

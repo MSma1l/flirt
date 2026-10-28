@@ -20,6 +20,9 @@ resources:
   - redis.yaml
   - api.yaml
   - web.yaml
+  # ratelimit.yaml = Middleware-urile Traefik (limită per IP, exactă) pe care
+  # le referă ingress.yaml; CRD-urile traefik.io vin cu chart-ul traefik-crd din k3s.
+  - ratelimit.yaml
   - ingress.yaml
   - cronjobs.yaml
   - networkpolicies.yaml

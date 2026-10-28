@@ -1,8 +1,17 @@
 # NetworkPolicy — k3s le aplică prin controller-ul încorporat (kube-router).
 #
-# Model: tot ingress-ul din namespace e INTERZIS implicit; deschidem explicit doar
-# drumurile necesare:   Traefik (kube-system) → web:8080 → api:8000 → db / redis.
-# Egress-ul rămâne DESCHIS: aplicația vorbește cu Telegram API, provideri AI, SMTP.
+# Model: tot ingress-ul ȘI tot egress-ul din namespace sunt INTERZISE implicit;
+# deschidem explicit doar drumurile necesare:
+#   ingress:  Traefik (kube-system) → web:8080 → api:8000 → db / redis
+#   egress:   toate podurile → CoreDNS:53; web → api:8000; api → db, redis,
+#             internet :443 (fără rangurile private); migrate/purge/backup-db → db
+#             (purge și → redis). backup-media, db, redis, solver-ul ACME: doar DNS.
+#
+# kube-router evaluează egress-ul DUPĂ DNAT-ul Service-ului (kube-proxy) → regulile
+# cu podSelector pe podurile DESTINAȚIE funcționează pentru Service-uri ClusterIP,
+# iar portul din regulă e targetPort-ul podului (nu portul Service-ului).
+# NetworkPolicy e stateful: răspunsurile la conexiunile primite (Traefik → web,
+# probe kubelet) NU au nevoie de reguli de egress.
 #
 # Probele kubelet (liveness/readiness/startup) NU sunt afectate: vin de pe nodul
 # însuși (IP local), iar kube-router are o regulă explicită care acceptă traficul
@@ -117,3 +126,171 @@ spec:
       ports:
         - protocol: TCP
           port: 8089
+---
+# ============================== EGRESS ===================================== #
+# Implicit: niciun pod din namespace nu poate iniția conexiuni. Un RCE în api/web
+# nu mai poate scana clusterul, lovi API-ul Kubernetes (:6443), metadata-ul
+# cloud-ului (169.254.169.254) sau exfiltra pe porturi arbitrare.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+---
+# DNS pentru TOATE podurile: doar CoreDNS din kube-system (eticheta k8s-app=kube-dns
+# din manifestul k3s), UDP + TCP 53 (TCP pentru răspunsuri mari / trunchiate).
+# namespaceSelector + podSelector în ACELAȘI element = ȘI logic.
+# Și podurile fără nevoie reală de rețea (db, redis, backup-media, solver-ul ACME)
+# primesc doar DNS — inofensiv, iar un CrashLoop din cauza unui lookup e evitat.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# API: db, redis și internetul public DOAR pe HTTPS (443).
+# Destinații externe găsite în backend/app (toate httpx/SDK pe https://, :443):
+#   Telegram Bot API + descărcare avatare (api.telegram.org); AI: OpenRouter
+#   (openrouter.ai, OPENROUTER_BASE_URL) și Anthropic (api.anthropic.com, moderare
+#   poze); geocodare: Nominatim / Google Geocoding / Mapbox (GEO_BASE_URL);
+#   push: Expo (exp.host) și FCM (fcm.googleapis.com); login: JWKS Google
+#   (www.googleapis.com) și Apple (appleid.apple.com); SMS: Twilio (api.twilio.com);
+#   plăți: Stripe (api.stripe.com), Google Play (oauth2.googleapis.com,
+#   androidpublisher.googleapis.com); opțional AWS S3 / Rekognition (boto3, :443).
+#   Fără SMTP în cod. ⚠️ Excepții care ar cere alt port: APP_STORE_ENABLE_ONLINE_CHECKS=1
+#   (OCSP Apple pe http://ocsp.apple.com, :80 — implicit oprit) și un GEO_BASE_URL /
+#   OPENROUTER_BASE_URL self-hosted pe alt port → adăugați portul aici.
+#
+# `except` blochează SSRF spre rețele interne: pod-uri/Service-uri k3s (10.42/10.43
+# ⊂ 10/8), LAN-uri private, CGNAT (100.64/10), loopback și link-local
+# 169.254.0.0/16 (metadata cloud). Doar IPv4: k3s e implicit single-stack IPv4; pe un
+# cluster dual-stack egress-ul IPv6 rămâne INTERZIS (fail-closed) până se adaugă
+# explicit ::/0 cu excepțiile fc00::/7, fe80::/10, ::1/128.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: db
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# Web (nginx): DOAR proxy spre api:8000. Nimic spre internet.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: api
+      ports:
+        - protocol: TCP
+          port: 8000
+---
+# Migrare (alembic) și backup-ul DB: doar Postgres. (Redis nu e folosit de alembic,
+# iar ingress-ul redis oricum nu acceptă `migrate`.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: db-clients-egress
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: ["migrate", "backup-db"]
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: db
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# Purjarea GDPR: db + redis. FĂRĂ internet: cu STORAGE_PROVIDER=local fișierele se
+# șterg din volumul `media`. ⚠️ Cu STORAGE_PROVIDER=s3 purjarea ar avea nevoie de
+# :443 (ștergeri S3) — atunci se adaugă regula de internet de la api-egress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: purge-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: purge
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: db
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+# backup-media (doar fișiere locale), db, redis și solver-ul ACME (doar RĂSPUNDE la
+# cererea HTTP-01 a Let's Encrypt, venită prin Traefik — conexiune primită, deci
+# răspunsul trece stateful) NU au reguli de egress proprii: doar DNS-ul de mai sus.
+# (Verificarea self-check HTTP-01 o face pod-ul cert-manager din namespace-ul
+# cert-manager, care nu e afectat de politicile de aici.)

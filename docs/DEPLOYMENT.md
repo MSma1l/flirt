@@ -42,10 +42,20 @@ alias k='k3s kubectl -n flirt'
 | CronJob `purge` | purjare GDPR, orar | — |
 | CronJob `backup-db` / `backup-media` | la 6 ore / zilnic → `/opt/flirt-backups` pe host | — |
 
-NetworkPolicy `default-deny` + excepții explicite: doar Traefik → `web`, `web` → `api`,
-`api`/`migrate`/`purge`/`backup-db` → `db`, `api`/`purge` → `redis`. Un Redis sau
-Postgres expus pe internet e preluat în minute — aici nu au nici port pe host, nici
-Service public.
+NetworkPolicy `default-deny` (ingress **și** egress) + excepții explicite: doar Traefik →
+`web`, `web` → `api`, `api`/`migrate`/`purge`/`backup-db` → `db`, `api`/`purge` → `redis`.
+Ieșire spre internet: doar `api`, doar TCP 443, fără rețele private; restul podurilor au
+doar DNS. Un Redis sau Postgres expus pe internet e preluat în minute — aici nu au nici
+port pe host, nici Service public.
+
+> ⚠️ O funcție care cere ieșire pe alt port decât 443 (ex. `APP_STORE_ENABLE_ONLINE_CHECKS=1`
+> face OCSP pe portul 80; un GEO/OPENROUTER self-hosted pe alt port) **nu va merge** până nu
+> extinzi politica `api-egress` din `deploy/k8s/manifests/networkpolicies.yaml`.
+
+Rate limit per IP: exact în Traefik (`deploy/k8s/manifests/ratelimit.yaml` + IngressRoute
+`flirt-api-limits`, o replică Traefik), zonele nginx rămân a doua linie per pod. Un prag se
+schimbă în **ambele** (`ratelimit.yaml` și `deploy/k8s/images/web/nginx.conf.template`; un test
+verifică paritatea). Traefik cu >1 replică ⇒ limite de N× mai largi (soluție: `rateLimit.redis`).
 
 ### Domeniile
 
@@ -219,9 +229,15 @@ k3s kubectl -n flirt exec -it deploy/api -- python scripts/create_admin.py admin
   `k logs deploy/api | grep <request_id>`. Nu se loghează tokenuri, parole, mesaje, PII.
 - IP trunchiat în jurnalele de acces (nginx `flirt_anon`, API `client_ip` /24, IPv6 /48);
   rate limiting-ul folosește IP-ul complet doar în memorie/Redis.
-- Logurile containerelor sunt rotite de kubelet după mărime. ⚠️ Retenția în timp
-  promisă în Politica de confidențialitate (`LOG_RETENTION_DAYS`, implicit 30) nu mai are
-  un cron dedicat după migrare — de verificat.
+- Retenția logurilor (`LOG_RETENTION_DAYS` din `.env`, implicit 30, promisă în Politica de
+  confidențialitate) e aplicată pe host de `deploy/k8s/scripts/install-k3s.sh host-hardening`
+  (rulat și de `phase1`; re-rulează-l după ce schimbi valoarea sau `deploy/k8s/host/`):
+  kubelet rotește după mărime (`container-log-max-size=10Mi`, `container-log-max-files=5`),
+  timer-ul zilnic `flirt-log-retention` șterge/taie tot ce e mai vechi de termen (loguri de
+  poduri — inclusiv liniile vechi din fișierul activ —, Docker, `/var/log` rotit), iar
+  journald are `MaxRetentionSec` (`/etc/systemd/journald.conf.d/flirt-retention.conf`).
+  Verificare: `systemctl list-timers flirt-log-retention`, `journalctl -u flirt-log-retention`
+  (doar numărători); probă fără modificări: `sudo DRY_RUN=1 /usr/local/sbin/flirt-log-retention`.
 
 ---
 
@@ -286,6 +302,8 @@ k create job --from=cronjob/purge purge-manual                   # o trecere acu
 - [ ] `https://<IP>/` → nu răspunde API-ul (Traefik nu are rută pentru IP; nginx dă 444 pe Host necunoscut)
 - [ ] **Doar Traefik** ascultă pe 80/443 (`ss -ltnp`); `db`/`redis` sunt ClusterIP, fără porturi pe host
 - [ ] NetworkPolicies aplicate (`k get networkpolicy`); 6443 închis; firewall doar 22/80/443
+- [ ] Rate limit la margine: `k3s kubectl -n flirt get middleware,ingressroute`; `k get certificate` → un singur `flirt-tls` Ready
+- [ ] `install-k3s.sh host-hardening` rulat: `systemctl list-timers flirt-log-retention` activ
 
 **Funcționare**
 - [ ] `curl -s https://api.flrt.md/health/ready` → `database: ok`, `redis: ok`

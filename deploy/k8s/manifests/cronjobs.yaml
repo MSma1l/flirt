@@ -5,8 +5,9 @@
 # concurrencyPolicy: Forbid — o execuție lentă nu se suprapune cu următoarea.
 # Ora: Europe/Chisinau (timeZone e GA din k8s 1.27).
 #
-# Backup-urile scriu pe host în /opt/flirt-backups,
+# Backup-urile scriu pe host în /opt/flirt-backups (proprietar 1000:1000),
 # ÎN AFARA checkout-ului git, prin PVC-ul `backups` (vezi backups.yaml).
+# Toate podurile de aici rulează NON-ROOT (compatibile Pod Security `restricted`).
 # ⚠️ Ideal pe un disc separat / sincronizat off-site.
 ---
 # Purjare GDPR + retenția dovezilor de plată + curățarea story-urilor expirate.
@@ -60,6 +61,8 @@ spec:
                   value: db
                 - name: POSTGRES_PORT
                   value: "5432"
+                - name: TMPDIR
+                  value: /tmp
               resources:
                 requests:
                   cpu: 50m
@@ -69,6 +72,8 @@ spec:
                   memory: 512Mi
               securityContext:
                 allowPrivilegeEscalation: false
+                # Aceeași imagine ca api: scrie doar în /data/media și /tmp.
+                readOnlyRootFilesystem: true
                 capabilities:
                   drop: ["ALL"]
               # Purjarea ȘTERGE fișiere media ale conturilor purjate — fără volum
@@ -76,10 +81,15 @@ spec:
               volumeMounts:
                 - name: media
                   mountPath: /data/media
+                - name: tmp
+                  mountPath: /tmp
           volumes:
             - name: media
               persistentVolumeClaim:
                 claimName: media
+            - name: tmp
+              emptyDir:
+                sizeLimit: 256Mi
 ---
 # Backup Postgres: pg_dump | gzip -9 → .partial → mv, apoi retenție N zile.
 # Logica e INLINE aici (sursa unică; fostul backend/scripts/backup_db.sh a fost
@@ -110,9 +120,14 @@ spec:
         spec:
           automountServiceAccountToken: false
           restartPolicy: Never
-          # Root (ca în compose): /opt/flirt-backups e al lui root pe host, iar
-          # dump-urile rămân 0600 root (umask 077). Fără nicio capabilitate.
+          # NON-ROOT, uid/gid 1000 (ca appuser din api): /opt/flirt-backups e al lui
+          # 1000:1000 pe host (install-k3s.sh face chown), dump-urile rămân 0600
+          # (umask 077). pg_dump merge pe TCP cu PGPASSWORD; uid-ul nu trebuie să
+          # existe în /etc/passwd (PGUSER e setat explicit). Fără nicio capabilitate.
           securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
             seccompProfile:
               type: RuntimeDefault
           containers:
@@ -136,6 +151,9 @@ spec:
                 - name: BACKUP_RETENTION_DAYS
                   valueFrom:
                     secretKeyRef: { name: flirt-env, key: BACKUP_RETENTION_DAYS, optional: true }
+                # uid 1000 nu are home în imagine → libpq caută ~/.pgpass în /tmp.
+                - name: HOME
+                  value: /tmp
               command:
                 - /bin/sh
                 - -c
@@ -182,15 +200,21 @@ spec:
                   memory: 512Mi
               securityContext:
                 allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
                 capabilities:
                   drop: ["ALL"]
               volumeMounts:
                 - name: backups
                   mountPath: /backups
+                - name: tmp
+                  mountPath: /tmp
           volumes:
             - name: backups
               persistentVolumeClaim:
                 claimName: backups
+            - name: tmp
+              emptyDir:
+                sizeLimit: 16Mi
 ---
 # Backup MEDIA: tar.gz al volumului `media` → /opt/flirt-backups/media, retenție.
 # Logica e INLINE aici (sursa unică), cu plase de siguranță: sursa montată
@@ -221,7 +245,13 @@ spec:
         spec:
           automountServiceAccountToken: false
           restartPolicy: Never
+          # NON-ROOT, uid/gid 1000 = proprietarul fișierelor media (le scrie api ca
+          # appuser) → le citește direct, FĂRĂ DAC_OVERRIDE. Un fișier media cu alt
+          # proprietar și 0600 face `tar` să eșueze (vizibil în Job), nu tăcut.
           securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
             seccompProfile:
               type: RuntimeDefault
           containers:
@@ -279,12 +309,10 @@ spec:
                   memory: 256Mi
               securityContext:
                 allowPrivilegeEscalation: false
+                # Scrie doar în /backups (tar direct în fișier, fără temporare).
+                readOnlyRootFilesystem: true
                 capabilities:
                   drop: ["ALL"]
-                  # Root fără DAC_OVERRIDE nu poate citi fișiere 0600 ale lui appuser
-                  # (uid 1000). DAC_READ_SEARCH ar fi mai îngust, dar PSA `baseline` nu-l
-                  # permite; scrierea în media rămâne imposibilă (montare readOnly).
-                  add: ["DAC_OVERRIDE"]
               volumeMounts:
                 - name: media
                   mountPath: /data/media

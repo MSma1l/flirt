@@ -1,15 +1,35 @@
 # ╔══════════════════════════════════════════════════════════════════════════╗
 # ║  SINGURUL loc cu numele publice (DNS). Schimbi un domeniu → îl schimbi AICI ║
-# ║  (rules + tls) ȘI în `.env` (DOMAIN / ADMIN_DOMAIN / MINIAPP_DOMAIN).      ║
+# ║  (rules + tls + IngressRoute-urile de jos) ȘI în `.env`                    ║
+# ║  (DOMAIN / ADMIN_DOMAIN / MINIAPP_DOMAIN).                                 ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 #   api.flrt.md              = DOMAIN         (API + /media)
 #   admin-flirt-paty.flrt.md = ADMIN_DOMAIN   (panoul de admin)
 #   miniapp.flrt.md          = MINIAPP_DOMAIN (Telegram Mini App)
 #
-# Toate trei merg la `web:80`; nginx-ul din `web` rutează după Host.
+# Toate rutele merg la `web:80`; nginx-ul din `web` rutează după Host.
 # TLS: cert-manager emite UN certificat (SAN) în secretul `flirt-tls` prin
 # ClusterIssuer-ul `letsencrypt-prod` (cluster/issuers.yaml), HTTP-01 prin Traefik.
 # Pentru teste fără limite de rată: schimbă adnotarea pe `letsencrypt-staging`.
+#
+# LIMITAREA DE CERERI PER IP (Middleware-urile din ratelimit.yaml):
+#   - Ingress-ul `flirt` (mai jos) = ruta implicită `/` a celor trei host-uri,
+#     cu `rl-general`. E SINGURUL obiect cu adnotarea cert-manager: ingress-shim
+#     creează Certificate DOAR pentru Ingress-uri adnotate, deci rămâne UN
+#     singur Certificate `flirt-tls` pentru toate trei numele.
+#   - IngressRoute-urile Traefik de la final = rutele cu prag PROPRIU de pe
+#     host-ul API (auth, sesiune, media). IngressRoute, nu Ingress, pentru că:
+#       1. regula poate exclude `OPTIONS` (`!Method`): preflight-ul CORS al
+#          browserului NU consumă bugetul de login (ca `$flirt_auth_key` din
+#          nginx) — cade pe ruta implicită, cu `rl-general`;
+#       2. /auth/me + /auth/refresh stau într-o SINGURĂ rută → o singură găleată
+#          (starea unui Middleware e per ruter; cu Ingress ar fi fost două).
+#     Ele doar REFOLOSESC secretul `flirt-tls` (fără adnotare cert-manager).
+#   - Provocarea ACME HTTP-01: Ingress-ul temporar al solver-ului (creat de
+#     cert-manager) nu are niciun Middleware; rutele de aici sunt doar pe
+#     `websecure` și nu potrivesc /.well-known/acme-challenge/ (doar ruta
+#     implicită `/`, care are prioritate MAI MICĂ decât path-ul exact al
+#     solver-ului — prioritatea implicită Traefik = lungimea regulii).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -22,6 +42,9 @@ metadata:
     # (cluster/traefik-config.yaml).
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
+    # Limita generală per IP (20r/s, burst 41) — ratelimit.yaml.
+    # Format: <namespace>-<nume>@kubernetescrd.
+    traefik.ingress.kubernetes.io/router.middlewares: flirt-rl-general@kubernetescrd
 spec:
   ingressClassName: traefik
   tls:
@@ -52,3 +75,59 @@ spec:
             pathType: Prefix
             backend:
               service: { name: web, port: { name: http } }
+---
+# Rutele cu prag propriu de pe host-ul API. Prioritățile sunt EXPLICITE:
+# implicit Traefik ordonează după lungimea regulii, iar `PathPrefix(/api/v1/auth/)`
+# ar fi „mai lungă" decât `Path(/api/v1/auth/me)` → ar fura rutele de sesiune.
+#   1100 = căi exacte (telegram, sesiune) > 1000 = prefixe (auth, media)
+#   > ruta implicită `/` a Ingress-ului de mai sus (~40, după lungime).
+# Redirect-ul HTTP→HTTPS are 10 și e pe `web`, nu pe `websecure`.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: flirt-api-limits
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  entryPoints:
+    - websecure
+  tls:
+    secretName: flirt-tls
+  routes:
+    # Autentificarea Telegram (= `location = /api/v1/auth/telegram`).
+    - kind: Rule
+      match: Host(`api.flrt.md`) && Path(`/api/v1/auth/telegram`) && !Method(`OPTIONS`)
+      priority: 1100
+      middlewares:
+        - name: rl-tg-auth
+      services:
+        - name: web
+          port: http
+    # Rutele de SESIUNE — o singură rută = o singură găleată (ca zona
+    # `flirt_session` din nginx, comună pentru ambele).
+    - kind: Rule
+      match: Host(`api.flrt.md`) && (Path(`/api/v1/auth/me`) || Path(`/api/v1/auth/refresh`)) && !Method(`OPTIONS`)
+      priority: 1100
+      middlewares:
+        - name: rl-session
+      services:
+        - name: web
+          port: http
+    # Acreditări: login cu parolă, register, OTP, Google/Apple (= `location /api/v1/auth/`).
+    - kind: Rule
+      match: Host(`api.flrt.md`) && PathPrefix(`/api/v1/auth/`) && !Method(`OPTIONS`)
+      priority: 1000
+      middlewares:
+        - name: rl-auth
+      services:
+        - name: web
+          port: http
+    # Media servită de nginx din PVC (= `location /media/`).
+    - kind: Rule
+      match: Host(`api.flrt.md`) && PathPrefix(`/media/`)
+      priority: 1000
+      middlewares:
+        - name: rl-media
+      services:
+        - name: web
+          port: http

@@ -13,9 +13,12 @@ CE VERIFICĂM
 3. Imagini pe versiune fixă (fără `:latest`); `api` (și orice container) cu
    limite de CPU/RAM; compose-ul de dev nu publică db/redis.
 4. Rețea k8s: db/redis/api doar ClusterIP, fără hostPort/hostNetwork,
-   NetworkPolicy default-deny + reguli explicite; containere fără privilegii.
-5. Backup-uri (CronJob-uri): umask 077, în afara repo-ului (/opt/flirt-backups
-   prin PVC-ul `backups`, Retain), retenție limitată la tiparul propriu.
+   NetworkPolicy default-deny pe ingress ȘI egress + reguli explicite (doar api
+   iese în internet, pe :443, fără rangurile private/metadata); containere fără
+   privilegii, compatibile Pod Security `restricted`, rădăcină read-only.
+5. Backup-uri (CronJob-uri): non-root (1000:1000, fără capabilități), umask 077,
+   în afara repo-ului (/opt/flirt-backups prin PVC-ul `backups`, Retain),
+   retenție limitată la tiparul propriu.
 6. Push: tokenurile nu mai apar întregi în log-uri.
 """
 from __future__ import annotations
@@ -370,11 +373,98 @@ def test_podurile_nu_monteaza_tokenul_de_serviceaccount():
 @pytest.mark.parametrize(
     ("kind", "name"),
     [("Deployment", "api"), ("Deployment", "web"), ("StatefulSet", "db"),
-     ("StatefulSet", "redis"), ("CronJob", "purge")],
+     ("StatefulSet", "redis"), ("CronJob", "purge"), ("CronJob", "backup-db"),
+     ("CronJob", "backup-media"), ("Job", "migrate")],
 )
 def test_workload_urile_aplicatiei_ruleaza_non_root(kind, name):
+    ctx = _pod_spec(_resource(kind, name))["securityContext"]
+    assert ctx.get("runAsNonRoot") is True
+    # uid numeric explicit: kubelet nu poate verifica runAsNonRoot pe `USER nume`.
+    assert isinstance(ctx.get("runAsUser"), int) and ctx["runAsUser"] > 0
+
+
+# Volumele permise de Pod Security `restricted` (hostPath etc. interzise).
+_RESTRICTED_VOLUMES = {
+    "configMap", "csi", "downwardAPI", "emptyDir", "ephemeral",
+    "persistentVolumeClaim", "projected", "secret",
+}
+
+
+def test_toate_podurile_respecta_pod_security_restricted():
+    """Toate workload-urile noastre trec de profilul `restricted` (namespace-ul
+    impune doar `baseline`, dar raportează `restricted`): non-root, seccomp
+    RuntimeDefault, drop ALL fără capabilități adăugate, volume permise."""
+    for name, spec in _workloads():
+        pod_ctx = spec.get("securityContext", {})
+        assert pod_ctx.get("seccompProfile", {}).get("type") == "RuntimeDefault", name
+        for volume in spec.get("volumes", []):
+            kinds = set(volume) - {"name"}
+            assert kinds <= _RESTRICTED_VOLUMES, f"{name}: volum nepermis {kinds}"
+        for container in spec.get("initContainers", []) + spec["containers"]:
+            ctx = container.get("securityContext", {})
+            non_root = ctx.get("runAsNonRoot", pod_ctx.get("runAsNonRoot"))
+            assert non_root is True, f"{name}/{container['name']}: runAsNonRoot"
+            assert ctx.get("runAsUser", pod_ctx.get("runAsUser")) != 0, name
+            added = set(ctx.get("capabilities", {}).get("add", []))
+            assert added <= {"NET_BIND_SERVICE"}, f"{name}/{container['name']}: capabilități {added}"
+
+
+def _container(kind: str, name: str) -> tuple[dict, dict]:
     spec = _pod_spec(_resource(kind, name))
-    assert spec["securityContext"].get("runAsNonRoot") is True
+    return spec, spec["containers"][0]
+
+
+def _tmp_emptydir(spec: dict, container: dict) -> dict:
+    mount = next((m for m in container.get("volumeMounts", []) if m["mountPath"] == "/tmp"), None)
+    assert mount, f"{container['name']}: /tmp nu e montat (root read-only → fără loc de scriere)"
+    volume = next(v for v in spec["volumes"] if v["name"] == mount["name"])
+    assert "emptyDir" in volume and volume["emptyDir"].get("sizeLimit"), volume
+    return volume["emptyDir"]
+
+
+@pytest.mark.parametrize(
+    ("kind", "name"),
+    [("Deployment", "web"), ("Deployment", "api"), ("Job", "migrate"),
+     ("CronJob", "purge"), ("CronJob", "backup-db")],
+)
+def test_root_read_only_cu_tmp_emptydir(kind, name):
+    """Rădăcina imaginii read-only: un RCE nu poate rescrie codul/configul;
+    scrierile temporare merg într-un emptyDir plafonat."""
+    spec, container = _container(kind, name)
+    assert container["securityContext"].get("readOnlyRootFilesystem") is True
+    _tmp_emptydir(spec, container)
+
+
+def test_backup_media_root_read_only():
+    _, container = _container("CronJob", "backup-media")
+    assert container["securityContext"].get("readOnlyRootFilesystem") is True
+
+
+@pytest.mark.parametrize(("kind", "name"), [("Deployment", "api"), ("CronJob", "purge"), ("Job", "migrate")])
+def test_imaginea_api_scrie_temporarele_in_tmp(kind, name):
+    _, container = _container(kind, name)
+    env = {e["name"]: e.get("value") for e in container.get("env", [])}
+    assert env.get("TMPDIR") == "/tmp"
+
+
+def test_tmp_api_e_pe_disc_nu_in_ram():
+    """Upload-uri de 55m + ffmpeg: un emptyDir `medium: Memory` s-ar contoriza în
+    limita de memorie a podului (OOM-kill)."""
+    spec, container = _container("Deployment", "api")
+    assert _tmp_emptydir(spec, container).get("medium") != "Memory"
+
+
+@pytest.mark.parametrize("cronjob", ["backup-db", "backup-media"])
+def test_backup_non_root_fara_capabilitati(cronjob):
+    """Backup-urile rulează ca 1000:1000 (proprietarul media și al
+    /opt/flirt-backups) — fără root și fără DAC_OVERRIDE."""
+    spec, container = _container("CronJob", cronjob)
+    ctx = spec["securityContext"]
+    assert ctx.get("runAsNonRoot") is True
+    assert ctx.get("runAsUser") == 1000 and ctx.get("runAsGroup") == 1000
+    caps = container["securityContext"].get("capabilities", {})
+    assert caps.get("drop") == ["ALL"]
+    assert not caps.get("add"), f"{cronjob}: capabilități adăugate {caps.get('add')}"
 
 
 def test_namespace_impune_pod_security():
@@ -439,6 +529,129 @@ def test_networkpolicy_doar_clientii_necesari(target, clients, port):
     names, ports = _allowed(target)
     assert names == clients
     assert ports == {port}
+
+
+# --- Egress ----------------------------------------------------------------- #
+
+_PRIVATE_RANGES = {
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+    "169.254.0.0/16", "100.64.0.0/10", "127.0.0.0/8",
+}
+
+
+def _selects(selector: dict, name: str) -> bool:
+    """Selectorul de pod alege podurile cu `app.kubernetes.io/name=name`?"""
+    if selector == {}:
+        return True
+    if selector.get("matchLabels", {}).get("app.kubernetes.io/name") == name:
+        return True
+    return any(
+        e["key"] == "app.kubernetes.io/name" and e["operator"] == "In" and name in e["values"]
+        for e in selector.get("matchExpressions", [])
+    )
+
+
+def _egress_rules(source: str) -> list[dict]:
+    """Regulile de egress care se aplică podurilor `source` (inclusiv cele globale)."""
+    rules = []
+    for spec in _policies().values():
+        if "Egress" in spec.get("policyTypes", []) and _selects(spec["podSelector"], source):
+            rules += spec.get("egress", [])
+    return rules
+
+
+def _is_dns_rule(rule: dict) -> bool:
+    peers = rule.get("to", [])
+    return bool(peers) and all(
+        p.get("namespaceSelector", {}).get("matchLabels", {}).get("kubernetes.io/metadata.name") == "kube-system"
+        and p.get("podSelector", {}).get("matchLabels", {}).get("k8s-app") == "kube-dns"
+        for p in peers
+    ) and {(p.get("protocol", "TCP"), p["port"]) for p in rule["ports"]} <= {("UDP", 53), ("TCP", 53)}
+
+
+def _egress_destinations(source: str) -> set[tuple[str, int]]:
+    """(destinație, port) permise pentru `source`, fără DNS. Destinația e
+    eticheta podului sau `internet` pentru ipBlock."""
+    out: set[tuple[str, int]] = set()
+    for rule in _egress_rules(source):
+        if _is_dns_rule(rule):
+            continue
+        assert rule.get("to"), f"{source}: regulă de egress fără `to` = ORICE destinație"
+        assert rule.get("ports"), f"{source}: regulă de egress fără restricție de port"
+        ports = {p["port"] for p in rule["ports"]}
+        for peer in rule["to"]:
+            if "ipBlock" in peer:
+                dest = "internet"
+            else:
+                assert "namespaceSelector" not in peer, f"{source}: egress spre alt namespace"
+                sel = peer["podSelector"]
+                assert sel, f"{source}: podSelector gol = TOATE podurile"
+                dest = sel["matchLabels"]["app.kubernetes.io/name"]
+            out |= {(dest, port) for port in ports}
+    return out
+
+
+def test_networkpolicy_default_deny_egress():
+    deny = [
+        spec for spec in _policies().values()
+        if spec["podSelector"] == {} and spec.get("policyTypes") == ["Egress"] and not spec.get("egress")
+    ]
+    assert deny, "lipsește NetworkPolicy default-deny egress (podSelector: {}, fără reguli egress)"
+
+
+def test_dns_permis_doar_spre_coredns():
+    """Fără DNS nimic nu rezolvă `db`/`api`; dar DOAR spre CoreDNS din kube-system."""
+    dns = [
+        spec for spec in _policies().values()
+        if spec["podSelector"] == {} and any(_is_dns_rule(r) for r in spec.get("egress", []))
+    ]
+    assert dns, "lipsește egress-ul DNS pentru toate podurile"
+    for spec in dns:
+        assert all(_is_dns_rule(r) for r in spec["egress"]), "politica globală deschide mai mult decât DNS"
+        ports = {(p["protocol"], p["port"]) for r in spec["egress"] for p in r["ports"]}
+        assert ports == {("UDP", 53), ("TCP", 53)}
+
+
+@pytest.mark.parametrize(
+    ("source", "destinations"),
+    [
+        ("api", {("db", 5432), ("redis", 6379), ("internet", 443)}),
+        ("web", {("api", 8000)}),
+        ("migrate", {("db", 5432)}),
+        ("purge", {("db", 5432), ("redis", 6379)}),
+        ("backup-db", {("db", 5432)}),
+        ("backup-media", set()),
+        ("db", set()),
+        ("redis", set()),
+    ],
+)
+def test_networkpolicy_egress_doar_destinatiile_necesare(source, destinations):
+    """Doar api iese în internet; web doar spre api; db/redis/backup-media
+    nicăieri (în afară de DNS)."""
+    assert _egress_destinations(source) == destinations
+
+
+def test_api_internet_doar_https_fara_ranguri_interne():
+    """SSRF: api nu poate lovi rețele interne, Service-uri/poduri k3s sau metadata
+    cloud (169.254.169.254) prin regula de internet."""
+    blocks = [
+        (peer["ipBlock"], rule)
+        for rule in _egress_rules("api")
+        for peer in rule.get("to", [])
+        if "ipBlock" in peer
+    ]
+    assert blocks, "api nu are egress spre internet"
+    for block, rule in blocks:
+        assert block["cidr"] == "0.0.0.0/0"
+        assert _PRIVATE_RANGES <= set(block.get("except", [])), block
+        assert {(p.get("protocol", "TCP"), p["port"]) for p in rule["ports"]} == {("TCP", 443)}
+
+
+@pytest.mark.parametrize("source", ["web", "db", "redis", "migrate", "purge", "backup-db", "backup-media"])
+def test_fara_internet_in_afara_de_api(source):
+    for rule in _egress_rules(source):
+        for peer in rule.get("to", []):
+            assert "ipBlock" not in peer, f"{source}: egress ipBlock (internet)"
 
 
 # --------------------------------------------------------------------------- #

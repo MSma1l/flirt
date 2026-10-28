@@ -1,0 +1,12 @@
+# FLIRT — rulează zilnic flirt-log-retention.service. Persistent: o rulare ratată
+# (server oprit) se face la pornire. Verificare: systemctl list-timers flirt-log-retention
+[Unit]
+Description=FLIRT: retentia zilnica a jurnalelor
+
+[Timer]
+OnCalendar=*-*-* 04:15:00
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

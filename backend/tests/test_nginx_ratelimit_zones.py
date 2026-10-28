@@ -516,3 +516,252 @@ def test_nginx_t_daca_binarul_exista(rendered_raw, tmp_path):
         [binary, "-t", "-p", str(tmp_path), "-c", str(root)], capture_output=True, text=True
     )
     assert result.returncode == 0, result.stderr
+
+
+# --------------------------------------------------------------------------- #
+# 5. Stratul EXACT: Traefik (deploy/k8s/manifests/ratelimit.yaml + ingress.yaml)
+#
+# Zonele nginx de mai sus sunt PER POD: cu `web` la N replici, un IP primește
+# ~N× bugetul. Limita exactă e în Traefik (o singură replică → un singur
+# contor). Testele de aici leagă cele două straturi: aceeași rută → aceeași
+# „zonă", aceleași praguri, cheia = IP-ul conexiunii (nu X-Forwarded-For).
+# --------------------------------------------------------------------------- #
+
+MANIFESTS = REPO / "deploy" / "k8s" / "manifests"
+
+# Zona nginx → Middleware-ul Traefik care o dublează EXACT.
+ZONE_TO_MIDDLEWARE = {
+    "flirt_general": "rl-general",
+    "flirt_media": "rl-media",
+    "flirt_tg_auth": "rl-tg-auth",
+    "flirt_session": "rl-session",
+    "flirt_auth": "rl-auth",
+}
+
+# Pentru praguri: URI-ul reprezentativ al fiecărei zone (location-ul lui dă burst-ul).
+ZONE_REPRESENTATIVE_URI = {
+    "flirt_general": "/api/v1/profiles/me",
+    "flirt_media": "/media/photos/1/abc.jpg",
+    "flirt_tg_auth": "/api/v1/auth/telegram",
+    "flirt_session": "/api/v1/auth/me",
+    "flirt_auth": "/api/v1/auth/login",
+}
+
+PERIOD_SECONDS = {"s": 1, "m": 60, "h": 3600}
+
+
+def _manifest_docs() -> list[dict]:
+    """Toate documentele din resursele kustomization-ului (ce ajunge în cluster)."""
+    import yaml
+
+    kustomization = yaml.safe_load((MANIFESTS / "kustomization.yaml").read_text(encoding="utf-8"))
+    docs = []
+    for name in kustomization["resources"]:
+        for doc in yaml.safe_load_all((MANIFESTS / name).read_text(encoding="utf-8")):
+            if doc:
+                docs.append(doc)
+    return docs
+
+
+def _of_kind(kind: str) -> list[dict]:
+    return [doc for doc in _manifest_docs() if doc["kind"] == kind]
+
+
+def _middlewares() -> dict[str, dict]:
+    return {
+        doc["metadata"]["name"]: doc["spec"]
+        for doc in _of_kind("Middleware")
+        if doc["apiVersion"] == "traefik.io/v1alpha1"
+    }
+
+
+def _main_ingress() -> dict:
+    found = [doc for doc in _of_kind("Ingress") if doc["metadata"]["name"] == "flirt"]
+    assert len(found) == 1, "lipsește Ingress-ul principal `flirt`"
+    return found[0]
+
+
+def _api_host() -> str:
+    """Host-ul API din Ingress (primul rule = DOMAIN, vezi antetul ingress.yaml)."""
+    return _main_ingress()["spec"]["rules"][0]["host"]
+
+
+def _ingress_routes() -> list[dict]:
+    return [route for doc in _of_kind("IngressRoute") for route in doc["spec"]["routes"]]
+
+
+def _rule_matches(rule: str, host: str, path: str, method: str) -> bool:
+    """Evaluator minimal pentru regulile Traefik v3 folosite de noi:
+    Host, Path, PathPrefix, Method, &&, ||, ! și paranteze. Orice alt matcher
+    → eroare (testul trebuie extins, nu păcălit)."""
+    known = {"Host", "Path", "PathPrefix", "Method"}
+    used = set(re.findall(r"\b([A-Z]\w*)\(", rule))
+    assert used <= known, f"matcher necunoscut în test: {used - known}"
+
+    def call(match: re.Match) -> str:
+        name, arg = match.group(1), match.group(2)
+        value = {
+            "Host": host == arg,
+            "Path": path == arg,
+            "PathPrefix": path.startswith(arg),
+            "Method": method == arg,
+        }[name]
+        return " True " if value else " False "
+
+    expr = re.sub(r"\b(Host|Path|PathPrefix|Method)\(`([^`]*)`\)", call, rule)
+    expr = expr.replace("&&", " and ").replace("||", " or ").replace("!", " not ")
+    assert re.fullmatch(r"[\sA-Za-z()]*", expr), f"regulă neașteptată: {rule}"
+    return bool(eval(expr, {"__builtins__": {}}, {}))  # noqa: S307 — doar True/False/and/or/not
+
+
+def _traefik_middleware_for(host: str, path: str, method: str = "GET") -> list[str]:
+    """Middleware-urile pe care Traefik le aplică unei cereri (pe websecure):
+    ruta IngressRoute potrivită cu prioritatea cea mai mare, altfel ruta
+    implicită `/` a Ingress-ului principal."""
+    candidates = [
+        route
+        for route in _ingress_routes()
+        if _rule_matches(route["match"], host, path, method)
+    ]
+    if candidates:
+        best = max(candidates, key=lambda route: route["priority"])
+        assert [r["priority"] for r in candidates].count(best["priority"]) == 1, (
+            f"{method} {path}: două rute cu aceeași prioritate — ordinea ar fi arbitrară"
+        )
+        return [m["name"] for m in best.get("middlewares", [])]
+    annotation = _main_ingress()["metadata"]["annotations"]["traefik.ingress.kubernetes.io/router.middlewares"]
+    return [ref.strip().split("@")[0].removeprefix("flirt-") for ref in annotation.split(",")]
+
+
+def test_ratelimit_e_in_kustomization():
+    import yaml
+
+    kustomization = yaml.safe_load((MANIFESTS / "kustomization.yaml").read_text(encoding="utf-8"))
+    assert "ratelimit.yaml" in kustomization["resources"]
+    assert "ingress.yaml" in kustomization["resources"]
+
+
+def test_middlewareurile_exista_pentru_fiecare_zona():
+    assert set(_middlewares()) == set(ZONE_TO_MIDDLEWARE.values())
+
+
+@pytest.mark.parametrize("name", sorted(ZONE_TO_MIDDLEWARE.values()))
+def test_cheia_e_ip_ul_conexiunii_nu_x_forwarded_for(name):
+    """`depth: 0` → RemoteAddr (IP real, externalTrafficPolicy: Local). O adâncime
+    > 0 sau o cheie din antet = clientul își alege cheia și ocolește limita."""
+    source = _middlewares()[name]["rateLimit"]["sourceCriterion"]
+    assert source == {"ipStrategy": {"depth": 0}}, source
+
+
+@pytest.mark.parametrize("zone", sorted(ZONE_TO_MIDDLEWARE))
+def test_pragurile_traefik_sunt_cele_din_nginx(rendered, zone):
+    """Aceeași rată; burst Traefik = burst nginx + 1 (`burst=N nodelay` acceptă
+    N+1 cereri lipite, găleata Traefik de N+1 jetoane — la fel)."""
+    limit = _middlewares()[ZONE_TO_MIDDLEWARE[zone]]["rateLimit"]
+    period = re.fullmatch(r"(\d+)([smh])", limit["period"])
+    assert period, f"perioadă neașteptată: {limit['period']}"
+    per_minute = limit["average"] * 60 / (int(period.group(1)) * PERIOD_SECONDS[period.group(2)])
+    assert per_minute == _per_minute(_zones(rendered)[zone]["rate"])
+
+    body = _match_location(_locations(_api_server(rendered)), ZONE_REPRESENTATIVE_URI[zone])[2]
+    match = re.search(rf"limit_req zone={zone} burst=(\d+) nodelay;", body)
+    assert match, f"{ZONE_REPRESENTATIVE_URI[zone]} nu e pe zona {zone}"
+    assert limit["burst"] == int(match.group(1)) + 1
+
+
+@pytest.mark.parametrize(
+    "uri",
+    [
+        "/api/v1/auth/login",
+        "/api/v1/auth/register",
+        "/api/v1/auth/google",
+        "/api/v1/auth/apple",
+        "/api/v1/auth/otp/request",
+        "/api/v1/auth/telegram",
+        "/api/v1/auth/telegram/",
+        "/api/v1/auth/me",
+        "/api/v1/auth/refresh",
+        "/media/photos/1/abc.jpg",
+        "/api/v1/profiles/me",
+        "/api/v1/feed",
+        "/api/v1/admin/auth/login",
+        "/health/ready",
+    ],
+)
+def test_traefik_aplica_aceeasi_zona_ca_nginx(rendered, uri):
+    """Pentru fiecare rută: Middleware-ul Traefik = dublura zonei nginx."""
+    zone = _zone_of(_match_location(_locations(_api_server(rendered)), uri)[2])
+    assert _traefik_middleware_for(_api_host(), uri, "POST") == [ZONE_TO_MIDDLEWARE[zone]]
+
+
+@pytest.mark.parametrize("uri", ["/api/v1/auth/login", "/api/v1/auth/telegram", *SESSION_URIS])
+def test_preflightul_nu_consuma_bugetul_de_auth_in_traefik(uri):
+    """Echivalentul `$flirt_auth_key` gol pentru OPTIONS: preflight-ul CORS cade
+    pe ruta implicită (limita generală), nu pe cea strictă a rutei."""
+    assert _traefik_middleware_for(_api_host(), uri, "OPTIONS") == ["rl-general"]
+
+
+def test_login_cu_parola_ramane_strict_in_traefik():
+    assert _traefik_middleware_for(_api_host(), "/api/v1/auth/login", "POST") == ["rl-auth"]
+    limit = _middlewares()["rl-auth"]["rateLimit"]
+    assert (limit["average"], limit["period"], limit["burst"]) == (5, "1m", 11)
+
+
+@pytest.mark.parametrize("host", ["admin-flirt-paty.flrt.md", "miniapp.flrt.md"])
+def test_hosturile_statice_au_limita_generala(host):
+    assert host in {rule["host"] for rule in _main_ingress()["spec"]["rules"]}
+    for uri in ("/", "/api/v1/auth/login", "/media/x.jpg"):
+        assert _traefik_middleware_for(host, uri, "GET") == ["rl-general"]
+
+
+def test_un_singur_ingress_e_gestionat_de_cert_manager():
+    """ingress-shim creează un Certificate DOAR pentru Ingress-urile adnotate:
+    exact unul → un singur Certificate `flirt-tls` (SAN pe toate host-urile)."""
+    annotated = [
+        doc
+        for doc in _of_kind("Ingress")
+        if {"cert-manager.io/cluster-issuer", "cert-manager.io/issuer"}
+        & set(doc["metadata"].get("annotations", {}))
+    ]
+    assert [doc["metadata"]["name"] for doc in annotated] == ["flirt"]
+
+    ingress = _main_ingress()
+    hosts = {rule["host"] for rule in ingress["spec"]["rules"]}
+    tls = ingress["spec"]["tls"]
+    assert len(tls) == 1 and tls[0]["secretName"] == "flirt-tls"
+    assert set(tls[0]["hosts"]) == hosts
+
+
+def test_ingress_principal_pe_websecure_cu_limita_generala():
+    annotations = _main_ingress()["metadata"]["annotations"]
+    assert annotations["traefik.ingress.kubernetes.io/router.entrypoints"] == "websecure"
+    assert annotations["traefik.ingress.kubernetes.io/router.tls"] == "true"
+    assert annotations["traefik.ingress.kubernetes.io/router.middlewares"] == "flirt-rl-general@kubernetescrd"
+
+
+def test_ingressroute_urile_refolosesc_certificatul_si_backendul():
+    """Doar websecure, secretul `flirt-tls` (fără Certificate nou), backend web:http,
+    doar host-ul API, Middleware-uri care chiar există."""
+    middlewares = set(_middlewares())
+    for doc in _of_kind("IngressRoute"):
+        spec = doc["spec"]
+        assert spec["entryPoints"] == ["websecure"]
+        assert spec["tls"] == {"secretName": "flirt-tls"}
+        for route in spec["routes"]:
+            assert set(re.findall(r"Host\(`([^`]*)`\)", route["match"])) == {_api_host()}
+            assert route["services"] == [{"name": "web", "port": "http"}]
+            assert isinstance(route["priority"], int) and route["priority"] > 100
+            for ref in route.get("middlewares", []):
+                assert ref["name"] in middlewares
+                assert "namespace" not in ref
+
+
+def test_provocarea_acme_nu_trece_prin_middleware_urile_de_ruta():
+    """Solver-ul HTTP-01 (Ingress temporar al cert-manager, path exact) nu are
+    voie să fie prins de o rută cu prioritate explicită mare."""
+    for host in {rule["host"] for rule in _main_ingress()["spec"]["rules"]}:
+        for method in ("GET", "HEAD"):
+            path = "/.well-known/acme-challenge/token123"
+            assert not [
+                route for route in _ingress_routes() if _rule_matches(route["match"], host, path, method)
+            ]

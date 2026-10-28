@@ -23,9 +23,10 @@ deploy/k8s/manifests/
 ├── redis.yaml             # Service redis:6379 + StatefulSet redis (redis:7-alpine, PVC 1Gi)
 ├── api.yaml               # Deployment/Service/HPA(2–6)/PDB api (flirt-api, :8000)
 ├── web.yaml               # Deployment/Service/HPA(2–4)/PDB web (flirt-web nginx, :8080 → svc :80)
-├── ingress.yaml           # Ingress flirt → web:80 — SINGURUL loc cu domeniile publice
+├── ingress.yaml           # Ingress flirt → web:80 + IngressRoute flirt-api-limits — SINGURUL loc cu domeniile publice
+├── ratelimit.yaml         # Middleware-uri Traefik rl-* (limite per IP la margine)
 ├── cronjobs.yaml          # purge (orar), backup-db (la 6h), backup-media (zilnic 03:30)
-├── networkpolicies.yaml   # default-deny ingress + excepții explicite
+├── networkpolicies.yaml   # default-deny ingress ȘI egress + excepții explicite
 ├── jobs/migrate-job.yaml  # șablon Job alembic (__IMAGE__) — NU e în kustomization
 └── cluster/               # nivel de cluster — NU sunt în kustomization
     ├── storageclass.yaml  # local-path-retain (reclaimPolicy Retain)
@@ -52,8 +53,25 @@ client ─▶ Traefik (kube-system, TLS, redirect 80→443) ─▶ web:80 (nginx
                                                           └─ /api ─▶ api:8000 ─▶ db:5432, redis:6379
 ```
 
-NetworkPolicy permite doar: kube-system → web:8080 (+ solver ACME :8089), web → api:8000,
-{api, migrate, purge, backup-db} → db:5432, {api, purge} → redis:6379. Egress liber.
+NetworkPolicy, ingress: kube-system → web:8080 (+ solver ACME :8089), web → api:8000,
+{api, migrate, purge, backup-db} → db:5432, {api, purge} → redis:6379.
+Egress **default-deny**: toate podurile → doar DNS (CoreDNS); api → db, redis și internet
+TCP 443 *exceptând* rețelele private (10/8, 172.16/12, 192.168/16, 169.254/16, 100.64/10,
+127/8); web → api:8000; migrate/backup-db → db; purge → db + redis; backup-media, db,
+redis → nimic. O integrare nouă pe alt port decât 443 (ex. `APP_STORE_ENABLE_ONLINE_CHECKS=1`
+= OCSP pe 80, un GEO/OPENROUTER self-hosted) cere extinderea politicii `api-egress`.
+
+Toate podurile din `flirt` respectă Pod Security `restricted` (namespace-ul impune încă
+`baseline`); web/api/migrate/purge/backup-uri au `readOnlyRootFilesystem` cu `/tmp` emptyDir.
+
+**Rate limit la margine (Traefik, exact, o singură replică):** `ratelimit.yaml` — `rl-general`
+20/s (burst 41), `rl-media` 100/s (201), `rl-tg-auth` 60/min (31), `rl-session` 120/min (121),
+`rl-auth` 5/min (11); `ipStrategy.depth 0` = IP-ul real (Service traefik cu
+`externalTrafficPolicy: Local`). IngressRoute `flirt-api-limits` le aplică rutelor
+auth/session/media de pe hostul api (fără OPTIONS). Zonele nginx rămân a doua linie, per pod:
+**un prag se schimbă în AMBELE** `ratelimit.yaml` și `images/web/nginx.conf.template` (un test
+verifică paritatea). Traefik scalat la >1 replică ⇒ limitele devin iar de N× mai largi
+(soluție: `rateLimit.redis` în Traefik).
 
 ## Stabilitate
 
@@ -77,7 +95,16 @@ NetworkPolicy permite doar: kube-system → web:8080 (+ solver ACME :8089), web 
   `media/media-AAAALLZZ-HHMMSS.tar.gz` (zilnic), retenție 14 zile (cheile
   `BACKUP_RETENTION_DAYS` / `MEDIA_BACKUP_RETENTION_DAYS` din `flirt-env`, opționale).
   Logica e inline în `cronjobs.yaml` (sursa unică de adevăr).
+- `/opt/flirt-backups` e al uid/gid 1000 (`0750`), ca CronJob-urile de backup să ruleze
+  non-root; pregătit de `install-k3s.sh host-hardening`.
 - Backup manual imediat: `kubectl -n flirt create job --from=cronjob/backup-db backup-manual-$(date +%s)`.
+
+## Loguri
+
+Kubelet rotește logurile containerelor după mărime (10Mi × 5); limita în **timp**
+(`LOG_RETENTION_DAYS`, promisă în Politica de confidențialitate) o aplică pe host
+timer-ul `flirt-log-retention` + journald, instalate de `install-k3s.sh host-hardening`
+(detalii: `deploy/k8s/scripts/README.md` §1).
 
 ## Comenzi utile
 

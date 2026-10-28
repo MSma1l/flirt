@@ -16,7 +16,8 @@ alias k='k3s kubectl -n flirt'
 
 | Fișier | Rol |
 |---|---|
-| `install-k3s.sh phase1\|phase2\|status` | instalare k3s + cert-manager; phase2 = Traefik/ServiceLB pornite |
+| `install-k3s.sh phase1\|phase2\|host-hardening\|status` | instalare k3s + cert-manager; phase2 = Traefik/ServiceLB pornite; host-hardening = retenția logurilor + `/opt/flirt-backups` (§1) |
+| `../host/` | timer-ul systemd `flirt-log-retention` (script + unități), instalate de host-hardening |
 | `deploy.sh` | deploy zilnic zero-downtime cu rollback automat (`--rollback`, `--prepare`, `--no-pull`) |
 | `lib.sh` | funcții comune (curățarea `.env`, secret, migrații, imagini) |
 | `../images/web/` | imaginea `flirt-web` (admin + Mini App + nginx, non-root, :8080) |
@@ -37,13 +38,41 @@ deploy/k8s/scripts/install-k3s.sh phase1
   verificat cu `sha256sum-<arch>.txt`, apoi `install.sh` de la același tag cu
   `INSTALL_K3S_SKIP_DOWNLOAD=true`. **Fără `curl | sh`.**
 - `/etc/rancher/k3s/config.yaml`: `write-kubeconfig-mode: "0600"`,
-  `secrets-encryption: true`, `disable: [traefik, servicelb]` (80/443 rămân
-  libere până la phase2).
+  `secrets-encryption: true`, `kubelet-arg` cu rotația logurilor,
+  `disable: [traefik, servicelb]` (80/443 rămân libere până la phase2).
 - ufw: permis `10.42.0.0/16` (poduri) și `10.43.0.0/16` (servicii). **6443 rămâne închis.**
 - cert-manager fixat (`CERT_MANAGER_VERSION`, implicit `v1.21.3`), din manifestul
   oficial al release-ului; apoi storageclass, traefik-config și ClusterIssuer-ele
   (`__ACME_EMAIL__` ← `CERTBOT_EMAIL` din `.env`).
+- La final rulează `host-hardening` (de mai jos).
 - Idempotent: ce e deja instalat la versiunea fixată e sărit.
+
+### host-hardening (retenția logurilor, backup-uri non-root)
+
+```sh
+deploy/k8s/scripts/install-k3s.sh host-hardening   # idempotent; re-rulează după ce schimbi LOG_RETENTION_DAYS sau deploy/k8s/host/
+```
+
+- `kubelet-arg` `container-log-max-size=10Mi` + `container-log-max-files=5` adăugate în
+  `config.yaml` (copie `config.yaml.bak.<stamp>`); **k3s se repornește doar dacă fișierul
+  s-a schimbat** — podurile continuă să ruleze.
+- journald: `/etc/systemd/journald.conf.d/flirt-retention.conf` (`MaxRetentionSec`,
+  `MaxFileSec=1day`, `SystemMaxUse=1G`).
+- Timer zilnic `flirt-log-retention` (`/usr/local/sbin/flirt-log-retention`, termen în
+  `/etc/default/flirt-log-retention` ← `LOG_RETENTION_DAYS` din `.env`): șterge logurile
+  rotite de poduri/Docker/`/var/log` mai vechi de termen și taie liniile vechi din fișierele
+  active (un container tăcut de peste termen rămâne cu logul gol). Se aplică cu o zi de
+  marjă, deci nimic nu depășește termenul între două rulări.
+- `/opt/flirt-backups` → `1000:1000`, `0750` (CronJob-urile de backup rulează non-root),
+  la fel dump-urile `*.sql.gz` și `media/`; `arhiva-compose/` rămâne `root`, `0700`.
+- Volumul `media` (`/var/lib/rancher/k3s/storage/*_flirt_media`) → tot `1000:1000`
+  (un fișier root `0600` ar face `backup-media`, non-root, să eșueze).
+
+```sh
+systemctl list-timers flirt-log-retention       # următoarea rulare
+journalctl -u flirt-log-retention               # ce s-a șters (doar numărători)
+DRY_RUN=1 /usr/local/sbin/flirt-log-retention   # probă, fără modificări
+```
 
 ## 2. Primul deploy pe un server nou, apoi Traefik
 

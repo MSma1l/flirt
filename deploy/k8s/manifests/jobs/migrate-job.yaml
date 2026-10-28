@@ -45,6 +45,8 @@ spec:
               value: db
             - name: POSTGRES_PORT
               value: "5432"
+            - name: TMPDIR
+              value: /tmp
           resources:
             requests:
               cpu: 100m
@@ -54,5 +56,14 @@ spec:
               memory: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
+            # Alembic doar citește migrațiile (PYTHONDONTWRITEBYTECODE=1 în imagine).
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

@@ -86,9 +86,15 @@ log_format flirt_anon '$flirt_anon_ip [$time_local] "$request_method $uri $serve
                       '$status $body_bytes_sent $request_time "$http_user_agent" $request_id';
 
 # --------------------------------------------------------------------------- #
-# RATE LIMITING la marginea rețelei (identic cu vechiul compose; motivarea
-# pragurilor: istoricul git al fostului backend/nginx/nginx.conf). Cheia = IP-ul REAL (după real_ip).
-# ATENȚIE: zonele sunt PER POD. Cu `web` la N replici, limita efectivă e ~N×.
+# RATE LIMITING — STRATUL 2 (defense in depth). Motivarea pragurilor: istoricul
+# git al fostului backend/nginx/nginx.conf. Cheia = IP-ul REAL (după real_ip).
+# ATENȚIE: zonele sunt PER POD. Cu `web` la N replici (HPA 2–4), limita de aici
+# e ~N× mai largă. Limita EXACTĂ per IP (aceleași praguri, un singur contor) e în
+# Traefik: deploy/k8s/manifests/ratelimit.yaml (Middleware-uri) + ingress.yaml
+# (ce rută are ce Middleware). Zonele rămân aici ca plasă de siguranță dacă un
+# Middleware lipsește/e greșit, și pentru diferențele fine pe care Traefik nu
+# le are (ex. /health cu burst 10, găleata generală comună celor trei host-uri).
+# ORICE schimbare de prag se face în AMBELE locuri.
 # --------------------------------------------------------------------------- #
 limit_req_zone $binary_remote_addr zone=flirt_general:10m rate=20r/s;
 

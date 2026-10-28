@@ -1,0 +1,16 @@
+# FLIRT — retenția în timp a jurnalelor de pe host (LOG_RETENTION_DAYS).
+# Instalat de deploy/k8s/scripts/install-k3s.sh host-hardening; pornit de
+# flirt-log-retention.timer. Verificare: journalctl -u flirt-log-retention
+[Unit]
+Description=FLIRT: sterge jurnalele mai vechi de LOG_RETENTION_DAYS (poduri, docker, /var/log)
+Documentation=file:///opt/flirt/docs/DEPLOYMENT.md
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/flirt-log-retention
+ExecStart=/usr/local/sbin/flirt-log-retention
+Nice=10
+IOSchedulingClass=idle
+PrivateTmp=yes
+ProtectHome=yes
+NoNewPrivileges=yes

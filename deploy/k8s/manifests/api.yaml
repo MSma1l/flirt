@@ -88,6 +88,11 @@ spec:
             # Proxy-urile de încredere = CIDR-ul pod-urilor k3s (Traefik, web nginx).
             - name: FORWARDED_ALLOW_IPS
               value: "10.42.0.0/16"
+            # Rădăcina e read-only → orice fișier temporar (upload-uri multipart
+            # spool-uite, conversiile ffmpeg din chat_media, heartbeat-ul workerilor
+            # gunicorn) merge în emptyDir-ul /tmp.
+            - name: TMPDIR
+              value: /tmp
           startupProbe:
             httpGet: { path: /health, port: http }
             periodSeconds: 5
@@ -122,15 +127,27 @@ spec:
               memory: 2Gi
           securityContext:
             allowPrivilegeEscalation: false
+            # Codul nu scrie nicăieri în afara /data/media (storage local) și /tmp
+            # (tempfile): PYTHONDONTWRITEBYTECODE=1 în imagine (fără __pycache__),
+            # log-uri doar pe stdout. Un RCE nu poate modifica codul din /app.
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
           volumeMounts:
             - name: media
               mountPath: /data/media
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: media
           persistentVolumeClaim:
             claimName: media
+        # Pe DISC, nu în RAM (medium: Memory s-ar contoriza în limita de 2Gi):
+        # upload-uri de până la 55m spool-uite + intrare/ieșire ffmpeg, în paralel.
+        # Depășirea sizeLimit = evacuarea podului (HPA/ReplicaSet îl recreează).
+        - name: tmp
+          emptyDir:
+            sizeLimit: 2Gi
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler

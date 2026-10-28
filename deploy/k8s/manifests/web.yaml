@@ -45,7 +45,10 @@ spec:
       # preStop 5s (ieșire din Endpoints) + nginx închide grațios conexiunile la SIGQUIT.
       terminationGracePeriodSeconds: 30
       securityContext:
+        # uid/gid 101 = `nginx` din nginxinc/nginx-unprivileged (USER 101 în Dockerfile).
         runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -90,6 +93,10 @@ spec:
               memory: 256Mi
           securityContext:
             allowPrivilegeEscalation: false
+            # Rădăcina imaginii e read-only: un nginx compromis nu poate rescrie
+            # configul sau fișierele statice. Tot ce scrie la rulare (config randat
+            # de entrypoint, pid, buffere *_temp) stă în /tmp (vezi nginx.conf).
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
           volumeMounts:
@@ -97,11 +104,26 @@ spec:
             - name: media
               mountPath: /var/www/media
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            # Plasă de siguranță: căile *_temp compilate în imagine. nginx.conf le
+            # mută pe toate în /tmp, dar o schimbare a imaginii de bază nu trebuie
+            # să transforme un rollout într-un CrashLoop.
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
       volumes:
         - name: media
           persistentVolumeClaim:
             claimName: media
             readOnly: true
+        # Pe disc (nu în RAM): uploadurile de până la 55m se bufferează în
+        # /tmp/client_temp, mai multe în paralel.
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: nginx-cache
+          emptyDir:
+            sizeLimit: 16Mi
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler

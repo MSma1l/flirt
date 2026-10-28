@@ -467,8 +467,9 @@ class Settings(BaseSettings):
     # după atâtea zile de la decizie (timp pentru contestații).
     rejected_payment_proof_retention_days: int = 90
     # Cât păstrăm jurnalele tehnice (promis în Politica de confidențialitate).
-    # ⚠️ Fostul scripts/prune_container_logs.sh (docker compose) a fost scos; pe
-    # k3s kubelet rotește log-urile doar după mărime — limita în timp e de refăcut.
+    # Aplicat pe host (k3s) de `deploy/k8s/scripts/install-k3s.sh host-hardening`,
+    # care citește valoarea din .env: timer-ul systemd zilnic flirt-log-retention
+    # (loguri de poduri, docker, /var/log rotit) + MaxRetentionSec în journald.
     log_retention_days: int = 30
 
     # Plafoane de paginare (folosite de app/services/pagination.py). Fără ele,

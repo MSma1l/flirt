@@ -34,9 +34,18 @@ envsubst '${DOMAIN} ${ADMIN_DOMAIN} ${MINIAPP_DOMAIN}' \
     < /etc/nginx/flirt/flirt.conf.template > /tmp/nginx/flirt.conf
 log "config randat: DOMAIN=$DOMAIN ADMIN_DOMAIN=$ADMIN_DOMAIN MINIAPP_DOMAIN=$MINIAPP_DOMAIN"
 
-if ! nginx -t -q; then
-    log "EROARE: configurația nginx e invalidă (vezi mai sus). Nu pornesc."
-    exit 1
-fi
+# `nginx -t` rezolvă upstream-ul `api` prin DNS. Într-un pod NOU, NetworkPolicy
+# (egress DNS) se aplică cu ~1-2s întârziere → reîncercăm scurt înainte să
+# declarăm configul invalid (altfel containerul repornește o dată inutil).
+i=1
+until nginx -t -q 2>/dev/null; do
+    if [ "$i" -ge 15 ]; then
+        nginx -t -q || true
+        log "EROARE: configurația nginx e invalidă (vezi mai sus). Nu pornesc."
+        exit 1
+    fi
+    i=$((i + 1))
+    sleep 1
+done
 
 exec nginx -g 'daemon off;'

@@ -8,6 +8,13 @@
 #   install-k3s.sh phase2   scoate lista `disable:` din config și repornește k3s
 #                           → Traefik + ServiceLB preiau 80/443. Cere porturile
 #                           80/443 LIBERE.
+#   install-k3s.sh host-hardening
+#                           configurarea hostului (idempotent, rulat și la finalul
+#                           phase1): rotația log-urilor în kubelet, retenția
+#                           journald, timer-ul flirt-log-retention (LOG_RETENTION_DAYS
+#                           promis în Politica de confidențialitate), /opt/flirt-backups
+#                           al uid 1000 (CronJob-urile de backup rulează non-root).
+#                           Repornește k3s DOAR dacă config.yaml s-a schimbat.
 #   install-k3s.sh status   ce e instalat.
 #
 # Server nou: phase1 → deploy.sh → phase2 (runbook: deploy/k8s/scripts/README.md).
@@ -25,6 +32,13 @@ LOG_TAG=install-k3s
 K3S_VERSION="${K3S_VERSION:-v1.36.5+k3s1}"
 CERT_MANAGER_VERSION="${CERT_MANAGER_VERSION:-v1.21.3}"
 K3S_CONFIG=/etc/rancher/k3s/config.yaml
+HOST_DIR="$REPO_ROOT/deploy/k8s/host"
+BACKUP_HOST_DIR="${BACKUP_HOST_DIR:-/opt/flirt-backups}"
+BACKUP_UID="${BACKUP_UID:-1000}"
+BACKUP_GID="${BACKUP_GID:-1000}"
+# Rotația după mărime a log-urilor de containere (kubelet). Limita în TIMP o
+# aplică flirt-log-retention.timer (host-hardening).
+KUBELET_LOG_ARGS=(container-log-max-size=10Mi container-log-max-files=5)
 
 # Configul phase1. `secrets-encryption`: Secret-urile (inclusiv flirt-env cu
 # parola DB și cheia JWT) sunt criptate în datastore. Kubeconfig doar pentru root.
@@ -40,6 +54,10 @@ write_config_phase1() {
 # FLIRT — config k3s (vezi deploy/k8s/scripts/install-k3s.sh)
 write-kubeconfig-mode: "0600"
 secrets-encryption: true
+# Rotația log-urilor de containere (după mărime); retenția în timp: host-hardening.
+kubelet-arg:
+  - "container-log-max-size=10Mi"
+  - "container-log-max-files=5"
 # phase1: Traefik + ServiceLB OPRITE până la phase2 (80/443 încă neocupate).
 # `install-k3s.sh phase2` scoate lista de mai jos și repornește k3s.
 disable:
@@ -140,6 +158,7 @@ phase1() {
     else
         warn "$ENV_FILE lipsește → resursele de cluster se aplică la primul deploy.sh"
     fi
+    host_hardening
     log "phase1 GATA. Urmează: deploy/k8s/scripts/deploy.sh, apoi install-k3s.sh phase2"
 }
 
@@ -197,6 +216,222 @@ phase2() {
     die "Service-ul traefik nu a primit IP de la ServiceLB (kubectl -n kube-system get pods | grep svclb)"
 }
 
+# --------------------------------------------------------------------------- #
+# host-hardening
+# --------------------------------------------------------------------------- #
+# Valoarea unei chei din .env (curățat ca pentru secret, FĂRĂ validare: merge și
+# pe un server nou cu .env incomplet). Gol dacă .env lipsește.
+host_env() {
+    [ -r "$ENV_FILE" ] || return 0
+    local t v
+    t="$(umask 077 && mktemp)"
+    env_clean "$ENV_FILE" "$t" 2>/dev/null || true
+    v="$(env_get "$t" "$1")"
+    rm -f "$t"
+    printf '%s' "$v"
+}
+
+retention_days() {
+    local d
+    d="$(host_env LOG_RETENTION_DAYS)"
+    d="${d:-30}"
+    case "$d" in *[!0-9]*) die "LOG_RETENTION_DAYS invalid în $ENV_FILE: $d" ;; esac
+    [ "$d" -ge 2 ] || die "LOG_RETENTION_DAYS trebuie să fie >= 2"
+    printf '%s' "$d"
+}
+
+# Adaugă/corectează intrările KUBELET_LOG_ARGS în lista bloc `kubelet-arg:` din
+# config.yaml (o creează dacă lipsește); restul fișierului rămâne neatins, stilul
+# de ghilimele și indentarea listei existente se păstrează. Refuză o listă inline
+# (`kubelet-arg: [...]`) — de corectat manual. Scrie rezultatul pe stdout.
+kubelet_args_render() {
+    python3 - "$@" <<'PYEOF'
+import re, sys
+
+path, wanted = sys.argv[1], sys.argv[2:]
+want = dict(a.split("=", 1) for a in wanted)
+lines = open(path, encoding="utf-8").read().splitlines()
+
+def unquote(v):
+    v = re.sub(r"\s+#.*$", "", v).strip()
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+        v = v[1:-1]
+    return v
+
+idx = next((i for i, l in enumerate(lines) if re.match(r"^kubelet-arg\s*:", l)), None)
+if idx is None:
+    if lines and lines[-1].strip():
+        lines.append("")
+    lines.append("# Rotația log-urilor de containere (install-k3s.sh host-hardening).")
+    lines.append("kubelet-arg:")
+    lines += ['  - "%s=%s"' % kv for kv in want.items()]
+else:
+    rest = re.sub(r"\s*#.*$", "", lines[idx].split(":", 1)[1]).strip()
+    if rest:
+        sys.exit("kubelet-arg nu e listă bloc (`kubelet-arg: %s`) — corectează manual" % rest)
+    indent, quote, last, seen, first = "  ", '"', idx, set(), True
+    j = idx + 1
+    while j < len(lines):
+        l = lines[j]
+        m = re.match(r"^(\s*)-(\s+(.*))?$", l)
+        if m:
+            raw = (m.group(3) or "").strip()
+            if first:
+                indent, first = m.group(1), False
+                quote = raw[0] if raw[:1] in ("'", '"') else ""
+            val = unquote(raw)
+            key = val.split("=", 1)[0]
+            if key in want:
+                seen.add(key)
+                if val != "%s=%s" % (key, want[key]):
+                    lines[j] = "%s- %s%s=%s%s" % (m.group(1), quote, key, want[key], quote)
+            last = j
+        elif l.strip() and not l.lstrip().startswith("#"):
+            break
+        j += 1
+    lines[last + 1:last + 1] = [
+        "%s- %s%s=%s%s" % (indent, quote, k, v, quote) for k, v in want.items() if k not in seen
+    ]
+
+sys.stdout.write("\n".join(lines) + "\n")
+PYEOF
+}
+
+# (a) Rotația log-urilor în kubelet. Repornește k3s DOAR dacă fișierul s-a schimbat.
+# Podurile NU se opresc la repornirea serviciului k3s (containerd-shim le ține în
+# viață); kubelet aplică noile limite și containerelor deja pornite.
+ensure_kubelet_log_rotation() {
+    [ -f "$K3S_CONFIG" ] || die "$K3S_CONFIG lipsește — rulează întâi phase1"
+    local new bak
+    new="$(umask 077 && mktemp)"
+    if ! kubelet_args_render "$K3S_CONFIG" "${KUBELET_LOG_ARGS[@]}" > "$new"; then
+        rm -f "$new"
+        die "nu pot actualiza kubelet-arg în $K3S_CONFIG"
+    fi
+    if cmp -s "$new" "$K3S_CONFIG"; then
+        rm -f "$new"
+        log "kubelet-arg: rotația log-urilor deja configurată (${KUBELET_LOG_ARGS[*]})"
+        return 0
+    fi
+    bak="$K3S_CONFIG.bak.$(date +%Y%m%d-%H%M%S)"
+    cp -p "$K3S_CONFIG" "$bak"
+    install -m 0600 "$new" "$K3S_CONFIG"
+    rm -f "$new"
+    log "kubelet-arg actualizat în $K3S_CONFIG (copie: $bak):"
+    diff -u "$bak" "$K3S_CONFIG" >&2 || true
+    if systemctl is-active --quiet k3s; then
+        log "repornesc k3s (podurile continuă să ruleze)"
+        systemctl restart k3s
+        wait_node_ready
+    fi
+}
+
+# (b) journald, aceeași limită în timp. journald șterge fișiere ÎNTREGI ⇒
+# MaxFileSec=1day (un fișier pe zi) + o zi de marjă: nicio intrare nu trece de termen.
+configure_journald() {
+    local days="$1" dst=/etc/systemd/journald.conf.d/flirt-retention.conf new
+    new="$(mktemp)"
+    cat > "$new" <<EOF
+# FLIRT — retenția jurnalelor (LOG_RETENTION_DAYS=$days). Gestionat de
+# deploy/k8s/scripts/install-k3s.sh host-hardening — nu edita manual.
+[Journal]
+MaxRetentionSec=$((days - 1))day
+MaxFileSec=1day
+SystemMaxUse=1G
+EOF
+    if cmp -s "$new" "$dst"; then
+        rm -f "$new"
+        log "journald: retenția e deja configurată ($dst)"
+        return 0
+    fi
+    install -d -m 0755 "$(dirname "$dst")"
+    install -m 0644 "$new" "$dst"
+    rm -f "$new"
+    systemctl restart systemd-journald
+    log "journald: MaxRetentionSec=$((days - 1))day MaxFileSec=1day SystemMaxUse=1G ($dst)"
+}
+
+# Copiază $1 în $2 (mod $3) doar dacă diferă. 0 = a copiat.
+install_if_changed() {
+    cmp -s "$1" "$2" && return 1
+    install -m "$3" "$1" "$2"
+}
+
+# (c)+(d) Timer-ul zilnic de retenție (sursele în deploy/k8s/host/).
+install_log_retention() {
+    local days="$1" changed=0 new
+    install_if_changed "$HOST_DIR/flirt-log-retention.sh" /usr/local/sbin/flirt-log-retention 0755 && changed=1
+    install_if_changed "$HOST_DIR/flirt-log-retention.service" /etc/systemd/system/flirt-log-retention.service 0644 && changed=1
+    install_if_changed "$HOST_DIR/flirt-log-retention.timer" /etc/systemd/system/flirt-log-retention.timer 0644 && changed=1
+    new="$(mktemp)"
+    printf '# Gestionat de install-k3s.sh host-hardening (LOG_RETENTION_DAYS din .env).\nLOG_RETENTION_DAYS=%s\n' "$days" > "$new"
+    install_if_changed "$new" /etc/default/flirt-log-retention 0644 && changed=1
+    rm -f "$new"
+    systemctl daemon-reload
+    systemctl enable --now flirt-log-retention.timer >/dev/null 2>&1 \
+        || die "nu pot activa flirt-log-retention.timer (journalctl -xe)"
+    if [ "$changed" = 1 ]; then
+        log "flirt-log-retention instalat/actualizat → rulez o dată acum"
+        systemctl start flirt-log-retention.service \
+            || warn "flirt-log-retention a eșuat (journalctl -u flirt-log-retention)"
+        journalctl -u flirt-log-retention -n 1 -o cat --no-pager >&2 2>/dev/null || true
+    else
+        log "flirt-log-retention: neschimbat, timer activ"
+    fi
+}
+
+# CronJob-urile backup-db / backup-media rulează ca uid/gid 1000 și scriu/șterg în
+# /opt/flirt-backups doar `<POSTGRES_DB>-*.sql.gz` (+ `.partial`) la rădăcină și
+# `media/media-*.tar.gz` (+ `.partial`). Doar acestea trec la 1000;
+# `arhiva-compose/` (arhiva de la cutover) rămâne root, 0700.
+prepare_backup_dir() {
+    local d="$BACKUP_HOST_DIR" db n
+    [ -L "$d" ] && die "$d e symlink — refuz chown"
+    [ -L "$d/media" ] && die "$d/media e symlink — refuz chown"
+    db="$(host_env POSTGRES_DB)"
+    db="${db:-flirt}"
+    mkdir -p "$d/media"
+    chown "$BACKUP_UID:$BACKUP_GID" "$d"
+    chmod 0750 "$d"
+    n="$(find "$d" -maxdepth 1 -type f \( -name "${db}-*.sql.gz*" -o -name 'flirt-*.sql.gz*' \) \
+        ! -user "$BACKUP_UID" -print -exec chown "$BACKUP_UID:$BACKUP_GID" {} + | wc -l)"
+    chown -R -h "$BACKUP_UID:$BACKUP_GID" "$d/media"
+    chmod 0750 "$d/media"
+    if [ -d "$d/arhiva-compose" ] && [ ! -L "$d/arhiva-compose" ]; then
+        chown root:root "$d/arhiva-compose"
+        chmod 0700 "$d/arhiva-compose"
+    fi
+    log "backup-uri: $d → $BACKUP_UID:$BACKUP_GID 0750 ($n dump-uri trecute la $BACKUP_UID, media/ recursiv; arhiva-compose/ rămâne root 0700)"
+}
+
+# backup-media (uid 1000, fără capabilități) arhivează volumul `media`: un fișier
+# root 0600 acolo ar face tar-ul să eșueze. api rulează tot ca 1000 ⇒ chown sigur.
+K3S_STORAGE="${K3S_STORAGE:-/var/lib/rancher/k3s/storage}"
+fix_media_pv_owner() {
+    local dir n found=0
+    while IFS= read -r -d '' dir; do
+        found=1
+        n="$(find "$dir" \( ! -user "$BACKUP_UID" -o ! -group "$BACKUP_GID" \) -print \
+            -exec chown -h "$BACKUP_UID:$BACKUP_GID" {} + | wc -l)"
+        log "media PV $dir: $n intrări trecute la $BACKUP_UID:$BACKUP_GID"
+    done < <(find "$K3S_STORAGE" -mindepth 1 -maxdepth 1 -type d -name '*_flirt_media' -print0 2>/dev/null)
+    [ "$found" = 1 ] || log "media PV: niciun director *_flirt_media în $K3S_STORAGE (încă nu există) → sar"
+}
+
+host_hardening() {
+    require_root
+    require_cmd python3 systemctl install cmp diff journalctl
+    local days
+    days="$(retention_days)"
+    log "host-hardening (LOG_RETENTION_DAYS=$days)"
+    ensure_kubelet_log_rotation
+    configure_journald "$days"
+    install_log_retention "$days"
+    prepare_backup_dir
+    fix_media_pv_owner
+    log "host-hardening GATA"
+}
+
 status() {
     k3s --version 2>/dev/null | head -1 || echo "k3s: neinstalat"
     systemctl is-active k3s 2>/dev/null || true
@@ -204,11 +439,14 @@ status() {
     kc get nodes -o wide 2>/dev/null || true
     kc -n cert-manager get deploy 2>/dev/null || true
     kc -n kube-system get deploy traefik svc traefik 2>/dev/null || true
+    systemctl list-timers flirt-log-retention.timer --no-pager 2>/dev/null || true
+    ls -ld "$BACKUP_HOST_DIR" 2>/dev/null || true
 }
 
 case "${1:-}" in
     phase1) phase1 ;;
     phase2) phase2 ;;
+    host-hardening) host_hardening ;;
     status) status ;;
-    *) echo "utilizare: $0 phase1|phase2|status" >&2; exit 2 ;;
+    *) echo "utilizare: $0 phase1|phase2|host-hardening|status" >&2; exit 2 ;;
 esac
