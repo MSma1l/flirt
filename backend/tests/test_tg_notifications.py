@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select, update
 
+from app.core.config import settings
 from app.models.account import Block
 from app.models.user import User
 from app.services import auth_service, bot_texts, telegram_bot, tg_notify
@@ -399,8 +400,11 @@ async def test_match_fara_mesaj_invita_la_primul_salut(client, db_session, sent)
 
 # --- Povești --------------------------------------------------------------------
 async def _post_story(client, headers):
+    me = await client.get(f"{API}/auth/me", headers=headers)
+    assert me.status_code == 200, me.text
+    media_url = f"{settings.storage_base_url}/stories/{me.json()['id']}/{uuid.uuid4().hex}.jpg"
     resp = await client.post(
-        f"{API}/stories/", json={"media_url": "https://cdn/x.jpg"}, headers=headers
+        f"{API}/stories/", json={"media_url": media_url}, headers=headers
     )
     assert resp.status_code == 201, resp.text
 

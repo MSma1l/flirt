@@ -10,6 +10,76 @@ Teste de regresie de securitate: `test_feed_security.py` · `test_security_harde
 
 ---
 
+# Valul 3 — audit Telegram Mini App (27.10.2026)
+
+4 auditori în paralel (auth/IDOR, injecție/upload, abuz/logică, expunere/infra), apoi 4 agenți
+de remediere pe zone disjuncte. Teste noi: `test_auth_disabled_methods.py` ·
+`test_security_auth_hardening.py` · `test_security_media_{stories,images,ffmpeg}.py` ·
+`test_security_logic_{events,reports,social,masker,feed,limits}.py` ·
+`test_security_infra_{headers,runtime}.py`.
+
+## Critice (active în producție până la hotfix-ul din aceeași zi)
+- ✅ **API expus pe `0.0.0.0:8000` în HTTP clar.** `docker-compose.override.yml` (doar pentru dev) era
+  în git, iar compose îl încarcă automat → ocolea nginx, TLS, `limit_req` și, prin `X-Forwarded-For`
+  falsificat, rate-limitul aplicației (brute-force nelimitat pe admin). Scos din git → `.example`,
+  ignorat; gunicorn are încredere în `X-Forwarded-For` doar de la subrețeaua Docker.
+- ✅ **Login social / OTP / cumpărare în modul `stub` active în producție.** `/capabilities` le declara
+  oprite, dar rutele acceptau `stub:orice@x`, codul `000000` (preluarea oricărui cont `phone_*`) și
+  premium gratuit. `require_capability` → 503 în producție.
+- ✅ **Ștampile Passport auto-emise** (`POST /events/{id}/checkin` fără dovadă) → trepte → reduceri la
+  bilete și invitații. Acum cere admitere înregistrată de staff + eveniment în desfășurare; butonul
+  scos din Mini App (scanarea la intrare emite ștampila).
+- ✅ **Auto-banul la raportări folosibil ca armă** (3 conturi noi banau pe oricine, inclusiv admini).
+  Acum doar ascunde profilul până la review; rolurile ≠ user exceptate; contează doar raportori cu
+  cont ≥ 3 zile, profil complet și interacțiune reală cu ținta; `POST /reports` 10/zi.
+
+## Înalte
+- ✅ **Pre-preluarea contului Telegram** prin `/auth/register` cu `telegram_<id>@ext.flirt`. Domeniile
+  sintetice (`*.flirt`, `*.invalid`) refuzate; la legare, parola și sesiunile rândului sunt anulate.
+- ✅ **Story cu `media_url` arbitrar** (ocolea moderarea NSFW, scurgea IP-ul privitorilor). Doar
+  `stories/{user_id}/{hex}.ext` din storage-ul propriu.
+- ✅ **Blocarea nu ascundea story-urile și favoritele.** Filtre în ambele sensuri + banat/șters/ascuns;
+  blocarea șterge favoritele reciproce.
+- ✅ **WebP animat de câțiva KB → ore de CPU.** Fără re-encodare; plafoane din antete (cadre, pixeli).
+- ✅ **Panoul de admin fără CSP/XFO/HSTS** (moștenirea `add_header` anulată în `location`). Antete
+  repetate + test generic pe toate `location`-urile.
+- ✅ **AI plătit limitat doar per IP.** Cotă zilnică per user + cache 24h pe chimie.
+- ✅ **Stocare și moderare plătită nelimitate.** Cote per user la poze, story-uri, atașamente;
+  `max_photos` verificat înainte de moderare.
+
+## Medii / scăzute (✅ toate cu test)
+- ffmpeg: semafor 2/worker, `-threads 1`, `-format_whitelist`/`-codec_whitelist`, `-t` la vocale,
+  `RLIMIT_CPU/AS`; validat pe ffmpeg 7.1 real.
+- Bombă de decompresie pe calea de moderare; `Image.MAX_IMAGE_PIXELS`, `formats=` la `Image.open`;
+  citire plafonată a upload-urilor; `client_max_body_size` 1m implicit, 55m doar pe rutele de upload.
+- ReDoS în mascarea contactelor (8000 de caractere: 1–2 s → < 6 ms); mascare și pe „despre", pe
+  textul story-urilor și pe telefoane despărțite de litere.
+- GDPR: purjarea golește identitatea Telegram, `payment_code`, `passport_token`; contul șters nu mai
+  primește sesiuni; story-urile expirate/șterse își pierd și fișierele (plus fișierele orfane).
+- Trilaterare: coordonate pe grilă de ~1 km + decalaj per user, distanțe pe trepte, 10 schimbări/zi.
+- JWT cu `iss`/`aud` (token-urile vechi acceptate până la 10.11.2026), `FOR UPDATE` la rotația
+  refresh, blocare per cont după 5 parole greșite, adminii doar prin `/admin/login`, sesiune admin ≤ 12h.
+- Limite per user: 60 mesaje/min, export 1/oră, cursa la limita zilnică de swipe, notificări de match
+  deduplicate 24h; rate-limit pe `/auth/google|apple|refresh`.
+- `/media/`: CSP `sandbox`, cache de un an doar pe 200; `Permissions-Policy` pe Mini App; tokenuri push
+  trunchiate în log; certbot fixat pe versiune; limite CPU/RAM pe `api`; Redis cu parolă opțională;
+  backup-uri cu `umask 077`, în afara checkout-ului git; `npm audit fix`.
+
+## Rămase deschise (🟡)
+- **Media din chat e publică după URL** (nume de 128 biți, deci negăsibil, dar un URL scăpat rămâne
+  valid). Remedierea cere URL-uri semnate cu expirare — lucru separat.
+- **Admin fără 2FA și fără restricție de IP.** De făcut: TOTP pentru rolul admin + `allow` pe IP-urile
+  proprietarului în nginx.
+- **Separarea strictă a token-urilor admin/user** (`aud` impus în `require_admin`) — `aud` e emis, dar
+  încă neimpus pe rutele de admin.
+- **Un dump gol de DB** (`backend/backups/flirt-20260713-195510.sql.gz`) rămâne în istoria git.
+  Fără date; scoaterea din istorie cere rescriere + force-push.
+- **409 la `/auth/register`** dezvăluie existența unui email (risc acceptat; doar aplicația mobilă).
+- Firewall-ul serverului (`ufw`) e inactiv; Docker oricum îl ocolește — porturile se închid din compose
+  și din panoul providerului.
+
+---
+
 # Valul 2 — breșe găsite la auditul de producție (recent)
 
 Acestea sunt cele mai grave, pentru că fiecare dintre ele **arăta ca și cum ar funcționa**.

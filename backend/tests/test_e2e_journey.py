@@ -4,10 +4,12 @@ Un SINGUR flux care leagă modulele reale între ele: auth → profil → feed �
 swipe/match → chat (+ mascare contacte + reacții) → billing → evenimente →
 stories. Fiecare pas are aserțiuni clare. Folosește DOAR endpoint-uri reale.
 """
+import uuid
 from datetime import date
 
 import pytest
 
+from app.core.config import settings
 from app.services.contact_masker import MASK
 from tests.conftest import upload_photo
 
@@ -236,7 +238,10 @@ async def test_full_user_journey(client, db_session):
     # --- Pas 11: A publică o poveste → B (match) o vede --------------------
     resp = await client.post(
         f"{API}/stories/",
-        json={"media_url": "https://cdn/alice.jpg", "caption": "Prima poveste"},
+        json={
+            "media_url": f"{settings.storage_base_url}/stories/{a_id}/{uuid.uuid4().hex}.jpg",
+            "caption": "Prima poveste",
+        },
         headers=a_headers,
     )
     assert resp.status_code == 201, resp.text
