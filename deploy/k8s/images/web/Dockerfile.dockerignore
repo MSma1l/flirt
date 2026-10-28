@@ -22,5 +22,5 @@
 **/*.pem
 **/.DS_Store
 **/*.tsbuildinfo
-# Testele mobile nu intră în build-ul Mini App-ului (ca în build_miniapp.sh).
+# Testele mobile nu intră în build-ul Mini App-ului.
 mobile/**/__tests__

@@ -1,13 +1,22 @@
-"""Hardening de infrastructură: gunicorn, Redis, certbot, resurse, backup, push.
+"""Hardening de infrastructură: gunicorn, Redis, imagini, resurse, rețea, backup, push.
+
+Din 28.10.2026 producția rulează pe k3s: sursele de adevăr sunt
+deploy/k8s/manifests/*.yaml (+ deploy/k8s/images/web/). backend/docker-compose.yml
+a rămas DOAR pentru dezvoltare (db + redis + api).
 
 CE VERIFICĂM
 ------------
 1. gunicorn NU mai are încredere în X-Forwarded-* de la oricine (`*`): implicit
    doar subrețeaua Docker a containerului (detectată din /proc/net/route).
-2. Redis: parolă OPȚIONALĂ — fără REDIS_PASSWORD totul rămâne ca înainte.
-3. certbot pe versiune fixă; `api` cu limite de CPU/RAM.
-4. Backup-uri: umask 077, implicit în afara repo-ului, dump-ul nu mai e în git.
-5. Push: tokenurile nu mai apar întregi în log-uri.
+2. Redis: parolă OPȚIONALĂ — fără REDIS_PASSWORD totul rămâne ca înainte
+   (compose de dev ȘI StatefulSet-ul k8s).
+3. Imagini pe versiune fixă (fără `:latest`); `api` (și orice container) cu
+   limite de CPU/RAM; compose-ul de dev nu publică db/redis.
+4. Rețea k8s: db/redis/api doar ClusterIP, fără hostPort/hostNetwork,
+   NetworkPolicy default-deny + reguli explicite; containere fără privilegii.
+5. Backup-uri (CronJob-uri): umask 077, în afara repo-ului (/opt/flirt-backups
+   prin PVC-ul `backups`, Retain), retenție limitată la tiparul propriu.
+6. Push: tokenurile nu mai apar întregi în log-uri.
 """
 from __future__ import annotations
 
@@ -19,12 +28,58 @@ import textwrap
 
 import httpx
 import pytest
+import yaml
 
 from tests.test_nginx_ratelimit_zones import BACKEND
 
 REPO = BACKEND.parent
 ENTRYPOINT = BACKEND / "entrypoint.sh"
 COMPOSE = BACKEND / "docker-compose.yml"
+K8S = REPO / "deploy" / "k8s"
+MANIFESTS = K8S / "manifests"
+
+
+def _docs() -> list[tuple[str, dict]]:
+    """Toate resursele k8s din manifests/ (inclusiv jobs/ și cluster/)."""
+    out = []
+    for path in sorted(MANIFESTS.rglob("*.yaml")):
+        for doc in yaml.safe_load_all(path.read_text(encoding="utf-8")):
+            if doc and "kind" in doc:
+                out.append((str(path.relative_to(MANIFESTS)), doc))
+    return out
+
+
+def _resource(kind: str, name: str) -> dict:
+    for _, doc in _docs():
+        if doc["kind"] == kind and doc["metadata"]["name"] == name:
+            return doc
+    raise AssertionError(f"{kind}/{name} lipsește din deploy/k8s/manifests")
+
+
+def _pod_spec(doc: dict) -> dict | None:
+    """Spec-ul de pod al unui workload (Deployment/StatefulSet/Job/CronJob)."""
+    spec = doc.get("spec", {})
+    if doc["kind"] == "CronJob":
+        spec = spec["jobTemplate"]["spec"]
+    template = spec.get("template")
+    return template["spec"] if template else None
+
+
+def _workloads() -> list[tuple[str, dict]]:
+    """(Kind/nume, pod spec) pentru toate workload-urile."""
+    return [
+        (f"{doc['kind']}/{doc['metadata']['name']}", spec)
+        for _, doc in _docs()
+        if (spec := _pod_spec(doc)) is not None
+    ]
+
+
+def _containers() -> list[tuple[str, dict]]:
+    out = []
+    for name, spec in _workloads():
+        for container in spec.get("initContainers", []) + spec["containers"]:
+            out.append((f"{name}/{container['name']}", container))
+    return out
 
 
 def _service(name: str) -> str:
@@ -149,6 +204,32 @@ def test_comanda_redis_expandata_de_shell(password, expected):
     assert out == expected
 
 
+@pytest.mark.parametrize(
+    ("password", "expected"),
+    [("", "redis-server --save 60 1"), ("abc", "redis-server --save 60 1 --requirepass abc")],
+)
+def test_comanda_redis_k8s_expandata_de_shell(password, expected):
+    """Același comportament în StatefulSet-ul `redis`: parola vine din secret
+    (cheie OPȚIONALĂ), iar `${...}` e expandat de shell-ul din container."""
+    spec = _pod_spec(_resource("StatefulSet", "redis"))
+    container = spec["containers"][0]
+    env = {e["name"]: e for e in container["env"]}
+    ref = env["REDIS_PASSWORD"]["valueFrom"]["secretKeyRef"]
+    assert ref["name"] == "flirt-env" and ref.get("optional") is True
+
+    command = container["command"]
+    assert command[:2] == ["/bin/sh", "-c"]
+    script = command[2].replace("exec redis-server", 'printf "%s " redis-server', 1)
+    out = subprocess.run(
+        ["/bin/sh", "-c", script],
+        env={"PATH": "/usr/bin:/bin", "REDIS_PASSWORD": password},
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert out == expected
+
+
 @pytest.mark.skipif(shutil.which("docker") is None, reason="docker nu e instalat")
 def test_compose_config_valid(tmp_path):
     """`docker compose config` pe o COPIE (cu un .env gol alături): validează
@@ -172,43 +253,265 @@ def test_compose_config_valid(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# 3. certbot fix + limite pe api
+# 3. Imagini fixe + limite de resurse + compose-ul de dev
 # --------------------------------------------------------------------------- #
 
+# Pulled din registry → versiune explicită (cu cifre), niciodată `latest`.
+PINNED = re.compile(r"^[a-z0-9./_-]+:(?!latest$)[A-Za-z0-9._-]*\d[A-Za-z0-9._-]*$")
+# Construite local și importate în containerd (imagePullPolicy: Never): tag-ul
+# e mutat de deploy.sh pe commit-ul livrat (`current`) / substituit (`__IMAGE__`).
+LOCAL = re.compile(r"^flirt-(api|web):(current|__IMAGE__)$")
 
-def test_certbot_pe_versiune_fixa():
-    image = re.search(r"^\s+image:\s*(\S+)", _service("certbot"), re.MULTILINE).group(1)
-    assert re.fullmatch(r"certbot/certbot:v\d+\.\d+\.\d+", image), image
+
+def test_dev_compose_are_doar_db_redis_api():
+    services = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))["services"]
+    assert set(services) == {"db", "redis", "api"}, (
+        "compose e DOAR pentru dezvoltare; nginx/certbot/backup trăiesc în deploy/k8s/"
+    )
+
+
+@pytest.mark.parametrize("service", ["db", "redis"])
+def test_dev_compose_nu_publica_db_redis(service):
+    """Un Redis/Postgres publicat pe 0.0.0.0 e preluat în minute; pe laptop se
+    publică explicit pe 127.0.0.1 din override, nu din fișierul de bază."""
+    body = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))["services"][service]
+    assert "ports" not in body
+    assert "network_mode" not in body
 
 
 def test_nicio_imagine_latest():
     assert not re.search(r"^\s+image:\s*\S+:latest\s*$", COMPOSE.read_text(encoding="utf-8"), re.MULTILINE)
+    for name, container in _containers():
+        image = container["image"]
+        assert not image.endswith(":latest") and ":" in image, f"{name}: {image}"
+
+
+def test_imaginile_k8s_sunt_pe_versiune_fixa():
+    """Echivalentul vechiului „certbot pe versiune fixă": un `kubectl rollout
+    restart` nu are voie să tragă o versiune nouă, netestată, din registry."""
+    for name, container in _containers():
+        image = container["image"]
+        if container.get("imagePullPolicy") == "Never":
+            assert LOCAL.match(image), f"{name}: imagine locală neașteptată {image}"
+        else:
+            assert PINNED.match(image), f"{name}: imagine fără versiune fixă {image}"
+
+
+def test_imaginile_de_baza_din_dockerfile_sunt_fixe():
+    for dockerfile in (K8S / "images" / "web" / "Dockerfile", BACKEND / "Dockerfile"):
+        if not dockerfile.exists():
+            continue
+        for image in re.findall(r"^FROM\s+(\S+)", dockerfile.read_text(encoding="utf-8"), re.MULTILINE):
+            assert PINNED.match(image), f"{dockerfile.name}: FROM {image}"
 
 
 def test_api_are_limite_de_resurse():
-    api = _service("api")
-    assert re.search(r"^    cpus: \$\{API_CPUS:-2\.0\}$", api, re.MULTILINE)
-    assert re.search(r"^    mem_limit: \$\{API_MEM_LIMIT:-1536m\}$", api, re.MULTILINE)
+    spec = _pod_spec(_resource("Deployment", "api"))
+    resources = spec["containers"][0]["resources"]
+    for key in ("cpu", "memory"):
+        assert resources["limits"].get(key), f"api fără limits.{key}"
+        assert resources["requests"].get(key), f"api fără requests.{key} (HPA/scheduler)"
+
+
+def test_toate_containerele_au_limite():
+    """Un container fără limită poate înfometa nodul (unul singur!) — inclusiv db."""
+    for name, container in _containers():
+        limits = container.get("resources", {}).get("limits", {})
+        assert limits.get("cpu") and limits.get("memory"), f"{name} fără limits cpu/memory"
 
 
 # --------------------------------------------------------------------------- #
-# 4. Backup-uri
+# 4. Rețea + privilegii (k8s)
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.parametrize("script", ["backup_db.sh", "backup_media.sh"])
-def test_backup_scrie_cu_umask_077(script):
-    text = (BACKEND / "scripts" / script).read_text(encoding="utf-8")
+@pytest.mark.parametrize("name", ["db", "redis", "api", "web"])
+def test_serviceurile_interne_sunt_clusterip(name):
+    """Nimic nu e expus direct în afara clusterului; doar Traefik (Ingress → web)."""
+    spec = _resource("Service", name)["spec"]
+    assert spec.get("type", "ClusterIP") == "ClusterIP"
+    assert "externalIPs" not in spec
+    for port in spec["ports"]:
+        assert "nodePort" not in port
+
+
+def test_niciun_service_nodeport_sau_loadbalancer():
+    for path, doc in _docs():
+        if doc["kind"] == "Service":
+            assert doc["spec"].get("type", "ClusterIP") == "ClusterIP", f"{path}: {doc['metadata']['name']}"
+
+
+def test_niciun_pod_pe_reteaua_sau_namespace_ul_hostului():
+    for name, spec in _workloads():
+        for key in ("hostNetwork", "hostPID", "hostIPC"):
+            assert not spec.get(key), f"{name}: {key}"
+        for volume in spec.get("volumes", []):
+            assert "hostPath" not in volume, f"{name}: hostPath direct în pod ({volume['name']})"
+    for name, container in _containers():
+        for port in container.get("ports", []):
+            assert "hostPort" not in port, f"{name}: hostPort {port}"
+
+
+def test_containerele_fara_privilegii():
+    for name, container in _containers():
+        ctx = container.get("securityContext", {})
+        assert ctx.get("allowPrivilegeEscalation") is False, f"{name}: allowPrivilegeEscalation"
+        assert not ctx.get("privileged"), f"{name}: privileged"
+        assert ctx.get("capabilities", {}).get("drop") == ["ALL"], f"{name}: capabilities.drop != ALL"
+
+
+def test_podurile_nu_monteaza_tokenul_de_serviceaccount():
+    """Niciun pod nu vorbește cu API-ul Kubernetes: un RCE în aplicație nu
+    trebuie să primească și un token de cluster."""
+    for name, spec in _workloads():
+        assert spec.get("automountServiceAccountToken") is False, name
+
+
+@pytest.mark.parametrize(
+    ("kind", "name"),
+    [("Deployment", "api"), ("Deployment", "web"), ("StatefulSet", "db"),
+     ("StatefulSet", "redis"), ("CronJob", "purge")],
+)
+def test_workload_urile_aplicatiei_ruleaza_non_root(kind, name):
+    spec = _pod_spec(_resource(kind, name))
+    assert spec["securityContext"].get("runAsNonRoot") is True
+
+
+def test_namespace_impune_pod_security():
+    labels = _resource("Namespace", "flirt")["metadata"]["labels"]
+    assert labels.get("pod-security.kubernetes.io/enforce") in {"baseline", "restricted"}
+
+
+def _policies() -> dict[str, dict]:
+    return {
+        doc["metadata"]["name"]: doc["spec"]
+        for _, doc in _docs()
+        if doc["kind"] == "NetworkPolicy"
+    }
+
+
+def test_networkpolicy_default_deny_ingress():
+    deny = [
+        spec for spec in _policies().values()
+        if spec["podSelector"] == {} and spec.get("policyTypes") == ["Ingress"] and not spec.get("ingress")
+    ]
+    assert deny, "lipsește NetworkPolicy default-deny (podSelector: {}, fără reguli ingress)"
+    kustomization = yaml.safe_load((MANIFESTS / "kustomization.yaml").read_text(encoding="utf-8"))
+    assert "networkpolicies.yaml" in kustomization["resources"]
+
+
+def _allowed(target: str) -> tuple[set[str], set[int]]:
+    """(etichete `app.kubernetes.io/name` permise, porturi) spre podurile `target`."""
+    names: set[str] = set()
+    ports: set[int] = set()
+    for spec in _policies().values():
+        if spec["podSelector"].get("matchLabels", {}).get("app.kubernetes.io/name") != target:
+            continue
+        for rule in spec.get("ingress", []):
+            assert rule.get("ports"), f"regulă spre {target} fără restricție de port"
+            ports |= {p["port"] for p in rule["ports"]}
+            for peer in rule.get("from", []):
+                assert "ipBlock" not in peer, f"{target}: ipBlock (deschide spre IP-uri arbitrare)"
+                sel = peer.get("podSelector")
+                if sel is None:
+                    names.add(f"ns:{peer['namespaceSelector']['matchLabels']['kubernetes.io/metadata.name']}")
+                    continue
+                assert sel, f"{target}: podSelector gol = TOATE podurile"
+                names |= set(sel.get("matchLabels", {}).values())
+                for expr in sel.get("matchExpressions", []):
+                    assert expr["key"] == "app.kubernetes.io/name" and expr["operator"] == "In"
+                    names |= set(expr["values"])
+    return names, ports
+
+
+@pytest.mark.parametrize(
+    ("target", "clients", "port"),
+    [
+        ("db", {"api", "migrate", "purge", "backup-db"}, 5432),
+        ("redis", {"api", "purge"}, 6379),
+        ("api", {"web"}, 8000),
+        ("web", {"ns:kube-system"}, 8080),
+    ],
+)
+def test_networkpolicy_doar_clientii_necesari(target, clients, port):
+    """db/redis accesibile DOAR din podurile care chiar le folosesc; api doar
+    prin nginx (rate limiting + blocarea ticket-proofs); web doar de la Traefik."""
+    names, ports = _allowed(target)
+    assert names == clients
+    assert ports == {port}
+
+
+# --------------------------------------------------------------------------- #
+# 5. Backup-uri (CronJob-uri k8s)
+# --------------------------------------------------------------------------- #
+
+
+def _backup_script(name: str) -> str:
+    container = _pod_spec(_resource("CronJob", name))["containers"][0]
+    command = container["command"]
+    assert command[:2] == ["/bin/sh", "-c"]
+    return command[2]
+
+
+@pytest.mark.parametrize("cronjob", ["backup-db", "backup-media"])
+def test_backup_scrie_cu_umask_077(cronjob):
+    text = _backup_script(cronjob)
+    assert re.search(r"^set -eu$", text, re.MULTILINE)
     umask = re.search(r"^umask 077$", text, re.MULTILINE)
-    assert umask, f"{script}: lipsește `umask 077`"
+    assert umask, f"{cronjob}: lipsește `umask 077`"
     assert umask.start() < text.index("mkdir -p"), "umask trebuie setat înainte de orice scriere"
 
 
-@pytest.mark.parametrize("service", ["backup", "backup-media"])
-def test_backup_implicit_in_afara_repo(service):
-    body = _service(service)
-    assert "${BACKUP_HOST_DIR:-/opt/flirt-backups}:/backups" in body
-    assert "${BACKUP_HOST_DIR:-./backups}" not in body
+@pytest.mark.parametrize("cronjob", ["backup-db", "backup-media"])
+def test_backup_atomic_si_retentie_pe_tiparul_propriu(cronjob):
+    """Arhiva se scrie în `.partial` și se redenumește doar la succes; retenția
+    șterge DOAR fișierele proprii, fără recursivitate."""
+    text = _backup_script(cronjob)
+    assert '.partial"' in text and re.search(r'^\s*mv "\$tmp" "\$target"$', text, re.MULTILINE)
+    find = re.search(r"^.*find .*-delete.*$", text, re.MULTILINE)
+    assert find, f"{cronjob}: lipsește retenția"
+    line = find.group(0)
+    assert "-maxdepth 1" in line and "-type f" in line and "-mtime" in line
+    assert re.search(r'-name "\$\{\w+\}-\*\.(sql|tar)\.gz"', line), line
+
+
+def test_backup_db_nu_mascheaza_esecul_pg_dump():
+    text = _backup_script("backup-db")
+    assert text.index("set -o pipefail") < text.index("pg_dump --clean")
+
+
+def test_backup_media_citeste_media_read_only():
+    spec = _pod_spec(_resource("CronJob", "backup-media"))
+    mount = next(m for m in spec["containers"][0]["volumeMounts"] if m["name"] == "media")
+    volume = next(v for v in spec["volumes"] if v["name"] == "media")
+    assert mount.get("readOnly") is True
+    assert volume["persistentVolumeClaim"].get("readOnly") is True
+
+
+@pytest.mark.parametrize("cronjob", ["backup-db", "backup-media"])
+def test_backup_implicit_in_afara_repo(cronjob):
+    """Echivalentul `BACKUP_HOST_DIR:-/opt/flirt-backups`: PVC-ul `backups` e
+    legat de un PV hostPath /opt/flirt-backups cu Retain (nu în checkout-ul git,
+    nu în stocarea k3s, nu se șterge odată cu namespace-ul)."""
+    spec = _pod_spec(_resource("CronJob", cronjob))
+    mount = next(m for m in spec["containers"][0]["volumeMounts"] if m["name"] == "backups")
+    assert mount["mountPath"] == "/backups"
+    volume = next(v for v in spec["volumes"] if v["name"] == "backups")
+    claim = volume["persistentVolumeClaim"]["claimName"]
+
+    pvc = _resource("PersistentVolumeClaim", claim)
+    pv = _resource("PersistentVolume", pvc["spec"]["volumeName"])
+    assert pv["spec"]["hostPath"]["path"] == "/opt/flirt-backups"
+    assert pv["spec"]["persistentVolumeReclaimPolicy"] == "Retain"
+    assert pv["spec"]["claimRef"]["name"] == claim
+    assert not pv["spec"]["hostPath"]["path"].startswith(str(REPO))
+
+
+@pytest.mark.parametrize("cronjob", ["backup-db", "backup-media"])
+def test_backup_programat_fara_suprapuneri(cronjob):
+    spec = _resource("CronJob", cronjob)["spec"]
+    assert spec["concurrencyPolicy"] == "Forbid"
+    assert spec.get("suspend") is not True
 
 
 def test_backups_ignorate_si_nevesionate():
@@ -225,7 +528,7 @@ def test_backups_ignorate_si_nevesionate():
 
 
 # --------------------------------------------------------------------------- #
-# 5. Push: tokenurile mascate în log-uri
+# 6. Push: tokenurile mascate în log-uri
 # --------------------------------------------------------------------------- #
 
 

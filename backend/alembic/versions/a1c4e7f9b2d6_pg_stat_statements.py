@@ -10,7 +10,7 @@ ce query-uri consumă timp pe producție:
     FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 20;
 
 Colectarea propriu-zisă cere `shared_preload_libraries=pg_stat_statements` la
-pornirea serverului (setat în docker-compose.yml, serviciul `db`; cere restart).
+pornirea serverului (setat în deploy/k8s/manifests/db.yaml și în docker-compose.yml de dev; cere restart).
 Fără el, extensia se creează, dar view-ul dă eroare la citire — aplicația nu-l
 folosește, deci nimic nu se strică.
 

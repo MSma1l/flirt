@@ -22,7 +22,8 @@ de remediere pe zone disjuncte. Teste noi: `test_auth_disabled_methods.py` ·
 - ✅ **API expus pe `0.0.0.0:8000` în HTTP clar.** `docker-compose.override.yml` (doar pentru dev) era
   în git, iar compose îl încarcă automat → ocolea nginx, TLS, `limit_req` și, prin `X-Forwarded-For`
   falsificat, rate-limitul aplicației (brute-force nelimitat pe admin). Scos din git → `.example`,
-  ignorat; gunicorn are încredere în `X-Forwarded-For` doar de la subrețeaua Docker.
+  ignorat; gunicorn are încredere în `X-Forwarded-For` doar de la subrețeaua Docker (acum, pe k3s:
+  `FORWARDED_ALLOW_IPS` din `deploy/k8s/manifests/api.yaml`; compose a rămas doar pentru dev).
 - ✅ **Login social / OTP / cumpărare în modul `stub` active în producție.** `/capabilities` le declara
   oprite, dar rutele acceptau `stub:orice@x`, codul `000000` (preluarea oricărui cont `phone_*`) și
   premium gratuit. `require_capability` → 503 în producție.
@@ -62,7 +63,7 @@ de remediere pe zone disjuncte. Teste noi: `test_auth_disabled_methods.py` ·
 - Limite per user: 60 mesaje/min, export 1/oră, cursa la limita zilnică de swipe, notificări de match
   deduplicate 24h; rate-limit pe `/auth/google|apple|refresh`.
 - `/media/`: CSP `sandbox`, cache de un an doar pe 200; `Permissions-Policy` pe Mini App; tokenuri push
-  trunchiate în log; certbot fixat pe versiune; limite CPU/RAM pe `api`; Redis cu parolă opțională;
+  trunchiate în log; certbot fixat pe versiune (acum: k3s + cert-manager fixate pe versiune, k3s verificat cu sha256); limite CPU/RAM pe `api`; Redis cu parolă opțională;
   backup-uri cu `umask 077`, în afara checkout-ului git; `npm audit fix`.
 
 ## Rămase deschise (🟡)
@@ -75,8 +76,9 @@ de remediere pe zone disjuncte. Teste noi: `test_auth_disabled_methods.py` ·
 - **Un dump gol de DB** (`backend/backups/flirt-20260713-195510.sql.gz`) rămâne în istoria git.
   Fără date; scoaterea din istorie cere rescriere + force-push.
 - **409 la `/auth/register`** dezvăluie existența unui email (risc acceptat; doar aplicația mobilă).
-- Firewall-ul serverului (`ufw`) e inactiv; Docker oricum îl ocolește — porturile se închid din compose
-  și din panoul providerului.
+- Firewall-ul serverului (`ufw`) era inactiv (Docker îl ocolea). Acum, pe k3s: doar Traefik ascultă
+  public (80/443), `db`/`redis` sunt ClusterIP + NetworkPolicies; restul porturilor (inclusiv 6443)
+  se închid în `ufw` și în panoul providerului.
 
 ---
 
@@ -91,9 +93,9 @@ Un control de securitate care pare activ, dar nu e, e mai periculos decât unul 
 |---|---|---|---|
 | **P1** | **Banul NU revoca sesiunile.** Se seta `banned_at`, dar refresh token-ul rămânea valid. Access-ul expiră în 15 min — refresh-ul e o creanță de **30 de zile**. Un cont banat care rotea refresh-ul **folosea aplicația o lună întreagă.** Banul era teatru. | ✅ | `admin_service.ban_user()` face **trei** lucruri în aceeași tranzacție: `banned_at` + motiv, **revocarea tuturor sesiunilor de refresh**, `profile_hidden`. `get_current_user` citește banul **din DB la fiecare cerere** (403 imediat), iar `rotate_refresh` refuză un cont banat. |
 | **P2** | **Ștergerea GDPR lăsa `PushDevice` în urmă.** Un cont „șters" continua să **primească notificări push** pe telefon. Datele personale ștergeau, dar canalul de contact rămânea deschis. | ✅ | `purge_user_data` șterge acum și `PushDevice` (plus Ticket, EventAttendance, FlirtPassportStamp, Subscription). Rândul din `users` se **anonimizează** (`deleted+{uuid}@deleted.invalid`), nu se șterge, ca să nu rupă cheile externe. |
-| **P3** | **Purjarea GDPR nu rula NICIODATĂ.** Funcția `purge_expired_accounts()` exista, era testată... și **n-o apela nimeni**. Conturile „șterse" rămâneau în baza de date la infinit. Conformitatea era un comentariu. | ✅ | Serviciu Docker Compose **separat** (`purge` → `scripts/gdpr_purge.py --loop`). Deliberat NU în lifespan-ul FastAPI: cu 4 workeri gunicorn ar fi rulat de 4 ori în paralel. |
+| **P3** | **Purjarea GDPR nu rula NICIODATĂ.** Funcția `purge_expired_accounts()` exista, era testată... și **n-o apela nimeni**. Conturile „șterse" rămâneau în baza de date la infinit. Conformitatea era un comentariu. | ✅ | Serviciu Docker Compose **separat** (`purge` → `scripts/gdpr_purge.py --loop`) — acum CronJob k8s `purge`, orar. Deliberat NU în lifespan-ul FastAPI: cu 4 workeri gunicorn ar fi rulat de 4 ori în paralel. |
 | **P4** | **Rate-limiting fals.** Contorul era in-memory, per proces. Cu **4 workeri gunicorn**, limita reală era **4× cea configurată**: „5 încercări/minut" însemna de fapt 20. Protecția anti-brute-force era un sfert din ce credeam. | ✅ | Rate-limiting pe **Redis**, partajat între workeri (`INCR`+`EXPIRE` în pipeline). `REDIS_URL` gol în producție = **refuz de pornire**. Fallback in-memory doar în dev/test. |
-| **P5** | **TLS era COMENTAT în nginx.** Configul avea blocul HTTPS, dar comentat. Deploy-ul ar fi servit **HTTP în clar** — cu tokenuri JWT și mesaje private pe fir. | ✅ | TLS activ (TLS 1.2/1.3, cifruri AEAD), redirect **80→443**, HSTS `max-age=63072000; includeSubDomains; preload`, certbot automat (emitere + reînnoire). Host necunoscut / scanare pe IP brut → `444` (conexiune închisă). |
+| **P5** | **TLS era COMENTAT în nginx.** Configul avea blocul HTTPS, dar comentat. Deploy-ul ar fi servit **HTTP în clar** — cu tokenuri JWT și mesaje private pe fir. | ✅ | TLS activ (TLS 1.2/1.3, cifruri AEAD), redirect **80→443**, HSTS `max-age=63072000; includeSubDomains; preload`, certbot automat (emitere + reînnoire) — acum TLS în Traefik + cert-manager (k3s). Host necunoscut → `444` în nginx; scanare pe IP brut → nicio rută în Traefik. |
 | **P6** | **Guardul de producție accepta CHEI GOALE.** Verifica doar *modul* (`stub` vs `live`), nu și dacă cheile există. Un `.env` cu `STORAGE_PROVIDER=s3` și `AWS_SECRET_ACCESS_KEY=` gol trecea guardul și pornea — apoi crăpa la prima poză. La fel, **`GEO_PROVIDER` lipsea complet** din lista verificată: putea rămâne pe `stub` în producție. | ✅ | Guardul verifică acum **și cheile, per provider** (18 verificări), include `GEO_PROVIDER`, respinge un `.env` necompletat (orice valoare care mai conține `<<< COMPLETEAZĂ >>>`), și refuză `User-Agent`-ul implicit la Nominatim (politica OSM). Vezi tabelul complet mai jos. |
 
 ## Înalte
@@ -110,7 +112,7 @@ Un control de securitate care pare activ, dar nu e, e mai periculos decât unul 
 | # | Finding | Status | Fix |
 |---|---|---|---|
 | **P11** | **Dockerfile-ul NU se construia DELOC.** `pip install .` rula **înainte** de `COPY . .` — pip încerca să construiască pachetul fără directorul `app/`. Imaginea **nu s-a construit niciodată** cu succes. | ✅ | Se instalează doar *dependențele* (extrase din `pyproject.toml`), iar `COPY . .` rămâne dedesubt — aplicația rulează ca `app.main:app` din `/app`, nu are nevoie să fie instalată ca pachet. Layer-ul de pip se invalidează doar când se schimbă `pyproject.toml`. |
-| **P12** | **Coliziune de nume Docker.** Compose deriva numele proiectului din folder (`backend`) — orice alt proiect cu un folder `backend` s-ar fi ciocnit de aceleași volume/rețele. | ✅ | `name: flirt` explicit în `docker-compose.yml`. |
+| **P12** | **Coliziune de nume Docker.** Compose deriva numele proiectului din folder (`backend`) — orice alt proiect cu un folder `backend` s-ar fi ciocnit de aceleași volume/rețele. | ✅ | `name: flirt` explicit în `docker-compose.yml` (acum compose e doar pentru dev: `name: flirt-dev`; producția e pe k3s). |
 | **P13** | **Producția nu putea crea niciun eveniment.** `POST /events` **nu exista** în API-ul public, iar seed-ul demo se oprește explicit când `environment == "production"`. Secțiunea „Evenimente" s-ar fi lansat goală și ar fi rămas goală. | ✅ | CRUD complet în panoul de admin (`/admin/events`) — singura cale prin care un eveniment real ajunge în baza de producție. |
 
 ---
@@ -226,10 +228,12 @@ Non-premium: **50** like-uri / 24h.
 
 - `ENVIRONMENT=production`, `DEBUG=false`, `CORS_ORIGINS` explicit — **guardul le impune**, nu poți uita.
 - `.env` cu `chmod 600`; cheia privată JWT generată **pe server**, niciodată în git.
-- Doar `nginx` publică porturi (80, 443). **Postgres și Redis nu au niciun port pe host** — un Redis expus
+- Producția rulează pe k3s — **nu rula `docker compose` pe server**. Doar Traefik ascultă public (80, 443).
+  **Postgres și Redis sunt ClusterIP, fără port pe host, izolate prin NetworkPolicies** — un Redis expus
   pe internet e preluat în minute (`CONFIG SET` → execuție de cod).
 - Firewall: doar 22, 80, 443 (și în panoul providerului, nu doar `ufw`).
-- Backup-uri pe alt disc / off-site, **testate prin restore** (`make restore`). Un backup pe care nu l-ai
+- Backup-urile din `/opt/flirt-backups` copiate off-site, **testate prin restore** (runbook
+  `deploy/k8s/scripts/README.md` §7). Un backup pe care nu l-ai
   restaurat niciodată nu e un backup, e o presupunere.
 
 Vezi [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) pentru procedura completă și checklistul final.

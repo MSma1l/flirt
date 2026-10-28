@@ -4,7 +4,8 @@
 #   ${ADMIN_DOMAIN}    → build-ul static al panoului de admin (SPA React/Vite)
 #   ${MINIAPP_DOMAIN}  → build-ul static al Telegram Mini App (SPA Vite)
 #
-# Port al lui backend/nginx/nginx.conf (docker compose). TOATE regulile de
+# Port al fostului backend/nginx/nginx.conf (stack-ul docker compose, retras la
+# 28.10.2026; acesta e acum SINGURUL config nginx de producție). TOATE regulile de
 # securitate de acolo sunt păstrate (antete, CSP per host, /media sandbox +
 # MIME, limite de corp, Cache-Control, rate limiting). DIFERENȚE:
 #   - TLS NU mai e aici: îl termină Traefik (certificate cert-manager). nginx
@@ -22,7 +23,7 @@
 # └──────────────────────────────────────────────────────────────────────────────┘
 
 # --------------------------------------------------------------------------- #
-# UPSTREAM API. În compose foloseam `resolver 127.0.0.11` + variabilă, pentru că
+# UPSTREAM API. În vechiul compose foloseam `resolver 127.0.0.11` + variabilă, pentru că
 # IP-ul containerului `api` se schimba la fiecare restart. În k8s numele `api`
 # e un Service cu ClusterIP STABIL (nu se schimbă când podurile mor/repornesc;
 # kube-proxy alege un pod sănătos), deci un `upstream` clasic e corect și ne dă
@@ -85,8 +86,8 @@ log_format flirt_anon '$flirt_anon_ip [$time_local] "$request_method $uri $serve
                       '$status $body_bytes_sent $request_time "$http_user_agent" $request_id';
 
 # --------------------------------------------------------------------------- #
-# RATE LIMITING la marginea rețelei (identic cu compose; motivarea pragurilor
-# e în backend/nginx/nginx.conf). Cheia = IP-ul REAL (după real_ip).
+# RATE LIMITING la marginea rețelei (identic cu vechiul compose; motivarea
+# pragurilor: istoricul git al fostului backend/nginx/nginx.conf). Cheia = IP-ul REAL (după real_ip).
 # ATENȚIE: zonele sunt PER POD. Cu `web` la N replici, limita efectivă e ~N×.
 # --------------------------------------------------------------------------- #
 limit_req_zone $binary_remote_addr zone=flirt_general:10m rate=20r/s;
@@ -236,7 +237,7 @@ server {
     }
 
     # UPLOAD-URI (multipart) — singurele rute cu corp mare (lista EXACTĂ din
-    # routerele app/api/v1/**; vezi backend/nginx/nginx.conf). 55m = 50 MB video
+    # routerele app/api/v1/**). 55m = 50 MB video
     # + overhead multipart; limita fină per tip rămâne în aplicație.
     # Regex ANCORAT `^/api/v1/...$`: nu poate potrivi /media/... (nu ocolește
     # blocarea /media/ticket-proofs/).
@@ -309,7 +310,7 @@ server {
 # Dacă MINIAPP_DOMAIN e gol, entrypoint-ul pune santinela `miniapp.localhost`
 # (blocul rămâne valid; traficul real nu ajunge pe el).
 #
-# CSP diferit de admin (motivarea completă în backend/nginx/nginx.conf):
+# CSP diferit de admin (motivarea completă: istoricul git al fostului backend/nginx/nginx.conf):
 # frame-ancestors = originile Telegram (Mini App-ul e încadrat), script-src +
 # telegram.org (SDK-ul oficial), img-src/media-src https: + blob:. FĂRĂ
 # X-Frame-Options (DENY ar bloca iframe-ul Telegram).

@@ -1,7 +1,14 @@
 # FLIRT pe k3s — manifeste
 
-Cluster k3s cu **un singur nod** (6 CPU, ~10 GB RAM). Înlocuiește `backend/docker-compose.yml`.
-Scripturile de build/deploy/migrare a datelor sunt documentate în `deploy/k8s/scripts/`.
+Cluster k3s cu **un singur nod** (6 CPU, ~10 GB RAM). **Singurul** mod de a rula producția.
+Scripturile de instalare/build/deploy sunt documentate în `deploy/k8s/scripts/README.md`.
+
+> ⛔ **NU rula `docker compose` pe server.** `backend/docker-compose.yml` e doar pentru
+> dezvoltare locală (db + redis + api); API-ul refuză să pornească cu
+> `ENVIRONMENT=production` în afara Kubernetes.
+>
+> Istoric: producția a rulat pe docker compose până la cutover-ul spre k3s, făcut pe
+> **28.10.2026** (scriptul unic de migrare a fost scos din repo după aceea).
 
 ## Structură
 
@@ -69,7 +76,7 @@ NetworkPolicy permite doar: kube-system → web:8080 (+ solver ACME :8089), web 
 - Backup-uri în `/opt/flirt-backups` pe host: `flirt-AAAALLZZ-HHMMSS.sql.gz` (la 6h) și
   `media/media-AAAALLZZ-HHMMSS.tar.gz` (zilnic), retenție 14 zile (cheile
   `BACKUP_RETENTION_DAYS` / `MEDIA_BACKUP_RETENTION_DAYS` din `flirt-env`, opționale).
-  Logica e copiată din `backend/scripts/backup_*.sh` — modifici scriptul, sincronizezi CronJob-ul.
+  Logica e inline în `cronjobs.yaml` (sursa unică de adevăr).
 - Backup manual imediat: `kubectl -n flirt create job --from=cronjob/backup-db backup-manual-$(date +%s)`.
 
 ## Comenzi utile
@@ -78,7 +85,7 @@ NetworkPolicy permite doar: kube-system → web:8080 (+ solver ACME :8089), web 
 kubectl -n flirt get pods,hpa,pdb,cronjobs,jobs
 kubectl -n flirt rollout status deploy/api
 kubectl -n flirt logs deploy/api -f
-kubectl -n flirt exec -it db-0 -- psql -U "$POSTGRES_USER" "$POSTGRES_DB"
+kubectl -n flirt exec -it db-0 -c postgres -- sh -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB"'
 kubectl -n flirt get certificate,certificaterequest,challenge   # starea TLS
 ```
 

@@ -60,18 +60,39 @@ jobs:
           TEST_DATABASE_URL: postgresql+asyncpg://flirt:flirt@localhost:5432/flirt_test
         run: python -m pytest -q
 
-      - name: Verific sintaxa nginx (config-ul de TLS chiar trebuie să pornească)
+      - name: Verific config-ul nginx al imaginii flirt-web (șablon k8s → nginx -t)
+        # Exact ce face podul `web` la pornire, în ACEEAȘI imagine de bază ca etapa
+        # finală din Dockerfile: fișierele montate la căile din `COPY`, apoi
+        # entrypoint-ul REAL (validare hostname + envsubst cu listă fixă + `nginx -t`),
+        # cu `exec nginx ...` final înlocuit de `exit 0` (verificăm, nu pornim).
+        # `--add-host api:127.0.0.1`: `upstream flirt_api` se rezolvă la încărcare,
+        # iar în CI nu există Service-ul `api`. Fără TLS aici (îl termină Traefik).
+        working-directory: deploy/k8s/images/web
+        shell: bash
         run: |
-          docker run --rm \
-            -v "$PWD/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
-            nginx:1.27-alpine nginx -t 2>&1 | tee /tmp/nginx-t.log || true
-          # Certificatele lipsesc în CI (le pune ensure-cert.sh la runtime), deci
-          # acceptăm DOAR eroarea de certificat lipsă, nu erori de sintaxă.
-          if grep -qE "syntax is ok|cannot load certificate" /tmp/nginx-t.log; then
-            echo "nginx.conf: sintaxă validă"
-          else
-            echo "nginx.conf: EROARE de sintaxă"; cat /tmp/nginx-t.log; exit 1
-          fi
+          set -euo pipefail
+          IMAGE="$(awk '$1 == "FROM" && $2 ~ /^nginxinc\// {print $2}' Dockerfile | tail -n1)"
+          test -n "$IMAGE" || { echo "nu găsesc imaginea nginx de bază în Dockerfile"; exit 1; }
+
+          mounts=()
+          while read -r src dest; do
+            mounts+=(-v "$GITHUB_WORKSPACE/$src:$dest:ro")
+          done < <(awk '$1 == "COPY" && $2 ~ /^deploy\/k8s\/images\/web\// {print $2, $3}' Dockerfile)
+          test "${#mounts[@]}" -gt 0
+
+          check="$RUNNER_TEMP/flirt-web-check.sh"
+          sed 's/^exec nginx .*/exit 0/' entrypoint.sh > "$check"
+          grep -qx 'exit 0' "$check" || { echo 'entrypoint.sh nu mai are "exec nginx"'; exit 1; }
+
+          # Cu și fără MINIAPP_DOMAIN (gol → santinela `miniapp.localhost`).
+          for miniapp in miniapp.ci.invalid ""; do
+            docker run --rm --add-host api:127.0.0.1 \
+              -e DOMAIN=api.ci.invalid -e ADMIN_DOMAIN=admin.ci.invalid -e MINIAPP_DOMAIN="$miniapp" \
+              "${mounts[@]}" \
+              -v "$check:/usr/local/bin/flirt-web-check.sh:ro" \
+              --entrypoint /bin/sh "$IMAGE" /usr/local/bin/flirt-web-check.sh
+          done
+          echo "flirt-web: configurația nginx randată e validă ($IMAGE)"
 
   mobile:
     name: Mobile — typecheck + jest

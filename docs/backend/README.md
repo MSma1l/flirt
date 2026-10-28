@@ -39,7 +39,7 @@ Backend Python async, **fără workeri și fără broker de cozi**. Procesarea �
 | **Auth** | **`python-jose`** (JWT RS256) + **`passlib[argon2]`** | tokenuri și parole |
 | **HTTP client** | **`httpx`** | JWKS Apple/Google, Nominatim, Twilio, Stripe, FCM |
 | **Object storage** | S3 (`boto3`) sau stub local | fotografii de profil |
-| **Reverse proxy / TLS** | **nginx** + **certbot** (Let's Encrypt) | TLS 1.2/1.3, HSTS, rate limit la margine |
+| **Reverse proxy / TLS** | **Traefik** + **cert-manager** (Let's Encrypt) pe k3s → **nginx** (imaginea `flirt-web`) | TLS, redirect 80→443; nginx: HSTS, rate limit la margine |
 
 ### Ce NU folosim (și de ce contează să fie scris)
 
@@ -137,7 +137,7 @@ backend/
     versions/                 # 13 migrări
     env.py
   scripts/
-    gdpr_purge.py             # purjarea GDPR (--loop) — RULEAZĂ CA SERVICIU SEPARAT
+    gdpr_purge.py             # purjarea GDPR — RULEAZĂ SEPARAT (CronJob `purge` în k8s)
     create_admin.py  create_test_users.py  seed_load_data.py
   tests/                      # PLAT (fără unit/ vs integration/) — 37 module, 445 teste
     conftest.py
@@ -146,15 +146,14 @@ backend/
     test_perf_queries.py      # teste de REGRESIE pe numărul de query-uri (N+1)
     test_config.py            # guardul de producție
     test_e2e_journey.py       # parcursul complet, cap-coadă
-  nginx/                      # nginx.conf (TLS 1.2/1.3, HSTS, limit_req)
   Dockerfile
   entrypoint.sh               # verifică .env → migrații Alembic (cu retry) → gunicorn 4 workeri
-  docker-compose.yml          # api · db · redis · nginx · certbot · admin-build · purge · backup
+  docker-compose.yml          # DOAR dev local: api · db · redis (producția: deploy/k8s/)
   pyproject.toml
   alembic.ini
 ```
 
-Panoul de admin web (React + Vite) e un proiect separat, la rădăcina repo-ului: **`/admin`** — construit de serviciul Compose `admin-build` și servit de nginx.
+Panoul de admin web (React + Vite) e un proiect separat, la rădăcina repo-ului: **`/admin`** — construit (împreună cu Mini App-ul) în imaginea `flirt-web` (`deploy/k8s/images/web/Dockerfile`) și servit de nginx-ul din ea.
 
 ### Principii de organizare
 
@@ -212,20 +211,18 @@ Fiecare integrare externă are o **fabrică de provideri** (`get_face_verifier()
 
 ## 6. Producție
 
-```
-docker compose up --build -d
-```
+Producția rulează pe **k3s** (un nod, namespace `flirt`, manifeste în `deploy/k8s/`). Deploy: `ssh flirt 'cd /opt/flirt && deploy/k8s/scripts/deploy.sh'`. **`docker-compose.yml` e doar pentru dezvoltare locală — nu se rulează pe server.**
 
-**Servicii Compose:** `api` · `db` (Postgres 16) · `redis` · `nginx` · `certbot` · `admin-build` · **`purge`** · `backup`
+**Resurse k8s:** `api` · `web` (nginx + admin + Mini App) · `db` (Postgres 16) · `redis` · Job `migrate` · CronJob-uri `purge`, `backup-db`, `backup-media` · Traefik + cert-manager (TLS)
 
-- **`api`** — `entrypoint.sh`: verifică `.env` (refuză orice `<<< COMPLETEAZĂ >>>` rămas și orice `JWT_PRIVATE_KEY` care nu arată a PEM) → rulează **migrațiile Alembic** (cu retry, 5 încercări) → pornește **gunicorn cu 4 workeri uvicorn**. Nu există un pas manual „rulează întâi migrațiile".
-- **`purge`** — rulează `scripts/gdpr_purge.py --loop`. **De ce un serviciu separat și nu lifespan-ul FastAPI:** cu 4 workeri gunicorn, un task în lifespan ar rula **de 4 ori în paralel**, pe aceleași rânduri.
-- **`nginx`** — TLS 1.2/1.3, HSTS, `limit_req` (`flirt_auth` 5r/m pe auth, `flirt_general` 20r/s pe restul), servește și `/admin`.
-- **`backup`** — `pg_dump` periodic + retenție. Restaurarea se testează cu `scripts/restore_db.sh` — un backup netestat nu e backup.
+- **`api`** — `entrypoint.sh`: verifică `.env` (refuză orice `<<< COMPLETEAZĂ >>>` rămas și orice `JWT_PRIVATE_KEY` care nu arată a PEM) → pornește **gunicorn cu workeri uvicorn**. În k8s migrațiile **nu** rulează în pod (`RUN_MIGRATIONS=0`), ci o singură dată, în Job-ul `migrate` lansat de `deploy.sh` înainte de rollout. Refuză să pornească cu `ENVIRONMENT=production` în afara Kubernetes (`ALLOW_PROD_OUTSIDE_K8S=1` doar la urgență).
+- **`purge`** — CronJob orar care rulează `scripts/gdpr_purge.py`. **De ce separat și nu lifespan-ul FastAPI:** cu mai mulți workeri și mai multe replici, un task în lifespan ar rula **de N ori în paralel**, pe aceleași rânduri.
+- **`web`** — nginx: HSTS, `limit_req` la margine, servește admin-ul și Mini App-ul, proxy `/api` → `api`. Configul: `deploy/k8s/images/web/nginx.conf.template`. TLS-ul îl termină Traefik.
+- **`backup-db` / `backup-media`** — `pg_dump` la 6 ore / arhivă media zilnic, în `/opt/flirt-backups` pe host, retenție 14 zile. Restaurarea: runbook §7 — un backup netestat nu e backup.
 - **Observabilitate** — logging JSON, `X-Request-ID` pe fiecare cerere, handler global de excepții (stack trace pe server, răspuns generic + `request_id` la client). Access log fără PII, tokenuri sau body-uri.
-- **Health** — `/health` (liveness) și `/health/ready` (readiness: **503** dacă DB-ul nu răspunde) la **rădăcină**, nu sub `/api/v1`: nginx, healthcheck-ul Docker și load balancer-ele le caută acolo, iar ele nu fac parte din API-ul public.
+- **Health** — `/health` (liveness) și `/health/ready` (readiness: **503** dacă DB-ul nu răspunde) la **rădăcină**, nu sub `/api/v1`: nginx, probele Kubernetes (startup/liveness pe `/health`, readiness pe `/health/ready`) și load balancer-ele le caută acolo, iar ele nu fac parte din API-ul public.
 
-Procedura completă (DNS, certificate, generarea cheilor JWT, `.env`): [`../DEPLOYMENT.md`](../DEPLOYMENT.md).
+Procedura completă (DNS, certificate, generarea cheilor JWT, `.env`): [`../DEPLOYMENT.md`](../DEPLOYMENT.md) și runbook-ul [`deploy/k8s/scripts/README.md`](../../deploy/k8s/scripts/README.md).
 
 ---
 

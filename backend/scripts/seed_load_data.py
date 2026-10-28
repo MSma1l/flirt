@@ -16,7 +16,7 @@ UTILIZARE
     # Postgres (ca producția) — ia DATABASE_URL din mediu / .env:
     python scripts/seed_load_data.py --users 2000 --reset
 
-    # Pe server (în container):
+    # În containerul de dev (docker compose):
     docker compose exec api python scripts/seed_load_data.py --users 2000 --reset
 
 Toți userii de test au ACEEAȘI parolă (`loadtest123`) și emailuri de forma

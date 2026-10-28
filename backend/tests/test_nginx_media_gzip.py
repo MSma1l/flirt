@@ -8,31 +8,35 @@ CE VERIFICĂM
    în location anulează moștenirea celor de la nivel de server).
 2. Dovezile de plată (`/media/ticket-proofs/*`) NU sunt servite: aceeași regulă
    ca `_PublicMediaFiles` din app/main.py.
-3. `docker-compose.yml` montează volumul de media în nginx, read-only, exact la
-   rădăcina folosită de config.
+3. Deployment-ul `web` (deploy/k8s/manifests/web.yaml) montează PVC-ul de
+   media READ-ONLY exact la rădăcina folosită de `location /media/`, iar `api`
+   scrie în ACELAȘI PVC.
 4. gzip e activ la nivel de `http`, cu JSON în listă.
 5. `/health` are limită (era complet nelimitat).
 
 Folosim parserul și randarea din `test_nginx_ratelimit_zones.py` (aceeași
-randare ca producția, prin `nginx/entrypoint.sh`).
+randare ca producția, prin entrypoint-ul imaginii deploy/k8s/images/web/).
 """
 from __future__ import annotations
 
 import re
 
 import pytest
+import yaml
 
 from tests.test_nginx_ratelimit_zones import (  # noqa: F401  (fixture importat)
-    BACKEND,
+    DOCKERFILE,
+    REPO,
     _api_server,
     _locations,
     _match_location,
     _zone_of,
     _zones,
     rendered,
+    rendered_raw,
 )
 
-COMPOSE = BACKEND / "docker-compose.yml"
+MANIFESTS = REPO / "deploy" / "k8s" / "manifests"
 
 SECURITY_HEADERS = [
     "add_header X-Content-Type-Options nosniff always;",
@@ -187,16 +191,40 @@ def test_nu_exista_location_regex_care_ar_putea_ocoli_blocarea(rendered):
 # --------------------------------------------------------------------------- #
 
 
-def test_compose_monteaza_media_in_nginx_read_only():
-    compose = COMPOSE.read_text(encoding="utf-8")
-    match = re.search(r"^  nginx:\n((?:    .*\n|\s*\n)+)", compose, re.MULTILINE)
-    assert match, "serviciul nginx lipsește din docker-compose.yml"
-    nginx_service = match.group(1)
+def _pod_spec(manifest: str, kind: str, name: str) -> dict:
+    for doc in yaml.safe_load_all((MANIFESTS / manifest).read_text(encoding="utf-8")):
+        if doc and doc["kind"] == kind and doc["metadata"]["name"] == name:
+            return doc["spec"]["template"]["spec"]
+    raise AssertionError(f"{kind}/{name} lipsește din {manifest}")
 
-    assert re.search(r"^\s+- mediadata:/var/www/media:ro\b", nginx_service, re.MULTILINE)
-    # Același volum pe care îl scrie API-ul.
-    api = re.search(r"^  api:\n((?:    .*\n|\s*\n)+)", compose, re.MULTILINE).group(1)
-    assert re.search(r"^\s+- mediadata:/data/media\b", api, re.MULTILINE)
+
+def _mount(spec: dict, container: str, path: str) -> tuple[dict, dict]:
+    """(volumeMount, volum) pentru containerul dat la calea dată."""
+    cont = next(c for c in spec["containers"] if c["name"] == container)
+    mount = next((m for m in cont.get("volumeMounts", []) if m["mountPath"] == path), None)
+    assert mount, f"{container}: nimic montat la {path}"
+    volume = next(v for v in spec["volumes"] if v["name"] == mount["name"])
+    return mount, volume
+
+
+def test_web_monteaza_media_read_only(rendered):
+    body = _match_location(_locations(_api_server(rendered)), MEDIA_URIS[0])[2]
+    root = re.search(r"^\s*root\s+(\S+);", body, re.MULTILINE).group(1)
+    media_dir = root.rstrip("/") + "/media"  # `location /media/` + `root` → <root>/media
+
+    mount, volume = _mount(_pod_spec("web.yaml", "Deployment", "web"), "web", media_dir)
+    # Read-only pe AMBELE niveluri: un nginx compromis nu poate scrie/înlocui media.
+    assert mount.get("readOnly") is True
+    assert volume["persistentVolumeClaim"].get("readOnly") is True
+    assert volume["persistentVolumeClaim"]["claimName"] == "media"
+    # Punctul de montare există în imagine (altfel nginx ar servi un dir gol).
+    assert media_dir in DOCKERFILE.read_text(encoding="utf-8")
+
+
+def test_api_scrie_in_acelasi_pvc_de_media():
+    mount, volume = _mount(_pod_spec("api.yaml", "Deployment", "api"), "api", "/data/media")
+    assert not mount.get("readOnly")
+    assert volume["persistentVolumeClaim"]["claimName"] == "media"
 
 
 # --------------------------------------------------------------------------- #

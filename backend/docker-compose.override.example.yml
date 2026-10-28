@@ -1,22 +1,19 @@
-# FLIRT — локальный оверрайд. Скопировать в backend/docker-compose.override.yml (gitignored)
+# FLIRT — override LOCAL de dezvoltare. Copiază-l în backend/docker-compose.override.yml
+# (gitignored); docker compose îl preia AUTOMAT lângă docker-compose.yml.
 #
-# docker compose подхватывает этот файл АВТОМАТИЧЕСКИ рядом с docker-compose.yml.
-# Основной compose — продакшн-формы: наружу торчит только nginx (443, самоподписанный
-# сертификат на localhost). Для локальной разработки и для телефона в той же Wi-Fi
-# удобнее иметь чистый HTTP на :8000 — это всё, что делает файл.
-#
-# В продакшн его НЕ копировать.
+# docker-compose.yml e DOAR pentru dezvoltare (producția = k3s, vezi deploy/k8s/).
+# Override-ul publică API-ul pe HTTP :8000 (Swagger + Expo de pe telefonul din
+# aceeași rețea). Postgres/Redis rămân nepublicate; decomentează mai jos dacă
+# vrei să te conectezi din host — DOAR pe 127.0.0.1.
 
 services:
   api:
     ports:
-      - "8000:8000"      # http://<IP-ноутбука>:8000/docs — Swagger, и туда же ходит Expo
+      - "8000:8000"      # http://<IP-laptop>:8000/docs — Swagger, și tot aici vine Expo
 
-  # certbot на localhost и так уходит в сон (см. scripts/certbot_entrypoint.sh),
-  # но локально он просто не нужен. Профиль, которого нет в `up`, = сервис не стартует.
-  certbot:
-    profiles: ["prod"]
-
-  # Ежедневный pg_dump локально тоже ни к чему.
-  backup:
-    profiles: ["prod"]
+  # db:
+  #   ports:
+  #     - "127.0.0.1:5434:5432"
+  # redis:
+  #   ports:
+  #     - "127.0.0.1:6380:6379"

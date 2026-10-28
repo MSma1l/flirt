@@ -41,7 +41,7 @@
 | Upload: allowlist MIME + magic-bytes + 8 MB | ✅ | `app/api/v1/profiles.py` |
 | Ștergere cont, grație 30 zile + purjare GDPR | ✅ | `app/services/account_service.py`, `scripts/gdpr_purge.py` |
 | Guard de producție (18 verificări la pornire) | ✅ | `app/core/config.py` |
-| TLS 1.2/1.3, HSTS, rate limit la margine | ✅ | `nginx/nginx.conf` |
+| TLS 1.2/1.3, HSTS, rate limit la margine | ✅ | TLS: Traefik + cert-manager (`deploy/k8s/manifests/`); HSTS + rate limit: `deploy/k8s/images/web/nginx.conf.template` |
 | Logging JSON + `request_id` + handler global | ✅ | `app/core/logging.py`, `app/main.py` |
 | Claim `age_group` / gardă `require_adult` | ❌ | **Nu există. Aplicația e 18+ only** — vezi 4.4 |
 | Endpoint JWKS propriu (`/.well-known/jwks.json`), `kid`, rotație chei | 🔜 | cheile vin din env, fără `kid` |
@@ -424,7 +424,7 @@ Apărarea e în **trei straturi independente** (config, preferințe efective, va
 
 Utilizatorul poate anula în perioada de grație (`POST /api/v1/settings/account/delete/cancel`).
 
-**Purjarea** (`account_service.purge_expired_accounts` → `purge_user_data`) rulează într-un **serviciu Docker Compose separat** (`purge`, care execută `scripts/gdpr_purge.py --loop`, interval `GDPR_PURGE_INTERVAL_SECONDS`), **NU în lifespan-ul FastAPI**. Motivul e concret: `entrypoint.sh` pornește **4 workeri gunicorn**, deci un task în lifespan ar rula **de 4 ori în paralel**, pe aceleași rânduri.
+**Purjarea** (`account_service.purge_expired_accounts` → `purge_user_data`) rulează într-un **CronJob k8s separat** (`purge`, orar, care execută `scripts/gdpr_purge.py` — `deploy/k8s/manifests/cronjobs.yaml`), **NU în lifespan-ul FastAPI**. Motivul e concret: API-ul rulează cu mai mulți workeri gunicorn și mai multe replici, deci un task în lifespan ar rula **de N ori în paralel**, pe aceleași rânduri.
 
 Ce se șterge efectiv (`purge_user_data`, idempotentă, apelată identic și de `admin_service.delete_user`):
 
@@ -435,7 +435,7 @@ Două decizii care merită explicate:
 - **Rândul din `users` NU se șterge — se ANONIMIZEAZĂ.** `email` devine `deleted+{uuid}@deleted.invalid` (domeniul `.invalid`, RFC 2606, nu poate fi înregistrat vreodată), `password_hash` devine șirul gol (niciun hash nu se potrivește ⇒ nicio parolă nu funcționează), `profile_completed=False`. Contul devine ne-autentificabil și ne-identificabil, dar cheile externe rămân valide.
 - **Rapoartele de moderare (`Report`) se PĂSTREAZĂ — intenționat.** GDPR **art. 17(3)** permite păstrarea datelor necesare pentru constatarea sau apărarea unui drept și pentru prevenirea abuzului. Dacă am fi șters rapoartele odată cu contul, un abuzator și-ar fi putut curăța dovezile pur și simplu cerându-și ștergerea contului — și ar fi revenit cu un cont nou și un istoric de moderare gol. Exact de asta rândul `users` rămâne (anonimizat): ca FK-urile rapoartelor să nu se rupă.
 
-> 🔜 **Propagarea ștergerii în backup-uri** nu e documentată cu un termen maxim. Serviciul `backup` din Compose face dump-uri periodice; politica de retenție și procedura de purjare din backup **trebuie scrise** (cerință GDPR).
+> 🔜 **Propagarea ștergerii în backup-uri** nu e documentată cu un termen maxim. CronJob-ul `backup-db` face dump-uri la 6 ore în `/opt/flirt-backups` (retenție 14 zile); politica de retenție și procedura de purjare din backup **trebuie scrise** (cerință GDPR).
 
 ### 4.6 Audit logging
 
@@ -473,24 +473,26 @@ Depășire → **429**. `admin_login` are **bucket separat** de `login`: un cont
 
 > ⚠️ **De asta `REDIS_URL` e OBLIGATORIU în producție** (guardul îl impune, secțiunea 6): limitatorul in-memory e **per proces**, iar `entrypoint.sh` pornește **4 workeri gunicorn** ⇒ limita reală devine **4×** cea configurată, și se înmulțește la scale-out orizontal. Practic, brute-force-ul pe login trece.
 
-**La margine (nginx, `nginx/nginx.conf`):**
+**La margine (nginx din imaginea `flirt-web`, `deploy/k8s/images/web/nginx.conf.template`):**
 
 ```nginx
 limit_req_zone $binary_remote_addr zone=flirt_general:10m rate=20r/s;
-limit_req_zone $binary_remote_addr zone=flirt_auth:10m    rate=5r/m;
+limit_req_zone $flirt_auth_key     zone=flirt_auth:10m    rate=5r/m;
+# + flirt_tg_auth, flirt_session, flirt_media — vezi șablonul
 ```
-`flirt_auth` (burst 10) pe rutele de auth, `flirt_general` (burst 40) pe restul. Două straturi: nginx oprește inundațiile brute înainte să atingă Python, aplicația aplică limitele semantice.
+`flirt_auth` pe rutele de login, zone separate pentru auth Telegram, sesiune și media, `flirt_general` pe restul. Limitele sunt **per pod `web`** (N replici ≈ N× limita la margine). Două straturi: nginx oprește inundațiile brute înainte să atingă Python, aplicația aplică limitele semantice.
 
 > 🔜 **Nu există** rate limiting **per user** (`sub`) — doar per IP. Un atacator cu multe IP-uri (botnet, proxy rotativ) nu e oprit de limita per-IP.
 > 🔜 **Nu trimitem header-ul `Retry-After`** pe 429.
 
 ### 5.2 HTTPS / TLS
 
-`nginx/nginx.conf` + `certbot` (Let's Encrypt, serviciu în Compose):
+TLS terminat de **Traefik** (k3s), certificat Let's Encrypt emis și reînnoit de **cert-manager**
+(`deploy/k8s/manifests/ingress.yaml`, `cluster/issuers.yaml`, `cluster/traefik-config.yaml`):
 
-- ✅ **TLS 1.2 / 1.3** (`ssl_protocols TLSv1.2 TLSv1.3;`). HTTP → redirecționat.
-- ✅ **HSTS:** `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`.
-- ✅ Uvicorn pornește cu `--forwarded-allow-ips`, ca `X-Forwarded-Proto` să fie respectat (altfel ar considera cererile HTTP chiar venind prin TLS).
+- ✅ **TLS 1.2+** (minimul implicit Traefik). HTTP → redirect permanent spre HTTPS (Traefik).
+- ✅ **HSTS:** `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload` (nginx, `deploy/k8s/images/web/nginx.conf.template`).
+- ✅ Gunicorn/uvicorn pornește cu `--forwarded-allow-ips` (în k8s: `FORWARDED_ALLOW_IPS` din `api.yaml`), ca `X-Forwarded-Proto` să fie respectat (altfel ar considera cererile HTTP chiar venind prin TLS).
 
 > 🔜 **Certificate pinning** în aplicația mobilă — **recomandat, neimplementat**. Ar reduce riscul de MITM pe endpoint-urile de auth, cu prețul unei operațiuni de rotație a certificatului mai delicate.
 

@@ -466,8 +466,9 @@ class Settings(BaseSettings):
     # Dovezile comenzilor RESPINSE/ANULATE nu sunt documente contabile: se șterg
     # după atâtea zile de la decizie (timp pentru contestații).
     rejected_payment_proof_retention_days: int = 90
-    # Cât păstrăm jurnalele tehnice. Aplicat pe host de
-    # scripts/prune_container_logs.sh (citește LOG_RETENTION_DAYS din .env).
+    # Cât păstrăm jurnalele tehnice (promis în Politica de confidențialitate).
+    # ⚠️ Fostul scripts/prune_container_logs.sh (docker compose) a fost scos; pe
+    # k3s kubelet rotește log-urile doar după mărime — limita în timp e de refăcut.
     log_retention_days: int = 30
 
     # Plafoane de paginare (folosite de app/services/pagination.py). Fără ele,

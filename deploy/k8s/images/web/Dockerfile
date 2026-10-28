@@ -8,17 +8,16 @@
 #     --build-arg DOMAIN=api.flrt.md --build-arg TELEGRAM_BOT_USERNAME=... \
 #     -t flirt-web:<tag> .
 #
-# Echivalentul serviciilor `admin-build` / `miniapp-build` din
-# backend/docker-compose.yml (scripts/build_admin.sh, build_miniapp.sh), cu O
-# DIFERENȚĂ voită: un build stricat FACE build-ul imaginii să eșueze (nu mai
-# servim placeholder). În k8s asta e corect — deploy.sh se oprește, iar
-# versiunea veche rămâne online.
+# SINGURUL loc unde se construiesc admin-ul și Mini App-ul pentru producție
+# (fostele servicii compose `admin-build` / `miniapp-build` au fost retrase).
+# Un build stricat FACE build-ul imaginii să eșueze (nu servim placeholder):
+# deploy.sh se oprește, iar versiunea veche rămâne online.
 #
 # Variabilele VITE_* sunt inline-uite în bundle la BUILD → vin ca ARG-uri.
 # NICIUN SECRET aici: bundle-ul e public (TELEGRAM_BOT_TOKEN NU intră niciodată).
 
 # --------------------------------------------------------------------------- #
-# 1. Panoul de admin — node:20 (ca `admin-build`)
+# 1. Panoul de admin — node:20
 # --------------------------------------------------------------------------- #
 FROM node:20-alpine AS admin
 WORKDIR /src/admin
@@ -36,7 +35,7 @@ COPY admin/ ./
 ARG DOMAIN=localhost
 ARG API_V1_PREFIX=/api/v1
 ARG VITE_API_URL=
-# Gol → compus din DOMAIN, exact ca build_admin.sh.
+# Gol → compus din DOMAIN (https://$DOMAIN$API_V1_PREFIX).
 RUN VITE_API_URL="${VITE_API_URL:-https://${DOMAIN}${API_V1_PREFIX}}" \
     && export VITE_API_URL \
     && echo "VITE_API_URL=${VITE_API_URL}" \
@@ -52,7 +51,7 @@ COPY miniapp/package.json miniapp/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 # Sursele partajate cu aplicația mobilă (alias-urile @mobile/ și @theme/ din
 # miniapp/vite.config.ts arată spre ../mobile). __tests__ sunt excluse prin
-# Dockerfile.dockerignore (ca în build_miniapp.sh).
+# Dockerfile.dockerignore.
 COPY mobile/src /src/mobile/src
 COPY mobile/theme /src/mobile/theme
 # Puntea de dependențe: sursele din mobile/ importă axios, i18next etc., iar

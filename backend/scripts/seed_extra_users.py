@@ -26,7 +26,7 @@ Rulare:
     python scripts/seed_extra_users.py
     python scripts/seed_extra_users.py --count 80
     python scripts/seed_extra_users.py --reset
-    docker compose exec api python scripts/seed_extra_users.py
+    docker compose exec api python scripts/seed_extra_users.py    # dev local
 """
 from __future__ import annotations
 

@@ -28,7 +28,9 @@ UTILIZARE
     # Neinteractiv (CI / provisioning), parola dintr-o variabilă de mediu:
     ADMIN_PASSWORD='...' python scripts/create_admin.py admin@flrt.md --from-env
 
-    # În Docker:
+    # Producție (k3s, pe server):
+    k3s kubectl -n flirt exec -it deploy/api -- python scripts/create_admin.py admin@flrt.md
+    # Dev local (docker compose):
     docker compose exec api python scripts/create_admin.py admin@flrt.md
 
 IDEMPOTENT: dacă emailul există deja, contul e PROMOVAT la rolul `admin` (parola

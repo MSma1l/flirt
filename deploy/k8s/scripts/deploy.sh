@@ -7,7 +7,7 @@
 #   (fără)       pull → build → import → secret → manifeste → migrații → rollout
 #   --rollback   revine la versiunea anterioară (api + web + cronjob purge)
 #   --prepare    doar pull + build + import + secret + resurse de cluster (fără
-#                rollout); folosit înainte de migrate-from-compose.sh
+#                rollout) — pregătire, ex. pe un server nou înainte de primul deploy
 #   --no-pull    sare peste `git pull` (deploy al commit-ului deja prezent)
 #
 # ⚠️  MIGRAȚII COMPATIBILE ÎNAPOI (expand/contract) — OBLIGATORIU.
@@ -157,7 +157,7 @@ WEB_RUNNING="$(deploy_image web web)"
 
 if [ "$MODE" = prepare ]; then
     # Instalare nouă (încă nimic în k8s): `current` = imaginea tocmai construită,
-    # ca migrate-from-compose.sh / `apply -k` să aibă ce porni.
+    # ca `apply -k` să aibă ce porni.
     [ -n "$API_RUNNING" ] || ctr_retag_current "flirt-api:$TAG"
     [ -n "$WEB_RUNNING" ] || ctr_retag_current "flirt-web:$TAG"
     log "=== --prepare gata: imagini flirt-api:$TAG / flirt-web:$TAG importate, secret actualizat ==="
@@ -167,7 +167,7 @@ fi
 FRESH=0
 if [ -z "$API_RUNNING" ] || [ -z "$WEB_RUNNING" ]; then
     # Prima instalare: nu există versiune veche de protejat.
-    warn "Deployment-urile nu există încă → instalare nouă (pentru migrarea din compose folosește migrate-from-compose.sh)"
+    warn "Deployment-urile nu există încă → instalare nouă"
     FRESH=1
     ctr_retag_current "flirt-api:$TAG"
     ctr_retag_current "flirt-web:$TAG"

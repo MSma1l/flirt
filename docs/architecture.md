@@ -11,7 +11,8 @@ cheie, cum comunică mobilul cu backendul.
 > **neimplementate**.
 
 **Stack real:** **Expo (React Native)** · **FastAPI** (gunicorn, 4 workeri uvicorn) ·
-**PostgreSQL 16** (fără PostGIS) · **Redis** · **nginx** (TLS) · **Alembic** · **JWT**.
+**PostgreSQL 16** (fără PostGIS) · **Redis** · **nginx** · **Alembic** · **JWT** · producția pe
+**k3s** (Traefik + cert-manager pentru TLS) — vezi [`DEPLOYMENT.md`](./DEPLOYMENT.md).
 
 ---
 
@@ -30,9 +31,9 @@ cheie, cum comunică mobilul cu backendul.
            └───────────────┬──────────┘
                            ▼
               ┌─────────────────────────┐
-              │        nginx            │   ← TLS, redirect 80→443,
-              │  reverse proxy + TLS    │     rate-limit la margine,
-              │  servește admin SPA     │     servește /admin static
+              │ Traefik (TLS) → nginx   │   ← TLS + redirect 80→443 (Traefik),
+              │  reverse proxy          │     rate-limit la margine,
+              │  servește admin SPA     │     admin + Mini App static (nginx)
               └────────────┬────────────┘
                            ▼
    ┌───────────────────────────────────────────────────┐
@@ -62,20 +63,21 @@ cheie, cum comunică mobilul cu backendul.
         FĂRĂ Celery · FĂRĂ broker · FĂRĂ cozi · FĂRĂ pub/sub
 ```
 
-### Servicii Docker Compose
+### Resurse în producție (k3s, namespace `flirt`)
 
-| Serviciu | Rol |
+| Resursă | Rol |
 |---|---|
-| `api` | FastAPI sub gunicorn (4 workeri uvicorn). Rulează migrațiile Alembic la pornire. |
-| `db` | PostgreSQL 16. |
-| `redis` | Rate-limiting partajat + store OTP. |
-| `nginx` | TLS, redirect 80→443, rate-limit la margine, servește SPA-ul de admin. |
-| `certbot` | Emite și reînnoiește certificatul TLS **automat**. |
-| `admin-build` | Buildează SPA-ul de admin într-un volum comun cu nginx. |
-| `purge` | Job GDPR — șterge definitiv conturile după grația de 30 de zile. |
-| `backup` | `pg_dump` periodic. |
+| Traefik + cert-manager | TLS Let's Encrypt (emitere + reînnoire **automată**), redirect 80→443. Singurul punct expus public. |
+| `web` (Deployment) | nginx: rate-limit la margine, servește SPA-urile admin + Mini App (build în `deploy/k8s/images/web/Dockerfile`), proxy către `api`. |
+| `api` (Deployment) | FastAPI sub gunicorn, 2–6 replici (HPA). |
+| Job `migrate` | Migrațiile Alembic, o singură dată per deploy, înainte de rollout. |
+| `db` (StatefulSet) | PostgreSQL 16, ClusterIP. |
+| `redis` (StatefulSet) | Rate-limiting partajat + store OTP, ClusterIP. |
+| CronJob `purge` | GDPR — șterge definitiv conturile după grația de 30 de zile (orar). |
+| CronJob `backup-db` / `backup-media` | `pg_dump` la 6 ore / arhivă media zilnic → `/opt/flirt-backups`. |
 
-Deploy complet: [`DEPLOYMENT.md`](./DEPLOYMENT.md).
+Deploy complet: [`DEPLOYMENT.md`](./DEPLOYMENT.md). Local, `backend/docker-compose.yml` pornește
+doar `api` + `db` + `redis` (dezvoltare).
 
 ### Rolurile componentelor
 
@@ -83,7 +85,7 @@ Deploy complet: [`DEPLOYMENT.md`](./DEPLOYMENT.md).
 |---|---|
 | **Mobile (Expo)** | UI, gesturi de swipe, **polling** chat, cache prin **React Query** (state server) + **Zustand** (state client), `axios` cu JWT. Hărțile: `react-native-webview` + **Leaflet** + tiles **OpenStreetMap**. |
 | **Admin SPA** | React + Vite + react-router; **static**, servit de nginx; consumă `/api/v1/admin/*`. |
-| **nginx** | Singurul lucru expus public. TLS, rate-limit de margine, proxy către `api`, servire statică. |
+| **Traefik → nginx** | Singura intrare publică. Traefik termină TLS; nginx (`web`) face rate-limit de margine, proxy către `api`, servire statică. |
 | **FastAPI** | Toată logica. **Sincron, în request** — nu există workeri de fundal. |
 | **PostgreSQL 16** | Sursa de adevăr. `lat`/`lng` sunt **`Float`**, iar distanța se calculează cu **haversine în aplicație**. |
 | **Redis** | **Rate-limiting partajat** (cei 4 workeri trebuie să vadă același contor — în memorie ar fi fost 4 limite separate) și **store OTP** (codurile expiră singure, nu poluează DB-ul). |
@@ -197,7 +199,7 @@ Admin ──POST /api/v1/admin/users/{id}/ban──► BAN REAL
 
 ## 4. Comunicarea frontend ↔ backend
 
-- **Protocol**: REST / JSON peste HTTPS (TLS terminat în nginx). Autorizare **JWT Bearer**
+- **Protocol**: REST / JSON peste HTTPS (TLS terminat în Traefik). Autorizare **JWT Bearer**
   (`Authorization: Bearer <access_token>`), access token scurt + refresh token.
 - **Client de date**: **axios** + **React Query** (fetching, cache, invalidare, retry) pentru
   starea de server; **Zustand** pentru starea de client (sesiune, UI). TypeScript **strict**.
@@ -255,6 +257,6 @@ Guideline 4.8).
 - Securitate backend (JWT, sesiuni, moderare, GDPR): [`./backend/security.md`](./backend/security.md)
 - Panou de admin: [`./admin/README.md`](./admin/README.md) · [`./admin/api.md`](./admin/api.md)
 - Integrări externe (S3, Rekognition, Nominatim, push, billing): [`./INTEGRATIONS.md`](./INTEGRATIONS.md)
-- Deployment (TLS, Compose, `.env`): [`./DEPLOYMENT.md`](./DEPLOYMENT.md)
+- Deployment (k3s, TLS, `.env`): [`./DEPLOYMENT.md`](./DEPLOYMENT.md)
 - Design system: [`./design-system/colors.md`](./design-system/colors.md)
 - Index general: [`./README.md`](./README.md)

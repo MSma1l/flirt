@@ -1,18 +1,17 @@
-# Sarcini periodice — echivalentul serviciilor `purge`, `backup`, `backup-media`
-# din compose. Acolo rulau în buclă (`--loop` + sleep); aici fiecare execuție e un
-# Job separat (scripturile fără `--loop` fac O SINGURĂ trecere și ies), deci un
-# eșec e vizibil în `kubectl get jobs -n flirt` în loc să fie înghițit de buclă.
+# Sarcini periodice (fostele servicii compose `purge`, `backup`, `backup-media`,
+# retrase la 28.10.2026). Fiecare execuție e un Job separat (o singură trecere,
+# apoi iese), deci un eșec e vizibil în `kubectl get jobs -n flirt`.
 #
 # concurrencyPolicy: Forbid — o execuție lentă nu se suprapune cu următoarea.
 # Ora: Europe/Chisinau (timeZone e GA din k8s 1.27).
 #
-# Backup-urile scriu pe host în /opt/flirt-backups (ca BACKUP_HOST_DIR din compose),
+# Backup-urile scriu pe host în /opt/flirt-backups,
 # ÎN AFARA checkout-ului git, prin PVC-ul `backups` (vezi backups.yaml).
 # ⚠️ Ideal pe un disc separat / sincronizat off-site.
 ---
 # Purjare GDPR + retenția dovezilor de plată + curățarea story-urilor expirate.
 # `python scripts/gdpr_purge.py` fără `--loop` = o trecere (vezi docstring-ul lui).
-# Compose: GDPR_PURGE_INTERVAL_SECONDS=3600 → aici orar.
+# Orar.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -83,11 +82,9 @@ spec:
                 claimName: media
 ---
 # Backup Postgres: pg_dump | gzip -9 → .partial → mv, apoi retenție N zile.
-# Logica e COPIATĂ din backend/scripts/backup_db.sh (mod fără `--loop`): kustomize
-# nu poate încărca fișiere din afara rădăcinii lui (backend/scripts/), iar imaginea
-# postgres nu are scripturile. ⚠️ Modifici scriptul → sincronizează și aici.
-# Compose rula zilnic (BACKUP_INTERVAL_SECONDS=86400); aici la 6h = pierdere maximă
-# de date 6h în loc de 24h (retenția pe zile rămâne aceeași: ~56 dump-uri).
+# Logica e INLINE aici (sursa unică; fostul backend/scripts/backup_db.sh a fost
+# scos odată cu stack-ul compose). La 6h = pierdere maximă de date 6h (retenția pe
+# zile: ~56 dump-uri la 14 zile).
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -196,9 +193,9 @@ spec:
                 claimName: backups
 ---
 # Backup MEDIA: tar.gz al volumului `media` → /opt/flirt-backups/media, retenție.
-# Logica e COPIATĂ din backend/scripts/backup_media.sh (mod fără `--loop`), cu
-# aceleași plase de siguranță: sursa montată readOnly, destinația nu poate fi în
-# sursă, retenția doar pe tiparul propriu, -maxdepth 1. Zilnic, ca în compose.
+# Logica e INLINE aici (sursa unică), cu plase de siguranță: sursa montată
+# readOnly, destinația nu poate fi în sursă, retenția doar pe tiparul propriu,
+# -maxdepth 1. Zilnic.
 apiVersion: batch/v1
 kind: CronJob
 metadata:

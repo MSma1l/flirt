@@ -64,7 +64,7 @@ export const config = {
  * DE CE LE DERIVĂM din adresa API, în loc să le scriem de mână: adresa API e
  * deja obligatorie și validată, iar paginile stau pe ACELAȘI host (build-ul
  * compune `VITE_API_URL="https://$DOMAIN$API_V1_PREFIX"` — vezi
- * `backend/scripts/build_miniapp.sh`). O a doua constantă hardcodată ar putea
+ * `deploy/k8s/images/web/Dockerfile`). O a doua constantă hardcodată ar putea
  * rămâne în urmă la o schimbare de domeniu și ar trimite utilizatorul — și
  * recenzentul din magazin — la o pagină moartă.
  *
@@ -141,7 +141,7 @@ export function getLegalUrls(): LegalUrls {
  * afara Telegram se poate întoarce unde trebuie.
  *
  * Vine din `VITE_TELEGRAM_BOT_USERNAME`, injectat la build de
- * `backend/scripts/build_miniapp.sh` (care îl ia din `TELEGRAM_BOT_USERNAME`).
+ * `deploy/k8s/images/web/Dockerfile` (care îl ia din `TELEGRAM_BOT_USERNAME`).
  * NU e hardcodat nicăieri: un nume greșit în bundle ar duce utilizatorul la un
  * chat inexistent, iar el n-ar avea cum să-și dea seama de ce.
  *

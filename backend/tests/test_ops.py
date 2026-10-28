@@ -327,7 +327,7 @@ async def test_malicious_request_id_is_sanitized(client: AsyncClient):
 
 @_aio
 async def test_gdpr_purge_script_deletes_expired_accounts(db_session, monkeypatch):
-    """`scripts/gdpr_purge.py --loop` (serviciul `purge` din compose) chiar șterge."""
+    """`scripts/gdpr_purge.py` (CronJob-ul `purge` din deploy/k8s/manifests/cronjobs.yaml) chiar șterge."""
     import contextlib
     import importlib
     import sys

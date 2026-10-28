@@ -12,7 +12,7 @@ compatibilitate**, **chat cu mascarea contactelor** și **evenimente offline „
 | **Backend** | Python 3.12 · FastAPI · SQLAlchemy 2.0 async · PostgreSQL 16 · Redis · Alembic | ✅ deployabil, validat pe stiva reală |
 | **Mobile** | React Native · Expo · expo-router · TypeScript strict · React Query · Zustand | ✅ funcțional; ❌ build de store blocat (vezi mai jos) |
 | **Admin** | React · Vite · TypeScript | ✅ funcțional |
-| **Infra** | Docker Compose · nginx (TLS/Let's Encrypt) · gunicorn | ✅ un singur `docker compose up` |
+| **Infra** | k3s (un nod) · Traefik + cert-manager (TLS Let's Encrypt) · nginx · gunicorn | ✅ deploy zero-downtime cu rollback automat (`deploy/k8s/`) |
 
 **Cifre reale** (verificate prin rulare, nu estimate):
 
@@ -29,7 +29,8 @@ compatibilitate**, **chat cu mascarea contactelor** și **evenimente offline „
 ## Structura repo-ului
 
 ```
-backend/     FastAPI + Postgres + Redis + nginx + Docker Compose (tot deploy-ul)
+backend/     FastAPI + Postgres + Redis (docker-compose.yml = doar dev local)
+deploy/k8s/  producția: manifeste k3s, imaginea web (nginx + admin + Mini App), scripturi de deploy
 mobile/      aplicația Expo (proiect SEPARAT, nu face parte din stack-ul de server)
 admin/       panoul de administrare (SPA React + Vite, servit de nginx)
 docs/        documentația tehnică — vezi docs/README.md
@@ -74,27 +75,31 @@ npm test                      # 19 teste
 npm run dev                   # http://localhost:5173
 ```
 
-### Stiva completă în Docker (ca în producție)
+### Backend în Docker — doar dezvoltare locală
 
 ```bash
 cd backend
 cp .env.example .env
-docker compose up --build
+docker compose up --build     # DOAR local (proiectul `flirt-dev`), niciodată pe server
 ```
 
-Pornește api + Postgres + Redis + nginx + build-ul panoului de admin. Migrațiile rulează singure.
+Pornește api + Postgres + Redis. Migrațiile rulează singure. Panoul de admin și Mini App-ul
+se rulează separat cu `npm run dev`.
 
 ---
 
 ## Cum deployezi
 
-Procedura completă (server gol → `https://api.flrt.md` live, cu TLS emis automat) e în
-**[`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)**. Pe scurt, după ce `.env` e completat o dată:
+Producția rulează pe **k3s** (din 28.10.2026). Rezumat în
+**[`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)**, runbook complet în
+[`deploy/k8s/scripts/README.md`](./deploy/k8s/scripts/README.md). Deploy (build, migrații,
+rollout fără downtime, rollback automat):
 
 ```bash
-cd /opt/flirt && git pull
-cd backend && docker compose up --build -d
+ssh flirt 'cd /opt/flirt && deploy/k8s/scripts/deploy.sh'
 ```
+
+> **NU rula `docker compose` pe server** — compose e doar pentru dezvoltare locală.
 
 Domeniile reale:
 
@@ -102,13 +107,14 @@ Domeniile reale:
 |---|---|
 | `api.flrt.md` | API-ul (aplicația mobilă vorbește doar aici) |
 | `admin-flirt-paty.flrt.md` | panoul de admin |
+| `miniapp.flrt.md` | Telegram Mini App |
 
 > Domeniul e **`flrt.md`**, nu `flirt.md` (care nu există în DNS).
 
-Primul cont de admin se creează cu un script, din interiorul containerului:
+Primul cont de admin se creează cu un script, pe server:
 
 ```bash
-docker compose exec api python scripts/create_admin.py admin@flrt.md
+k3s kubectl -n flirt exec -it deploy/api -- python scripts/create_admin.py admin@flrt.md
 ```
 
 ---

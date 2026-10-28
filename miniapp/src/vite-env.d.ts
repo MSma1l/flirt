@@ -5,7 +5,7 @@ interface ImportMetaEnv {
   readonly VITE_API_URL?: string;
   /**
    * Numele botului Telegram (fără `@`), injectat la build de
-   * `backend/scripts/build_miniapp.sh`. Când lipsește, butonul
+   * `deploy/k8s/images/web/Dockerfile`. Când lipsește, butonul
    * „Deschide în Telegram" nu se afișează deloc.
    */
   readonly VITE_TELEGRAM_BOT_USERNAME?: string;

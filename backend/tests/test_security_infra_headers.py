@@ -8,9 +8,13 @@ declarate la nivel de `server`. Panoul de admin avea `add_header Cache-Control`
 în `location /assets/` și `location = /index.html` — adică tot ce servea —
 deci pleca fără CSP, X-Frame-Options, HSTS, nosniff și Referrer-Policy.
 
-REGULA PĂZITĂ AICI, generic, pe TOATE serverele TLS:
+REGULA PĂZITĂ AICI, generic, pe TOATE serverele publice:
   orice `location` cu `add_header` repetă TOATE antetele de securitate ale
   serverului său (aceeași valoare, cu `always`).
+
+Sursa de adevăr (din 28.10.2026, k3s): șablonul nginx al imaginii `flirt-web`,
+deploy/k8s/images/web/nginx.conf.template, randat ca în entrypoint-ul imaginii.
+TLS-ul îl termină Traefik, dar HSTS & co. se trimit în continuare din nginx.
 
 Plus: CSP `sandbox` pe /media, Cache-Control lung fără `always`,
 Permissions-Policy pe Mini App și `client_max_body_size` 1m implicit / 55m
@@ -28,8 +32,10 @@ from tests.test_nginx_ratelimit_zones import (  # noqa: F401  (fixture importat)
     BACKEND,
     DOMAIN,
     MINIAPP_DOMAIN,
+    TEMPLATE,
     _block_body,
     rendered,
+    rendered_raw,
 )
 
 REPO = BACKEND.parent
@@ -291,9 +297,10 @@ def test_limita_implicita_este_1m(rendered):
 
 def test_location_upload_e_proxat_corect(rendered):
     _, body = _upload_location(rendered)
-    assert "proxy_pass http://$" in body
+    # Snippet-ul comun proxy-api.conf e expandat de fixture (cum îl vede nginx).
+    assert re.search(r"^\s*proxy_pass http://flirt_api;", body, re.MULTILINE)
     assert "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;" in body
-    assert "proxy_set_header X-Forwarded-Proto $scheme;" in body
+    assert "proxy_set_header X-Forwarded-Proto $flirt_fwd_proto;" in body
     assert re.search(r"^\s*limit_req zone=flirt_general\b", body, re.MULTILINE)
 
 
@@ -378,5 +385,29 @@ def test_lista_de_upload_acopera_toate_rutele_multipart_din_api(rendered):
 
 
 def test_template_nu_mai_are_55m_global():
-    text = (BACKEND / "nginx" / "nginx.conf").read_text(encoding="utf-8")
+    text = TEMPLATE.read_text(encoding="utf-8")
     assert len(re.findall(r"^\s*client_max_body_size\s+55m;", text, re.MULTILINE)) == 1
+
+
+# --------------------------------------------------------------------------- #
+# 6. Host necunoscut → 444 (doar /nginx-health pentru probele kubelet)
+# --------------------------------------------------------------------------- #
+
+
+def test_host_necunoscut_primeste_444(rendered):
+    """Serverul implicit nu servește nimic pentru un Host străin (scanere, DNS
+    rebinding): conexiune închisă. Singura excepție: `/nginx-health` (exact)."""
+    clean = _strip_comments(rendered)
+    defaults = []
+    for match in re.finditer(r"^server\s*\{", clean, re.MULTILINE):
+        body, _ = _block_body(clean, match.end() - 1)
+        if re.search(r"^\s*listen\s+\S+\s+default_server;", body, re.MULTILINE):
+            defaults.append(body)
+    assert len(defaults) == 1, "exact UN server implicit"
+    body = defaults[0]
+    assert re.search(r"^\s*server_name\s+_;", body, re.MULTILINE)
+
+    locations = {(mod, path): loc for mod, path, loc in _locations(body)}
+    assert set(locations) == {("=", "/nginx-health"), ("", "/")}
+    assert re.search(r"^\s*return 444;", locations[("", "/")], re.MULTILINE)
+    assert "proxy_pass" not in body and "root" not in body

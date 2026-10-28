@@ -2,7 +2,7 @@
  * Harta locului unui eveniment — Leaflet REAL, direct în DOM-ul Mini App-ului.
  *
  * DE CE NU PORTĂM VARIANTA WEB DIN MOBIL (`<iframe>` spre openstreetmap.org):
- * politica CSP servită paginii Mini App (`backend/nginx/nginx.conf`, blocul
+ * politica CSP servită paginii Mini App (`deploy/k8s/images/web/nginx.conf.template`, blocul
  * Mini App) începe cu `default-src 'self'`, iar `frame-src` nu e declarat
  * separat — deci moștenește `default-src` și un iframe către un alt origin ar fi
  * BLOCAT, în tăcere, cu o casetă goală pe ecran.

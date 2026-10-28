@@ -118,27 +118,27 @@ pe server: rolul e citit **din DB la fiecare cerere**, deci un rol retras între
 
 ## 5. Build și servire în producție
 
-Nu există un runtime separat pentru admin. E **doar fișiere statice**, servite de același nginx.
+Nu există un runtime separat pentru admin. E **doar fișiere statice**, coapte în imaginea
+`flirt-web` (k3s) și servite de nginx-ul din ea.
 
 ```
-docker compose up  →  serviciul `admin-build` (node:20-alpine, rulează o dată)
-                      → scripts/build_admin.sh
-                      → npm ci && npm run build
-                      → publică în volumul `admin_dist`
-                   →  nginx montează `admin_dist:/var/www/admin:ro`
-                      și îl servește pe server_name ${ADMIN_DOMAIN}
+deploy/k8s/scripts/deploy.sh  →  docker build -f deploy/k8s/images/web/Dockerfile
+                                 → etapa `admin` (node:20-alpine): npm ci && npm run build
+                                 → dist/ copiat în /var/www/admin (+ Mini App în /var/www/miniapp)
+                              →  Deployment `web` (nginx non-root, :8080)
+                                 servește pe server_name ${ADMIN_DOMAIN}
 ```
 
 Trei proprietăți care contează:
 
-1. **`build_admin.sh` iese ÎNTOTDEAUNA cu 0.** Dacă build-ul panoului pică, se publică o pagină
-   explicativă, iar **API-ul nu e afectat**. nginx nu are `depends_on` pe `admin-build`. Un panou de
-   admin stricat nu are voie să doboare aplicația.
-2. **Idempotent**: un hash md5 al surselor e salvat în `/dist/.build-hash`; sursă neschimbată = build sărit.
-3. **`VITE_API_URL` se injectează la BUILD**, nu la runtime (Vite inline-uiește `VITE_*`). Dacă nu e
-   setat în `.env`, devine `https://${DOMAIN}${API_V1_PREFIX}`. Schimbarea domeniului cere **rebuild**, nu doar restart.
+1. **Un build stricat oprește deploy-ul.** Dacă `npm run build` pică, build-ul imaginii eșuează,
+   `deploy.sh` se oprește înainte de rollout și **versiunea veche rămâne online** (API-ul nu e afectat).
+2. **Cache pe layere**: dependențele npm se reinstalează doar când se schimbă `package-lock.json`.
+3. **`VITE_API_URL` se injectează la BUILD**, nu la runtime (Vite inline-uiește `VITE_*`) — vine ca
+   build-arg. Dacă nu e dat, devine `https://${DOMAIN}${API_V1_PREFIX}`. Schimbarea domeniului cere
+   **rebuild** (un nou `deploy.sh`), nu doar restart.
 
-### Antete de securitate (nginx, vhost-ul de admin)
+### Antete de securitate (nginx, vhost-ul de admin — `deploy/k8s/images/web/nginx.conf.template`)
 
 HSTS · `X-Content-Type-Options: nosniff` · `X-Frame-Options: DENY` · `Referrer-Policy: no-referrer` ·
 CSP: `default-src 'self'; script-src 'self'; frame-ancestors 'none'; connect-src 'self' https://${DOMAIN}`.
@@ -171,7 +171,7 @@ cd admin && npm test
 | 1 | 🟡 **`SubscriptionsPage` nu are teste** — singura pagină fără. |
 | 2 | 🟡 Refresh token în `sessionStorage`, nu în cookie httpOnly (vezi §3). Necesită o schimbare pe backend. |
 | 3 | ⚠️ **`admin/index.html` încarcă fontul Manrope de la `fonts.googleapis.com`**, dar CSP-ul de producție permite doar `style-src 'self' 'unsafe-inline'` și `font-src 'self' data:` — în producție fontul e **blocat** și se cade pe fontul de sistem. Cosmetic, dar e o inconsistență reală între `index.html` și configul nginx. |
-| 4 | ⚠️ `admin/.env.example` spune că `VITE_API_URL` se dă **fără** `/api/v1`, dar `scripts/build_admin.sh` îl compune **cu** `${API_V1_PREFIX}`. Fișierul de exemplu folosește și un domeniu placeholder (`api.exemplu.ro`), nu `api.flrt.md`. |
+| 4 | ⚠️ `admin/.env.example` spune că `VITE_API_URL` se dă **fără** `/api/v1`, dar build-ul de producție (`deploy/k8s/images/web/Dockerfile`) îl compune **cu** `${API_V1_PREFIX}`. Fișierul de exemplu folosește și un domeniu placeholder (`api.exemplu.ro`), nu `api.flrt.md`. |
 | 5 | Fără RBAC granular: există doar `user` și `admin`. Coloana `role` e `TEXT` tocmai ca un rol nou (`moderator`) să fie o migrație de **date**, nu o rescriere. |
 
 ---

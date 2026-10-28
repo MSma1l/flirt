@@ -5,7 +5,7 @@ avea dreptate în cazul pe care și-l imaginase și greșea în cazul real.
 
 1. `client_ip` lua PRIMA intrare din `X-Forwarded-For`. Antetul e o listă pe
    care clientul o poate începe cu ce vrea (nginx doar APPEND-ează adresa reală,
-   vezi `$proxy_add_x_forwarded_for` în `nginx/nginx.conf`), deci cheia de
+   vezi `$proxy_add_x_forwarded_for` în `deploy/k8s/images/web/proxy-api.conf`), deci cheia de
    limitare era aleasă de cel limitat.
 
 2. `claim_init_data` construia clientul Redis ÎN AFARA blocului `try`. O

@@ -79,7 +79,11 @@ Implementat, testat și funcțional. Fiecare linie de mai jos are teste care tre
 - **Guard de producție** care refuză pornirea cu o configurare nesigură (18 verificări — vezi §2).
 - **CI** (GitHub Actions): pytest + verificare sintaxă nginx + typecheck/jest pe mobil.
 - **Docker Compose complet**: api, db, redis, nginx, certbot, admin-build, purge, backup.
-  Un singur `docker compose up --build -d`.
+  Un singur `docker compose up --build -d`. *(istoric — înlocuit, vezi rândul de mai jos)*
+- **28.10.2026 — producția mutată pe k3s** (un nod, `deploy/k8s/`): replici cu autoscalare, rollout
+  fără downtime cu rollback automat, TLS prin Traefik + cert-manager, NetworkPolicies, migrații în Job,
+  backup-uri și purge ca CronJob-uri. Deploy: `ssh flirt 'cd /opt/flirt && deploy/k8s/scripts/deploy.sh'`.
+  `backend/docker-compose.yml` a rămas **doar pentru dev local** (db, redis, api).
 
 ## Backend — performanță
 
@@ -337,7 +341,8 @@ Depinde de o decizie de business (rețea de reclame, venit estimat).
 ```bash
 # Backend
 cd backend && . .venv/bin/activate && python -m pytest -q     # 445 teste
-cd backend && docker compose up --build                        # stiva completă
+cd backend && docker compose up --build                        # DOAR dev local: api + db + redis
+# Producție (k3s): ssh flirt 'cd /opt/flirt && deploy/k8s/scripts/deploy.sh' — vezi docs/DEPLOYMENT.md
 
 # Mobile
 cd mobile && npm test                                          # 340 teste

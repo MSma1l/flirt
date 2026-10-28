@@ -27,7 +27,7 @@ IDEMPOTENT: rulat de două ori, actualizează în loc să dubleze. `--reset` le 
 
 Rulare:
     python scripts/create_test_users.py
-    docker compose exec api python scripts/create_test_users.py
+    docker compose exec api python scripts/create_test_users.py   # dev local
 """
 from __future__ import annotations
 

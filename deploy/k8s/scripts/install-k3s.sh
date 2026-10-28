@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
-# FLIRT — instalarea k3s (un singur nod) lângă stack-ul docker compose existent.
+# FLIRT — instalarea k3s (un singur nod), singurul mod de a rula producția.
 #
 #   install-k3s.sh phase1   k3s + cert-manager + resurse de cluster, cu Traefik și
-#                           ServiceLB OPRITE (porturile 80/443 sunt încă ale
-#                           nginx-ului din compose). Idempotent: ce e deja
-#                           instalat (la versiunea fixată) e sărit.
-#   install-k3s.sh phase2   (cutover) scoate lista `disable:` din config și
-#                           repornește k3s → Traefik + ServiceLB preiau 80/443.
-#                           Cere porturile 80/443 LIBERE (compose nginx oprit).
+#                           ServiceLB OPRITE (aplicația se poate pregăti fără să
+#                           ocupe încă 80/443). Idempotent: ce e deja instalat
+#                           (la versiunea fixată) e sărit.
+#   install-k3s.sh phase2   scoate lista `disable:` din config și repornește k3s
+#                           → Traefik + ServiceLB preiau 80/443. Cere porturile
+#                           80/443 LIBERE.
 #   install-k3s.sh status   ce e instalat.
+#
+# Server nou: phase1 → deploy.sh → phase2 (runbook: deploy/k8s/scripts/README.md).
+# Pe serverul actual, cutover-ul din docker compose s-a făcut pe 28.10.2026.
 #
 # Fără `curl | sh`: binarul k3s fixat se descarcă din GitHub Releases și se
 # verifică cu sha256sum-<arch>.txt din ACEEAȘI versiune; install.sh e luat de la
@@ -37,7 +40,7 @@ write_config_phase1() {
 # FLIRT — config k3s (vezi deploy/k8s/scripts/install-k3s.sh)
 write-kubeconfig-mode: "0600"
 secrets-encryption: true
-# phase1: Traefik + ServiceLB OPRITE cât timp nginx-ul din compose ține 80/443.
+# phase1: Traefik + ServiceLB OPRITE până la phase2 (80/443 încă neocupate).
 # `install-k3s.sh phase2` scoate lista de mai jos și repornește k3s.
 disable:
   - traefik
@@ -137,7 +140,7 @@ phase1() {
     else
         warn "$ENV_FILE lipsește → resursele de cluster se aplică la primul deploy.sh"
     fi
-    log "phase1 GATA. Urmează: deploy/k8s/scripts/deploy.sh --prepare, apoi migrate-from-compose.sh"
+    log "phase1 GATA. Urmează: deploy/k8s/scripts/deploy.sh, apoi install-k3s.sh phase2"
 }
 
 # Scoate `disable:` (listă bloc sau inline) din config.
@@ -166,7 +169,7 @@ phase2() {
     if ! grep -q '^disable:' "$K3S_CONFIG"; then
         log "$K3S_CONFIG nu mai are lista disable → Traefik/ServiceLB deja activate"
     else
-        ports_free || die "porturile 80/443 sunt încă ocupate (compose nginx?): docker compose stop nginx certbot"
+        ports_free || die "porturile 80/443 sunt încă ocupate de alt proces (vezi lista de mai sus)"
         cp -p "$K3S_CONFIG" "$K3S_CONFIG.phase1.bak"
         strip_disable "$K3S_CONFIG.phase1.bak" > "$K3S_CONFIG.new"
         chmod 0600 "$K3S_CONFIG.new"

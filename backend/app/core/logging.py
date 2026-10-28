@@ -37,7 +37,7 @@ from starlette.responses import Response
 #
 # Aici a existat o a doua copie, care lua PRIMA intrare din `X-Forwarded-For`.
 # Antetul ajuns la aplicație e cel construit de nginx cu
-# `$proxy_add_x_forwarded_for` (vezi `nginx/nginx.conf`), adică
+# `$proxy_add_x_forwarded_for` (vezi `deploy/k8s/images/web/nginx.conf.template`), adică
 # „ce a trimis clientul, VIRGULĂ, IP-ul real al conexiunii" — prima intrare e
 # text scris de client. Consecința în jurnalul de acces: oricine putea alege ce
 # adresă apare în log-urile noastre, deci urmărirea unui abuz ducea la o adresă
@@ -63,7 +63,7 @@ def anonymize_ip(value: str) -> str:
 
     IPv4 → ultimul octet 0 (`1.2.3.4` → `1.2.3.0`); IPv6 → prefixul /48
     (`2001:db8:1::`). Orice altceva (ex. `anonymous`) trece neschimbat. Regula e
-    IDENTICĂ cu formatul `flirt_anon` din `nginx/nginx.conf`. Rate limiting-ul
+    IDENTICĂ cu formatul `flirt_anon` din `deploy/k8s/images/web/nginx.conf.template`. Rate limiting-ul
     folosește în continuare adresa completă (în memorie/Redis, nu în jurnal).
     """
     try:

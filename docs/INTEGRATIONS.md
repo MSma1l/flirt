@@ -62,20 +62,22 @@ produs care încă nu are venit, e o dependență de cost inutilă. Am ales:
 
 ## Cum pornești în producție
 
+Producția rulează pe **k3s** — **nu** cu `docker compose` (compose e doar pentru dev local).
+
 ```bash
-cd backend
-cp .env.production.example .env
-chmod 600 .env
-nano .env        # completează tot ce e marcat cu  <<< COMPLETEAZĂ >>>
-make config      # validează .env FĂRĂ să pornească nimic
-docker compose up --build -d
+# pe server, în /opt/flirt
+cp backend/.env.production.example backend/.env
+chmod 600 backend/.env
+nano backend/.env        # completează tot ce e marcat cu  <<< COMPLETEAZĂ >>>
+deploy/k8s/scripts/deploy.sh    # .env → secretul flirt-env, migrații (Job), rollout
 ```
 
 `.env.production.example` conține **toate** variabilele cerute de guard, fiecare cu explicație și cu
-locul de unde se ia cheia. `make config` îți spune exact ce lipsește — nu pornește tăcut cu o
-configurare pe jumătate.
+locul de unde se ia cheia. Dacă lipsește ceva, guardul refuză pornirea și listează exact ce lipsește
+(`k3s kubectl -n flirt logs job/migrate` / `deploy/api`) — podurile noi nu devin Ready și versiunea
+veche rămâne online.
 
-Migrațiile rulează automat la pornire (`alembic upgrade head` în `entrypoint.sh`).
+Migrațiile rulează în Job-ul `migrate`, lansat de `deploy.sh` înainte de rollout.
 Procedura completă: [`DEPLOYMENT.md`](./DEPLOYMENT.md).
 
 ---

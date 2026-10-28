@@ -1,36 +1,25 @@
-# FLIRT — stack complet de producție.
+# FLIRT — DOAR DEZVOLTARE LOCALĂ (db + redis + api).
 #
-#   git pull && docker compose up --build -d
+# ⛔ PRODUCȚIA NU RULEAZĂ CU DOCKER COMPOSE. Din 28.10.2026 producția rulează pe
+#    k3s: `deploy/k8s/scripts/deploy.sh` (runbook: deploy/k8s/scripts/README.md).
+#    NU rula `docker compose up` pe server. Ca plasă de siguranță, entrypoint.sh
+#    refuză să pornească API-ul cu ENVIRONMENT=production în afara Kubernetes.
 #
-# Atât. Un singur pas manual, O SINGURĂ DATĂ, ÎNAINTE: completezi `.env`
-# (pornind de la `.env.production.example`). Restul e automat:
-#   - migrațiile Alembic rulează la pornirea containerului `api` (entrypoint.sh);
-#   - nginx pornește din prima, chiar fără certificat (self-signed generat pe loc);
-#   - `certbot` cere singur certificatul REAL pentru api + admin + Telegram Mini App
-#     (numele setate), iar nginx îl preia și dă reload în ≤1 minut, fără downtime;
-#   - panoul de admin (folderul `admin/`) și Telegram Mini App-ul (folderul
-#     `miniapp/`) sunt construite și publicate automat; dacă lipsesc sau build-ul
-#     lor pică, backend-ul pornește NORMAL.
+#   cd backend
+#   cp docker-compose.override.example.yml docker-compose.override.yml   # o dată
+#   docker compose up --build        # API pe http://localhost:8000 (prin override)
 #
-# Servicii publice: DOAR nginx (80/443). Postgres și Redis NU au `ports:` — trăiesc
-# exclusiv în rețeaua internă Docker. Vezi comentariile de la fiecare.
-#
-# Variabilele ${...} se citesc din `.env`. Nimic hardcodat.
+# Nu există nginx/TLS/certbot/backup aici — toate astea trăiesc în deploy/k8s/.
+# Migrațiile Alembic rulează la pornirea containerului `api` (entrypoint.sh).
+# Postgres și Redis NU au `ports:` aici (le publici, dacă ai nevoie, din override —
+# vezi exemplul). Variabilele ${...} se citesc din `.env` (vezi `.env.example`).
 
-# Rotația log-urilor: fără ea, log-urile JSON umplu discul în tăcere, iar când
-# discul e plin cade Postgres (adică tot produsul). 10 MB × 5 fișiere / serviciu.
-# Limita în TIMP (LOG_RETENTION_DAYS, implicit 30 de zile — promisă în Politica
-# de confidențialitate) NU se poate exprima aici: driverul json-file rotește doar
-# după mărime. O aplică pe host `scripts/prune_container_logs.sh` (cron zilnic,
-# vezi docs/DEPLOYMENT.md §7). IP-urile din jurnalele de acces sunt trunchiate
-# (nginx: formatul `flirt_anon`; API: `anonymize_ip`).
-# Numele proiectului, EXPLICIT. Implicit, docker compose îl deduce din numele
-# folderului — adică „backend", care e cel mai banal nume posibil. Pe un server cu
-# mai multe aplicații, două proiecte cu un folder `backend/` s-ar amesteca: `docker
-# compose ps` ar arăta containerele altcuiva, iar un `down` ar putea opri altă
-# aplicație. Cu numele fixat, izolarea e garantată.
-name: flirt
+# Numele proiectului, EXPLICIT și DIFERIT de vechiul stack de producție (`flirt`):
+# volumele/containerele de dev nu se pot amesteca cu cele rămase pe server, iar
+# un `docker compose down -v` de dev nu poate atinge altceva.
+name: flirt-dev
 
+# Rotația log-urilor: fără ea, log-urile JSON umplu discul în tăcere.
 x-logging: &default-logging
   driver: json-file
   options:
@@ -43,36 +32,19 @@ services:
     restart: unless-stopped
     logging: *default-logging
     security_opt: [ "no-new-privileges:true" ]
-    # ⚠️  FĂRĂ `ports:`. Un Postgres publicat pe host (0.0.0.0:5432) e scanat și
-    # atacat în minute. `api`, `purge` și `backup` îl ating prin numele de serviciu
-    # `db` în rețeaua internă Docker — nu are nevoie de niciun port pe host.
-    # Ai nevoie de psql de pe laptop? Tunel SSH:
-    #   ssh -L 5432:localhost:5432 user@server  +  docker compose exec db psql -U flirt
+    # FĂRĂ `ports:` implicit: `api` îl atinge prin numele de serviciu `db`. Vrei
+    # psql de pe laptop? Publică-l pe 127.0.0.1 din override (vezi exemplul).
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-flirt}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
       POSTGRES_DB: ${POSTGRES_DB:-flirt}
-    # Tuning pentru serverul de producție (2 vCPU, presupune >= 2 GB RAM; pe un
-    # VPS mai mic coboară shared_buffers la ~25% din RAM). Valorile implicite ale
-    # imaginii (shared_buffers=128MB, random_page_cost=4 — gândit pentru HDD)
-    # lasă aproape toată memoria nefolosită și împing planificatorul spre
-    # seq scan pe un SSD. `shm_size` trebuie să fie > 64MB (implicitul Docker),
-    # altfel query-urile paralele/sortările mari cad cu „could not resize shared
-    # memory segment". `pg_stat_statements` = statistica de query-uri lente
-    # (extensia e creată de migrația a1c4e7f9b2d6). Schimbarea cere RESTART db.
+    # `pg_stat_statements` e cerut de migrația a1c4e7f9b2d6 (statistica de
+    # query-uri lente) — fără preload, view-ul extensiei dă eroare. Tuning-ul de
+    # producție (shared_buffers etc.) e în deploy/k8s/manifests/db.yaml.
     command:
       - postgres
       - -c
-      - shared_buffers=512MB
-      - -c
-      - effective_cache_size=2GB
-      - -c
-      - work_mem=8MB
-      - -c
-      - random_page_cost=1.1
-      - -c
       - shared_preload_libraries=pg_stat_statements
-    shm_size: 256mb
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -131,24 +103,12 @@ services:
       # Cu REDIS_PASSWORD setat (vezi serviciul `redis`), URL-ul implicit devine
       # redis://:<parola>@redis:6379/0; fără el rămâne exact ca înainte.
       REDIS_URL: ${REDIS_URL:-redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379/0}
-    # LIMITE DE RESURSE — plasă de siguranță, nu tuning. Un upload video (ffmpeg)
-    # sau o scurgere de memorie într-un worker nu are voie să înfometeze Postgres
-    # (care ține TOT produsul) și nginx pe același host. Dimensiunea serverului
-    # nu e fixată în repo, deci valorile sunt GENEROASE: 2 CPU / 1.5 GB acoperă
-    # confortabil workerii auto-calculați (entrypoint.sh citește limita cgroup:
-    # ~5 workeri × ~180 MB). Pe un server mai mare, ridică-le din .env:
-    #   API_CPUS=4  API_MEM_LIMIT=3g
-    # ⚠️  `cpus` nu poate depăși numărul de CPU-uri ale host-ului (Docker refuză
-    # pornirea): pe un VPS cu 1 vCPU pune API_CPUS=1.0.
-    cpus: ${API_CPUS:-2.0}
-    mem_limit: ${API_MEM_LIMIT:-1536m}
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # `expose` = documentație + rețeaua internă. NU publică nimic pe host: singurul
-    # drum către API din exterior trece prin nginx (TLS + rate limiting).
+    # `expose` NU publică nimic pe host; portul 8000 îl publică override-ul de dev.
     expose:
       - "8000"
     # Media încărcată (poze/story-uri) cu STORAGE_PROVIDER=local. Volum persistent
@@ -164,221 +124,7 @@ services:
       retries: 3
       start_period: 40s
 
-  # Construiește panoul de admin (`admin/`, React+Vite) și îl publică în volumul
-  # `admin_dist`, de unde nginx îl servește ca fișiere statice pe ${ADMIN_DOMAIN}.
-  #
-  # Rulează O DATĂ, apoi iese (`restart: "no"`). Sursa e montată READ-ONLY: nu
-  # atingem folderul altui agent. Scriptul iese ÎNTOTDEAUNA cu 0 și nginx NU
-  # depinde de el ⇒ un panou de admin lipsă sau un build stricat nu pot ține
-  # backend-ul jos. Detalii: scripts/build_admin.sh
-  admin-build:
-    image: node:20-alpine
-    restart: "no"
-    logging: *default-logging
-    security_opt: [ "no-new-privileges:true" ]
-    working_dir: /tmp
-    environment:
-      ADMIN_SRC: /src/admin
-      ADMIN_OUT: /dist
-      ADMIN_BUILD_DIR: ${ADMIN_BUILD_DIR:-dist}
-      # Panoul are nevoie de URL-ul API-ului la BUILD (Vite inline-uiește VITE_*).
-      # Dacă VITE_API_URL nu e setat în .env, scriptul îl compune din DOMAIN.
-      VITE_API_URL: ${VITE_API_URL:-}
-      DOMAIN: ${DOMAIN:-localhost}
-      API_V1_PREFIX: ${API_V1_PREFIX:-/api/v1}
-    volumes:
-      # Rădăcina repo-ului, READ-ONLY. Montăm repo-ul, nu `../admin`, tocmai ca
-      # Docker să NU creeze un folder `admin/` gol pe host când acesta lipsește.
-      - ../:/src:ro
-      - admin_dist:/dist
-      - ./scripts/build_admin.sh:/build_admin.sh:ro
-    command: ["/bin/sh", "/build_admin.sh"]
-
-  # Construiește Telegram Mini App-ul (`miniapp/`, Vite) și îl publică în volumul
-  # `miniapp_dist`, de unde nginx îl servește ca fișiere statice pe ${MINIAPP_DOMAIN}.
-  #
-  # Geamăn cu `admin-build`: rulează O DATĂ, apoi iese (`restart: "no"`). Sursa e
-  # montată READ-ONLY: nu atingem folderul altui agent. Scriptul iese ÎNTOTDEAUNA
-  # cu 0 și nginx NU depinde de el ⇒ un Mini App lipsă sau un build stricat nu pot
-  # ține backend-ul jos. Detalii: scripts/build_miniapp.sh
-  miniapp-build:
-    # Node 22: `react-router` cere >=22.22. Pe node:20 buildul frontendului ar
-    # esua, iar utilizatorii ar primi pagina de asteptare. Serviciul de admin
-    # ramane pe node:20 — nu are aceasta dependenta.
-    image: node:22-alpine
-    restart: "no"
-    logging: *default-logging
-    security_opt: [ "no-new-privileges:true" ]
-    working_dir: /tmp
-    environment:
-      MINIAPP_SRC: /src/miniapp
-      MINIAPP_OUT: /dist
-      MINIAPP_BUILD_DIR: ${MINIAPP_BUILD_DIR:-dist}
-      # Mini App-ul are nevoie de URL-ul API-ului la BUILD (Vite inline-uiește
-      # VITE_*). Gol → se compune din DOMAIN. NICIUN SECRET aici: bundle-ul e
-      # public, iar TELEGRAM_BOT_TOKEN rămâne exclusiv pe backend.
-      VITE_API_URL: ${VITE_API_URL:-}
-      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
-      DOMAIN: ${DOMAIN:-localhost}
-      API_V1_PREFIX: ${API_V1_PREFIX:-/api/v1}
-    volumes:
-      # Rădăcina repo-ului, READ-ONLY. Montăm repo-ul, nu `../miniapp`, tocmai ca
-      # Docker să NU creeze un folder `miniapp/` gol pe host când acesta lipsește.
-      - ../:/src:ro
-      - miniapp_dist:/dist
-      - ./scripts/build_miniapp.sh:/build_miniapp.sh:ro
-    command: ["/bin/sh", "/build_miniapp.sh"]
-
-  nginx:
-    image: nginx:1.27-alpine
-    restart: unless-stopped
-    logging: *default-logging
-    security_opt: [ "no-new-privileges:true" ]
-    environment:
-      # Numele publice. Decid `server_name` din config (randat la pornire) ȘI ce
-      # certificat caută nginx în /etc/letsencrypt. Zero hardcodare.
-      DOMAIN: ${DOMAIN:-localhost}
-      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-admin.localhost}
-      # Telegram Mini App. Gol/nesetat = entrypoint-ul randează un nume-santinelă
-      # (miniapp.localhost): blocul rămâne valid, nginx pornește, nimic nu se rupe.
-      MINIAPP_DOMAIN: ${MINIAPP_DOMAIN:-}
-    ports:
-      - "80:80"     # doar ACME + redirect 301 către HTTPS
-      - "443:443"   # tot traficul real (api + admin)
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/templates/default.conf.template:ro
-      - ./nginx/entrypoint.sh:/usr/local/bin/nginx-entrypoint.sh:ro
-      - ./nginx/40-ensure-cert.sh:/usr/local/bin/ensure-cert.sh:ro
-      - letsencrypt:/etc/letsencrypt          # certificate emise de certbot
-      - certbot_www:/var/www/certbot          # webroot pentru HTTP-01
-      - nginx_certs:/etc/nginx/certs          # certificatul activ (LE sau self-signed)
-      - admin_dist:/var/www/admin:ro          # build-ul panoului de admin
-      - miniapp_dist:/var/www/miniapp:ro      # build-ul Telegram Mini App
-      # Media încărcată (STORAGE_PROVIDER=local), servită DIRECT de nginx la
-      # /media/* (cache 1 an, fără Python). Read-only: nginx doar citește; scrie
-      # numai `api`. Dovezile de plată (ticket-proofs/) sunt blocate în nginx.conf.
-      - mediadata:/var/www/media:ro
-    # Randează configul (${DOMAIN}) → asigură un certificat → `nginx -t` → pornește
-    # → supraveghează certificatul și dă reload când certbot îl emite/reînnoiește.
-    command: ["/bin/sh", "/usr/local/bin/nginx-entrypoint.sh"]
-    depends_on:
-      - api
-
-  # Emite ȘI reînnoiește certificatul Let's Encrypt pentru AMBELE nume
-  # (${DOMAIN} + ${ADMIN_DOMAIN}), complet automat — vezi scripts/certbot_entrypoint.sh.
-  # Nu există „comanda de emitere inițială" de rulat manual.
-  certbot:
-    # Versiune FIXĂ (nu `:latest`): un deploy nu are voie să tragă tăcut altă
-    # versiune de certbot (schimbări de CLI / regresii). v5.8.0 = `latest` la
-    # 2026-09-01. Actualizare = schimbi tag-ul aici, conștient.
-    image: certbot/certbot:v5.8.0
-    restart: unless-stopped
-    logging: *default-logging
-    environment:
-      DOMAIN: ${DOMAIN:-localhost}
-      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-}
-      # Gol = certificatul se emite ca înainte, doar pentru api + admin.
-      MINIAPP_DOMAIN: ${MINIAPP_DOMAIN:-}
-      CERTBOT_EMAIL: ${CERTBOT_EMAIL:-}
-      CERTBOT_STAGING: ${CERTBOT_STAGING:-false}
-      CERTBOT_INTERVAL_SECONDS: ${CERTBOT_INTERVAL_SECONDS:-43200}
-    volumes:
-      - letsencrypt:/etc/letsencrypt
-      - certbot_www:/var/www/certbot
-      - ./scripts/certbot_entrypoint.sh:/certbot_entrypoint.sh:ro
-    entrypoint: ["/bin/sh", "/certbot_entrypoint.sh"]
-    depends_on:
-      - nginx
-
-  # Purjare GDPR: șterge definitiv conturile a căror perioadă de grație a expirat.
-  # Serviciu SEPARAT, o singură instanță — dacă ar rula în lifespan-ul API-ului,
-  # s-ar executa de 4 ori (câți workeri gunicorn are entrypoint.sh).
-  purge:
-    build: .
-    restart: unless-stopped
-    logging: *default-logging
-    security_opt: [ "no-new-privileges:true" ]
-    env_file: .env
-    environment:
-      POSTGRES_HOST: db
-      POSTGRES_PORT: 5432
-      GDPR_PURGE_INTERVAL_SECONDS: ${GDPR_PURGE_INTERVAL_SECONDS:-3600}
-    depends_on:
-      db:
-        condition: service_healthy
-    command: ["python", "scripts/gdpr_purge.py", "--loop"]
-    # Media (STORAGE_PROVIDER=local): purjarea și retenția ȘTERG fișiere — pozele,
-    # poveștile și atașamentele de chat ale conturilor purjate, plus dovezile de
-    # plată expirate. Fără volumul ăsta ștergerile erau no-op tăcute (fișierul nu
-    # exista în container), iar fișierele rămâneau pe disc la nesfârșit.
-    volumes:
-      - mediadata:/data/media
-    # Containerul moșteneşte din Dockerfile verificarea de sănătate a API-ului,
-    # care interoghează un server web pe :8000. Aici rulează un script de fundal,
-    # fără server web, deci verificarea NU putea trece niciodată: serviciul apărea
-    # permanent „nesănătos" deşi funcţiona (peste 100.000 de eşecuri consecutive).
-    # O alarmă mereu aprinsă ascunde alarmele reale, de aceea o oprim aici.
-    healthcheck:
-      disable: true
-
-  # Backup periodic (pg_dump comprimat) + retenție. Restore: vezi DEPLOYMENT.md.
-  # Un backup NETESTAT nu e backup — `scripts/restore_db.sh` e procedura testabilă.
-  backup:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    logging: *default-logging
-    security_opt: [ "no-new-privileges:true" ]
-    environment:
-      PGHOST: db
-      PGUSER: ${POSTGRES_USER:-flirt}
-      PGPASSWORD: ${POSTGRES_PASSWORD:-change_me}
-      PGDATABASE: ${POSTGRES_DB:-flirt}
-      POSTGRES_DB: ${POSTGRES_DB:-flirt}
-      BACKUP_DIR: /backups
-      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
-      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
-    # BACKUP_HOST_DIR implicit = /opt/flirt-backups, ÎN AFARA checkout-ului git:
-    # un dump complet al bazei (date personale, conversații) în `backend/backups/`
-    # a ajuns deja o dată comis în repo. Dump-urile se scriu cu umask 077 (doar
-    # root le poate citi). COMPATIBILITATE: un .env care are deja
-    # `BACKUP_HOST_DIR=./backups` (ca în .env*.example) continuă exact ca înainte;
-    # `backend/backups/` e acum în .gitignore oricum.
-    volumes:
-      - ./scripts:/scripts:ro
-      - ${BACKUP_HOST_DIR:-/opt/flirt-backups}:/backups
-    depends_on:
-      db:
-        condition: service_healthy
-    command: ["/bin/sh", "/scripts/backup_db.sh", "--loop"]
-
-  # Backup periodic al MEDIA (pozele/story-urile userilor) — volumul `mediadata`.
-  # Auditul l-a găsit fără backup: un dump SQL conține doar CĂILE fișierelor, deci
-  # fără arhiva asta un volum pierdut = mii de profiluri goale, irecuperabile.
-  #
-  # ⚠️  `mediadata` e montat READ-ONLY aici: chiar dacă scriptul ar avea vreodată
-  # un bug, kernelul nu-i permite să scrie sau să șteargă date sursă.
-  backup-media:
-    image: alpine:3.20
-    restart: unless-stopped
-    logging: *default-logging
-    security_opt: [ "no-new-privileges:true" ]
-    environment:
-      MEDIA_DIR: /data/media
-      MEDIA_BACKUP_DIR: /backups/media
-      MEDIA_BACKUP_INTERVAL_SECONDS: ${MEDIA_BACKUP_INTERVAL_SECONDS:-86400}
-      MEDIA_BACKUP_RETENTION_DAYS: ${MEDIA_BACKUP_RETENTION_DAYS:-14}
-    volumes:
-      - ./scripts:/scripts:ro
-      - mediadata:/data/media:ro
-      - ${BACKUP_HOST_DIR:-/opt/flirt-backups}:/backups
-    command: ["/bin/sh", "/scripts/backup_media.sh", "--loop"]
-
 volumes:
   pgdata:
   mediadata:
   redisdata:
-  letsencrypt:
-  certbot_www:
-  nginx_certs:
-  admin_dist:
-  miniapp_dist:

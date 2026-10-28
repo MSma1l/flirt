@@ -253,7 +253,7 @@ def client_ip(request: Request) -> str:
     LUĂM ULTIMA INTRARE DIN LISTĂ, NU PRIMA. `X-Forwarded-For` e o listă pe care
     ORICINE o poate începe: nginx-ul nostru e configurat cu
     `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for` (vezi
-    `nginx/nginx.conf`), iar `$proxy_add_x_forwarded_for` înseamnă
+    `deploy/k8s/images/web/nginx.conf.template`), iar `$proxy_add_x_forwarded_for` înseamnă
     „ce a trimis clientul, VIRGULĂ, IP-ul real al conexiunii". Deci antetul
     ajuns la noi arată așa:
 

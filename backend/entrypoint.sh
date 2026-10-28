@@ -32,9 +32,27 @@ if [ "${ENVIRONMENT:-development}" = "production" ]; then
     esac
 fi
 
-# Migrațiile rulează AUTOMAT la fiecare pornire a containerului — de asta
-# `docker compose up --build -d` e suficient pe un server curat: nu există un pas
-# manual „rulează întâi migrațiile".
+# ---------------------------------------------------------------------------- #
+# 0b. Producția rulează DOAR pe Kubernetes (k3s).
+# ---------------------------------------------------------------------------- #
+# Din 28.10.2026 producția e pe k3s (deploy/k8s/). Un `docker compose up` rătăcit
+# pe server, cu .env-ul de producție, ar porni un al doilea API care scrie într-o
+# bază veche. Kubernetes injectează KUBERNETES_SERVICE_HOST în ORICE pod; lipsa
+# ei = nu suntem în cluster → refuzăm. Ieșire de urgență, conștientă:
+# ALLOW_PROD_OUTSIDE_K8S=1.
+if [ "${ENVIRONMENT:-development}" = "production" ] \
+    && [ -z "${KUBERNETES_SERVICE_HOST:-}" ] \
+    && [ "${ALLOW_PROD_OUTSIDE_K8S:-0}" != "1" ]; then
+    echo "✗ ENVIRONMENT=production în afara Kubernetes — refuz să pornesc."
+    echo "  Producția rulează pe k3s: deploy/k8s/scripts/deploy.sh"
+    echo "  (runbook: deploy/k8s/scripts/README.md)."
+    echo "  docker compose e DOAR pentru dezvoltare locală (ENVIRONMENT=development)."
+    echo "  Urgență, conștient: ALLOW_PROD_OUTSIDE_K8S=1."
+    exit 1
+fi
+
+# Migrațiile rulează AUTOMAT la fiecare pornire a containerului (dev: docker
+# compose) — nu există un pas manual „rulează întâi migrațiile".
 #
 # Retry: `depends_on: service_healthy` garantează că Postgres a răspuns la
 # `pg_isready`, dar între acel moment și prima conexiune reală mai poate exista o
@@ -43,8 +61,8 @@ fi
 #
 # RUN_MIGRATIONS=0 (k8s): migrațiile le rulează O SINGURĂ DATĂ Job-ul `migrate`,
 # ÎNAINTE de rollout (deploy/k8s/scripts/deploy.sh). Cu N replici, N procese
-# `alembic upgrade` pornite simultan s-ar bate pe aceeași schemă. Implicit 1 →
-# docker compose se comportă exact ca înainte.
+# `alembic upgrade` pornite simultan s-ar bate pe aceeași schemă. Implicit 1
+# (dezvoltare locală cu docker compose).
 if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
     ATTEMPTS="${MIGRATION_ATTEMPTS:-5}"
     DELAY="${MIGRATION_RETRY_SECONDS:-3}"
@@ -58,7 +76,7 @@ if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
         fi
         if [ "$i" -ge "$ATTEMPTS" ]; then
             echo "✗ Migrațiile au eșuat după $ATTEMPTS încercări. Nu pornesc API-ul cu o"
-            echo "  schemă necunoscută — ar corupe date. Verifică: docker compose logs db"
+            echo "  schemă necunoscută — ar corupe date. Verifică log-urile bazei de date."
             exit 1
         fi
         echo "  eșec; reîncerc peste ${DELAY}s"
@@ -81,8 +99,8 @@ fi
 # workerii se bat pe CPU degeaba). Minim 2.
 #
 # LIMITELE CONTAINERULUI (cgroup) au prioritate: /proc/meminfo și `nproc` arată
-# resursele HOST-ului, nu `mem_limit`/`cpus` din docker-compose.yml. Fără
-# corecția asta, pe un host mare cu `mem_limit` setat am porni workeri
+# resursele HOST-ului, nu limitele containerului (resources.limits în k8s). Fără
+# corecția asta, pe un host mare cu limită de memorie setată am porni workeri
 # calculați pentru tot RAM-ul host-ului → OOM-kill în buclă.
 if [ -z "${WEB_CONCURRENCY:-}" ]; then
     RAM_MB=$(awk '/MemTotal/ {printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || echo 1024)
@@ -131,11 +149,9 @@ fi
 # listă. Înainte era „*": ORICINE ajungea direct la :8000 (alt container, un
 # port publicat din greșeală) își putea alege IP-ul și schema.
 #
-# Implicit: rețelele Docker la care e conectat DIRECT containerul (rutele fără
-# gateway din /proc/net/route — adică subrețeaua compose `flirt_default`, unde
-# stă nginx) + 127.0.0.1. NU fixăm o subrețea în compose: n-ar mai exista risc
-# de coliziune cu rețelele altor proiecte de pe același server, iar IP-ul lui
-# nginx (care se schimbă la fiecare recreare) e mereu acoperit.
+# Implicit: rețelele la care e conectat DIRECT containerul (rutele fără gateway
+# din /proc/net/route) + 127.0.0.1. În k8s, api.yaml setează FORWARDED_ALLOW_IPS
+# explicit; detecția rămâne pentru dezvoltarea locală cu docker compose.
 # Override explicit: FORWARDED_ALLOW_IPS="172.18.0.0/16,127.0.0.1" în .env.
 # Dacă detecția eșuează, cădem pe rangurile private (tot mai strict decât „*").
 #

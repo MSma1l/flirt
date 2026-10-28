@@ -2,7 +2,7 @@
 
 > Schema bazei de date FLIRT. Documentul distinge **✅ Implementat** — modelele care există în `app/models/*.py` — de **🔜 Planificat / ❌ Amânat**. Pentru starea proiectului vezi [`PROGRESS.md`](../../PROGRESS.md).
 
-Stack de persistență: **SQLAlchemy 2.0 async**, migrat cu **Alembic**. În producție rulează pe **PostgreSQL 16** (vezi `docker-compose.yml`), iar testele pe SQLite in-memory — de aceea listele/vectorii se stochează ca **`JSON` portabil**, nu ca tipuri specifice Postgres.
+Stack de persistență: **SQLAlchemy 2.0 async**, migrat cu **Alembic**. În producție rulează pe **PostgreSQL 16** (StatefulSet `db` pe k3s, `deploy/k8s/manifests/db.yaml`; local: `backend/docker-compose.yml`), iar testele pe SQLite in-memory — de aceea listele/vectorii se stochează ca **`JSON` portabil**, nu ca tipuri specifice Postgres.
 
 **Astăzi: 22 de tabele, 13 migrații.**
 

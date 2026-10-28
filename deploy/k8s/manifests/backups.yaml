@@ -1,5 +1,5 @@
-# Destinația backup-urilor: directorul de pe host /opt/flirt-backups (ca
-# BACKUP_HOST_DIR din compose), în afara checkout-ului git și a stocării k3s.
+# Destinația backup-urilor: directorul de pe host /opt/flirt-backups, în afara
+# checkout-ului git și a stocării k3s.
 #
 # De ce PV static și nu `hostPath` direct în pod: namespace-ul impune Pod Security
 # `baseline`, care interzice volumele hostPath în spec-ul pod-ului. Un PV hostPath

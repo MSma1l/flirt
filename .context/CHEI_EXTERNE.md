@@ -10,11 +10,11 @@ Context pentru proiect, alături de `TZ.txt` și `DESIGN_TOKENS.md`.
 
 | Ce | Cum e rezolvat | Cost |
 |---|---|---|
-| **Chei JWT (RS256)** | Generate automat pe server (`/etc/flirt/keys/`). Nu circulă nicăieri, nu sunt în repo. | gratuit |
+| **Chei JWT (RS256)** | Generate pe server cu `openssl` (vezi `docs/DEPLOYMENT.md` §2), puse în `backend/.env`. Nu circulă nicăieri, nu sunt în repo. | gratuit |
 | **Hărți** (mobil) | OpenStreetMap + Leaflet prin WebView. **Fără cheie, fără cont.** | gratuit |
 | **Geocoding** (backend) | Nominatim (OpenStreetMap). `GEO_PROVIDER=nominatim`. **Fără cheie.** | gratuit |
-| **Certificat HTTPS** | Let's Encrypt, emis și reînnoit automat de certbot. | gratuit |
-| **Postgres + Redis** | Rulează în docker-compose pe serverul tău. | gratuit |
+| **Certificat HTTPS** | Let's Encrypt, emis și reînnoit automat de cert-manager (k3s). | gratuit |
+| **Postgres + Redis** | Rulează în k3s (StatefulSet-uri) pe serverul tău. | gratuit |
 
 > Google Maps și Mapbox au fost respinse **intenționat**: ambele cer card bancar. OpenStreetMap face aceeași treabă pentru cazul nostru (distanțe + hartă la eveniment), gratuit și fără dependență de nimeni.
 
@@ -81,7 +81,8 @@ Context pentru proiect, alături de `TZ.txt` și `DESIGN_TOKENS.md`.
 Pe server: `/opt/flirt/backend/.env` (chmod 600).
 Șablon complet, cu URL-ul providerului lângă fiecare variabilă: `backend/.env.production.example`.
 
-După ce adaugi o cheie:
+După ce adaugi o cheie (`.env` devine secretul `flirt-env`, podurile se recreează):
 ```bash
-cd /opt/flirt/backend && docker compose up -d
+ssh flirt 'cd /opt/flirt && deploy/k8s/scripts/deploy.sh'
 ```
+**NU** rula `docker compose` pe server — e doar pentru dezvoltare locală.

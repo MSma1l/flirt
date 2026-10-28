@@ -55,7 +55,11 @@ spec:
         - name: postgres
           image: postgres:16-alpine
           imagePullPolicy: IfNotPresent
-          # Același tuning ca în docker-compose.yml (vezi comentariile de acolo).
+          # Tuning pentru SSD și RAM-ul nodului: implicitele imaginii
+          # (shared_buffers=128MB, random_page_cost=4, gândit pentru HDD) lasă
+          # memoria nefolosită și împing planificatorul spre seq scan.
+          # pg_stat_statements = statistica query-urilor lente (migrația
+          # a1c4e7f9b2d6); schimbarea cere restart db.
           # În plus: max_connections=200. Bugetul de conexiuni la HPA maxim:
           # 6 pod-uri api × 2 workeri × (pool 5 + overflow 5) = 120, + purge + migrate
           # — peste implicitul 100. Schimbarea cere restart db.
@@ -129,7 +133,7 @@ spec:
             - name: dshm
               mountPath: /dev/shm
       volumes:
-        # Echivalentul `shm_size: 256mb` din compose (implicit 64MB → erori la
+        # /dev/shm mărit (implicit 64MB → erori la
         # query-uri paralele/sortări mari). Se contorizează în limita de memorie.
         - name: dshm
           emptyDir:

@@ -30,14 +30,15 @@ mașinii/containerului, face pasul explicit și intenționat.
 
 UTILIZARE
 ---------
+    # Producție = k3s, pe server (dev local: `docker compose exec -T api ...`).
     # Profilul botului (fără să atingă webhookul; îl verifică doar):
-    docker compose exec -T api python scripts/setup_telegram_bot.py
+    k3s kubectl -n flirt exec deploy/api -- python scripts/setup_telegram_bot.py
 
     # + poza de profil (o singură dată, sau când se schimbă avatarul):
-    docker compose exec -T api python scripts/setup_telegram_bot.py --with-photo
+    k3s kubectl -n flirt exec deploy/api -- python scripts/setup_telegram_bot.py --with-photo
 
     # + (re)înregistrarea webhookului (URL-ul dat explicit sau din TELEGRAM_WEBHOOK_URL):
-    docker compose exec -T api python scripts/setup_telegram_bot.py \\
+    k3s kubectl -n flirt exec deploy/api -- python scripts/setup_telegram_bot.py \\
         --webhook-url https://api.flrt.md/api/v1/telegram/webhook
 
     # Doar afișează ce ar face, fără niciun apel (nu cere token):
