@@ -56,7 +56,8 @@ confirm() {
 #   - cheie duplicată → câștigă ULTIMA (ca la compose).
 # Cheile JWT rămân pe o linie cu `\n` LITERAL: app/core/config.py
 # (`_normalize_pem`) le transformă în linii noi — nu le expandăm aici.
-# Valori pe mai multe linii NU sunt suportate (eroare explicită).
+# Valori între ghilimele pe MAI MULTE linii (cheile PEM, ca în .env-ul de pe
+# server) → unite cu `\n` literal, pe care config.py îl transformă înapoi.
 env_clean() {
     local src="$1" dst="$2"
     [ -r "$src" ] || die "nu pot citi $src"
@@ -64,6 +65,14 @@ env_clean() {
         function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t\r]+$/, "", s); return s }
         {
             line = $0; sub(/\r$/, "", line)
+            if (pkey != "") {
+                end = index(line, pq)
+                if (end == 0) { pval = pval "\\n" line; next }
+                val = pval "\\n" substr(line, 1, end - 1)
+                if (!(pkey in vals)) order[++n] = pkey
+                vals[pkey] = val; pkey = ""
+                next
+            }
             t = trim(line)
             if (t == "" || substr(t, 1, 1) == "#") next
             if (substr(t, 1, 7) == "export ") t = trim(substr(t, 8))
@@ -75,7 +84,7 @@ env_clean() {
             q = substr(val, 1, 1)
             if (q == "\"" || q == sq) {
                 rest = substr(val, 2); end = index(rest, q)
-                if (end == 0) { printf "%s:%d: ghilimele neînchise la %s (valori pe mai multe linii nu sunt suportate)\n", src, NR, key > "/dev/stderr"; bad = 1; next }
+                if (end == 0) { pkey = key; pq = q; pval = rest; pline = NR; next }
                 val = substr(rest, 1, end - 1)
             } else {
                 if (match(val, /[ \t]#/)) val = substr(val, 1, RSTART - 1)
@@ -85,6 +94,7 @@ env_clean() {
             vals[key] = val
         }
         END {
+            if (pkey != "") { printf "%s:%d: ghilimele neînchise la %s\n", src, pline, pkey > "/dev/stderr"; bad = 1 }
             if (bad) exit 2
             for (i = 1; i <= n; i++) print order[i] "=" vals[order[i]]
         }
