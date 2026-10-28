@@ -1,0 +1,295 @@
+# Sarcini periodice — echivalentul serviciilor `purge`, `backup`, `backup-media`
+# din compose. Acolo rulau în buclă (`--loop` + sleep); aici fiecare execuție e un
+# Job separat (scripturile fără `--loop` fac O SINGURĂ trecere și ies), deci un
+# eșec e vizibil în `kubectl get jobs -n flirt` în loc să fie înghițit de buclă.
+#
+# concurrencyPolicy: Forbid — o execuție lentă nu se suprapune cu următoarea.
+# Ora: Europe/Chisinau (timeZone e GA din k8s 1.27).
+#
+# Backup-urile scriu pe host în /opt/flirt-backups (ca BACKUP_HOST_DIR din compose),
+# ÎN AFARA checkout-ului git, prin PVC-ul `backups` (vezi backups.yaml).
+# ⚠️ Ideal pe un disc separat / sincronizat off-site.
+---
+# Purjare GDPR + retenția dovezilor de plată + curățarea story-urilor expirate.
+# `python scripts/gdpr_purge.py` fără `--loop` = o trecere (vezi docstring-ul lui).
+# Compose: GDPR_PURGE_INTERVAL_SECONDS=3600 → aici orar.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: purge
+  labels:
+    app.kubernetes.io/name: purge
+spec:
+  schedule: "7 * * * *"
+  timeZone: Europe/Chisinau
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: purge
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: purge
+              # Tag-ul `current` TREBUIE să indice ultima imagine livrată (scriptul
+              # de deploy îl re-etichetează); altfel purjarea rulează cod vechi.
+              image: flirt-api:current
+              imagePullPolicy: Never
+              command: ["python", "scripts/gdpr_purge.py"]
+              envFrom:
+                - secretRef:
+                    name: flirt-env
+              env:
+                - name: POSTGRES_HOST
+                  value: db
+                - name: POSTGRES_PORT
+                  value: "5432"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 192Mi
+                limits:
+                  cpu: "1"
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              # Purjarea ȘTERGE fișiere media ale conturilor purjate — fără volum
+              # ștergerile ar fi no-op tăcute (ca în compose).
+              volumeMounts:
+                - name: media
+                  mountPath: /data/media
+          volumes:
+            - name: media
+              persistentVolumeClaim:
+                claimName: media
+---
+# Backup Postgres: pg_dump | gzip -9 → .partial → mv, apoi retenție N zile.
+# Logica e COPIATĂ din backend/scripts/backup_db.sh (mod fără `--loop`): kustomize
+# nu poate încărca fișiere din afara rădăcinii lui (backend/scripts/), iar imaginea
+# postgres nu are scripturile. ⚠️ Modifici scriptul → sincronizează și aici.
+# Compose rula zilnic (BACKUP_INTERVAL_SECONDS=86400); aici la 6h = pierdere maximă
+# de date 6h în loc de 24h (retenția pe zile rămâne aceeași: ~56 dump-uri).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-db
+  labels:
+    app.kubernetes.io/name: backup-db
+spec:
+  schedule: "15 */6 * * *"
+  timeZone: Europe/Chisinau
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: backup-db
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          # Root (ca în compose): /opt/flirt-backups e al lui root pe host, iar
+          # dump-urile rămân 0600 root (umask 077). Fără nicio capabilitate.
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: backup
+              image: postgres:16-alpine
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: PGHOST
+                  value: db
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef: { name: flirt-env, key: POSTGRES_USER }
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef: { name: flirt-env, key: POSTGRES_PASSWORD }
+                - name: PGDATABASE
+                  valueFrom:
+                    secretKeyRef: { name: flirt-env, key: POSTGRES_DB }
+                - name: BACKUP_DIR
+                  value: /backups
+                - name: BACKUP_RETENTION_DAYS
+                  valueFrom:
+                    secretKeyRef: { name: flirt-env, key: BACKUP_RETENTION_DAYS, optional: true }
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  umask 077
+                  BACKUP_DIR="${BACKUP_DIR:-/backups}"
+                  BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
+                  PGDATABASE="${PGDATABASE:-flirt}"
+                  log() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [backup] $*"; }
+                  mkdir -p "$BACKUP_DIR"
+                  stamp="$(date -u +%Y%m%d-%H%M%S)"
+                  target="$BACKUP_DIR/${PGDATABASE}-${stamp}.sql.gz"
+                  tmp="${target}.partial"
+                  log "dump → $target"
+                  # pipefail: un pg_dump eșuat NU trebuie mascat de gzip reușit.
+                  set -o pipefail
+                  if pg_dump --clean --if-exists --no-owner --no-privileges "$PGDATABASE" | gzip -9 > "$tmp"; then
+                    mv "$tmp" "$target"
+                    log "OK ($(wc -c < "$target") octeți)"
+                  else
+                    rm -f "$tmp"
+                    log "EȘEC: pg_dump a returnat eroare"
+                    exit 1
+                  fi
+                  deleted="$(find "$BACKUP_DIR" -maxdepth 1 -name "${PGDATABASE}-*.sql.gz" -type f -mtime "+${BACKUP_RETENTION_DAYS}" -print -delete | wc -l)"
+                  if [ "$deleted" -gt 0 ]; then
+                    log "retenție: am șters $deleted backup-uri mai vechi de ${BACKUP_RETENTION_DAYS} zile"
+                  fi
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: "1"
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: backups
+---
+# Backup MEDIA: tar.gz al volumului `media` → /opt/flirt-backups/media, retenție.
+# Logica e COPIATĂ din backend/scripts/backup_media.sh (mod fără `--loop`), cu
+# aceleași plase de siguranță: sursa montată readOnly, destinația nu poate fi în
+# sursă, retenția doar pe tiparul propriu, -maxdepth 1. Zilnic, ca în compose.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-media
+  labels:
+    app.kubernetes.io/name: backup-media
+spec:
+  schedule: "30 3 * * *"
+  timeZone: Europe/Chisinau
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 7200
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 7200
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: backup-media
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: backup
+              image: alpine:3.20
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: MEDIA_DIR
+                  value: /data/media
+                - name: MEDIA_BACKUP_DIR
+                  value: /backups/media
+                - name: MEDIA_BACKUP_RETENTION_DAYS
+                  valueFrom:
+                    secretKeyRef: { name: flirt-env, key: MEDIA_BACKUP_RETENTION_DAYS, optional: true }
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  umask 077
+                  MEDIA_DIR="${MEDIA_DIR:-/data/media}"
+                  MEDIA_BACKUP_DIR="${MEDIA_BACKUP_DIR:-/backups/media}"
+                  MEDIA_BACKUP_RETENTION_DAYS="${MEDIA_BACKUP_RETENTION_DAYS:-14}"
+                  PREFIX=media
+                  log() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [backup-media] $*"; }
+                  if [ ! -d "$MEDIA_DIR" ]; then
+                    log "EȘEC: $MEDIA_DIR nu există (volumul de media nu e montat?)"; exit 1
+                  fi
+                  case "$MEDIA_BACKUP_DIR/" in
+                    "$MEDIA_DIR"/*) log "REFUZ: MEDIA_BACKUP_DIR e în interiorul MEDIA_DIR"; exit 1 ;;
+                  esac
+                  mkdir -p "$MEDIA_BACKUP_DIR"
+                  stamp="$(date -u +%Y%m%d-%H%M%S)"
+                  target="$MEDIA_BACKUP_DIR/${PREFIX}-${stamp}.tar.gz"
+                  tmp="${target}.partial"
+                  log "arhivez $MEDIA_DIR → $target"
+                  rel="${MEDIA_DIR#/}"
+                  if tar czf "$tmp" -C / "$rel"; then
+                    mv "$tmp" "$target"
+                    log "OK ($(wc -c < "$target") octeți)"
+                  else
+                    rm -f "$tmp"
+                    log "EȘEC: tar a returnat eroare"; exit 1
+                  fi
+                  deleted="$(find "$MEDIA_BACKUP_DIR" -maxdepth 1 -type f -name "${PREFIX}-*.tar.gz" -mtime "+${MEDIA_BACKUP_RETENTION_DAYS}" -print -delete | wc -l)"
+                  if [ "$deleted" -gt 0 ]; then
+                    log "retenție: am șters $deleted arhive mai vechi de ${MEDIA_BACKUP_RETENTION_DAYS} zile"
+                  fi
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 64Mi
+                limits:
+                  cpu: "1"
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                  # Root fără DAC_OVERRIDE nu poate citi fișiere 0600 ale lui appuser
+                  # (uid 1000). DAC_READ_SEARCH ar fi mai îngust, dar PSA `baseline` nu-l
+                  # permite; scrierea în media rămâne imposibilă (montare readOnly).
+                  add: ["DAC_OVERRIDE"]
+              volumeMounts:
+                - name: media
+                  mountPath: /data/media
+                  readOnly: true
+                - name: backups
+                  mountPath: /backups
+          volumes:
+            - name: media
+              persistentVolumeClaim:
+                claimName: media
+                readOnly: true
+            - name: backups
+              persistentVolumeClaim:
+                claimName: backups

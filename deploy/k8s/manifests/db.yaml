@@ -1,0 +1,148 @@
+# Postgres 16 — 1 replică (StatefulSet), date pe PVC local-path-retain.
+# FĂRĂ expunere în afara clusterului: Service ClusterIP + NetworkPolicy (doar
+# api, migrate, purge, backup-db). Numele `db` e păstrat ca DATABASE_URL din
+# `.env` (host `db`) să funcționeze neschimbat.
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  labels:
+    app.kubernetes.io/name: db
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db
+  labels:
+    app.kubernetes.io/name: db
+spec:
+  serviceName: db
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: db
+  # Ștergerea StatefulSet-ului NU șterge PVC-ul (și oricum clasa e Retain).
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: db
+    spec:
+      automountServiceAccountToken: false
+      priorityClassName: flirt-data
+      # Oprire curată: Postgres face checkpoint la SIGTERM (smart → fast shutdown).
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        # uid 70 = utilizatorul `postgres` din imaginea alpine. Rulăm direct ca el
+        # (entrypoint-ul oficial sare peste chown/gosu când nu e root).
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          # Același tuning ca în docker-compose.yml (vezi comentariile de acolo).
+          # În plus: max_connections=200. Bugetul de conexiuni la HPA maxim:
+          # 6 pod-uri api × 2 workeri × (pool 5 + overflow 5) = 120, + purge + migrate
+          # — peste implicitul 100. Schimbarea cere restart db.
+          args:
+            - postgres
+            - -c
+            - shared_buffers=512MB
+            - -c
+            - effective_cache_size=2GB
+            - -c
+            - work_mem=8MB
+            - -c
+            - random_page_cost=1.1
+            - -c
+            - shared_preload_libraries=pg_stat_statements
+            - -c
+            - max_connections=200
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            # Doar cele 3 chei necesare, nu tot `.env`-ul aplicației.
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: flirt-env, key: POSTGRES_USER }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: flirt-env, key: POSTGRES_PASSWORD }
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef: { name: flirt-env, key: POSTGRES_DB }
+            # Subdirector: rădăcina volumului poate conține lost+found etc.,
+            # iar initdb refuză un director nevid.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          startupProbe:
+            exec:
+              command: ["/bin/sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -h 127.0.0.1"]
+            periodSeconds: 5
+            timeoutSeconds: 3
+            # Recuperare după oprire bruscă (WAL replay) poate dura: până la 5 min.
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -h 127.0.0.1"]
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -h 127.0.0.1"]
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            # Request mare pe memorie: sub presiune, kubelet evacuează întâi pod-urile
+            # care își depășesc request-ul — Postgres nu trebuie să fie printre ele.
+            requests:
+              cpu: 500m
+              memory: 1536Mi
+            limits:
+              cpu: "3"
+              memory: 3Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        # Echivalentul `shm_size: 256mb` din compose (implicit 64MB → erori la
+        # query-uri paralele/sortări mari). Se contorizează în limita de memorie.
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: db
+      spec:
+        storageClassName: local-path-retain
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi

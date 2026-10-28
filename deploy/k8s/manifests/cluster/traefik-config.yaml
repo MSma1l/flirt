@@ -1,0 +1,41 @@
+# Configurarea Traefik-ului încorporat în k3s (chart Traefik v3).
+# Nivel de cluster: NU e în kustomization; scriptul îl aplică, iar helm-controller-ul
+# k3s re-randează chart-ul automat. Necesită Traefik + servicelb ACTIVE pe nod.
+#
+#   - HTTP → HTTPS: redirect permanent pe entryPoint-ul `web` (tot site-ul).
+#     Provocarea ACME HTTP-01 (/.well-known/acme-challenge/) e și ea redirecționată;
+#     Let's Encrypt URMEAZĂ redirect-ul spre HTTPS și nu validează certificatul
+#     acolo, iar Ingress-ul solver-ului (fără adnotare de entrypoint) e servit și
+#     pe websecure → emiterea funcționează.
+#   - externalTrafficPolicy: Local → Traefik vede IP-ul REAL al clientului (fără
+#     SNAT de kube-proxy). Necesar pentru rate limiting-ul din nginx și anti-abuz.
+#     Pe un singur nod nu are dezavantaje (toate pod-urile Traefik sunt locale).
+#   - Timeout de citire 300s pe HTTPS: Traefik v3 are implicit 60s, prea puțin
+#     pentru upload-uri video de pe rețele mobile lente.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    ports:
+      web:
+        redirections:
+          entryPoint:
+            to: websecure
+            scheme: https
+            permanent: true
+            # Prioritate MICĂ: altfel redirect-ul (implicit MaxInt32-1) bate și
+            # Ingress-ul solver-ului ACME HTTP-01 al cert-manager → reînnoirea
+            # certificatului ar eșua. Rutele normale au prioritate > 10.
+            priority: 10
+      websecure:
+        transport:
+          respondingTimeouts:
+            readTimeout: 300s
+            writeTimeout: 300s
+            idleTimeout: 180s
+    service:
+      spec:
+        externalTrafficPolicy: Local

@@ -1,0 +1,12 @@
+# Prioritate pentru stratul de date (db, redis). Pe un singur nod, sub presiune de
+# memorie kubelet evacuează întâi pod-urile cu prioritate mică: un pod `api` în plus
+# (HPA) trebuie să cadă înaintea Postgres-ului, care ține TOT produsul.
+# Resursă la nivel de cluster (namespace-ul din kustomization nu se aplică).
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: flirt-data
+value: 100000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: "FLIRT: Postgres și Redis — evacuate ultimele."

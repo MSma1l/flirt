@@ -1,0 +1,40 @@
+# ClusterIssuer-e cert-manager (Let's Encrypt, ACME HTTP-01 prin Traefik).
+# Nivel de cluster: NU e în kustomization. Cere cert-manager instalat (CRD-uri).
+# `__ACME_EMAIL__` e înlocuit de scriptul de deploy cu CERTBOT_EMAIL din `.env`:
+#   sed "s/__ACME_EMAIL__/$CERTBOT_EMAIL/" issuers.yaml | kubectl apply -f -
+#
+# staging = limite de rată generoase, certificat NEÎNCREZUT de browsere: îl folosești
+# ca să verifici lanțul (DNS → Traefik → solver) înainte de prod.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+  labels:
+    app.kubernetes.io/part-of: flirt
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: __ACME_EMAIL__
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  labels:
+    app.kubernetes.io/part-of: flirt
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: __ACME_EMAIL__
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik

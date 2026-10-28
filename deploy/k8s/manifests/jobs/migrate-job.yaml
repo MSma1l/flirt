@@ -1,0 +1,57 @@
+# Șablon Job de migrare Alembic — NU e în kustomization.
+# Scriptul de deploy îl aplică ÎNAINTEA rollout-ului api, cu tag-ul imaginii:
+#   sed "s/__IMAGE__/<gitsha>/" migrate-job.yaml | kubectl apply -n flirt -f -
+#   kubectl wait -n flirt --for=condition=complete job/migrate --timeout=300s
+# (un Job e imuabil: scriptul șterge `job/migrate` vechi înainte, dacă există).
+# Migrațiile trebuie să fie compatibile înapoi: podurile vechi rulează pe schema
+# nouă cât durează rollout-ul.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+  namespace: flirt
+  labels:
+    app.kubernetes.io/name: migrate
+    app.kubernetes.io/part-of: flirt
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: migrate
+        app.kubernetes.io/part-of: flirt
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: flirt-api:__IMAGE__
+          imagePullPolicy: Never
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - secretRef:
+                name: flirt-env
+          env:
+            - name: POSTGRES_HOST
+              value: db
+            - name: POSTGRES_PORT
+              value: "5432"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

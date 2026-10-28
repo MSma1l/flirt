@@ -1,0 +1,26 @@
+# Contextul de build al imaginii flirt-web = rădăcina repo-ului. BuildKit
+# folosește AUTOMAT acest fișier (`<Dockerfile>.dockerignore`) în locul unui
+# .dockerignore din rădăcină.
+#
+# Listă ALBĂ: excludem tot, apoi readucem DOAR ce intră în build. Fără asta,
+# contextul ar include .git, backend/.venv, node_modules (sute de MB), .env-uri
+# și fișiere personale din rădăcină.
+*
+!admin
+!miniapp
+!mobile/src
+!mobile/theme
+!deploy/k8s/images/web
+
+# Din ce am readus: nimic generat local sau secret.
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/.env
+**/.env.*
+**/*.pem
+**/.DS_Store
+**/*.tsbuildinfo
+# Testele mobile nu intră în build-ul Mini App-ului (ca în build_miniapp.sh).
+mobile/**/__tests__

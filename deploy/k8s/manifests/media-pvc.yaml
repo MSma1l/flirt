@@ -1,0 +1,19 @@
+# Media încărcată (STORAGE_PROVIDER=local) — echivalentul volumului `mediadata`.
+# Scrie: api, purge. Citește (readOnly): web, backup-media.
+#
+# ReadWriteOnce e SUFICIENT: RWO înseamnă „un singur NOD", nu „un singur pod".
+# Clusterul are un singur nod, deci toate pod-urile care montează volumul stau
+# împreună. La trecerea pe mai multe noduri: RWX (NFS/Longhorn) sau S3.
+# local-path-retain (Retain): ștergerea PVC-ului NU șterge datele. Nu impune dimensiunea (e un director pe host); 10Gi e orientativ.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: media
+  labels:
+    app.kubernetes.io/name: media
+spec:
+  storageClassName: local-path-retain
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 10Gi

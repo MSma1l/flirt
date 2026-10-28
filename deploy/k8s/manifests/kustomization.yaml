@@ -1,0 +1,33 @@
+# FLIRT pe k3s (un singur nod) — baza kustomize.
+#
+#   kubectl apply -k deploy/k8s/manifests
+#
+# NU sunt incluse aici (le aplică scriptul de deploy, separat):
+#   - jobs/migrate-job.yaml   — șablon cu __IMAGE__, rulat înainte de fiecare rollout;
+#   - cluster/*.yaml          — resurse la nivel de cluster (Traefik, cert-manager).
+# Secretul `flirt-env` NU e în git: îl creează scriptul din `.env`-ul serverului.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: flirt
+
+resources:
+  - namespace.yaml
+  - priorityclass.yaml
+  - media-pvc.yaml
+  - backups.yaml
+  - db.yaml
+  - redis.yaml
+  - api.yaml
+  - web.yaml
+  - ingress.yaml
+  - cronjobs.yaml
+  - networkpolicies.yaml
+
+# Eticheta comună. includeSelectors: false — selectorii (imuabili) rămân doar pe
+# app.kubernetes.io/name; includeTemplates: true — ajunge și pe pod-uri.
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: flirt
+    includeSelectors: false
+    includeTemplates: true

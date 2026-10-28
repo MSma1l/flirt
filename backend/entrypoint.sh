@@ -40,25 +40,34 @@ fi
 # `pg_isready`, dar între acel moment și prima conexiune reală mai poate exista o
 # fereastră (DB în recuperare după un restart brusc, disc lent). O eroare
 # tranzitorie nu are voie să lase containerul într-un crash-loop.
-ATTEMPTS="${MIGRATION_ATTEMPTS:-5}"
-DELAY="${MIGRATION_RETRY_SECONDS:-3}"
+#
+# RUN_MIGRATIONS=0 (k8s): migrațiile le rulează O SINGURĂ DATĂ Job-ul `migrate`,
+# ÎNAINTE de rollout (deploy/k8s/scripts/deploy.sh). Cu N replici, N procese
+# `alembic upgrade` pornite simultan s-ar bate pe aceeași schemă. Implicit 1 →
+# docker compose se comportă exact ca înainte.
+if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
+    ATTEMPTS="${MIGRATION_ATTEMPTS:-5}"
+    DELAY="${MIGRATION_RETRY_SECONDS:-3}"
 
-i=1
-while :; do
-    echo "→ Rulez migrațiile Alembic (încercarea $i/$ATTEMPTS)..."
-    if alembic upgrade head; then
-        echo "→ Migrații OK."
-        break
-    fi
-    if [ "$i" -ge "$ATTEMPTS" ]; then
-        echo "✗ Migrațiile au eșuat după $ATTEMPTS încercări. Nu pornesc API-ul cu o"
-        echo "  schemă necunoscută — ar corupe date. Verifică: docker compose logs db"
-        exit 1
-    fi
-    echo "  eșec; reîncerc peste ${DELAY}s"
-    sleep "$DELAY"
-    i=$((i + 1))
-done
+    i=1
+    while :; do
+        echo "→ Rulez migrațiile Alembic (încercarea $i/$ATTEMPTS)..."
+        if alembic upgrade head; then
+            echo "→ Migrații OK."
+            break
+        fi
+        if [ "$i" -ge "$ATTEMPTS" ]; then
+            echo "✗ Migrațiile au eșuat după $ATTEMPTS încercări. Nu pornesc API-ul cu o"
+            echo "  schemă necunoscută — ar corupe date. Verifică: docker compose logs db"
+            exit 1
+        fi
+        echo "  eșec; reîncerc peste ${DELAY}s"
+        sleep "$DELAY"
+        i=$((i + 1))
+    done
+else
+    echo "→ RUN_MIGRATIONS=${RUN_MIGRATIONS} → sar peste migrații (le rulează Job-ul migrate)."
+fi
 
 # NUMĂRUL DE WORKERI — AUTO-SCALARE DUPĂ RAM.
 # Dacă `WEB_CONCURRENCY` nu e setat explicit, îl calculăm din RAM-ul REAL al

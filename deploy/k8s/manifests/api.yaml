@@ -1,0 +1,191 @@
+# API FastAPI (gunicorn + uvicorn workers). Accesibil DOAR din pod-urile `web`
+# (NetworkPolicy); din exterior totul trece prin Traefik → web nginx → api.
+#
+# Imaginea `flirt-api:current` e construită pe server și importată în containerd
+# (imagePullPolicy: Never). Scriptul de deploy face `kubectl set image` cu tag-ul
+# commit-ului — tag-ul de aici e doar punctul de plecare.
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/name: api
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/name: api
+spec:
+  # `replicas` e gestionat de HPA după primul apply. kubectl apply îl resetează la 2
+  # doar dacă valoarea din fișier se schimbă — de aceea nu o modificăm des.
+  replicas: 2
+  revisionHistoryLimit: 5
+  # Zero downtime: un pod nou intră în rotație și stă 10s „Ready" înainte să fie
+  # oprit unul vechi; dacă noul pod nu devine Ready în 5 min, rollout-ul e
+  # marcat eșuat (scriptul face `rollout undo`), iar podurile vechi rămân.
+  minReadySeconds: 10
+  progressDeadlineSeconds: 300
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api
+    spec:
+      automountServiceAccountToken: false
+      # preStop 10s (Service-ul/Endpoints scot podul din rotație) + graceful-timeout
+      # gunicorn 30s (GUNICORN_GRACEFUL_TIMEOUT) = 40s; +5s marjă înainte de SIGKILL.
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        # Dockerfile-ul are `USER appuser` (nenumeric) → kubelet nu poate verifica
+        # runAsNonRoot fără uid explicit. appuser = primul useradd din debian = 1000.
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: flirt-api:current
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: flirt-env
+          env:
+            # Suprascrieri față de `.env` (env are prioritate peste envFrom).
+            - name: POSTGRES_HOST
+              value: db
+            - name: POSTGRES_PORT
+              value: "5432"
+            # Migrațiile rulează în Job-ul `migrate`, nu la pornirea fiecărui pod:
+            # 2-6 pod-uri care rulează alembic simultan = curse pe schemă.
+            - name: RUN_MIGRATIONS
+              value: "0"
+            # Workeri ficși per pod; scalarea se face pe orizontală (HPA), nu în pod.
+            # entrypoint.sh ar citi altfel RAM-ul host-ului.
+            - name: WEB_CONCURRENCY
+              value: "2"
+            # Proxy-urile de încredere = CIDR-ul pod-urilor k3s (Traefik, web nginx).
+            - name: FORWARDED_ALLOW_IPS
+              value: "10.42.0.0/16"
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30   # până la 150s pentru import + pornire workeri
+          readinessProbe:
+            # Readiness REAL (DB): un pod fără DB iese din rotație, nu e omorât.
+            httpGet: { path: /health/ready, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+          livenessProbe:
+            # Liveness DOAR pe /health (fără DB): o cădere a Postgres-ului nu trebuie
+            # să declanșeze restarturi în cascadă ale API-ului.
+            httpGet: { path: /health, port: http }
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 4
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "10"]
+          resources:
+            # Limite generoase: conversiile ffmpeg (RLIMIT_AS 1GiB fiecare, max 2
+            # simultan per proces) pot urca vârful de memorie peste 1.5GiB.
+            requests:
+              cpu: 300m
+              memory: 600Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: media
+              mountPath: /data/media
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: media
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/name: api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    # Urcare rapidă la vârf de trafic; coborâre lentă (evită oscilația).
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      selectPolicy: Max
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      selectPolicy: Min
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/name: api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api

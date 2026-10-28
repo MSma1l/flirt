@@ -1,0 +1,54 @@
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║  SINGURUL loc cu numele publice (DNS). Schimbi un domeniu → îl schimbi AICI ║
+# ║  (rules + tls) ȘI în `.env` (DOMAIN / ADMIN_DOMAIN / MINIAPP_DOMAIN).      ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+#   api.flrt.md              = DOMAIN         (API + /media)
+#   admin-flirt-paty.flrt.md = ADMIN_DOMAIN   (panoul de admin)
+#   miniapp.flrt.md          = MINIAPP_DOMAIN (Telegram Mini App)
+#
+# Toate trei merg la `web:80`; nginx-ul din `web` rutează după Host.
+# TLS: cert-manager emite UN certificat (SAN) în secretul `flirt-tls` prin
+# ClusterIssuer-ul `letsencrypt-prod` (cluster/issuers.yaml), HTTP-01 prin Traefik.
+# Pentru teste fără limite de rată: schimbă adnotarea pe `letsencrypt-staging`.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flirt
+  labels:
+    app.kubernetes.io/name: web
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Ruterul ascultă doar pe HTTPS; HTTP → HTTPS e redirect global în Traefik
+    # (cluster/traefik-config.yaml).
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+    - secretName: flirt-tls
+      hosts:
+        - api.flrt.md
+        - admin-flirt-paty.flrt.md
+        - miniapp.flrt.md
+  rules:
+    - host: api.flrt.md
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: web, port: { name: http } }
+    - host: admin-flirt-paty.flrt.md
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: web, port: { name: http } }
+    - host: miniapp.flrt.md
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: web, port: { name: http } }

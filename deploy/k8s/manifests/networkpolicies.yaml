@@ -1,0 +1,119 @@
+# NetworkPolicy — k3s le aplică prin controller-ul încorporat (kube-router).
+#
+# Model: tot ingress-ul din namespace e INTERZIS implicit; deschidem explicit doar
+# drumurile necesare:   Traefik (kube-system) → web:8080 → api:8000 → db / redis.
+# Egress-ul rămâne DESCHIS: aplicația vorbește cu Telegram API, provideri AI, SMTP.
+#
+# Probele kubelet (liveness/readiness/startup) NU sunt afectate: vin de pe nodul
+# însuși (IP local), iar kube-router are o regulă explicită care acceptă traficul
+# cu sursa LOCAL a nodului către pod-urile lui („kubelet health checks").
+# metrics-server citește kubelet-ul, nu pod-urile → HPA nu e afectat.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+---
+# Postgres: doar api, Job-ul de migrare, purjarea și backup-ul DB.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: db-allow-clients
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: db
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: ["api", "migrate", "purge", "backup-db"]
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# Redis: doar api și purjarea.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-allow-clients
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: ["api", "purge"]
+      ports:
+        - protocol: TCP
+          port: 6379
+---
+# API: doar prin nginx-ul din `web` (rate limiting + blocarea ticket-proofs acolo).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-allow-web
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: web
+      ports:
+        - protocol: TCP
+          port: 8000
+---
+# Web: doar de la Traefik (namespace kube-system).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-allow-traefik
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# cert-manager pornește pod-uri „solver" HTTP-01 în ACEST namespace (lângă
+# Certificate), pe portul 8089. Fără regula asta, default-deny ar bloca Traefik →
+# solver și emiterea/reînnoirea certificatului Let's Encrypt ar eșua.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: acme-solver-allow-traefik
+spec:
+  podSelector:
+    matchLabels:
+      acme.cert-manager.io/http01-solver: "true"
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 8089

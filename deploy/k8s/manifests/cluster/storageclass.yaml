@@ -1,0 +1,19 @@
+# StorageClass cu reclaimPolicy Retain pentru datele FLIRT (db, redis, media).
+#
+# `local-path` implicit din k3s are reclaimPolicy Delete: un `kubectl delete pvc`
+# sau `kubectl delete ns flirt` ar ȘTERGE de pe disc baza de date și pozele.
+# Cu Retain, PV-ul rămâne (status Released) cu directorul intact în
+# /var/lib/rancher/k3s/storage/ — se poate re-lega manual (vezi deploy/k8s/README.md).
+#
+# Nivel de cluster: NU e în kustomization; se aplică ÎNAINTEA bazei:
+#   kubectl apply -f deploy/k8s/manifests/cluster/storageclass.yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-retain
+  labels:
+    app.kubernetes.io/part-of: flirt
+provisioner: rancher.io/local-path
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: false
