@@ -35,7 +35,8 @@ spec:
         - name: migrate
           image: flirt-api:__IMAGE__
           imagePullPolicy: Never
-          command: ["alembic", "upgrade", "head"]
+          # Așteaptă db-ul: NetworkPolicy se aplică unui pod nou cu ~1-2s întârziere.
+          command: ["/bin/sh", "-c", 'for i in $(seq 1 30); do python -c "import socket; socket.create_connection((\"db\", 5432), 2)" 2>/dev/null && break; sleep 2; done; exec alembic upgrade head']
           envFrom:
             - secretRef:
                 name: flirt-env

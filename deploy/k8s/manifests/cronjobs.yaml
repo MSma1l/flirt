@@ -51,7 +51,8 @@ spec:
               # de deploy îl re-etichetează); altfel purjarea rulează cod vechi.
               image: flirt-api:current
               imagePullPolicy: Never
-              command: ["python", "scripts/gdpr_purge.py"]
+              # Așteaptă db-ul: NetworkPolicy se aplică unui pod nou cu ~1-2s întârziere.
+              command: ["/bin/sh", "-c", 'for i in $(seq 1 30); do python -c "import socket; socket.create_connection((\"db\", 5432), 2)" 2>/dev/null && break; sleep 2; done; exec python scripts/gdpr_purge.py']
               envFrom:
                 - secretRef:
                     name: flirt-env
@@ -152,6 +153,14 @@ spec:
                   stamp="$(date -u +%Y%m%d-%H%M%S)"
                   target="$BACKUP_DIR/${PGDATABASE}-${stamp}.sql.gz"
                   tmp="${target}.partial"
+                  # NetworkPolicy (kube-router) se aplică unui pod NOU cu ~1-2s
+                  # întârziere: primele conexiuni sunt refuzate. Așteptăm db-ul.
+                  i=0
+                  until pg_isready -t 2 >/dev/null 2>&1; do
+                    i=$((i + 1))
+                    [ "$i" -ge 30 ] && { log "EȘEC: db indisponibil după 60s"; exit 1; }
+                    sleep 2
+                  done
                   log "dump → $target"
                   # pipefail: un pg_dump eșuat NU trebuie mascat de gzip reușit.
                   set -o pipefail
