@@ -21,15 +21,18 @@ spec:
   valuesContent: |-
     ports:
       web:
-        redirections:
-          entryPoint:
-            to: websecure
-            scheme: https
-            permanent: true
-            # Prioritate MICĂ: altfel redirect-ul (implicit MaxInt32-1) bate și
-            # Ingress-ul solver-ului ACME HTTP-01 al cert-manager → reînnoirea
-            # certificatului ar eșua. Rutele normale au prioritate > 10.
-            priority: 10
+        # Chart Traefik v35+: cheia e `ports.web.http.redirections` (vechiul
+        # `ports.web.redirections` e ignorat în tăcere → HTTP rămânea 404).
+        http:
+          redirections:
+            entryPoint:
+              to: websecure
+              scheme: https
+              permanent: true
+              # Prioritate MICĂ: altfel redirect-ul (implicit MaxInt32-1) bate și
+              # Ingress-ul solver-ului ACME HTTP-01 al cert-manager → reînnoirea
+              # certificatului ar eșua. Rutele normale au prioritate > 10.
+              priority: 10
       websecure:
         transport:
           respondingTimeouts:
