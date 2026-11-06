@@ -302,7 +302,9 @@ async def test_last_message_lateral_matches_window_function(db_session):
 
     expected = await _last_messages_reference(db_session, me)
     actual = await chat_service._last_messages_by_chat(db_session, me)
-    assert actual == expected
+    # Al 4-lea câmp (aditiv) = mesaj șters; aici niciunul nu e șters.
+    assert {k: v[:3] for k, v in actual.items()} == expected
+    assert not any(v[3] for v in actual.values())
     assert chat_empty.id not in actual
     assert foreign.id not in actual
     assert actual[chat_many.id][0] == "" and actual[chat_many.id][2] == "video"

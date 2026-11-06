@@ -18,7 +18,9 @@
  * Rutele confirmate în `backend/app/api/v1/chat.py`:
  *   GET    /chats/                                  → list[ChatSummary]
  *   GET    /chats/{chat_id}/messages?limit&cursor   → list[MessageOut] + X-Next-Cursor
- *   POST   /chats/{chat_id}/messages                → MessageOut (201)
+ *   POST   /chats/{chat_id}/messages                → MessageOut (201), `{body, reply_to_id?}`
+ *   PATCH  /chats/{chat_id}/messages/{id}           → MessageOut (editare, doar text, doar emitentul)
+ *   DELETE /chats/{chat_id}/messages/{id}           → MessageOut (forma „ștearsă", pentru amândoi)
  *   POST   /chats/{chat_id}/messages/{id}/react     → MessageOut
  *   POST   /chats/{chat_id}/read                    → 204
  *   POST   /chats/{chat_id}/attachments (multipart)  → MessageOut (201)
@@ -35,7 +37,7 @@ import type { ChatMessage, ChatSummary } from '@mobile/features/chat/types';
 
 import { api } from '@/api/client';
 
-export { markRead, reactToMessage, sendMessage } from '@mobile/features/chat/chatApi';
+export { markRead, reactToMessage } from '@mobile/features/chat/chatApi';
 
 /**
  * Tipul unui mesaj. Lipsa câmpului (mesaje vechi) înseamnă text.
@@ -53,10 +55,28 @@ export interface MessageAttachment {
   height: number | null;
 }
 
-/** Mesajul din Mini App: cel din mobil + câmpurile media (opționale). */
+/**
+ * Mesajul citat într-un răspuns (`reply_to` din `MessageOut`). `body` e deja
+ * scurtat de server (≤ 120 de caractere) și gol pentru media / mesaje șterse.
+ */
+export interface ReplyRef {
+  id: string;
+  senderId: string;
+  body: string;
+  kind: MessageKind;
+  isDeleted: boolean;
+}
+
+/** Mesajul din Mini App: cel din mobil + câmpurile media, editare, ștergere, răspuns. */
 export interface ChatMessageEx extends ChatMessage {
   kind?: MessageKind;
   attachment?: MessageAttachment | null;
+  /** Momentul ultimei editări (ISO 8601) sau `null` dacă n-a fost editat. */
+  editedAt?: string | null;
+  /** Șters pentru amândoi: `body` gol, fără atașament, fără reacție. */
+  isDeleted?: boolean;
+  /** Mesajul la care acesta răspunde. */
+  replyTo?: ReplyRef | null;
 }
 
 /** Rândul din lista de dialoguri + câmpurile pe care backendul le POATE expune. */
@@ -68,6 +88,8 @@ export interface ChatSummaryEx extends ChatSummary {
    * proprii, poza preluată automat din Telegram. Lipsă → inițiala.
    */
   otherPhotoUrl?: string;
+  /** Ultimul mesaj a fost șters (`last_message_deleted`) → „Mesaj șters". */
+  lastMessageDeleted?: boolean;
 }
 
 interface AttachmentResponse {
@@ -107,6 +129,7 @@ interface ChatSummaryResponse {
   last_message?: string | null;
   last_message_at?: string | null;
   last_message_kind?: string | null;
+  last_message_deleted?: boolean | null;
   unread_count: number;
   compatibility?: number | null;
 }
@@ -131,6 +154,7 @@ export async function fetchChats(): Promise<ChatSummaryEx[]> {
     };
     if (c.last_message_kind) row.lastMessageKind = toKind(c.last_message_kind);
     if (c.other_photo_url) row.otherPhotoUrl = c.other_photo_url;
+    if (c.last_message_deleted) row.lastMessageDeleted = true;
     return row;
   });
 }
@@ -150,9 +174,32 @@ interface ChatMessageResponse {
   reaction?: string | null;
   kind?: string | null;
   attachment?: AttachmentResponse | null;
+  edited_at?: string | null;
+  is_deleted?: boolean | null;
+  reply_to?: ReplyRefResponse | null;
+}
+
+interface ReplyRefResponse {
+  id: string;
+  sender_id: string;
+  body?: string | null;
+  kind?: string | null;
+  is_deleted?: boolean | null;
+}
+
+function mapReplyRef(r: ReplyRefResponse | null | undefined): ReplyRef | null {
+  if (!r || typeof r.id !== 'string' || !r.id) return null;
+  return {
+    id: r.id,
+    senderId: r.sender_id,
+    body: r.body ?? '',
+    kind: toKind(r.kind),
+    isDeleted: !!r.is_deleted,
+  };
 }
 
 function mapMessage(m: ChatMessageResponse): ChatMessageEx {
+  const isDeleted = !!m.is_deleted;
   return {
     id: m.id,
     senderId: m.sender_id,
@@ -162,9 +209,14 @@ function mapMessage(m: ChatMessageResponse): ChatMessageEx {
     wasMasked: !!m.was_masked,
     isRead: !!m.is_read,
     createdAt: m.created_at,
-    reaction: m.reaction ?? null,
+    // Un mesaj șters nu mai poartă reacție sau atașament, chiar dacă un server
+    // mai vechi le-ar trimite.
+    reaction: isDeleted ? null : (m.reaction ?? null),
     kind: toKind(m.kind),
-    attachment: mapAttachment(m.attachment),
+    attachment: isDeleted ? null : mapAttachment(m.attachment),
+    editedAt: m.edited_at ?? null,
+    isDeleted,
+    replyTo: mapReplyRef(m.reply_to),
   };
 }
 
@@ -203,6 +255,44 @@ export async function fetchMessagesPage(
   };
 }
 
+/**
+ * Trimite un mesaj text, opțional ca RĂSPUNS la alt mesaj (`reply_to_id`).
+ * Versiune locală (nu cea din mobil): mobilul nu cunoaște încă răspunsurile.
+ * Fără `replyToId`, cererea e identică cu cea de pe mobil (`{body}`).
+ */
+export async function sendMessage(
+  chatId: string,
+  body: string,
+  replyToId?: string | null,
+): Promise<ChatMessageEx> {
+  const { data } = await api.post<ChatMessageResponse>(`/chats/${chatId}/messages`, {
+    body,
+    ...(replyToId ? { reply_to_id: replyToId } : {}),
+  });
+  return mapMessage(data);
+}
+
+/** Editează textul unui mesaj propriu (`PATCH`). 409 dacă mesajul a fost șters. */
+export async function editMessage(
+  chatId: string,
+  messageId: string,
+  body: string,
+): Promise<ChatMessageEx> {
+  const { data } = await api.patch<ChatMessageResponse>(
+    `/chats/${chatId}/messages/${messageId}`,
+    { body },
+  );
+  return mapMessage(data);
+}
+
+/** Șterge un mesaj propriu pentru AMÂNDOI; întoarce forma lui „ștearsă". */
+export async function deleteMessage(chatId: string, messageId: string): Promise<ChatMessageEx> {
+  const { data } = await api.delete<ChatMessageResponse>(
+    `/chats/${chatId}/messages/${messageId}`,
+  );
+  return mapMessage(data);
+}
+
 /** Opțiunile unui upload de atașament. */
 export interface UploadOptions {
   /** Durata în milisecunde (mesaje vocale / video). */
@@ -216,6 +306,8 @@ export interface UploadOptions {
   fileName?: string;
   /** `video_note` → câmpul `kind`: serverul îl face mesaj video rotund (≤ 60 s). */
   kind?: 'video_note';
+  /** Mesajul la care atașamentul răspunde → câmpul `reply_to_id`. */
+  replyToId?: string | null;
 }
 
 /**
@@ -240,6 +332,7 @@ export async function uploadAttachment(
   const caption = options.caption?.trim();
   if (caption) form.append('caption', caption);
   if (options.kind === 'video_note') form.append('kind', 'video_note');
+  if (options.replyToId) form.append('reply_to_id', options.replyToId);
 
   const { data } = await api.post<ChatMessageResponse>(`/chats/${chatId}/attachments`, form, {
     // Uploadul unui video de 50 MB pe o rețea mobilă poate dura minute.

@@ -13,12 +13,20 @@
  * mascat ceva (`was_masked`), sub bulă apare explicația portată din mobil
  * (`chat:bubble.maskedHint`).
  *
- * Deosebirea față de nativ: picker-ul de reacții se deschide la CLIC pe bulă,
- * nu la apăsare lungă — într-un WebView apăsarea lungă e furată de meniul
- * contextual al sistemului. La bulele media (care au propriile butoane: deschide
- * poza, play) reacția are un buton mic alături.
+ * MENIUL MESAJULUI (reacții + Răspunde / Copiază / Editează / Șterge) se
+ * deschide la APĂSARE LUNGĂ (gesturile din `useMessageGestures`; meniul
+ * contextual al WebView-ului e suprimat), la clic-dreapta pe desktop și, la
+ * bulele text, și la o atingere scurtă — ca în Telegram. La bulele media (care
+ * au propriile butoane: deschide poza, play) atingerea scurtă rămâne a lor;
+ * meniul are și un buton mic alături. Meniul însuși e randat O SINGURĂ DATĂ, de
+ * `ChatScreen` (`MessageActionMenu`), nu în fiecare bulă.
+ *
+ * GLISAREA SPRE STÂNGA pe bulă → răspuns la mesaj.
+ *
+ * Mesajele ȘTERSE apar ca o bulă estompată „Mesaj șters", fără reacții și fără
+ * meniu. Mesajele EDITATE au eticheta „editat" lângă oră.
  */
-import { memo, useState } from 'react';
+import { memo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Photo } from '@/components/Photo';
@@ -27,8 +35,11 @@ import { ChatIcon } from './ChatIcons';
 import type { ChatMessageEx, MessageKind } from './chatApi';
 import { formatDuration } from './chatMedia';
 import { emojiOnlyCount } from './emojiData';
+import type { MenuAnchor } from './MessageActionMenu';
 import { MediaViewer } from './MediaViewer';
+import { messageSnippet } from './replyPreview';
 import { splitStoryReply } from './storyReply';
+import { useMessageGestures } from './useMessageGestures';
 import { VideoNotePlayer } from './VideoNotePlayer';
 import { VoicePlayer } from './VoicePlayer';
 
@@ -53,13 +64,24 @@ interface Props {
   message: ChatMessageEx;
   /** Id-ul utilizatorului curent, pentru a decide alinierea. */
   currentUserId: string;
-  /** Aplică o reacție sau o scoate (`null`, la re-selectarea aceleiași). */
-  onReact?: (reaction: string | null) => void;
   position?: GroupPosition;
   /** Prezent doar la bulele optimiste (upload în curs / eșuat). */
   pending?: PendingState;
   /** Ora deja formatată (HH:MM). */
   timeLabel?: string;
+  /** Numele partenerului, pentru citatele din răspunsuri. */
+  partnerName?: string;
+  /** Evidențiere scurtă (după un salt din citat). */
+  highlighted?: boolean;
+  /**
+   * Deschide meniul mesajului lângă bulă. Fără el (sau la bule optimiste /
+   * șterse) bula nu are meniu și nici gesturi. Callback STABIL — bula e memoizată.
+   */
+  onOpenMenu?: (message: ChatMessageEx, anchor: MenuAnchor) => void;
+  /** Glisarea spre stânga: răspuns la mesaj. Callback stabil. */
+  onSwipeReply?: (message: ChatMessageEx) => void;
+  /** Atingerea citatului: salt la mesajul original. Callback stabil. */
+  onQuoteClick?: (messageId: string) => void;
 }
 
 /** Proporția pozei, plafonată ca o poză-panoramă să nu devină o fâșie. */
@@ -90,31 +112,50 @@ function ProgressRing({ progress }: { progress: number }) {
 function MessageBubbleBase({
   message,
   currentUserId,
-  onReact,
   position = 'single',
   pending,
   timeLabel,
+  partnerName,
+  highlighted = false,
+  onOpenMenu,
+  onSwipeReply,
+  onQuoteClick,
 }: Props) {
   const { t } = useTranslation(['chat', 'screens']);
   const isOwn = message.senderId === currentUserId;
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
+  const bubbleRef = useRef<HTMLDivElement>(null);
 
+  const isDeleted = !!message.isDeleted;
   const kind: MessageKind = message.kind ?? 'text';
-  const attachment = message.attachment ?? null;
+  const attachment = isDeleted ? null : (message.attachment ?? null);
   const isMedia = kind !== 'text' && !!attachment;
   // Răspuns la o poveste: textul fără prefixul fix (românesc) pus de server.
-  const storyReplyText = !isMedia ? splitStoryReply(message.body) : null;
-  const emojiCount = !isMedia && storyReplyText === null ? emojiOnlyCount(message.body) : 0;
+  const storyReplyText = !isMedia && !isDeleted ? splitStoryReply(message.body) : null;
+  const emojiCount =
+    !isMedia && !isDeleted && storyReplyText === null && !message.replyTo
+      ? emojiOnlyCount(message.body)
+      : 0;
   const isJumbo = emojiCount > 0 && emojiCount <= 3 && !message.wasMasked;
   const hasTail = position === 'single' || position === 'last';
-  const reactable = !!onReact && !pending;
+  const interactive = !!onOpenMenu && !pending && !isDeleted;
 
-  const pick = (emoji: string) => {
-    setPickerOpen(false);
-    // Re-selectarea aceleiași reacții o scoate.
-    onReact?.(message.reaction === emoji ? null : emoji);
+  const openMenu = () => {
+    if (!interactive) return;
+    const r = bubbleRef.current?.getBoundingClientRect();
+    onOpenMenu?.(message, {
+      top: r?.top ?? 0,
+      bottom: r?.bottom ?? 0,
+      left: r?.left ?? 0,
+      right: r?.right ?? 0,
+    });
   };
+
+  const gestures = useMessageGestures({
+    enabled: interactive,
+    onLongPress: openMenu,
+    onSwipe: interactive && onSwipeReply ? () => onSwipeReply(message) : undefined,
+  });
 
   let statusIcon: React.ReactElement | null = null;
   if (isOwn) {
@@ -143,9 +184,15 @@ function MessageBubbleBase({
     }
   }
 
+  const edited = !!message.editedAt && !isDeleted;
   const meta =
-    timeLabel || statusIcon ? (
+    timeLabel || statusIcon || edited ? (
       <span className="bubble__meta">
+        {edited ? (
+          <span className="bubble__edited" data-testid="edited-label">
+            {t('screens:chat.edited')}
+          </span>
+        ) : null}
         {timeLabel ? <time dateTime={message.createdAt}>{timeLabel}</time> : null}
         {statusIcon}
       </span>
@@ -158,6 +205,8 @@ function MessageBubbleBase({
     isJumbo ? `bubble--emoji bubble--emoji-${emojiCount}` : '',
     isMedia ? `bubble--media bubble--${kind}` : '',
     isMedia && !message.body ? 'bubble--bare' : '',
+    isDeleted ? 'bubble--deleted' : '',
+    interactive ? 'bubble--interactive' : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -263,60 +312,127 @@ function MessageBubbleBase({
     isOwn ? 'bubble-wrap--own' : '',
     `bubble-wrap--${position}`,
     pending ? 'bubble-wrap--pending' : '',
+    highlighted ? 'bubble-wrap--highlight' : '',
   ]
     .filter(Boolean)
     .join(' ');
+
+  // Citatul mesajului la care acesta răspunde (nu și la mesajele șterse).
+  const replyTo = !isDeleted ? (message.replyTo ?? null) : null;
+  const quote = replyTo ? (
+    <button
+      type="button"
+      className="bubble__quote"
+      data-testid="reply-quote"
+      onClick={(event) => {
+        // Saltul la original, nu meniul bulei.
+        event.stopPropagation();
+        onQuoteClick?.(replyTo.id);
+      }}
+    >
+      <span className="bubble__quote-name">
+        {replyTo.senderId === currentUserId
+          ? t('screens:chat.reply.you')
+          : partnerName || t('chat:conversation.fallbackTitle')}
+      </span>
+      <span className="bubble__quote-text">{messageSnippet(t, replyTo)}</span>
+    </button>
+  ) : null;
+
+  let bubble: React.ReactElement;
+  if (isDeleted) {
+    bubble = (
+      <div ref={bubbleRef} className={classes} data-testid="deleted-message">
+        <span className="bubble__text bubble__deleted-text">
+          <span aria-hidden="true">🚫 </span>
+          {t('screens:chat.deleted')}
+        </span>
+        {meta}
+      </div>
+    );
+  } else if (isMedia) {
+    bubble = (
+      <div className="bubble-row">
+        <div ref={bubbleRef} className={classes}>
+          {quote}
+          {media}
+          {pendingOverlay}
+          {message.body ? <span className="bubble__text bubble__caption">{message.body}</span> : null}
+          {meta}
+        </div>
+        {interactive ? (
+          <button
+            type="button"
+            className="bubble__react-btn"
+            aria-label={t('chat:bubble.react')}
+            aria-haspopup="dialog"
+            onClick={openMenu}
+          >
+            <ChatIcon name="smile" size={18} />
+          </button>
+        ) : null}
+      </div>
+    );
+  } else {
+    bubble = (
+      <div
+        ref={bubbleRef}
+        className={classes}
+        // Atingerea scurtă deschide meniul (reacții + acțiuni), ca în Telegram.
+        {...(interactive
+          ? {
+              role: 'button',
+              tabIndex: 0,
+              'aria-haspopup': 'dialog' as const,
+              onClick: openMenu,
+              onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => {
+                if (event.target !== event.currentTarget) return;
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  openMenu();
+                }
+              },
+            }
+          : {})}
+      >
+        {quote}
+        {storyReplyText !== null ? (
+          <>
+            {/* Prefixul românesc de pe server → eticheta în limba interfeței. */}
+            <span className="bubble__story-reply" data-testid="story-reply-label">
+              {isOwn ? t('screens:chat.storyReply.own') : t('screens:chat.storyReply.received')}
+            </span>
+            <span className="bubble__text">{storyReplyText}</span>
+          </>
+        ) : (
+          <span className="bubble__text">{message.body}</span>
+        )}
+        {meta}
+      </div>
+    );
+  }
 
   return (
     <li
       className={wrapClasses}
       data-testid="message-bubble"
+      data-message-id={message.id}
       data-kind={kind}
       aria-label={isOwn ? t('chat:bubble.own') : t('chat:bubble.received')}
     >
-      {isMedia ? (
-        <div className="bubble-row">
-          <div className={classes}>
-            {media}
-            {pendingOverlay}
-            {message.body ? <span className="bubble__text bubble__caption">{message.body}</span> : null}
-            {meta}
-          </div>
-          {reactable ? (
-            <button
-              type="button"
-              className="bubble__react-btn"
-              aria-label={t('chat:bubble.react')}
-              aria-expanded={pickerOpen}
-              onClick={() => setPickerOpen((open) => !open)}
-            >
-              <ChatIcon name="smile" size={18} />
-            </button>
-          ) : null}
+      {/* Zona gesturilor: apăsare lungă, glisare spre stânga, clic-dreapta.
+          Săgeata de răspuns stă SUB bulă, la marginea dreaptă, și se dezvăluie
+          pe măsură ce bula alunecă spre stânga. */}
+      <div className="bubble-swipe" {...gestures.handlers}>
+        {interactive && onSwipeReply ? (
+          <span className="bubble-swipe__arrow" ref={gestures.arrowRef} aria-hidden="true">
+            <ChatIcon name="reply" size={18} />
+          </span>
+        ) : null}
+        <div className="bubble-swipe__track" ref={gestures.trackRef}>
+          {bubble}
         </div>
-      ) : (
-        <button
-          type="button"
-          className={classes}
-          aria-label={t('chat:bubble.react')}
-          aria-expanded={pickerOpen}
-          disabled={!reactable}
-          onClick={() => reactable && setPickerOpen((open) => !open)}
-        >
-          {storyReplyText !== null ? (
-            <>
-              {/* Prefixul românesc de pe server → eticheta în limba interfeței. */}
-              <span className="bubble__story-reply" data-testid="story-reply-label">
-                {isOwn ? t('screens:chat.storyReply.own') : t('screens:chat.storyReply.received')}
-              </span>
-              <span className="bubble__text">{storyReplyText}</span>
-            </>
-          ) : (
-            <span className="bubble__text">{message.body}</span>
-          )}
-          {meta}
-        </button>
-      )}
+      </div>
 
       {pending?.status === 'error' && pending.errorText ? (
         <span className="bubble__error" role="alert" data-testid="upload-error">
@@ -324,7 +440,7 @@ function MessageBubbleBase({
         </span>
       ) : null}
 
-      {message.reaction ? (
+      {message.reaction && !isDeleted ? (
         <span
           className="bubble__reaction"
           data-testid="reaction-badge"
@@ -334,23 +450,7 @@ function MessageBubbleBase({
         </span>
       ) : null}
 
-      {pickerOpen ? (
-        <span className="bubble__picker" data-testid="reaction-picker">
-          {REACTIONS.map((emoji) => (
-            <button
-              key={emoji}
-              type="button"
-              className="bubble__picker-item"
-              aria-label={t('chat:bubble.reactionOption', { emoji })}
-              onClick={() => pick(emoji)}
-            >
-              {emoji}
-            </button>
-          ))}
-        </span>
-      ) : null}
-
-      {message.wasMasked ? (
+      {message.wasMasked && !isDeleted ? (
         <span className="bubble__masked" data-testid="masked-hint">
           {t('chat:bubble.maskedHint')}
         </span>

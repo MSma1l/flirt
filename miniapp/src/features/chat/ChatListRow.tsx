@@ -23,7 +23,8 @@ import { chatPath, chatProfilePath } from './chatRoutes';
 import { splitStoryReply } from './storyReply';
 
 interface Props {
-  chat: ChatSummary & Partial<Pick<ChatSummaryEx, 'lastMessageKind' | 'otherPhotoUrl'>>;
+  chat: ChatSummary &
+    Partial<Pick<ChatSummaryEx, 'lastMessageKind' | 'otherPhotoUrl' | 'lastMessageDeleted'>>;
 }
 
 function initial(name: string): string {
@@ -65,7 +66,10 @@ function ChatListRowBase({ chat }: Props) {
    */
   const kind = chat.lastMessageKind;
   let preview: string;
-  if (kind && kind !== 'text') {
+  if (chat.lastMessageDeleted) {
+    // Ultimul mesaj a fost șters pentru amândoi.
+    preview = t('screens:chat.deleted');
+  } else if (kind && kind !== 'text') {
     const label = t(`screens:chat.listPreview.${kind}`);
     preview = chat.lastMessage ? `${label} · ${chat.lastMessage}` : label;
   } else if (chat.lastMessage) {

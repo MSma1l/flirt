@@ -15,6 +15,9 @@
  *   în modul curent. Din tastatură (Enter / Space) butonul înregistrează direct.
  *   Odată pornită, înregistrarea rămâne „blocată": panoul cu anulare / trimitere
  *   e același ca înainte, deci ridicarea degetului nu trimite nimic.
+ * - BARA DE CONTEXT de deasupra câmpului: „răspuns la…" (numele + citatul) sau
+ *   „Editare" (textul original). X / Escape o anulează. În modul de editare,
+ *   agrafa și microfonul dispar, iar butonul de trimitere devine o bifă.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -25,6 +28,7 @@ import { ChatIcon } from './ChatIcons';
 import { formatDuration, MEDIA_LIMITS } from './chatMedia';
 import { EmojiPicker } from './EmojiPicker';
 import { useVideoNoteRecorder, type VideoNoteRecording } from './useVideoNoteRecorder';
+import './videoNote.css';
 import { isVoiceRecordingSupported, useVoiceRecorder, type VoiceRecording } from './useVoiceRecorder';
 
 /** ~5 rânduri de 22px + padding. */
@@ -45,7 +49,15 @@ export type RecordMode = 'voice' | 'video';
 const noopVideoNote = () => {};
 
 /** Previzualizarea rotundă a camerei, cu inelul de progres spre limita de 60 s. */
-function VideoNotePreview({ stream, elapsedMs }: { stream: MediaStream | null; elapsedMs: number }) {
+function VideoNotePreview({
+  stream,
+  elapsedMs,
+  mirrored,
+}: {
+  stream: MediaStream | null;
+  elapsedMs: number;
+  mirrored: boolean;
+}) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -66,7 +78,15 @@ function VideoNotePreview({ stream, elapsedMs }: { stream: MediaStream | null; e
   return (
     <div className="video-note-rec" data-testid="video-note-preview">
       <div className="video-note-rec__circle">
-        <video ref={videoRef} className="video-note-rec__video" muted playsInline autoPlay />
+        <video
+          ref={videoRef}
+          className={
+            mirrored ? 'video-note-rec__video' : 'video-note-rec__video video-note-rec__video--unmirrored'
+          }
+          muted
+          playsInline
+          autoPlay
+        />
         <svg className="video-note-rec__ring" viewBox="0 0 100 100" aria-hidden="true">
           <circle cx="50" cy="50" r={r} className="video-note-rec__track" />
           <circle
@@ -83,6 +103,18 @@ function VideoNotePreview({ stream, elapsedMs }: { stream: MediaStream | null; e
   );
 }
 
+/** Bara de deasupra câmpului: răspuns la un mesaj sau editarea unuia. */
+export interface ComposerContext {
+  mode: 'reply' | 'edit';
+  /** Numele celui citat sau „Editare". */
+  title: string;
+  /** Citatul (text sau eticheta media). */
+  snippet: string;
+  /** Eticheta butonului X. */
+  cancelLabel: string;
+  onCancel: () => void;
+}
+
 interface Props {
   draft: string;
   onDraftChange: (value: string) => void;
@@ -95,6 +127,10 @@ interface Props {
   onVoice: (recording: VoiceRecording) => void;
   /** Mesajul video rotund. Fără el, butonul rămâne doar microfon. */
   onVideoNote?: (recording: VideoNoteRecording) => void;
+  /** Răspuns / editare în curs. */
+  context?: ComposerContext | null;
+  /** Fiecare schimbare mută focusul în câmp (după „Răspunde" / „Editează"). */
+  focusToken?: number;
 }
 
 export function ChatComposer({
@@ -107,6 +143,8 @@ export function ChatComposer({
   onPickFile,
   onVoice,
   onVideoNote,
+  context = null,
+  focusToken = 0,
 }: Props) {
   const { t } = useTranslation(['chat', 'screens']);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -121,6 +159,12 @@ export function ChatComposer({
   const [hint, setHint] = useState<RecordMode | null>(null);
 
   const hasText = draft.trim().length > 0;
+  const isEditing = context?.mode === 'edit';
+
+  // „Răspunde" / „Editează" din meniu: tastatura se deschide direct în câmp.
+  useEffect(() => {
+    if (focusToken > 0) inputRef.current?.focus();
+  }, [focusToken]);
   const videoActive = videoRecorder.status !== 'idle';
   // Înregistrarea în curs (vocal SAU video) — panoul comun anulare / trimitere.
   const recorder = videoActive ? videoRecorder : voiceRecorder;
@@ -237,6 +281,11 @@ export function ChatComposer({
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Escape' && context) {
+      event.preventDefault();
+      context.onCancel();
+      return;
+    }
     // Pe desktop (pointer fin), Enter trimite și Shift+Enter rupe rândul.
     // Pe telefon, Enter rămâne rând nou — ca în orice mesagerie mobilă.
     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
@@ -293,8 +342,36 @@ export function ChatComposer({
         </p>
       ) : null}
 
+      {context ? (
+        <div
+          className={`chat-composer__context chat-composer__context--${context.mode}`}
+          data-testid={isEditing ? 'edit-bar' : 'reply-bar'}
+        >
+          <span className="chat-composer__context-icon" aria-hidden="true">
+            <ChatIcon name={isEditing ? 'edit' : 'reply'} size={20} />
+          </span>
+          <span className="chat-composer__context-body">
+            <span className="chat-composer__context-title">{context.title}</span>
+            <span className="chat-composer__context-text">{context.snippet}</span>
+          </span>
+          <button
+            type="button"
+            className="chat-icon-button"
+            data-testid="composer-context-cancel"
+            aria-label={context.cancelLabel}
+            onClick={context.onCancel}
+          >
+            <ChatIcon name="close" size={20} />
+          </button>
+        </div>
+      ) : null}
+
       {videoActive ? (
-        <VideoNotePreview stream={videoRecorder.stream} elapsedMs={videoRecorder.elapsedMs} />
+        <VideoNotePreview
+          stream={videoRecorder.stream}
+          elapsedMs={videoRecorder.elapsedMs}
+          mirrored={videoRecorder.mirrored}
+        />
       ) : null}
 
       {recording ? (
@@ -356,15 +433,17 @@ export function ChatComposer({
               onChange={(e) => onDraftChange(e.target.value)}
               onKeyDown={onKeyDown}
             />
-            <button
-              type="button"
-              className="chat-icon-button"
-              data-testid="attach-button"
-              aria-label={t('screens:chat.attach')}
-              onClick={() => fileRef.current?.click()}
-            >
-              <ChatIcon name="paperclip" />
-            </button>
+            {!isEditing ? (
+              <button
+                type="button"
+                className="chat-icon-button"
+                data-testid="attach-button"
+                aria-label={t('screens:chat.attach')}
+                onClick={() => fileRef.current?.click()}
+              >
+                <ChatIcon name="paperclip" />
+              </button>
+            ) : null}
             <input
               ref={fileRef}
               type="file"
@@ -382,7 +461,7 @@ export function ChatComposer({
             />
           </div>
 
-          {voiceSupported && !hasText ? (
+          {voiceSupported && !hasText && !isEditing ? (
             <button
               type="button"
               className={
@@ -416,10 +495,10 @@ export function ChatComposer({
               type="submit"
               className="chat-send"
               data-testid="send-button"
-              aria-label={t('chat:conversation.send')}
+              aria-label={isEditing ? t('screens:chat.edit.save') : t('chat:conversation.send')}
               disabled={!canSend}
             >
-              <ChatIcon name="send" size={20} />
+              <ChatIcon name={isEditing ? 'check' : 'send'} size={isEditing ? 22 : 20} />
             </button>
           )}
         </div>

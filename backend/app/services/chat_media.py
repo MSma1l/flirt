@@ -829,6 +829,13 @@ VIDEO_NOTE_MAX_DURATION_MS = 60_000
 _VIDEO_NOTE_DURATION_SLACK_MS = 3_000
 # Latura pătratului final: 2× bula de ~240px de pe ecranele retina.
 VIDEO_NOTE_SIDE = 480
+# Cadre pe secundă în fișierul final. WebM-ul din MediaRecorder (Chrome /
+# Android) are cadre cu ritm variabil, iar ffmpeg îi ghicește uneori ritmul
+# drept 1000 fps (baza de timp a Matroska) — `fps` dă un MP4 cu ritm constant,
+# ca în Telegram, și plafonează munca la un video de 120/240 fps (slow-motion).
+VIDEO_NOTE_FPS = 30
+# Sub atât, „кружок"-ul nu are conținut (un cadru, o atingere scăpată) → 422.
+VIDEO_NOTE_MIN_DURATION_MS = 300
 _VIDEO_NOTE_TIMEOUT_S = 120
 # Demuxerul FORȚAT pentru fiecare format video deja validat prin magic bytes.
 _FFMPEG_VIDEO_DEMUXER = {
@@ -871,6 +878,11 @@ def video_note_ffmpeg_args(src_path: str, demuxer: str, dst_path: str) -> list[s
     - `-t` plafonează durata și dacă clientul a mințit-o (WebM-ul din
       MediaRecorder nu are durată în container);
     - pista audio e opțională (`0:a:0?`) — camera fără microfon nu pică;
+    - rotația iOS (matricea de afișare din MOV/MP4) e aplicată de ffmpeg
+      (autorotate, implicit) ÎNAINTE de decupaj, iar fișierul final nu mai are
+      matrice → cercul e drept pe orice player;
+    - `fps` = ritm constant (vezi `VIDEO_NOTE_FPS`);
+    - `-map_metadata -1`: fără data / locația GPS din MOV-ul de pe iPhone;
     - `yuv420p` + profil `main` + `faststart`: redare imediată pe iOS și Android.
     """
     side = VIDEO_NOTE_SIDE
@@ -881,9 +893,14 @@ def video_note_ffmpeg_args(src_path: str, demuxer: str, dst_path: str) -> list[s
         "-t", f"{max_s:g}",
         "-map", "0:v:0", "-map", "0:a:0?",
         "-sn", "-dn", "-map_metadata", "-1",
-        "-vf", f"crop='min(iw,ih)':'min(iw,ih)',scale={side}:{side},setsar=1",
+        # Decupaj pătrat CENTRAL (crop centrează implicit) → 480×480.
+        "-vf",
+        f"fps={VIDEO_NOTE_FPS},crop='min(iw,ih)':'min(iw,ih)',scale={side}:{side},setsar=1",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
         "-profile:v", "main", "-pix_fmt", "yuv420p", "-threads", "2",
+        # Golurile de timestamp din WebM-ul MediaRecorder: sunetul rămâne
+        # sincron cu imaginea (ca la vocale). Fără pistă audio nu face nimic.
+        "-af", "aresample=async=1",
         "-c:a", "aac", "-b:a", "64k", "-ac", "1", "-ar", "44100",
         "-movflags", "+faststart",
         "-f", "mp4", dst_path,
@@ -900,12 +917,38 @@ async def _run_ffmpeg_video_note(
     )
 
 
+def _video_note_unavailable() -> HTTPException:
+    """Conversia n-a reușit (coadă plină, timeout, fișier stricat) → 503:
+    clientul arată „Reîncearcă", nu un mesaj care nu se poate reda pe iOS."""
+    return HTTPException(
+        status_code=503,
+        detail="Mesajul video nu a putut fi procesat. Reîncearcă.",
+    )
+
+
+def _video_note_empty() -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail="Mesajul video este gol sau prea scurt.",
+    )
+
+
 async def ensure_playable_video_note(media: ChatMedia) -> ChatMedia:
     """Mesajul video rotund convertit în MP4 H.264/AAC, pătrat 480×480.
 
     Fiecare platformă înregistrează altfel (iOS → MP4/H.264, Android/desktop →
-    WebM/VP8-VP9/Opus, pe care iOS NU-l redă). Best-effort, ca la vocale: fără
-    ffmpeg sau la o conversie eșuată rămâne fișierul original (validat deja).
+    WebM/VP8-VP9/Opus, pe care iOS NU-l redă). Ridică 422 / 503:
+
+    - fără ffmpeg (mediu de dev) → fișierul original, neschimbat (degradare);
+    - conversia a eșuat și originalul e MP4 / MOV (H.264 de pe iPhone, redabil
+      peste tot) → originalul, cu eroarea în log;
+    - conversia a eșuat și originalul e WebM → 503: un WebM păstrat ar apărea în
+      chat, dar destinatarul de pe iPhone nu l-ar putea vedea niciodată, iar
+      expeditorul n-ar afla. Așa vede „Reîncearcă";
+    - ffmpeg a reușit, dar ieșirea n-are cadre / are sub
+      `VIDEO_NOTE_MIN_DURATION_MS` → 422 (înregistrare goală).
+
+    Fișierele temporare dispar oricum (`TemporaryDirectory`, și la anulare).
     """
     if media.kind != VIDEO_NOTE_KIND:
         return media
@@ -917,20 +960,36 @@ async def ensure_playable_video_note(media: ChatMedia) -> ChatMedia:
         logger.warning("chat video note: ffmpeg lipsește → %s netranscodat", media.mime)
         return media
 
+    converted = b""
     with tempfile.TemporaryDirectory(prefix="flirt-vnote-") as tmp:
         src = os.path.join(tmp, "in.bin")
         dst = os.path.join(tmp, "out.mp4")
         with open(src, "wb") as fh:
             fh.write(media.content)
         ok = await _run_ffmpeg_video_note(ffmpeg, src, demuxer, dst)
-        if not ok or not os.path.isfile(dst):
-            return media
-        with open(dst, "rb") as fh:
-            converted = fh.read()
+        if ok and os.path.isfile(dst):
+            with open(dst, "rb") as fh:
+                converted = fh.read()
 
-    if not converted or len(converted) > settings.chat_video_max_bytes:
+    if not ok or not converted or len(converted) > settings.chat_video_max_bytes:
+        if media.mime == "video/webm":
+            logger.error("chat video note: conversia webm → mp4 a eșuat → 503")
+            raise _video_note_unavailable()
+        logger.error(
+            "chat video note: conversia %s → mp4 a eșuat; se păstrează originalul",
+            media.mime,
+        )
         return media
-    duration = _mp4_duration_ms(converted) or media.duration_ms
+
+    # ffmpeg iese cu 0 și când n-a decodat niciun cadru („Output file is
+    # empty") — un MP4 fără imagine nu devine „кружок".
+    duration = _mp4_duration_ms(converted)
+    if (
+        b"vide" not in _mp4_track_kinds(converted)
+        or duration is None
+        or duration < VIDEO_NOTE_MIN_DURATION_MS
+    ):
+        raise _video_note_empty()
     return ChatMedia(
         kind=VIDEO_NOTE_KIND,
         mime="video/mp4",

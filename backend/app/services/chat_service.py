@@ -3,20 +3,28 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, func, or_, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import user_ratelimit
+from app.core.ratelimit import enforce_user_quota
 from app.models.account import Block
 from app.models.chat import Chat, Message
 from app.models.interest import Interest, ProfileInterest
 from app.models.profile import Profile
 from app.models.swipe import Match
 from app.models.user import User
-from app.schemas.chat import ChatSummary, MessageOut, MessagePage, PartnerProfileOut
+from app.schemas.chat import (
+    REPLY_PREVIEW_MAX_LENGTH,
+    ChatSummary,
+    MessageOut,
+    MessagePage,
+    PartnerProfileOut,
+    ReplyPreview,
+)
 from app.services.chat_media import ChatMedia, build_attachment_key, save_chat_media
 from app.services.telegram_avatar import avatar_url_for
 from app.services.compatibility import compute_compatibility
@@ -24,6 +32,10 @@ from app.services.contact_masker import mask_contacts
 
 # Plafonul implicit de mesaje text per user per minut (vezi `send_message`).
 MESSAGES_PER_MINUTE_DEFAULT = 60
+# Cote per CONT pentru editare / ștergere — larg peste uzul real, dar opresc
+# un script care rescrie istoricul în buclă.
+MESSAGE_EDITS_PER_HOUR = 120
+MESSAGE_DELETES_PER_HOUR = 120
 from app.services.pagination import (
     MESSAGES_MAX_LIMIT,
     MESSAGES_PAGE_LIMIT,
@@ -131,8 +143,8 @@ async def _ensure_not_blocked(
 
 async def _last_messages_by_chat(
     db: AsyncSession, user: User
-) -> dict[uuid.UUID, tuple[str, object, str]]:
-    """Ultimul mesaj (body, created_at, kind) din FIECARE chat al userului — O(1) query.
+) -> dict[uuid.UUID, tuple[str, object, str, bool]]:
+    """Ultimul mesaj (body, created_at, kind, șters) din FIECARE chat al userului — O(1) query.
 
     `LATERAL (SELECT ... WHERE chat_id = c.id ORDER BY created_at DESC, id DESC
     LIMIT 1)` per chat: Postgres coboară în indexul `ix_messages_chat_created`
@@ -149,6 +161,7 @@ async def _last_messages_by_chat(
             Message.body.label("body"),
             Message.created_at.label("created_at"),
             Message.kind.label("kind"),
+            Message.deleted_at.label("deleted_at"),
         )
         .where(Message.chat_id == Chat.id)
         .order_by(Message.created_at.desc(), Message.id.desc())
@@ -162,12 +175,20 @@ async def _last_messages_by_chat(
             last_msg.c.body,
             last_msg.c.created_at,
             last_msg.c.kind,
+            last_msg.c.deleted_at,
         )
         .join(last_msg, true())
         .where(or_(Chat.user_a_id == user.id, Chat.user_b_id == user.id))
     )
     return {
-        row.chat_id: (row.body, row.created_at, row.kind) for row in result.all()
+        row.chat_id: (
+            # Un mesaj șters nu-și mai arată conținutul nici în lista de chat-uri.
+            "" if row.deleted_at is not None else row.body,
+            row.created_at,
+            row.kind,
+            row.deleted_at is not None,
+        )
+        for row in result.all()
     }
 
 
@@ -285,7 +306,9 @@ async def list_chats(db: AsyncSession, user: User) -> list[ChatSummary]:
         else:
             compatibility = 0
 
-        last_body, last_at, last_kind = last_by_chat.get(chat.id, (None, None, None))
+        last_body, last_at, last_kind, last_deleted = last_by_chat.get(
+            chat.id, (None, None, None, False)
+        )
 
         summaries.append(
             ChatSummary(
@@ -302,6 +325,7 @@ async def list_chats(db: AsyncSession, user: User) -> list[ChatSummary]:
                 last_message=last_body,
                 last_message_at=last_at,
                 last_message_kind=last_kind,
+                last_message_deleted=last_deleted,
                 unread_count=unread_by_chat.get(chat.id, 0),
                 compatibility=compatibility,
             )
@@ -438,16 +462,124 @@ async def get_messages(
     next_cursor = encode_cursor(rows[-1].id) if (has_more and rows) else None
 
     rows.reverse()  # cronologic crescător în interiorul paginii
+    # Citatele întregii pagini într-o SINGURĂ interogare (fără N+1).
+    previews = await _reply_previews(
+        db, chat.id, [m.reply_to_id for m in rows if m.reply_to_id and not m.is_deleted]
+    )
     return MessagePage(
-        items=[MessageOut.model_validate(m) for m in rows],
+        items=[_message_out(m, previews) for m in rows],
         next_cursor=next_cursor,
     )
 
 
-async def send_message(
-    db: AsyncSession, user: User, chat_id: uuid.UUID, body: str
+def _preview_of(message: Message) -> ReplyPreview:
+    """Previzualizarea (citatul) unui mesaj: text trunchiat, "" dacă e șters."""
+    body = "" if message.is_deleted else (message.body or "")
+    if len(body) > REPLY_PREVIEW_MAX_LENGTH:
+        body = body[: REPLY_PREVIEW_MAX_LENGTH - 1].rstrip() + "…"
+    return ReplyPreview(
+        id=message.id,
+        sender_id=message.sender_id,
+        body=body,
+        kind=message.kind or "text",
+        is_deleted=message.is_deleted,
+    )
+
+
+async def _reply_previews(
+    db: AsyncSession, chat_id: uuid.UUID, ids: list[uuid.UUID]
+) -> dict[uuid.UUID, ReplyPreview]:
+    """Citatele pentru `ids` — un singur SELECT, restrâns la chat-ul curent."""
+    unique = list({i for i in ids if i is not None})
+    if not unique:
+        return {}
+    result = await db.execute(
+        select(Message).where(Message.id.in_(unique), Message.chat_id == chat_id)
+    )
+    return {m.id: _preview_of(m) for m in result.scalars().all()}
+
+
+def _message_out(
+    message: Message, previews: dict[uuid.UUID, ReplyPreview] | None = None
 ) -> MessageOut:
-    """Trimite un mesaj: aplică mascarea contactelor și persistă (TZ 5.5)."""
+    """`MessageOut` pentru un mesaj, cu citatul atașat (din `previews`).
+
+    Un mesaj ȘTERS iese mereu în forma „goală" — chiar dacă vreun câmp n-ar fi
+    fost golit în DB, conținutul șters nu ajunge niciodată la client.
+    """
+    out = MessageOut.model_validate(message)
+    if message.is_deleted:
+        return out.model_copy(
+            update={
+                "is_deleted": True,
+                "body": "",
+                "attachment": None,
+                "reaction": None,
+                "was_masked": False,
+                "reply_to": None,
+            }
+        )
+    if message.reply_to_id and previews:
+        out.reply_to = previews.get(message.reply_to_id)
+    return out
+
+
+async def _message_out_single(db: AsyncSession, message: Message) -> MessageOut:
+    """`MessageOut` pentru UN mesaj (răspunsul la send/edit/react/delete)."""
+    previews = (
+        await _reply_previews(db, message.chat_id, [message.reply_to_id])
+        if message.reply_to_id and not message.is_deleted
+        else {}
+    )
+    return _message_out(message, previews)
+
+
+async def _validate_reply_to(
+    db: AsyncSession, chat: Chat, reply_to_id: uuid.UUID | None
+) -> uuid.UUID | None:
+    """422 dacă mesajul citat nu există în ACEST chat. Citatul șters e permis."""
+    if reply_to_id is None:
+        return None
+    result = await db.execute(
+        select(Message.id).where(
+            Message.id == reply_to_id, Message.chat_id == chat.id
+        )
+    )
+    if result.first() is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Mesajul citat nu există în această conversație.",
+        )
+    return reply_to_id
+
+
+async def _get_chat_message(
+    db: AsyncSession, chat: Chat, message_id: uuid.UUID
+) -> Message:
+    """Mesajul `message_id` din `chat`; 404 dacă lipsește sau e din alt chat."""
+    result = await db.execute(
+        select(Message).where(Message.id == message_id, Message.chat_id == chat.id)
+    )
+    message = result.scalar_one_or_none()
+    if message is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Message not found"
+        )
+    return message
+
+
+async def send_message(
+    db: AsyncSession,
+    user: User,
+    chat_id: uuid.UUID,
+    body: str,
+    reply_to_id: uuid.UUID | None = None,
+) -> MessageOut:
+    """Trimite un mesaj: aplică mascarea contactelor și persistă (TZ 5.5).
+
+    `reply_to_id` (opțional) = mesajul citat; trebuie să fie din același chat
+    (altfel 422). Răspunsul la un mesaj șters e permis (citatul arată „șters").
+    """
     chat = await _get_participant_chat(db, user, chat_id)
     # Breșă CHAT-BLOCK: un user blocat (oricare direcție) nu poate scrie.
     await _ensure_not_blocked(db, user.id, _other_id(chat, user.id))
@@ -465,6 +597,8 @@ async def send_message(
         detail="Trimiți mesaje prea repede. Așteaptă puțin și încearcă din nou.",
     )
 
+    reply_to_id = await _validate_reply_to(db, chat, reply_to_id)
+
     masked_body, was_masked = mask_contacts(body)
     message = Message(
         chat_id=chat.id,
@@ -472,12 +606,13 @@ async def send_message(
         body=masked_body,
         was_masked=was_masked,
         is_read=False,
+        reply_to_id=reply_to_id,
     )
     db.add(message)
     await db.commit()
     await db.refresh(message)
     _notify_recipient(chat, user, message)
-    return MessageOut.model_validate(message)
+    return await _message_out_single(db, message)
 
 
 def _notify_recipient(chat: Chat, sender: User, message: Message) -> None:
@@ -514,6 +649,7 @@ async def send_attachment(
     chat: Chat,
     media: ChatMedia,
     caption: str,
+    reply_to_id: uuid.UUID | None = None,
 ) -> MessageOut:
     """Trimite un mesaj media (poză / video / vocal) cu legendă opțională.
 
@@ -522,6 +658,8 @@ async def send_attachment(
     Fișierul se salvează în storage sub o cheie aleatoare; dacă persistarea
     mesajului pică, îl ștergem (best-effort) ca să nu rămână orfan.
     """
+    # Citatul se validează ÎNAINTE de a scrie fișierul (fără orfani la 422).
+    reply_to_id = await _validate_reply_to(db, chat, reply_to_id)
     masked_body, was_masked = mask_contacts(caption) if caption else ("", False)
 
     storage = get_storage()
@@ -541,6 +679,7 @@ async def send_attachment(
         attachment_duration_ms=media.duration_ms,
         attachment_width=media.width,
         attachment_height=media.height,
+        reply_to_id=reply_to_id,
     )
     db.add(message)
     try:
@@ -554,7 +693,7 @@ async def send_attachment(
         raise
     await db.refresh(message)
     _notify_recipient(chat, user, message)
-    return MessageOut.model_validate(message)
+    return await _message_out_single(db, message)
 
 
 async def react_to_message(
@@ -567,28 +706,123 @@ async def react_to_message(
     """Setează (sau scoate cu None) reacția la un mesaj din chat (TZ 5.2).
 
     Poți reacționa la orice mesaj din chatul tău. 404 dacă userul nu e
-    participant la chat sau dacă mesajul nu aparține acelui chat.
+    participant la chat sau dacă mesajul nu aparține acelui chat; 409 dacă
+    mesajul a fost șters.
     """
     chat = await _get_participant_chat(db, user, chat_id)
     # Breșă CHAT-BLOCK: un user blocat (oricare direcție) nu poate reacționa.
     await _ensure_not_blocked(db, user.id, _other_id(chat, user.id))
 
-    result = await db.execute(
-        select(Message).where(
-            Message.id == message_id, Message.chat_id == chat.id
-        )
-    )
-    message = result.scalar_one_or_none()
-    if message is None:
-        # Mesaj inexistent sau din alt chat → nu divulgăm → 404.
+    # Mesaj inexistent sau din alt chat → nu divulgăm → 404.
+    message = await _get_chat_message(db, chat, message_id)
+    if message.is_deleted:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Message not found"
+            status_code=status.HTTP_409_CONFLICT, detail="Mesajul a fost șters."
         )
 
     message.reaction = reaction  # None scoate reacția
     await db.commit()
     await db.refresh(message)
-    return MessageOut.model_validate(message)
+    return await _message_out_single(db, message)
+
+
+async def edit_message(
+    db: AsyncSession,
+    user: User,
+    chat_id: uuid.UUID,
+    message_id: uuid.UUID,
+    body: str,
+) -> MessageOut:
+    """Editează un mesaj TEXT propriu (ca în Telegram).
+
+    Străin de chat → 404; block în oricare direcție → 403; mesajul altuia → 403;
+    mesaj șters → 409; media (legenda nu se editează) → 422. Textul nou trece
+    prin aceeași mascare de contacte ca la trimitere. Text identic → mesajul se
+    întoarce neschimbat (fără `edited_at`). Nu se trimite notificare.
+    """
+    chat = await get_writable_chat(db, user, chat_id)
+    await enforce_user_quota("chat_edit", user.id, MESSAGE_EDITS_PER_HOUR, 3600)
+
+    message = await _get_chat_message(db, chat, message_id)
+    if message.sender_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Poți edita doar mesajele tale.",
+        )
+    if message.is_deleted:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Mesajul a fost șters."
+        )
+    if (message.kind or "text") != "text":
+        raise HTTPException(
+            status_code=422,
+            detail="Doar mesajele text pot fi editate.",
+        )
+
+    masked_body, was_masked = mask_contacts(body)
+    if masked_body != message.body:
+        message.body = masked_body
+        message.was_masked = was_masked
+        message.edited_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(message)
+    return await _message_out_single(db, message)
+
+
+async def delete_message(
+    db: AsyncSession,
+    user: User,
+    chat_id: uuid.UUID,
+    message_id: uuid.UUID,
+) -> MessageOut:
+    """Șterge un mesaj propriu PENTRU TOȚI (soft delete), ca în Telegram.
+
+    Doar participant (altfel 404) — permis și într-un chat blocat (userul își
+    poate retrage conținutul); doar expeditorul (altfel 403). Golește în DB
+    corpul, reacția și atașamentul; fișierul din storage e șters best-effort,
+    DUPĂ commit (o eroare de storage nu pică cererea). Idempotent: un mesaj deja
+    șters întoarce tot 200 cu forma ștearsă. Nu se trimite notificare.
+    """
+    chat = await _get_participant_chat(db, user, chat_id)
+    await enforce_user_quota("chat_delete", user.id, MESSAGE_DELETES_PER_HOUR, 3600)
+
+    message = await _get_chat_message(db, chat, message_id)
+    if message.sender_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Poți șterge doar mesajele tale.",
+        )
+    if message.is_deleted:
+        return _message_out(message)
+
+    attachment_url = message.attachment_url
+    message.deleted_at = datetime.now(timezone.utc)
+    message.body = ""
+    message.was_masked = False
+    message.reaction = None
+    # Un mesaj șters nu mai contează la necitite (badge-ul partenerului scade,
+    # ca în Telegram) — fără filtru în plus în query-urile pe indexul parțial.
+    message.is_read = True
+    message.attachment_url = None
+    message.attachment_mime = None
+    message.attachment_size = None
+    message.attachment_duration_ms = None
+    message.attachment_width = None
+    message.attachment_height = None
+    await db.commit()
+    await db.refresh(message)
+
+    if attachment_url:
+        try:
+            # Șterge și variantele WebP (`_480.webp`) — vezi `storage.delete`.
+            await get_storage().delete(attachment_url)
+        except Exception:  # noqa: BLE001 — storage-ul nu pică ștergerea mesajului
+            logger.warning(
+                "Atașamentul mesajului șters nu a putut fi eliminat: %s",
+                attachment_url,
+                exc_info=True,
+            )
+    return _message_out(message)
 
 
 async def mark_read(db: AsyncSession, user: User, chat_id: uuid.UUID) -> None:

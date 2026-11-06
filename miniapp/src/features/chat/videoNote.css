@@ -1,0 +1,37 @@
+/*
+ * Completări pentru mesajul video rotund (`VideoNotePlayer`); stilurile de
+ * bază (.video-note, inelul, badge-ul) sunt în chat.css.
+ */
+
+/* Indicatorul „fără sunet" lângă durată, cât timp cercul rulează în buclă. */
+.video-note__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.video-note__muted-icon {
+  flex: none;
+  opacity: 0.9;
+}
+
+/* Cercul decupat corect și pe WebKit (iOS): `overflow: hidden` + `border-radius`
+   pe un <video> compus pe GPU nu taie colțurile fără un context de stivuire. */
+.video-note {
+  isolation: isolate;
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.video-note__video {
+  object-fit: cover;
+  background: #000;
+}
+
+/* Previzualizarea înregistrării (ChatComposer): chat.css o oglindește mereu;
+   camera din spate primită în locul celei frontale NU se oglindește
+   (`useVideoNoteRecorder().mirrored`, ca `StoryCamera`). */
+.video-note-rec__video.video-note-rec__video--unmirrored {
+  transform: none;
+}

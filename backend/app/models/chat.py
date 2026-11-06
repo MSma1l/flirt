@@ -1,7 +1,8 @@
 """Modele pentru chat: un dialog per match + mesajele lui (TZ secț. 5)."""
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -86,6 +87,28 @@ class Message(Base):
     # Dimensiunile imaginii (doar kind='image').
     attachment_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     attachment_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Editare / ștergere / răspuns (ca în Telegram) — coloane ADITIVE, nullable,
+    # deci rândurile vechi și podurile vechi (din timpul rollout-ului) nu sunt
+    # afectate. `edited_at`: momentul ultimei editări (NULL = needitat).
+    edited_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Ștergere „pentru toți" (soft delete): la setare, `body`, reacția și
+    # atașamentul sunt golite în DB — conținutul șters nu mai poate scăpa.
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Mesajul citat (răspuns). SET NULL: dacă mesajul citat dispare fizic
+    # (ex. purjare GDPR), răspunsul rămâne, doar fără citat.
+    reply_to_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="SET NULL"), nullable=True
+    )
+
+    @property
+    def is_deleted(self) -> bool:
+        """True dacă mesajul a fost șters pentru toți (citit de `MessageOut`)."""
+        return self.deleted_at is not None
 
     @property
     def attachment(self) -> dict | None:

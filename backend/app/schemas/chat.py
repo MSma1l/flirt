@@ -34,6 +34,9 @@ class ChatSummary(BaseModel):
     # Tipul ultimului mesaj (aditiv): la media `last_message` e legenda sau "",
     # iar clientul afișează o previzualizare după `last_message_kind`.
     last_message_kind: MessageKind | None = None
+    # Aditiv: True dacă ultimul mesaj a fost șters pentru toți (atunci
+    # `last_message` e ""), ca clientul să afișeze „Mesaj șters".
+    last_message_deleted: bool = False
     unread_count: int = 0
     # Scorul de compatibilitate cu celălalt participant, 0–100 (TZ 5.2 / 4.6).
     compatibility: int = 0
@@ -75,6 +78,24 @@ class AttachmentOut(BaseModel):
     height: int | None = None
 
 
+# Lungimea maximă a textului din previzualizarea unui mesaj citat.
+REPLY_PREVIEW_MAX_LENGTH = 120
+
+
+class ReplyPreview(BaseModel):
+    """Previzualizarea mesajului la care se răspunde (citatul din bulă).
+
+    `body` e trunchiat la ~120 de caractere; "" dacă mesajul citat a fost șters
+    sau e media fără legendă (atunci clientul se ghidează după `kind`).
+    """
+
+    id: uuid.UUID
+    sender_id: uuid.UUID
+    body: str = ""
+    kind: MessageKind = "text"
+    is_deleted: bool = False
+
+
 class MessageOut(BaseModel):
     """Un mesaj afișat în lenta de conversație (TZ 5.2)."""
 
@@ -91,6 +112,11 @@ class MessageOut(BaseModel):
     # legenda sau "", iar `attachment` descrie fișierul; la text attachment=None.
     kind: MessageKind = "text"
     attachment: AttachmentOut | None = None
+    # Editare / ștergere / răspuns (ADITIVE). Un mesaj șters are
+    # `is_deleted=True`, `body=""`, fără atașament / reacție / citat.
+    edited_at: datetime | None = None
+    is_deleted: bool = False
+    reply_to: ReplyPreview | None = None
 
 
 class MessagePage(BaseModel):
@@ -112,6 +138,14 @@ class MessageIn(BaseModel):
     `body` e validat defensiv: trim, non-gol (gol/spații → 422), plafon lungime,
     fără caractere de control și fără marcaje HTML (anti-XSS stocat).
     """
+
+    body: safe_str(MESSAGE_MAX_LENGTH)
+    # Aditiv: id-ul mesajului citat (răspuns); trebuie să fie din același chat.
+    reply_to_id: uuid.UUID | None = None
+
+
+class MessageEditIn(BaseModel):
+    """Payload-ul de editare a unui mesaj text — aceleași reguli ca `MessageIn.body`."""
 
     body: safe_str(MESSAGE_MAX_LENGTH)
 

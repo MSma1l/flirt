@@ -524,6 +524,33 @@
       "received": "↩️ A răspuns la povestea ta",
       "own": "↩️ Ai răspuns la poveste",
       "preview": "↩️ Răspuns la poveste: {{text}}"
+    },
+    "deleted": "Mesaj șters",
+    "edited": "editat",
+    "actions": {
+      "title": "Acțiuni pentru mesaj",
+      "reply": "Răspunde",
+      "copy": "Copiază",
+      "edit": "Editează",
+      "delete": "Șterge"
+    },
+    "reply": {
+      "you": "Tu",
+      "cancel": "Anulează răspunsul"
+    },
+    "edit": {
+      "title": "Editare mesaj",
+      "cancel": "Anulează editarea",
+      "save": "Salvează modificarea",
+      "error": "Modificarea nu a fost salvată. Reîncearcă.",
+      "deletedError": "Mesajul a fost șters și nu mai poate fi editat."
+    },
+    "deleteDialog": {
+      "title": "Ștergi mesajul?",
+      "body": "Va fi șters pentru amândoi.",
+      "confirm": "Șterge",
+      "cancel": "Anulează",
+      "error": "Mesajul nu a fost șters. Reîncearcă."
     }
   },
   "profileView": {

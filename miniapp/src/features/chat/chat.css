@@ -487,10 +487,12 @@
   word-break: break-word;
   max-width: 100%;
   min-width: 0;
-  /* Mesajul e text real: trebuie să poată fi selectat, spre deosebire de restul
-     Mini App-ului, unde selecția e dezactivată pentru gesturi. */
-  -webkit-user-select: text;
-  user-select: text;
+  /* Apăsarea lungă deschide meniul mesajului (cu „Copiază"), deci selecția
+     nativă și meniul contextual al WebView-ului (iOS: callout) sunt oprite —
+     altfel ar fura gestul. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
   transition: filter 0.15s ease;
 }
 
@@ -606,6 +608,233 @@
 
 .bubble--emoji .bubble__ticks--read {
   color: var(--color-link);
+}
+
+/* ——— Gesturi: glisare spre stânga = răspuns ——— */
+
+/* Zona gesturilor. `pan-y`: derularea verticală rămâne nativă, iar mișcarea
+   orizontală ajunge la noi ca `pointermove`. */
+.bubble-swipe {
+  position: relative;
+  max-width: 100%;
+  touch-action: pan-y;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.bubble-swipe__track {
+  position: relative;
+  z-index: 1;
+  max-width: 100%;
+  /* Revenirea după glisare; în timpul tragerii, JS pune `transition: none`. */
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
+}
+
+/* Săgeata stă SUB bulă, la marginea dreaptă; bula alunecă și o dezvăluie. */
+.bubble-swipe__arrow {
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  z-index: 0;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-accent);
+  opacity: 0;
+  transform: translateY(-50%) scale(0.6);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.bubble--interactive {
+  cursor: pointer;
+}
+
+.bubble--interactive:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* ——— Răspuns: citatul din bulă ——— */
+
+.bubble__quote {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0 0 4px;
+  padding: 3px 8px 4px;
+  border: none;
+  border-left: 3px solid var(--color-accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bubble--own .bubble__quote {
+  border-left-color: var(--color-on-accent);
+  background: color-mix(in srgb, var(--color-on-accent) 18%, transparent);
+}
+
+.bubble--media .bubble__quote {
+  width: auto;
+  margin: 3px 3px 5px;
+}
+
+.bubble__quote-name {
+  font-size: 13px;
+  line-height: 17px;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.bubble--own .bubble__quote-name {
+  color: var(--color-on-accent);
+}
+
+.bubble__quote-text {
+  font-size: 13.5px;
+  line-height: 18px;
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ——— Editat / șters ——— */
+
+.bubble__edited {
+  font-style: italic;
+  margin-right: 2px;
+}
+
+.bubble--deleted,
+.bubble--deleted.bubble--own {
+  background: color-mix(in srgb, var(--color-surface) 55%, transparent);
+  color: var(--color-text-secondary);
+  box-shadow: none;
+  border: 1px dashed var(--color-border);
+  cursor: default;
+}
+
+.bubble--deleted::after {
+  display: none;
+}
+
+.bubble__deleted-text {
+  font-style: italic;
+}
+
+.bubble--deleted.bubble--own .bubble__meta {
+  color: var(--color-text-secondary);
+}
+
+/* Saltul dintr-un citat: mesajul original „clipește" scurt. */
+.bubble-wrap--highlight .bubble {
+  animation: bubble-flash 1.6s ease-out both;
+}
+
+@keyframes bubble-flash {
+  0%,
+  35% {
+    box-shadow: 0 0 0 3px var(--color-accent-glow), 0 0 18px var(--color-accent-glow);
+    filter: brightness(1.12);
+  }
+  100% {
+    filter: none;
+  }
+}
+
+/* ——— Meniul mesajului (apăsare lungă) ——— */
+
+.msg-menu__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: color-mix(in srgb, var(--color-scrim) 55%, transparent);
+  animation: fade-in 0.15s ease-out both;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.msg-menu {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 210px;
+  max-width: calc(100vw - 16px);
+  animation: pop-in 0.16s ease-out both;
+}
+
+.msg-menu__reactions {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  padding: var(--space-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.bubble__picker-item--active {
+  background: var(--color-tag-bg);
+}
+
+.msg-menu__actions {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.msg-menu__item {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: 15.5px;
+  line-height: 20px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.msg-menu__item + .msg-menu__item {
+  border-top: 1px solid var(--color-border);
+}
+
+.msg-menu__item:hover,
+.msg-menu__item:focus-visible,
+.msg-menu__item:active {
+  background: var(--color-surface-hover);
+  outline: none;
+}
+
+.msg-menu__item--danger {
+  color: var(--color-danger);
 }
 
 /* ——— Bule media ——— */
@@ -1145,6 +1374,47 @@
 
 /* ——— Composer ——— */
 
+/* Bara „răspuns la…" / „Editare" de deasupra câmpului. */
+.chat-composer__context {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 4px 12px;
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  animation: sheet-up 0.18s ease-out both;
+}
+
+.chat-composer__context-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--color-accent);
+}
+
+.chat-composer__context-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-composer__context-title {
+  font-size: 13.5px;
+  line-height: 18px;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.chat-composer__context-text {
+  font-size: 13.5px;
+  line-height: 18px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .chat-composer {
   flex-shrink: 0;
   display: flex;
@@ -1586,6 +1856,10 @@
 @media (prefers-reduced-motion: reduce) {
   .bubble-wrap,
   .bubble__picker,
+  .msg-menu,
+  .msg-menu__backdrop,
+  .chat-composer__context,
+  .bubble-wrap--highlight .bubble,
   .chat-send,
   .emoji-picker,
   .media-viewer,
@@ -1596,6 +1870,8 @@
   }
 
   .progress-ring__value,
+  .bubble-swipe__track,
+  .bubble-swipe__arrow,
   .bubble,
   .chat-icon-button,
   .chat-send {
@@ -1676,6 +1952,21 @@
   color: var(--color-text-primary);
   -webkit-user-select: text;
   user-select: text;
+}
+
+/* Confirmarea ștergerii unui mesaj. */
+.chat-dialog .button--danger {
+  background: var(--color-danger);
+  color: #fff;
+}
+
+.chat-dialog .button--danger:hover:not(:disabled),
+.chat-dialog .button--danger:active:not(:disabled) {
+  background: color-mix(in srgb, var(--color-danger) 85%, #000);
+}
+
+.chat-dialog .button--danger:disabled {
+  background: color-mix(in srgb, var(--color-danger) 45%, transparent);
 }
 
 /* ——— Profilul partenerului ——— */

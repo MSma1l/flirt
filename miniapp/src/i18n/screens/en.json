@@ -520,6 +520,33 @@
       "received": "↩️ Replied to your story",
       "own": "↩️ You replied to a story",
       "preview": "↩️ Story reply: {{text}}"
+    },
+    "deleted": "Message deleted",
+    "edited": "edited",
+    "actions": {
+      "title": "Message actions",
+      "reply": "Reply",
+      "copy": "Copy",
+      "edit": "Edit",
+      "delete": "Delete"
+    },
+    "reply": {
+      "you": "You",
+      "cancel": "Cancel reply"
+    },
+    "edit": {
+      "title": "Editing message",
+      "cancel": "Cancel editing",
+      "save": "Save changes",
+      "error": "Your changes weren't saved. Try again.",
+      "deletedError": "This message was deleted and can no longer be edited."
+    },
+    "deleteDialog": {
+      "title": "Delete message?",
+      "body": "It will be deleted for both of you.",
+      "confirm": "Delete",
+      "cancel": "Cancel",
+      "error": "The message wasn't deleted. Try again."
     }
   },
   "profileView": {

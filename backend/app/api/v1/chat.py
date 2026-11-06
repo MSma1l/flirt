@@ -16,6 +16,7 @@ from app.models.user import User
 from app.schemas.chat import (
     MESSAGE_MAX_LENGTH,
     ChatSummary,
+    MessageEditIn,
     MessageIn,
     MessageOut,
     PartnerProfileOut,
@@ -78,6 +79,18 @@ def _parse_duration(raw: object) -> int | None:
     if value < 0 or value > _DURATION_MS_MAX:
         raise HTTPException(status_code=422, detail="Câmpul 'duration_ms' este în afara limitelor.")
     return value
+
+
+def _parse_reply_to(raw: object) -> uuid.UUID | None:
+    """`reply_to_id` opțional (UUID ca text); lipsă/gol → None; invalid → 422."""
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return None
+    try:
+        return uuid.UUID(str(raw).strip())
+    except ValueError:
+        raise HTTPException(
+            status_code=422, detail="Câmpul 'reply_to_id' trebuie să fie un UUID valid."
+        ) from None
 
 
 def _parse_video_note(raw: object) -> bool:
@@ -145,8 +158,13 @@ async def get_messages(
 async def send_message(
     chat_id: uuid.UUID, data: MessageIn, db: DbDep, user: UserDep
 ) -> MessageOut:
-    """Trimite un mesaj (contactele sunt mascate automat, TZ 5.5)."""
-    return await chat_service.send_message(db, user, chat_id, data.body)
+    """Trimite un mesaj (contactele sunt mascate automat, TZ 5.5).
+
+    `reply_to_id` (opțional) = răspuns la un mesaj din același chat (altfel 422).
+    """
+    return await chat_service.send_message(
+        db, user, chat_id, data.body, reply_to_id=data.reply_to_id
+    )
 
 
 @router.post(
@@ -161,7 +179,8 @@ async def send_attachment(
 
     Câmpuri: `file` (obligatoriu), `duration_ms` (opțional, voice/video),
     `caption` (opțional; aceleași reguli + mascare ca un mesaj text),
-    `kind` (opțional, aditiv: doar "video_note" — mesaj video rotund ≤ 60 s).
+    `kind` (opțional, aditiv: doar "video_note" — mesaj video rotund ≤ 60 s),
+    `reply_to_id` (opțional, aditiv: UUID-ul mesajului citat, din același chat).
     Tipul (`kind`) se deduce din conținutul real (magic bytes): 415 dacă nu e
     permis, 413 peste limite, 422 pentru fișier gol. Pozele pierd EXIF/GPS.
     """
@@ -184,6 +203,7 @@ async def send_attachment(
     caption = _parse_caption(form.get("caption"))
     duration_ms = _parse_duration(form.get("duration_ms"))
     video_note = _parse_video_note(form.get("kind"))
+    reply_to_id = _parse_reply_to(form.get("reply_to_id"))
 
     # Plafon de citire: nu încărcăm în RAM mai mult decât cea mai mare limită.
     limit = max_attachment_bytes()
@@ -209,7 +229,9 @@ async def send_attachment(
     else:
         # Vocalele WebM/Ogg/Opus → AAC/M4A, ca să se poată asculta și pe iOS.
         media = await ensure_playable_voice(media)
-    return await chat_service.send_attachment(db, user, chat, media, caption)
+    return await chat_service.send_attachment(
+        db, user, chat, media, caption, reply_to_id=reply_to_id
+    )
 
 
 @router.post("/{chat_id}/messages/{message_id}/react", response_model=MessageOut)
@@ -224,6 +246,34 @@ async def react_to_message(
     return await chat_service.react_to_message(
         db, user, chat_id, message_id, data.reaction
     )
+
+
+@router.patch("/{chat_id}/messages/{message_id}", response_model=MessageOut)
+async def edit_message(
+    chat_id: uuid.UUID,
+    message_id: uuid.UUID,
+    data: MessageEditIn,
+    db: DbDep,
+    user: UserDep,
+) -> MessageOut:
+    """Editează un mesaj text propriu (contactele sunt mascate din nou).
+
+    403 dacă mesajul nu e al tău sau chat-ul e blocat, 404 pentru un chat /
+    mesaj străin, 409 dacă mesajul a fost șters, 422 pentru mesaje media.
+    """
+    return await chat_service.edit_message(db, user, chat_id, message_id, data.body)
+
+
+@router.delete("/{chat_id}/messages/{message_id}", response_model=MessageOut)
+async def delete_message(
+    chat_id: uuid.UUID, message_id: uuid.UUID, db: DbDep, user: UserDep
+) -> MessageOut:
+    """Șterge un mesaj propriu pentru AMBII participanți (idempotent).
+
+    Întoarce forma ștearsă a mesajului (`is_deleted=true`, `body=""`).
+    403 dacă mesajul nu e al tău, 404 pentru un chat / mesaj străin.
+    """
+    return await chat_service.delete_message(db, user, chat_id, message_id)
 
 
 @router.post("/{chat_id}/read", status_code=status.HTTP_204_NO_CONTENT)

@@ -23,7 +23,10 @@ export type ChatIconName =
   | 'trash'
   | 'heart'
   | 'alert'
-  | 'video';
+  | 'video'
+  | 'reply'
+  | 'edit'
+  | 'copy';
 
 const PATHS: Record<ChatIconName, ReactElement> = {
   flag: (
@@ -112,6 +115,25 @@ const PATHS: Record<ChatIconName, ReactElement> = {
     <>
       <rect x="2.5" y="6" width="13" height="12" rx="3" />
       <path d="M15.5 10.5l6-3.5v10l-6-3.5" />
+    </>
+  ),
+  // Săgeata „răspunde" (meniul mesajului + gestul de glisare).
+  reply: (
+    <>
+      <path d="M9 14L4 9l5-5" />
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5V20" />
+    </>
+  ),
+  edit: (
+    <>
+      <path d="M4 20h4L19 9l-4-4L4 16v4z" />
+      <path d="M13.5 6.5l4 4" />
+    </>
+  ),
+  copy: (
+    <>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3" />
     </>
   ),
 };
